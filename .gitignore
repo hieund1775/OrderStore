@@ -1,5 +1,6 @@
 # Ignore Order.md as requested
 Order.md
+Order2.md
 
 # Dependencies
 node_modules/
@@ -20,3 +21,11 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Archive files
+*.rar
+*.zip
+*.7z
+
+# Claude Code local config
+.claude/
