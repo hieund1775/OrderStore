@@ -1,0 +1,80 @@
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+
+export type CartItem = {
+  key: string;
+  productId: string;
+  name: string;
+  image: string;
+  size: string;
+  base: string;
+  sugar: string;
+  ice: string;
+  toppings: string[];
+  note?: string;
+  unitPrice: number;
+  qty: number;
+};
+
+type CartContextValue = {
+  items: CartItem[];
+  addItem: (item: Omit<CartItem, 'key'>) => void;
+  removeItem: (key: string) => void;
+  setQty: (key: string, qty: number) => void;
+  clear: () => void;
+  count: number;
+  subtotal: number;
+  wishlist: string[];
+  toggleWishlist: (id: string) => void;
+};
+
+const CartContext = createContext<CartContextValue | null>(null);
+
+export function CartProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [wishlist, setWishlist] = useState<string[]>(['tra-dau-tay']);
+
+  const value = useMemo<CartContextValue>(() => {
+    const count = items.reduce((s, i) => s + i.qty, 0);
+    const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+    return {
+      items,
+      count,
+      subtotal,
+      wishlist,
+      addItem: (item) =>
+        setItems((prev) => {
+          const key = [
+            item.productId,
+            item.size,
+            item.base,
+            item.sugar,
+            item.ice,
+            item.toppings.join('|'),
+          ].join('__');
+          const found = prev.find((p) => p.key === key);
+          if (found) {
+            return prev.map((p) => (p.key === key ? { ...p, qty: p.qty + item.qty } : p));
+          }
+          return [...prev, { ...item, key }];
+        }),
+      removeItem: (key) => setItems((prev) => prev.filter((p) => p.key !== key)),
+      setQty: (key, qty) =>
+        setItems((prev) =>
+          qty <= 0
+            ? prev.filter((p) => p.key !== key)
+            : prev.map((p) => (p.key === key ? { ...p, qty } : p)),
+        ),
+      clear: () => setItems([]),
+      toggleWishlist: (id) =>
+        setWishlist((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id])),
+    };
+  }, [items, wishlist]);
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
+}
+
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error('useCart must be used inside CartProvider');
+  return ctx;
+}
