@@ -8,7 +8,7 @@ export function Footer() {
       <div className="container-page grid gap-10 py-14 md:grid-cols-2 lg:grid-cols-4">
         <div>
           <p className="font-display text-xl font-bold">
-            Tiệm Trà <span className="text-primary">Vườn Xanh</span>
+            Tiệm Trà <span className="text-primary">Trái Cây Tô</span>
           </p>
           <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
             Trà ủ mới mỗi ngày từ vùng nguyên liệu Thái Nguyên & Bảo Lộc, kết hợp 100% trái cây tươi
@@ -68,7 +68,7 @@ export function Footer() {
               <Mail className="text-primary size-4" /> {brand.email}
             </li>
             <li className="flex items-center gap-2">
-              <Facebook className="text-primary size-4" /> Fanpage Vườn Xanh
+              <Facebook className="text-primary size-4" /> Fanpage Trà Trái Cây Tô
             </li>
             <li className="flex items-center gap-2">
               <MessageCircle className="text-primary size-4" /> Zalo OA

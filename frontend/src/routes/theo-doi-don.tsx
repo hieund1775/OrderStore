@@ -7,13 +7,13 @@ import { vnd } from "@/lib/data";
 export const Route = createFileRoute("/theo-doi-don")({
   head: () => ({
     meta: [
-      { title: "Theo dõi đơn hàng real-time — Vườn Xanh" },
+      { title: "Theo dõi đơn hàng real-time — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Xem trạng thái đơn trà theo thời gian thực: chờ xác nhận, đang pha chế, đang giao và hoàn tất.",
       },
-      { property: "og:title", content: "Theo dõi đơn hàng — Vườn Xanh" },
+      { property: "og:title", content: "Theo dõi đơn hàng — Trà Trái Cây Tô" },
       { property: "og:description", content: "Biết chính xác ly trà của bạn đang ở đâu." },
     ],
   }),

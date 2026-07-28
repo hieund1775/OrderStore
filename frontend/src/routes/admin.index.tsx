@@ -27,13 +27,13 @@ import { vnd } from "@/lib/data";
 export const Route = createFileRoute("/admin/")({
   head: () => ({
     meta: [
-      { title: "Tổng quan vận hành | Admin Vườn Xanh" },
+      { title: "Tổng quan vận hành | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "KPI doanh thu, đơn hàng, cảnh báo tồn kho và biểu đồ doanh thu theo giờ.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Tổng quan vận hành | Admin Vườn Xanh" },
+      { property: "og:title", content: "Tổng quan vận hành | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Theo dõi doanh thu, đơn hàng và cảnh báo vận hành real-time.",

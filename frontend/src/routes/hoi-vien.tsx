@@ -9,13 +9,13 @@ import { rewards, tiers } from "@/lib/data";
 export const Route = createFileRoute("/hoi-vien")({
   head: () => ({
     meta: [
-      { title: "Thẻ hội viên & tích điểm đổi quà — Vườn Xanh" },
+      { title: "Thẻ hội viên & tích điểm đổi quà — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Tích điểm mỗi ly trà, thăng hạng Đồng – Bạc – Vàng – Kim Cương và đổi voucher, topping, quà tặng hấp dẫn.",
       },
-      { property: "og:title", content: "Thẻ hội viên Vườn Xanh" },
+      { property: "og:title", content: "Thẻ hội viên Trà Trái Cây Tô" },
       { property: "og:description", content: "1 điểm cho mỗi 10.000₫ — đổi quà bất cứ lúc nào." },
     ],
   }),

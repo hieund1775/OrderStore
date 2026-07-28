@@ -38,13 +38,13 @@ import { vnd } from "@/lib/data";
 export const Route = createFileRoute("/admin/bao-cao")({
   head: () => ({
     meta: [
-      { title: "Báo cáo & Thống kê | Admin Vườn Xanh" },
+      { title: "Báo cáo & Thống kê | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "Doanh thu đa chiều, top món, top voucher, tiêu thụ nguyên liệu và KPI vận hành.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Báo cáo & Thống kê | Admin Vườn Xanh" },
+      { property: "og:title", content: "Báo cáo & Thống kê | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Phân tích doanh thu theo chi nhánh, danh mục và hiệu quả vận hành.",

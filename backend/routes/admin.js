@@ -1,0 +1,532 @@
+/**
+ * @swagger
+ * /admin/dashboard/kpi:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: KPI tổng quan (doanh thu, đơn hàng, tỷ lệ hủy, số ly)
+ *     responses: { 200: { description: OK } }
+ * /admin/dashboard/urgent:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Cảnh báo khẩn (tồn kho thấp, món tạm ngưng, đơn đang làm)
+ *     responses: { 200: { description: OK } }
+ * /admin/dashboard/revenue-by-hour:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Doanh thu theo giờ trong ngày
+ *     responses: { 200: { description: OK } }
+ * /admin/dashboard/revenue-by-category:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Doanh thu theo danh mục
+ *     responses: { 200: { description: OK } }
+ * /admin/dashboard/revenue-by-branch:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Doanh thu theo chi nhánh
+ *     responses: { 200: { description: OK } }
+ * /admin/dashboard/top-products:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Top 10 sản phẩm bán chạy
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/orders:
+ *   get:
+ *     tags: [Admin Orders]
+ *     summary: Danh sách đơn hàng (có filter)
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: store_id
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: date_from
+ *         schema: { type: string }
+ *       - in: query
+ *         name: date_to
+ *         schema: { type: string }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *     responses: { 200: { description: OK } }
+ * /admin/orders/{id}:
+ *   get:
+ *     tags: [Admin Orders]
+ *     summary: Chi tiết đơn hàng (kèm items + status history)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses: { 200: { description: OK }, 404: { description: Not found } }
+ * /admin/orders/{id}/status:
+ *   put:
+ *     tags: [Admin Orders]
+ *     summary: Cập nhật trạng thái đơn hàng
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: ['Chờ xác nhận','Đã xác nhận','Đang chuẩn bị','Đang giao','Hoàn thành','Đã hủy'] }
+ *               note: { type: string }
+ *               changed_by: { type: integer }
+ *     responses: { 200: { description: OK } }
+ * /admin/orders/{id}/cancel:
+ *   put:
+ *     tags: [Admin Orders]
+ *     summary: Hủy đơn hàng
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *               changed_by: { type: integer }
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/menu/categories:
+ *   get:
+ *     tags: [Admin Menu]
+ *     summary: Quản lý danh mục
+ *     responses: { 200: { description: OK } }
+ *   post:
+ *     tags: [Admin Menu]
+ *     summary: Tạo danh mục mới
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, slug]
+ *             properties:
+ *               name: { type: string }
+ *               slug: { type: string }
+ *               sort_order: { type: integer }
+ *               is_visible: { type: boolean }
+ *     responses: { 201: { description: Created } }
+ * /admin/menu/categories/{id}:
+ *   put:
+ *     tags: [Admin Menu]
+ *     summary: Cập nhật danh mục
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses: { 200: { description: OK } }
+ * /admin/menu/products:
+ *   get:
+ *     tags: [Admin Menu]
+ *     summary: Quản lý sản phẩm
+ *     parameters:
+ *       - in: query
+ *         name: category_id
+ *         schema: { type: integer }
+ *     responses: { 200: { description: OK } }
+ *   post:
+ *     tags: [Admin Menu]
+ *     summary: Thêm món mới
+ *     responses: { 201: { description: Created } }
+ * /admin/menu/products/{id}:
+ *   put:
+ *     tags: [Admin Menu]
+ *     summary: Cập nhật món
+ *     responses: { 200: { description: OK } }
+ * /admin/menu/products/{id}/toggle:
+ *   put:
+ *     tags: [Admin Menu]
+ *     summary: Bật/tắt món
+ *     responses: { 200: { description: OK } }
+ * /admin/menu/options:
+ *   get:
+ *     tags: [Admin Menu]
+ *     summary: Tất cả tùy chọn (size, cốt trà, đường, đá, topping)
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/customers:
+ *   get:
+ *     tags: [Admin Customers]
+ *     summary: Danh sách khách hàng
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: tier
+ *         schema: { type: string }
+ *     responses: { 200: { description: OK } }
+ * /admin/customers/{id}:
+ *   get:
+ *     tags: [Admin Customers]
+ *     summary: Chi tiết khách hàng (kèm đơn hàng gần đây, LTV)
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/branches:
+ *   get:
+ *     tags: [Admin Branches]
+ *     summary: Quản lý chi nhánh
+ *     responses: { 200: { description: OK } }
+ * /admin/branches/{id}:
+ *   put:
+ *     tags: [Admin Branches]
+ *     summary: Cập nhật chi nhánh
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/promotions:
+ *   get:
+ *     tags: [Admin Promotions]
+ *     summary: Quản lý khuyến mãi
+ *     responses: { 200: { description: OK } }
+ *   post:
+ *     tags: [Admin Promotions]
+ *     summary: Tạo khuyến mãi mới
+ *     responses: { 201: { description: Created } }
+ * /admin/promotions/{id}:
+ *   put:
+ *     tags: [Admin Promotions]
+ *     summary: Cập nhật khuyến mãi
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/inventory:
+ *   get:
+ *     tags: [Admin Inventory]
+ *     summary: Tồn kho nguyên liệu
+ *     parameters:
+ *       - in: query
+ *         name: store_id
+ *         schema: { type: integer }
+ *     responses: { 200: { description: OK } }
+ * /admin/inventory/{id}:
+ *   put:
+ *     tags: [Admin Inventory]
+ *     summary: Cập nhật số lượng tồn kho
+ *     responses: { 200: { description: OK } }
+ * /admin/inventory/{id}/log:
+ *   post:
+ *     tags: [Admin Inventory]
+ *     summary: Nhập/xuất kho
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/kitchen/orders:
+ *   get:
+ *     tags: [Admin Kitchen]
+ *     summary: Màn hình bếp (KDS) — các đơn đang chờ / đang làm
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/reports/summary:
+ *   get:
+ *     tags: [Admin Reports]
+ *     summary: Báo cáo doanh thu theo khoảng thời gian
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date }
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/settings/accounts:
+ *   get:
+ *     tags: [Admin Settings]
+ *     summary: Danh sách tài khoản admin
+ *     responses: { 200: { description: OK } }
+ * /admin/settings/audit-logs:
+ *   get:
+ *     tags: [Admin Settings]
+ *     summary: Nhật ký hoạt động admin
+ *     responses: { 200: { description: OK } }
+ *
+ * /admin/notifications:
+ *   get:
+ *     tags: [Admin Notifications]
+ *     summary: Danh sách thông báo hệ thống
+ *     responses: { 200: { description: OK } }
+ *   post:
+ *     tags: [Admin Notifications]
+ *     summary: Gửi thông báo mới
+ *     responses: { 201: { description: Created } }
+ */
+import { Router } from 'express';
+import db from '../config/db.js';
+
+const router = Router();
+router.use((req, res, next) => { /* TODO: JWT */ next(); });
+
+// ═══════════ DASHBOARD ═══════════
+
+router.get('/dashboard/kpi', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const [rev]    = await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const [ord]    = await db.query("SELECT COUNT(*) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const [cancel] = await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE)=? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[today]);
+    const [cups]   = await db.query("SELECT COALESCE(SUM(oi.qty),0) AS v FROM order_items oi JOIN orders o ON oi.order_id=o.id WHERE CAST(o.created_at AS DATE)=? AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const total = ord[0].v + cancel[0].v;
+    res.json({
+      revenue:{value:rev[0].v,label:'Doanh thu tạm tính'}, orders:{value:ord[0].v,label:'Đơn hoàn thành'},
+      cancelRate:{value:total>0?((cancel[0].v/total)*100).toFixed(1)+'%':'0%',label:'Tỷ lệ hủy đơn'},
+      cups:{value:cups[0].v,label:'Tổng ly đã bán'}
+    });
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/dashboard/urgent', async (req,res) => {
+  try {
+    const [a]=await db.query('SELECT COUNT(*) AS v FROM ingredients WHERE stock < safe_level * 0.3');
+    const [b]=await db.query('SELECT COUNT(*) AS v FROM products WHERE is_available = 0');
+    const [c]=await db.query("SELECT COUNT(*) AS v FROM order_status_history WHERE status=N'Đang chuẩn bị' AND id IN (SELECT MAX(id) FROM order_status_history GROUP BY order_id)");
+    res.json({lowStock:a[0].v,paused:b[0].v,preparing:c[0].v});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/dashboard/revenue-by-hour', async (req,res) => {
+  try { const [r]=await db.query("SELECT DATEPART(HOUR,created_at) AS hour, COALESCE(SUM(total),0) AS value FROM orders WHERE CAST(created_at AS DATE)=CAST(GETDATE() AS DATE) AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY DATEPART(HOUR,created_at) ORDER BY hour"); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/dashboard/revenue-by-category', async (req,res) => {
+  try { const [r]=await db.query("SELECT c.name, COALESCE(SUM(oi.line_total),0) AS value FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN categories c ON p.category_id=c.id JOIN orders o ON oi.order_id=o.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY c.id,c.name ORDER BY value DESC"); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/dashboard/revenue-by-branch', async (req,res) => {
+  try { const [r]=await db.query("SELECT s.name, COALESCE(SUM(o.total),0) AS value FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY s.id,s.name ORDER BY value DESC"); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/dashboard/top-products', async (req,res) => {
+  try { const [r]=await db.query("SELECT TOP 10 p.name, SUM(oi.qty) AS qty, SUM(oi.line_total) AS revenue FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN orders o ON oi.order_id=o.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY p.id,p.name ORDER BY qty DESC"); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ ORDERS ═══════════
+
+router.get('/orders', async (req,res) => {
+  try {
+    const {status,store_id,date_from,date_to,search}=req.query;
+    let sql=`SELECT TOP 100 o.*, s.name AS store_name, (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE 1=1`;
+    const params=[];
+    if(status){sql+=' AND (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC)=?';params.push(status);}
+    if(store_id){sql+=' AND o.store_id=?';params.push(store_id);}
+    if(date_from){sql+=' AND CAST(o.created_at AS DATE)>=?';params.push(date_from);}
+    if(date_to){sql+=' AND CAST(o.created_at AS DATE)<=?';params.push(date_to);}
+    if(search){sql+=' AND (o.order_code LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ?)';params.push(`%${search}%`,`%${search}%`,`%${search}%`);}
+    sql+=' ORDER BY o.created_at DESC';
+    const [rows]=await db.query(sql,params); res.json(rows);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.get('/orders/:id', async (req,res) => {
+  try {
+    const [rows]=await db.query(`SELECT o.*, s.name AS store_name, (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.id=?`,[req.params.id]);
+    if(!rows.length) return res.status(404).json({error:'Không tìm thấy đơn hàng'});
+    const order=rows[0];
+    const [items]=await db.query(`SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id=oi.id FOR JSON PATH) AS toppings FROM order_items oi WHERE oi.order_id=?`,[order.id]);
+    order.items=items.map(i=>{let t=[];try{t=JSON.parse(i.toppings||'[]');}catch{}return{...i,toppings:t};});
+    const [history]=await db.query('SELECT osh.*, u.fullname AS changed_by_name FROM order_status_history osh LEFT JOIN users u ON osh.changed_by=u.id WHERE osh.order_id=? ORDER BY osh.created_at',[order.id]);
+    order.status_history=history;
+    res.json(order);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.put('/orders/:id/status', async (req,res) => {
+  try {
+    const {status,note,changed_by}=req.body;
+    const v=['Chờ xác nhận','Đã xác nhận','Đang chuẩn bị','Đang giao','Hoàn thành','Đã hủy'];
+    if(!v.some(s=>s===status)) return res.status(400).json({error:'Trạng thái không hợp lệ'});
+    await db.query('INSERT INTO order_status_history (order_id,status,note,changed_by) VALUES (?,?,?,?)',[req.params.id,status,note||null,changed_by||null]);
+    res.json({message:`Đơn hàng → ${status}`});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+router.put('/orders/:id/cancel', async (req,res) => {
+  try {
+    const {reason,changed_by}=req.body;
+    await db.query("INSERT INTO order_status_history (order_id,status,note,changed_by) VALUES (?,N'Đã hủy',?,?)",[req.params.id,reason||'Hủy bởi admin',changed_by||null]);
+    await db.query('UPDATE orders SET cancel_reason=? WHERE id=?',[reason||'',req.params.id]);
+    res.json({message:'Đơn hàng đã bị hủy'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ MENU ═══════════
+
+router.get('/menu/categories', async (req,res) => {
+  try { const [r]=await db.query('SELECT c.*, (SELECT COUNT(*) FROM products WHERE category_id=c.id) AS items FROM categories c ORDER BY c.sort_order'); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.post('/menu/categories', async (req,res) => {
+  try {
+    const {name,slug,sort_order,is_visible}=req.body;
+    const [r]=await db.query('INSERT INTO categories (name,slug,sort_order,is_visible) OUTPUT INSERTED.id VALUES (?,?,?,?)',[name,slug,sort_order||0,is_visible!==undefined?is_visible:1]);
+    res.status(201).json({id:r[0].id,message:'Đã tạo danh mục'});
+  } catch(err) {
+    if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Slug đã tồn tại'});
+    res.status(500).json({error:err.message});
+  }
+});
+router.put('/menu/categories/:id', async (req,res) => {
+  try { const {name,slug,sort_order,is_visible}=req.body; await db.query('UPDATE categories SET name=?,slug=?,sort_order=?,is_visible=? WHERE id=?',[name,slug,sort_order,is_visible,req.params.id]); res.json({message:'Đã cập nhật'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.get('/menu/products', async (req,res) => {
+  try { const {category_id}=req.query; let s='SELECT p.*, c.name AS category_name FROM products p JOIN categories c ON p.category_id=c.id WHERE 1=1'; const p=[]; if(category_id){s+=' AND p.category_id=?';p.push(category_id);} s+=' ORDER BY p.id'; const [r]=await db.query(s,p); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.post('/menu/products', async (req,res) => {
+  try {
+    const {category_id,name,slug,base_tea,description,price,image_url,calories,fruit_group,tags}=req.body;
+    const [r]=await db.query('INSERT INTO products (category_id,name,slug,base_tea,description,price,image_url,calories,fruit_group,tags) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?)',[category_id,name,slug,base_tea,description||null,price,image_url||null,calories||0,fruit_group||null,tags?JSON.stringify(tags):null]);
+    res.status(201).json({id:r[0].id,message:'Đã thêm món'});
+  } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Slug đã tồn tại'}); res.status(500).json({error:err.message}); }
+});
+router.put('/menu/products/:id', async (req,res) => {
+  try {
+    const fields=['category_id','name','slug','base_tea','description','price','image_url','calories','fruit_group','is_available'];
+    const sets=[],params=[];
+    for(const f of fields){if(req.body[f]!==undefined){sets.push(`${f}=?`);params.push(req.body[f]);}}
+    if(req.body.tags!==undefined){sets.push('tags=?');params.push(JSON.stringify(req.body.tags));}
+    if(!sets.length) return res.status(400).json({error:'Không có trường để cập nhật'});
+    params.push(req.params.id); await db.query(`UPDATE products SET ${sets.join(',')} WHERE id=?`,params);
+    res.json({message:'Đã cập nhật'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.put('/menu/products/:id/toggle', async (req,res) => {
+  try { await db.query('UPDATE products SET is_available = CASE WHEN is_available = 1 THEN 0 ELSE 1 END WHERE id=?',[req.params.id]); const [r]=await db.query('SELECT is_available FROM products WHERE id=?',[req.params.id]); res.json({is_available:!!r[0].is_available,message:r[0].is_available?'Đã bật':'Đã tạm ngưng'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.get('/menu/options', async (req,res) => {
+  try {
+    const [sizes]=await db.query('SELECT * FROM size_options ORDER BY sort_order');
+    const [bases]=await db.query('SELECT * FROM base_options ORDER BY sort_order');
+    const [sugars]=await db.query('SELECT * FROM sugar_options ORDER BY sort_order');
+    const [ices]=await db.query('SELECT * FROM ice_options ORDER BY sort_order');
+    const [toppings]=await db.query('SELECT * FROM toppings ORDER BY sort_order');
+    res.json({sizes,bases,sugars,ices,toppings});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ CUSTOMERS ═══════════
+
+router.get('/customers', async (req,res) => {
+  try {
+    const {search,tier}=req.query;
+    let sql=`SELECT u.id,u.fullname,u.phone,u.email,u.tier,u.points,u.total_spent,(SELECT COUNT(*) FROM orders WHERE user_id=u.id) AS order_count,(SELECT MAX(created_at) FROM orders WHERE user_id=u.id) AS last_order FROM users u WHERE u.is_admin=0 AND u.is_active=1`;
+    const params=[];
+    if(search){sql+=' AND (u.fullname LIKE ? OR u.phone LIKE ?)';params.push(`%${search}%`,`%${search}%`);}
+    if(tier){sql+=' AND u.tier=?';params.push(tier);}
+    sql+=' ORDER BY u.points DESC'; const [rows]=await db.query(sql,params); res.json(rows);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.get('/customers/:id', async (req,res) => {
+  try {
+    const [rows]=await db.query('SELECT id,fullname,phone,email,avatar_url,address,tier,points,total_spent,created_at FROM users WHERE id=? AND is_admin=0',[req.params.id]);
+    if(!rows.length) return res.status(404).json({error:'Không tìm thấy'});
+    const user=rows[0];
+    const [orders]=await db.query('SELECT TOP 20 o.*, s.name AS store_name FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.user_id=? ORDER BY o.created_at DESC',[user.id]);
+    user.recent_orders=orders;
+    const [ltvR]=await db.query('SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE user_id=?',[user.id]);
+    user.ltv=ltvR[0].v; res.json(user);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ BRANCHES ═══════════
+router.get('/branches', async (req,res) => { try { const [r]=await db.query('SELECT * FROM stores ORDER BY id'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
+router.put('/branches/:id', async (req,res) => {
+  try { const {name,city,district,address,hours,phone,amenities,is_active}=req.body; await db.query('UPDATE stores SET name=?,city=?,district=?,address=?,hours=?,phone=?,amenities=?,is_active=? WHERE id=?',[name,city,district,address,hours,phone,amenities?JSON.stringify(amenities):null,is_active,req.params.id]); res.json({message:'Đã cập nhật'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ PROMOTIONS ═══════════
+router.get('/promotions', async (req,res) => { try { const [r]=await db.query('SELECT * FROM promotions ORDER BY start_date DESC'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
+router.post('/promotions', async (req,res) => {
+  try {
+    const {title,type,code,description,rule,emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,audience,scope}=req.body;
+    const st=new Date(start_date)>new Date()?'Lên lịch':new Date(end_date)<new Date()?'Đã kết thúc':'Đang diễn ra';
+    const [r]=await db.query('INSERT INTO promotions (title,type,code,description,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[title,type,code||null,description||null,rule||null,emoji||null,discount_value||null,discount_type||null,max_discount||null,min_order||null,start_date,end_date,st,audience||null,scope||null]);
+    res.status(201).json({id:r[0].id,message:'Đã tạo KM'});
+  } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Mã KM đã tồn tại'}); res.status(500).json({error:err.message}); }
+});
+router.put('/promotions/:id', async (req,res) => {
+  try {
+    const fields=[{name:'rule',sql:'[rule]'},'title','type','code','description','emoji','discount_value','discount_type','max_discount','min_order','start_date','end_date','status','audience','scope','is_active'];
+    const sets=[],params=[]; for(const f of fields){
+      const fn=typeof f==='string'?f:f.name; const fs=typeof f==='string'?f:f.sql;
+      if(req.body[fn]!==undefined){sets.push(`${fs}=?`);params.push(req.body[fn]);}
+    }
+    params.push(req.params.id); await db.query(`UPDATE promotions SET ${sets.join(',')} WHERE id=?`,params);
+    res.json({message:'Đã cập nhật'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ INVENTORY ═══════════
+router.get('/inventory', async (req,res) => {
+  try { const {store_id}=req.query; let s='SELECT i.*, s2.name AS store_name FROM ingredients i JOIN stores s2 ON i.store_id=s2.id WHERE 1=1'; const p=[]; if(store_id){s+=' AND i.store_id=?';p.push(store_id);} s+=' ORDER BY i.kind,i.name'; const [r]=await db.query(s,p); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.put('/inventory/:id', async (req,res) => {
+  try { const {stock,safe_level}=req.body; await db.query('UPDATE ingredients SET stock=?,safe_level=? WHERE id=?',[stock,safe_level,req.params.id]); res.json({message:'Đã cập nhật'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.post('/inventory/:id/log', async (req,res) => {
+  try { const {change_amount,reason,reference,created_by}=req.body; await db.query('UPDATE ingredients SET stock=stock+? WHERE id=?',[change_amount,req.params.id]); await db.query('INSERT INTO ingredient_logs (ingredient_id,change_amount,reason,reference,created_by) VALUES (?,?,?,?,?)',[req.params.id,change_amount,reason,reference||null,created_by||null]); res.json({message:'Đã cập nhật kho'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ KITCHEN ═══════════
+router.get('/kitchen/orders', async (req,res) => {
+  try {
+    const [orders]=await db.query("SELECT o.id,o.order_code,o.order_type,o.customer_name,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Chờ xác nhận',N'Đã xác nhận',N'Đang chuẩn bị') ORDER BY o.created_at");
+    for(const o of orders){const [items]=await db.query("SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id=oi.id FOR JSON PATH) AS toppings FROM order_items oi WHERE oi.order_id=?",[o.id]);o.items=items.map(i=>{let t=[];try{t=JSON.parse(i.toppings||'[]');}catch{}return{...i,toppings:t};});}
+    res.json(orders);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ REPORTS ═══════════
+router.get('/reports/summary', async (req,res) => {
+  try {
+    const {from,to}=req.query; const df=from||new Date().toISOString().split('T')[0]; const dt=to||new Date().toISOString().split('T')[0];
+    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [cancel]=await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[df,dt]);
+    res.json({period:{from:df,to:dt},revenue:rev[0].v,total_orders:ord[0].total,avg_order:Math.round(ord[0].avg),cancelled:cancel[0].v});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ SETTINGS ═══════════
+router.get('/settings/accounts', async (req,res) => {
+  try { const [r]=await db.query("SELECT u.id,u.fullname,u.email,u.admin_role AS role,COALESCE(s.name,N'Toàn hệ thống') AS branch,u.is_active AS active FROM users u LEFT JOIN stores s ON u.admin_branch_id=s.id WHERE u.is_admin=1 ORDER BY u.id"); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+router.get('/settings/audit-logs', async (req,res) => {
+  try { const [r]=await db.query('SELECT TOP 100 al.*, u.fullname AS user_name, u.email FROM audit_logs al JOIN users u ON al.user_id=u.id ORDER BY al.created_at DESC'); res.json(r); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ NOTIFICATIONS ═══════════
+router.get('/notifications', async (req,res) => { try { const [r]=await db.query('SELECT TOP 50 * FROM notifications ORDER BY created_at DESC'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
+router.post('/notifications', async (req,res) => {
+  try { const {user_id,type,title,body,link}=req.body; const [r]=await db.query('INSERT INTO notifications (user_id,type,title,body,link) OUTPUT INSERTED.id VALUES (?,?,?,?,?)',[user_id||null,type,title,body||null,link||null]); res.status(201).json({id:r[0].id,message:'Đã gửi'}); }
+  catch(err) { res.status(500).json({error:err.message}); }
+});
+
+export default router;
