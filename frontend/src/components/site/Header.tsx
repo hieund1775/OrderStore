@@ -59,7 +59,7 @@ function Logo() {
         🍹
       </span>
       <span className="font-display text-lg leading-tight font-bold sm:text-xl">
-        Vườn <span className="text-primary">Xanh</span>
+        Trà Trái Cây <span className="text-primary">Tô</span>
       </span>
     </Link>
   );

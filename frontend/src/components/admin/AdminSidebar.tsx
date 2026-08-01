@@ -55,7 +55,7 @@ export function AdminSidebar({
         </span>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="font-display truncate text-sm font-bold">Vườn Xanh Admin</p>
+            <p className="font-display truncate text-sm font-bold">Trà Trái Cây Tô Admin</p>
             <p className="text-muted-foreground truncate text-[11px]">Bảng điều khiển v3.0</p>
           </div>
         )}

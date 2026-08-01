@@ -34,14 +34,14 @@ import { vnd } from "@/lib/data";
 export const Route = createFileRoute("/admin/don-hang")({
   head: () => ({
     meta: [
-      { title: "Quản lý đơn hàng | Admin Vườn Xanh" },
+      { title: "Quản lý đơn hàng | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Danh sách đơn hàng dạng list và Kanban với bộ lọc chi nhánh, trạng thái, loại đơn.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Quản lý đơn hàng | Admin Vườn Xanh" },
+      { property: "og:title", content: "Quản lý đơn hàng | Admin Trà Trái Cây Tô" },
       { property: "og:description", content: "Lọc, theo dõi và xử lý đơn hàng đa chi nhánh." },
     ],
   }),

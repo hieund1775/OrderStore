@@ -23,13 +23,13 @@ import { stores, vnd } from "@/lib/data";
 export const Route = createFileRoute("/thanh-toan")({
   head: () => ({
     meta: [
-      { title: "Giỏ hàng & Thanh toán — Tiệm Trà Vườn Xanh" },
+      { title: "Giỏ hàng & Thanh toán — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Xác nhận đơn trà trái cây: chọn giao tận nơi hoặc lấy tại cửa hàng, áp mã ưu đãi và thanh toán COD, VietQR, MoMo, ZaloPay.",
       },
-      { property: "og:title", content: "Thanh toán đơn trà — Vườn Xanh" },
+      { property: "og:title", content: "Thanh toán đơn trà — Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Đặt nhanh, thanh toán linh hoạt, tích điểm tự động.",

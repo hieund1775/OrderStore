@@ -9,14 +9,14 @@ import { adminOrders } from "@/lib/admin-data";
 export const Route = createFileRoute("/admin/bep")({
   head: () => ({
     meta: [
-      { title: "Màn hình bếp KDS | Admin Vườn Xanh" },
+      { title: "Màn hình bếp KDS | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Kitchen Display System với thẻ đơn lớn, màu trạng thái trực quan và cảnh báo quá 15 phút.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Màn hình bếp KDS | Admin Vườn Xanh" },
+      { property: "og:title", content: "Màn hình bếp KDS | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Theo dõi và chuyển trạng thái đơn pha chế theo thời gian thực.",
