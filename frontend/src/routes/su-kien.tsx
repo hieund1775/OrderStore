@@ -9,13 +9,13 @@ import { promotions, type PromoStatus } from "@/lib/data";
 export const Route = createFileRoute("/su-kien")({
   head: () => ({
     meta: [
-      { title: "Khuyến mãi & sự kiện — Tiệm Trà Vườn Xanh" },
+      { title: "Khuyến mãi & sự kiện — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Cập nhật chương trình khuyến mãi trà trái cây: mua 1 tặng 1, giảm giá theo mùa, freeship cuối tuần và mã voucher.",
       },
-      { property: "og:title", content: "Khuyến mãi & sự kiện — Vườn Xanh" },
+      { property: "og:title", content: "Khuyến mãi & sự kiện — Trà Trái Cây Tô" },
       { property: "og:description", content: "Lưu mã ưu đãi vào ví và dùng ngay khi thanh toán." },
     ],
   }),

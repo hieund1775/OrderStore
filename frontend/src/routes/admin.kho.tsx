@@ -21,13 +21,13 @@ import { ingredients, stockLevel, type Ingredient } from "@/lib/admin-data";
 export const Route = createFileRoute("/admin/kho")({
   head: () => ({
     meta: [
-      { title: "Tồn kho & nguyên liệu | Admin Vườn Xanh" },
+      { title: "Tồn kho & nguyên liệu | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "Quản lý nguyên liệu tươi và đồ đóng lon với ngưỡng cảnh báo tồn kho 4 cấp độ.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Tồn kho & nguyên liệu | Admin Vườn Xanh" },
+      { property: "og:title", content: "Tồn kho & nguyên liệu | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Cảnh báo tồn kho 4 cấp và khóa món nhanh khi hết nguyên liệu.",

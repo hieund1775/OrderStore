@@ -10,13 +10,13 @@ import storyImg from "@/assets/story.jpg";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Tiệm Trà Vườn Xanh — Đặt trà trái cây tươi & tích điểm" },
+      { title: "Trà Trái Cây Tô — Đặt trà trái cây tươi & tích điểm" },
       {
         name: "description",
         content:
           "Đặt trà trái cây tươi online: tùy chỉnh trà nền, đường, đá, topping. Giao nhanh, tích điểm đổi quà mỗi ly.",
       },
-      { property: "og:title", content: "Tiệm Trà Vườn Xanh — Trà trái cây tươi mỗi ngày" },
+      { property: "og:title", content: "Trà Trái Cây Tô — Trà trái cây tươi mỗi ngày" },
       {
         property: "og:description",
         content: "Trà ủ mới trong ngày, 100% trái cây tươi. Đặt online, tích điểm, đổi quà.",

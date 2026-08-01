@@ -37,13 +37,13 @@ import { stores } from "@/lib/data";
 export const Route = createFileRoute("/admin/khuyen-mai")({
   head: () => ({
     meta: [
-      { title: "Khuyến mãi & Marketing | Admin Vườn Xanh" },
+      { title: "Khuyến mãi & Marketing | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "Cấu hình Flash Sale, Happy Hour, combo, mua 2 tặng 1 và banner trang chủ.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Khuyến mãi & Marketing | Admin Vườn Xanh" },
+      { property: "og:title", content: "Khuyến mãi & Marketing | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Ma trận điều kiện áp dụng theo chi nhánh, khung giờ và hạng thành viên.",

@@ -24,13 +24,13 @@ import { products, vnd } from "@/lib/data";
 export const Route = createFileRoute("/admin/thuc-don")({
   head: () => ({
     meta: [
-      { title: "Quản lý thực đơn | Admin Vườn Xanh" },
+      { title: "Quản lý thực đơn | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "CRUD danh mục, sản phẩm, SEO slug, sắp xếp hiển thị và cấu hình nhóm tùy chọn.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Quản lý thực đơn | Admin Vườn Xanh" },
+      { property: "og:title", content: "Quản lý thực đơn | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Thêm, sửa, ẩn/hiện món và cấu hình tùy chọn size, đường, đá, topping.",

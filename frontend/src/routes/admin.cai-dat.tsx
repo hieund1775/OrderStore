@@ -23,13 +23,13 @@ import { brand } from "@/lib/data";
 export const Route = createFileRoute("/admin/cai-dat")({
   head: () => ({
     meta: [
-      { title: "Cài đặt hệ thống | Admin Vườn Xanh" },
+      { title: "Cài đặt hệ thống | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "Phân quyền tài khoản, thương hiệu, VAT, khu vực giao hàng, audit log và backup.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Cài đặt hệ thống | Admin Vườn Xanh" },
+      { property: "og:title", content: "Cài đặt hệ thống | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Quản trị tài khoản nội bộ, cấu hình thanh toán và sao lưu dữ liệu.",

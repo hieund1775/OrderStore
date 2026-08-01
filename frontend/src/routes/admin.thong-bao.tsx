@@ -17,14 +17,14 @@ import { adminNotifications } from "@/lib/admin-data";
 export const Route = createFileRoute("/admin/thong-bao")({
   head: () => ({
     meta: [
-      { title: "Trung tâm thông báo | Admin Vườn Xanh" },
+      { title: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Đơn mới, cảnh báo tồn kho, voucher sắp hết hạn, duyệt nhân viên và lỗi thanh toán.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Trung tâm thông báo | Admin Vườn Xanh" },
+      { property: "og:title", content: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Tổng hợp cảnh báo vận hành real-time cho toàn chuỗi.",

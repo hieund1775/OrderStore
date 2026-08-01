@@ -6,10 +6,10 @@ import duaHau from '@/assets/p-dua-hau.jpg';
 import nho from '@/assets/p-nho.jpg';
 
 export const brand = {
-  name: 'Tiệm Trà Vườn Xanh',
+  name: 'Trà Trái Cây Tô',
   tagline: 'Trà đậm vị – Trái cây tươi mỗi ngày',
   hotline: '1900 8386',
-  email: 'cskh@travuonxanh.vn',
+  email: 'cskh@tratraicayto.vn',
 };
 
 export function vnd(value: number) {
@@ -170,7 +170,7 @@ export const toppingOptions = [
 export const stores = [
   {
     id: 'q1',
-    name: 'Vườn Xanh – Nguyễn Huệ',
+    name: 'Trà Trái Cây Tô – Nguyễn Huệ',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 1',
     address: '125 Nguyễn Huệ, P. Bến Nghé, Quận 1',
@@ -180,7 +180,7 @@ export const stores = [
   },
   {
     id: 'q3',
-    name: 'Vườn Xanh – Võ Văn Tần',
+    name: 'Trà Trái Cây Tô – Võ Văn Tần',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 3',
     address: '88 Võ Văn Tần, P.6, Quận 3',
@@ -190,7 +190,7 @@ export const stores = [
   },
   {
     id: 'pmh',
-    name: 'Vườn Xanh – Phú Mỹ Hưng',
+    name: 'Trà Trái Cây Tô – Phú Mỹ Hưng',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 7',
     address: 'R4-15 Hưng Phước, Phú Mỹ Hưng, Quận 7',
@@ -200,7 +200,7 @@ export const stores = [
   },
   {
     id: 'hn-hk',
-    name: 'Vườn Xanh – Hoàn Kiếm',
+    name: 'Trà Trái Cây Tô – Hoàn Kiếm',
     city: 'Hà Nội',
     district: 'Hoàn Kiếm',
     address: '12 Hàng Bài, P. Tràng Tiền, Hoàn Kiếm',
@@ -210,7 +210,7 @@ export const stores = [
   },
   {
     id: 'dn-hc',
-    name: 'Vườn Xanh – Hải Châu',
+    name: 'Trà Trái Cây Tô – Hải Châu',
     city: 'Đà Nẵng',
     district: 'Hải Châu',
     address: '45 Bạch Đằng, Hải Châu 1, Hải Châu',
@@ -320,7 +320,7 @@ export const rewards = [
   { id: 'r2', name: 'Miễn phí Topping bất kỳ', points: 120, emoji: '🍒' },
   { id: 'r3', name: 'Upsize Size L miễn phí', points: 90, emoji: '🥤' },
   { id: 'r4', name: '1 Ly Trà Cam Sả Size M', points: 450, emoji: '🍹' },
-  { id: 'r5', name: 'Bình giữ nhiệt Vườn Xanh', points: 1200, emoji: '🧊' },
+  { id: 'r5', name: 'Bình giữ nhiệt Trà Trái Cây Tô', points: 1200, emoji: '🧊' },
   { id: 'r6', name: 'Voucher giảm 100.000₫', points: 900, emoji: '💳' },
 ];
 

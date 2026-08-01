@@ -20,13 +20,13 @@ import { jobs, stores } from "@/lib/data";
 export const Route = createFileRoute("/tuyen-dung")({
   head: () => ({
     meta: [
-      { title: "Tuyển dụng nhân sự — Tiệm Trà Vườn Xanh" },
+      { title: "Tuyển dụng nhân sự — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
-          "Cơ hội việc làm tại Vườn Xanh: barista trà trái cây, thu ngân, quản lý cửa hàng và part-time. Nộp CV online.",
+          "Cơ hội việc làm tại Trà Trái Cây Tô: barista trà trái cây, thu ngân, quản lý cửa hàng và part-time. Nộp CV online.",
       },
-      { property: "og:title", content: "Tuyển dụng — Tiệm Trà Vườn Xanh" },
+      { property: "og:title", content: "Tuyển dụng — Trà Trái Cây Tô" },
       { property: "og:description", content: "Gia nhập đội ngũ 48 chi nhánh trên toàn quốc." },
     ],
   }),
