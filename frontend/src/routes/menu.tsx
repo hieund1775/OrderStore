@@ -11,13 +11,13 @@ import { fruitGroups, products, teaLines, vnd } from "@/lib/data";
 export const Route = createFileRoute("/menu")({
   head: () => ({
     meta: [
-      { title: "Thực đơn trà trái cây — Tiệm Trà Vườn Xanh" },
+      { title: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Menu trà trái cây tươi, trà đậm vị, trà tuyết và Hi-Tea detox. Lọc theo dòng trà, vị trái cây và đặt hàng ngay.",
       },
-      { property: "og:title", content: "Thực đơn trà trái cây — Vườn Xanh" },
+      { property: "og:title", content: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Lọc theo dòng trà và vị trái cây, tùy chỉnh từng ly.",

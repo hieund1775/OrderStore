@@ -7,14 +7,14 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Bảng điều khiển quản trị | Tiệm Trà Vườn Xanh" },
+      { title: "Bảng điều khiển quản trị | Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Hệ thống quản trị chuỗi trà trái cây: đơn hàng, KDS, tồn kho, khuyến mãi, CRM và báo cáo.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Bảng điều khiển quản trị | Tiệm Trà Vườn Xanh" },
+      { property: "og:title", content: "Bảng điều khiển quản trị | Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Quản lý đơn hàng, tồn kho, khuyến mãi và báo cáo cho toàn chuỗi.",

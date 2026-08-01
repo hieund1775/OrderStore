@@ -15,13 +15,13 @@ import { notifications, orderHistory, products, vnd } from "@/lib/data";
 export const Route = createFileRoute("/ho-so")({
   head: () => ({
     meta: [
-      { title: "Hồ sơ cá nhân & lịch sử đơn hàng — Vườn Xanh" },
+      { title: "Hồ sơ cá nhân & lịch sử đơn hàng — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Quản lý thông tin cá nhân, thẻ hội viên điện tử, mã QR tích điểm, lịch sử đơn hàng và danh sách yêu thích.",
       },
-      { property: "og:title", content: "Hồ sơ cá nhân — Vườn Xanh" },
+      { property: "og:title", content: "Hồ sơ cá nhân — Trà Trái Cây Tô" },
       { property: "og:description", content: "Đặt lại đơn cũ chỉ với 1 chạm." },
     ],
   }),

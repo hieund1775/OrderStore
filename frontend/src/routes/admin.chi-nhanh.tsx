@@ -10,13 +10,13 @@ import { stores } from "@/lib/data";
 export const Route = createFileRoute("/admin/chi-nhanh")({
   head: () => ({
     meta: [
-      { title: "Hệ thống cửa hàng | Admin Vườn Xanh" },
+      { title: "Hệ thống cửa hàng | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content: "Danh sách chi nhánh, giờ mở cửa và bật/tắt hoạt động từng cơ sở.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Hệ thống cửa hàng | Admin Vườn Xanh" },
+      { property: "og:title", content: "Hệ thống cửa hàng | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "Quản lý chi nhánh, giờ hoạt động và trạng thái nhận đơn.",

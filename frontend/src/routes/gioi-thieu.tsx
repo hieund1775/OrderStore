@@ -5,13 +5,13 @@ import storyImg from "@/assets/story.jpg";
 export const Route = createFileRoute("/gioi-thieu")({
   head: () => ({
     meta: [
-      { title: "Câu chuyện Trà & Trái cây tươi — Vườn Xanh" },
+      { title: "Câu chuyện Trà & Trái cây tươi — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
-          "Hành trình của Tiệm Trà Vườn Xanh: trà ủ mới mỗi ngày, trái cây tuyển chọn tại vườn và cam kết không chất bảo quản.",
+          "Hành trình của Trà Trái Cây Tô: trà ủ mới mỗi ngày, trái cây tuyển chọn tại vườn và cam kết không chất bảo quản.",
       },
-      { property: "og:title", content: "Câu chuyện Trà & Trái cây tươi — Vườn Xanh" },
+      { property: "og:title", content: "Câu chuyện Trà & Trái cây tươi — Trà Trái Cây Tô" },
       { property: "og:description", content: "Trà đậm vị pha trong ngày, 100% trái cây tươi." },
     ],
   }),
@@ -68,7 +68,7 @@ function About() {
           </p>
           <p className="text-muted-foreground text-sm leading-relaxed">
             Chúng tôi không dùng siro cô đặc hay chất bảo quản. Mọi mẻ trà chưa bán hết trong ngày
-            đều được loại bỏ — đó là cam kết bất di bất dịch của Vườn Xanh.
+            đều được loại bỏ — đó là cam kết bất di bất dịch của Trà Trái Cây Tô.
           </p>
         </div>
       </section>

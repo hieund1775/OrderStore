@@ -16,13 +16,13 @@ import { stores } from "@/lib/data";
 export const Route = createFileRoute("/cua-hang")({
   head: () => ({
     meta: [
-      { title: "Hệ thống cửa hàng & chi nhánh — Vườn Xanh" },
+      { title: "Hệ thống cửa hàng & chi nhánh — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
-          "Tìm chi nhánh Tiệm Trà Vườn Xanh gần bạn: địa chỉ, giờ mở cửa, tiện ích và chỉ đường nhanh.",
+          "Tìm chi nhánh Trà Trái Cây Tô gần bạn: địa chỉ, giờ mở cửa, tiện ích và chỉ đường nhanh.",
       },
-      { property: "og:title", content: "Hệ thống cửa hàng — Vườn Xanh" },
+      { property: "og:title", content: "Hệ thống cửa hàng — Trà Trái Cây Tô" },
       { property: "og:description", content: "48 chi nhánh tại TP.HCM, Hà Nội và Đà Nẵng." },
     ],
   }),

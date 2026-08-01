@@ -21,14 +21,14 @@ import { vnd } from "@/lib/data";
 export const Route = createFileRoute("/admin/khach-hang")({
   head: () => ({
     meta: [
-      { title: "Khách hàng & Loyalty | Admin Vườn Xanh" },
+      { title: "Khách hàng & Loyalty | Admin Trà Trái Cây Tô" },
       {
         name: "description",
         content:
           "Hồ sơ khách hàng, hạng thẻ, phân nhóm VIP / sinh nhật / churn risk và gửi voucher.",
       },
       { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Khách hàng & Loyalty | Admin Vườn Xanh" },
+      { property: "og:title", content: "Khách hàng & Loyalty | Admin Trà Trái Cây Tô" },
       {
         property: "og:description",
         content: "CRM chuỗi trà: lifetime value, hạng thẻ và công cụ chăm sóc khách hàng.",
