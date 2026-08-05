@@ -1,0 +1,1 @@
+function e(e){let t=e.match(/\d{1,2}:\d{2}/g);return{open:t?.[0]??`07:00`,close:t?.[1]??`22:00`}}function t(e){let[t,n]=e.split(`:`).map(Number);return Number.isFinite(t)&&Number.isFinite(n)?t*60+n:0}function n(n,r=new Date){let{open:i,close:a}=e(n),o=r.getHours()*60+r.getMinutes(),s=t(i),c=t(a);return o>=s&&o<=c}export{e as n,n as t};
