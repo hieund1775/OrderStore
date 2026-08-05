@@ -9,9 +9,19 @@ import {
 } from "react";
 import type * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Clock, Loader2, MapPin, Pencil, Phone, Plus, Search } from "lucide-react";
+import { Clock, Loader2, MapPin, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import { parseHours } from "@/lib/store-hours";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
@@ -295,6 +305,7 @@ function StoresAdminPage() {
   const [search, setSearch] = useState("");
   const [cityFilter, setCityFilter] = useState("all");
   const [mapStore, setMapStore] = useState<Store | null>(null);
+  const [deleting, setDeleting] = useState<Store | null>(null);
 
   const cities = Array.from(new Set(stores.map((s) => s.city)));
 
@@ -358,6 +369,18 @@ function StoresAdminPage() {
     }
   }
 
+  async function confirmDelete() {
+    if (!deleting) return;
+    try {
+      await apiDelete(`/admin/branches/${deleting.id}`);
+      toast.success(`Đã xóa chi nhánh ${deleting.name}`);
+      setDeleting(null);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa chi nhánh thất bại");
+    }
+  }
+
   return (
     <>
       <AdminPageHeader
@@ -413,7 +436,18 @@ function StoresAdminPage() {
                         {s.district} · {s.city}
                       </p>
                     </div>
+                    <div className="flex items-center gap-2">
                     <Switch checked={Boolean(s.is_active)} onCheckedChange={() => toggleActive(s)} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive h-8 w-8"
+                      onClick={() => setDeleting(s)}
+                      aria-label={`Xóa chi nhánh ${s.name}`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                   </div>
                   <ul className="text-muted-foreground mt-4 space-y-2 text-sm">
                     <li className="flex gap-2">
@@ -518,6 +552,26 @@ function StoresAdminPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa chi nhánh "{deleting?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Các bàn của chi nhánh này sẽ bị xóa theo. Hành động không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry text-berry-foreground hover:bg-berry/90"
+              onClick={confirmDelete}
+            >
+              Xóa chi nhánh
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { P as require_jsx_runtime } from "../_libs/@radix-ui/react-alert-dialog+[...].mjs";
 import { t as Button } from "./button-CZwUJQdE.mjs";
 import { t as Badge } from "./badge-Csfx8X-2.mjs";
-import { B as Leaf, _t as ArrowRight, f as Star, g as ShieldCheck, p as Sparkles } from "../_libs/lucide-react.mjs";
+import { B as Leaf, f as Star, g as ShieldCheck, p as Sparkles, vt as ArrowRight } from "../_libs/lucide-react.mjs";
 import { c as products, f as stores, l as promotions } from "./data-Z_klJ5jj.mjs";
 import { g as Link } from "../_libs/@tanstack/react-router+[...].mjs";
 import { t as story_default } from "./story-CfETKZ6E.mjs";

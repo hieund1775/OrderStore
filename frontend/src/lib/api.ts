@@ -26,6 +26,12 @@ export async function apiFetch<T = unknown>(path: string, options: RequestInit =
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
+    if (res.status === 401 && path !== "/admin/login" && typeof window !== "undefined") {
+      clearToken();
+      if (window.location.pathname !== "/admin/login") {
+        window.location.href = "/admin/login";
+      }
+    }
     const message = data?.error || data?.message || `Lỗi ${res.status}`;
     throw new ApiError(res.status, message, data);
   }

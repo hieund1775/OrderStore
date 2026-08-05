@@ -65,7 +65,7 @@ CREATE TABLE products (
     base_tea     NVARCHAR(100) NOT NULL,
     description  NVARCHAR(MAX) NULL,
     price        INT NOT NULL,
-    image_url    NVARCHAR(500) NULL,
+    image_url    NVARCHAR(MAX) NULL,
     rating       DECIMAL(2,1) NOT NULL DEFAULT 0,
     review_count INT NOT NULL DEFAULT 0,
     calories     INT NOT NULL DEFAULT 0,

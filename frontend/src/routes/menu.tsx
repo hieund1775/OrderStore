@@ -11,7 +11,12 @@ import { apiGet } from "@/lib/api";
 
 export const Route = createFileRoute("/menu")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
-    table_id: typeof search.table_id === "string" ? search.table_id : undefined,
+    table_id:
+      typeof search.table_id === "string"
+        ? search.table_id
+        : typeof search.table_id === "number"
+          ? String(search.table_id)
+          : undefined,
   }),
   head: () => ({
     meta: [
@@ -109,7 +114,7 @@ function MenuPage() {
       <div className="container-page grid gap-8 py-10 lg:grid-cols-[1fr_320px]">
         <div>
           {/* Filters */}
-          <div className="bg-card sticky top-32 z-20 mb-6 space-y-3 rounded-2xl border p-4">
+          <div className="bg-card top-32 z-20 mb-6 space-y-3 rounded-2xl border p-4">
             <div className="text-muted-foreground flex items-center gap-2 text-xs font-bold tracking-wide uppercase">
               <SlidersHorizontal className="size-3.5" /> Dòng trà
             </div>

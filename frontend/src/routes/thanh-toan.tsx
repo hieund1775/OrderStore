@@ -22,7 +22,12 @@ import { apiGet, apiPost } from "@/lib/api";
 
 export const Route = createFileRoute("/thanh-toan")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
-    table_id: typeof search.table_id === "string" ? search.table_id : undefined,
+    table_id:
+      typeof search.table_id === "string"
+        ? search.table_id
+        : typeof search.table_id === "number"
+          ? String(search.table_id)
+          : undefined,
   }),
   head: () => ({
     meta: [

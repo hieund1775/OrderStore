@@ -36,11 +36,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
-import { adminBranches } from "@/lib/admin-data";
 
 export const Route = createFileRoute("/admin/vi-tri")({
   validateSearch: (search: Record<string, unknown>) => ({
-    store_id: typeof search.store_id === "string" ? search.store_id : undefined,
+    store_id:
+      typeof search.store_id === "string"
+        ? search.store_id
+        : typeof search.store_id === "number"
+          ? String(search.store_id)
+          : undefined,
   }),
   head: () => ({ meta: [{ title: "Vị trí & Mã QR bàn | Admin" }, { name: "robots", content: "noindex" }] }),
   component: TablesPage,
@@ -62,13 +66,14 @@ function qrUrl(table: TableRow) {
 function TablesPage() {
   const search = Route.useSearch();
   const [tables, setTables] = useState<TableRow[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [branchFilter, setBranchFilter] = useState(search.store_id ?? "all");
   const [loading, setLoading] = useState(true);
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TableRow | null>(null);
   const [deleting, setDeleting] = useState<TableRow | null>(null);
-  const [formName, setFormName] = useState("");
+  const [formNum, setFormNum] = useState("1");
   const [formStore, setFormStore] = useState("1");
   const [saving, setSaving] = useState(false);
 
@@ -95,31 +100,64 @@ function TablesPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    apiGet<{ id: number; name: string }[]>("/admin/branches")
+      .then(setBranches)
+      .catch(() => {});
+  }, []);
+
+  function tableNumber(name: string) {
+    const m = name.match(/(\d+)/);
+    return m ? Number(m[1]) : 0;
+  }
+
+  function nextTableNumber(storeId: string) {
+    const nums = tables
+      .filter((t) => String(t.store_id) === storeId)
+      .map((t) => tableNumber(t.name))
+      .filter((n) => n > 0);
+    return (nums.length ? Math.max(...nums) : 0) + 1;
+  }
+
   const filtered = branchFilter === "all" ? tables : tables.filter((t) => t.store_id === Number(branchFilter));
 
   function openCreate() {
     setEditing(null);
-    setFormName("");
-    setFormStore(branchFilter === "all" ? "1" : branchFilter);
+    const store =
+      branchFilter === "all"
+        ? branches.length
+          ? String(branches[0].id)
+          : "1"
+        : branchFilter;
+    setFormStore(store);
+    setFormNum(String(nextTableNumber(store)));
     setDialogOpen(true);
   }
 
   function openEdit(t: TableRow) {
     setEditing(t);
-    setFormName(t.name);
+    setFormNum(String(tableNumber(t.name) || 1));
     setFormStore(String(t.store_id));
     setDialogOpen(true);
   }
 
   async function save() {
-    if (!formName.trim()) return toast.error("Vui lòng nhập tên bàn/vị trí");
+    const num = Number(formNum);
+    if (!Number.isInteger(num) || num <= 0) {
+      return toast.error("Số bàn phải là số nguyên dương (1, 2, 3...)");
+    }
+    const name = `Bàn ${num}`;
+    const dup = tables.some(
+      (x) => String(x.store_id) === formStore && x.id !== editing?.id && tableNumber(x.name) === num,
+    );
+    if (dup) return toast.error(`Số bàn ${num} đã tồn tại trong chi nhánh này`);
     setSaving(true);
     try {
       if (editing) {
-        await apiPut(`/admin/tables/${editing.id}`, { name: formName.trim() });
+        await apiPut(`/admin/tables/${editing.id}`, { name });
         toast.success("Đã cập nhật bàn");
       } else {
-        await apiPost("/admin/tables", { store_id: Number(formStore), name: formName.trim() });
+        await apiPost("/admin/tables", { store_id: Number(formStore), name });
         toast.success("Đã tạo bàn mới");
       }
       setDialogOpen(false);
@@ -191,7 +229,8 @@ function TablesPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {adminBranches.map((b) => (
+              <SelectItem value="all">Tất cả chi nhánh</SelectItem>
+              {branches.map((b) => (
                 <SelectItem key={b.id} value={String(b.id)}>
                   {b.name}
                 </SelectItem>
@@ -270,36 +309,40 @@ function TablesPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="table-name">Tên bàn / vị trí</Label>
+              <Label htmlFor="table-name">Số bàn</Label>
               <Input
                 id="table-name"
-                placeholder="VD: Bàn 06 - Tầng 1"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
+                type="number"
+                min={1}
+                placeholder="VD: 7"
+                value={formNum}
+                onChange={(e) => setFormNum(e.target.value)}
               />
+              <p className="text-muted-foreground text-xs">
+                Sẽ tạo bàn mang tên <strong>Bàn {formNum || "..."}</strong> — không được trùng số trong chi nhánh.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Chi nhánh</Label>
-              <Select value={formStore} onValueChange={setFormStore}>
+              <Select
+                value={formStore}
+                onValueChange={(v) => {
+                  setFormStore(v);
+                  if (!editing) setFormNum(String(nextTableNumber(v)));
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {adminBranches
-                    .filter((b) => b.id !== "all")
-                    .map((b) => (
-                      <SelectItem key={b.id} value={String(b.id)}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            {!editing && (
-              <p className="bg-accent/40 text-accent-foreground rounded-lg p-2.5 text-xs">
-                Mã QR bảo mật tự động sinh — URL: <code className="font-mono">/menu?table_id=…</code>
-              </p>
-            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDialogOpen(false)}>

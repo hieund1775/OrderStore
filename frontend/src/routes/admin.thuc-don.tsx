@@ -1,8 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Image, Loader2, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader, SectionCard } from "@/components/admin/AdminUI";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,7 +35,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import { vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/thuc-don")({
@@ -70,6 +80,25 @@ type Product = {
   category_name?: string;
 };
 
+type Topping = {
+  id: number;
+  name: string;
+  price: number;
+  is_available: boolean;
+  sort_order?: number;
+};
+
+function slugify(s: string) {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/gi, "d")
+    .replace(/ð/g, "d")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function MenuAdminPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -82,6 +111,21 @@ function MenuAdminPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
+  const [deleteCategory, setDeleteCategory] = useState<Category | null>(null);
+  const [editCategory, setEditCategory] = useState<Category | null>(null);
+  const [toppingDialog, setToppingDialog] = useState(false);
+  const [editTopping, setEditTopping] = useState<Topping | null>(null);
+  const [toppingName, setToppingName] = useState("");
+  const [toppingPrice, setToppingPrice] = useState("15000");
+  const [savingTopping, setSavingTopping] = useState(false);
+  const [deleteTopping, setDeleteTopping] = useState<Topping | null>(null);
+  const [baseDialog, setBaseDialog] = useState(false);
+  const [editBase, setEditBase] = useState<{ id: number; name: string } | null>(null);
+  const [baseName, setBaseName] = useState("");
+  const [savingBase, setSavingBase] = useState(false);
+  const [deleteBase, setDeleteBase] = useState<{ id: number; name: string } | null>(null);
+  const [tab, setTab] = useState("products");
   const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async () => {
@@ -119,20 +163,115 @@ function MenuAdminPage() {
     }
   }
 
-  async function toggleCategory(c: Category) {
+  async function confirmDeleteProduct() {
+    if (!deleteProduct) return;
     try {
-      await apiPut(`/admin/menu/categories/${c.id}`, {
-        name: c.name,
-        slug: c.slug,
-        sort_order: c.sort_order,
-        is_visible: c.is_visible ? 0 : 1,
-      });
-      toast.success(c.is_visible ? "Đã ẩn danh mục" : "Đã hiện danh mục");
-      setCategories((prev) =>
-        prev.map((x) => (x.id === c.id ? { ...x, is_visible: !x.is_visible } : x)),
-      );
+      await apiDelete(`/admin/menu/products/${deleteProduct.id}`);
+      toast.success(`Đã xóa món ${deleteProduct.name}`);
+      setDeleteProduct(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa món thất bại");
+    }
+  }
+
+  async function confirmDeleteCategory() {
+    if (!deleteCategory) return;
+    try {
+      await apiDelete(`/admin/menu/categories/${deleteCategory.id}`);
+      toast.success(`Đã xóa danh mục ${deleteCategory.name}`);
+      setDeleteCategory(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa danh mục thất bại");
+    }
+  }
+
+  function openTopping(t?: Topping) {
+    setEditTopping(t ?? null);
+    setToppingName(t?.name ?? "");
+    setToppingPrice(String(t?.price ?? 15000));
+    setToppingDialog(true);
+  }
+
+  async function saveTopping() {
+    if (!toppingName.trim()) return toast.error("Nhập tên topping");
+    setSavingTopping(true);
+    try {
+      const payload = { name: toppingName.trim(), price: Number(toppingPrice) || 0 };
+      if (editTopping) {
+        await apiPut(`/admin/menu/toppings/${editTopping.id}`, payload);
+        toast.success("Đã cập nhật topping");
+      } else {
+        await apiPost("/admin/menu/toppings", payload);
+        toast.success("Đã thêm topping");
+      }
+      setToppingDialog(false);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lưu topping thất bại");
+    } finally {
+      setSavingTopping(false);
+    }
+  }
+
+  async function toggleTopping(t: Topping) {
+    try {
+      await apiPut(`/admin/menu/toppings/${t.id}`, { is_available: t.is_available ? 0 : 1 });
+      toast.success(t.is_available ? "Đã tắt topping" : "Đã bật topping");
+      setReloadKey((k) => k + 1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+    }
+  }
+
+  async function confirmDeleteTopping() {
+    if (!deleteTopping) return;
+    try {
+      await apiDelete(`/admin/menu/toppings/${deleteTopping.id}`);
+      toast.success("Đã xóa topping");
+      setDeleteTopping(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa topping thất bại");
+    }
+  }
+
+  function openBase(b?: { id: number; name: string }) {
+    setEditBase(b ?? null);
+    setBaseName(b?.name ?? "");
+    setBaseDialog(true);
+  }
+
+  async function saveBase() {
+    if (!baseName.trim()) return toast.error("Nhập tên cốt trà nền");
+    setSavingBase(true);
+    try {
+      if (editBase) {
+        await apiPut(`/admin/menu/bases/${editBase.id}`, { name: baseName.trim() });
+        toast.success("Đã cập nhật cốt trà");
+      } else {
+        await apiPost("/admin/menu/bases", { name: baseName.trim() });
+        toast.success("Đã thêm cốt trà");
+      }
+      setBaseDialog(false);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lưu cốt trà thất bại");
+    } finally {
+      setSavingBase(false);
+    }
+  }
+
+  async function confirmDeleteBase() {
+    if (!deleteBase) return;
+    try {
+      await apiDelete(`/admin/menu/bases/${deleteBase.id}`);
+      toast.success("Đã xóa cốt trà");
+      setDeleteBase(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa cốt trà thất bại");
     }
   }
 
@@ -144,6 +283,7 @@ function MenuAdminPage() {
         actions={
           <ProductForm
             categories={categories}
+            bases={options?.bases ?? []}
             onSaved={() => setReloadKey((k) => k + 1)}
             product={editProduct}
             onClearEdit={() => setEditProduct(null)}
@@ -156,7 +296,7 @@ function MenuAdminPage() {
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : (
-        <Tabs defaultValue="products">
+        <Tabs value={tab} onValueChange={setTab} defaultValue="products">
           <TabsList>
             <TabsTrigger value="products">Sản phẩm</TabsTrigger>
             <TabsTrigger value="categories">Danh mục</TabsTrigger>
@@ -195,6 +335,15 @@ function MenuAdminPage() {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Xóa món ${p.name}`}
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteProduct(p)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -211,21 +360,40 @@ function MenuAdminPage() {
           <TabsContent value="categories" className="mt-5">
             <SectionCard
               title="Danh mục món"
-              desc="Bật/tắt hiển thị trên menu khách hàng"
+              desc="Danh mục tự kích hoạt khi thêm — chỉ sửa tên hoặc xóa"
               actions={
-                <CategoryForm onSaved={() => setReloadKey((k) => k + 1)} />
+                <CategoryForm
+                  onSaved={() => setReloadKey((k) => k + 1)}
+                  category={editCategory}
+                  onClearEdit={() => setEditCategory(null)}
+                />
               }
             >
               <ul className="space-y-2">
                 {categories.map((c) => (
                   <li key={c.id} className="flex items-center gap-3 rounded-xl border p-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{c.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        /{c.slug} · {c.items} món
+                      <p className="text-sm font-semibold">
+                        {c.name} <span className="text-muted-foreground font-normal">· {c.items} món</span>
                       </p>
                     </div>
-                    <Switch checked={c.is_visible} onCheckedChange={() => toggleCategory(c)} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Sửa danh mục ${c.name}`}
+                      onClick={() => setEditCategory(c)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Xóa danh mục ${c.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteCategory(c)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -244,13 +412,36 @@ function MenuAdminPage() {
                     ))}
                   </div>
                 </SectionCard>
-                <SectionCard title="Cốt trà nền" desc={`${options.bases.length} lựa chọn`}>
-                  <div className="flex flex-wrap gap-2">
+                <SectionCard
+                  title="Cốt trà nền"
+                  desc={`${options.bases.length} lựa chọn`}
+                  actions={
+                    <Button variant="soft" size="sm" onClick={() => openBase()}>
+                      <Plus className="mr-1 size-4" /> Thêm cốt trà
+                    </Button>
+                  }
+                >
+                  <div className="space-y-2">
                     {options.bases.map((b) => (
-                      <Badge key={b.id} variant="secondary" className="rounded-full px-3 py-1">
-                        {b.name}
-                      </Badge>
+                      <div key={b.id} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                        <span className="min-w-0 flex-1 text-sm">{b.name}</span>
+                        <Button variant="ghost" size="icon" aria-label={`Sửa cốt trà ${b.name}`} onClick={() => openBase(b)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Xóa cốt trà ${b.name}`}
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteBase(b)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
                     ))}
+                    {options.bases.length === 0 && (
+                      <p className="text-muted-foreground py-4 text-center text-sm">Chưa có cốt trà nào</p>
+                    )}
                   </div>
                 </SectionCard>
                 <SectionCard title="Mức đường" desc={`${options.sugars.length} lựa chọn`}>
@@ -271,17 +462,39 @@ function MenuAdminPage() {
                     ))}
                   </div>
                 </SectionCard>
-                <SectionCard title="Topping" desc={`${options.toppings.length} lựa chọn`}>
-                  <div className="flex flex-wrap gap-2">
+                <SectionCard
+                  title="Topping"
+                  desc={`${options.toppings.length} lựa chọn`}
+                  actions={
+                    <Button variant="soft" size="sm" onClick={() => openTopping()}>
+                      <Plus className="mr-1 size-4" /> Thêm topping
+                    </Button>
+                  }
+                >
+                  <div className="space-y-2">
                     {options.toppings.map((t) => (
-                      <Badge
-                        key={t.id}
-                        variant={t.is_available ? "secondary" : "outline"}
-                        className="rounded-full px-3 py-1"
-                      >
-                        {t.name} (+{vnd(t.price)}){!t.is_available ? " · hết" : ""}
-                      </Badge>
+                      <div key={t.id} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                        <Switch checked={t.is_available} onCheckedChange={() => toggleTopping(t)} />
+                        <span className="min-w-0 flex-1 text-sm">
+                          {t.name} <span className="text-muted-foreground">+{vnd(t.price)}</span>
+                        </span>
+                        <Button variant="ghost" size="icon" aria-label={`Sửa topping ${t.name}`} onClick={() => openTopping(t)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Xóa topping ${t.name}`}
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteTopping(t)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
                     ))}
+                    {options.toppings.length === 0 && (
+                      <p className="text-muted-foreground py-4 text-center text-sm">Chưa có topping nào</p>
+                    )}
                   </div>
                 </SectionCard>
               </div>
@@ -289,65 +502,197 @@ function MenuAdminPage() {
           </TabsContent>
         </Tabs>
       )}
+
+      <AlertDialog open={!!deleteProduct} onOpenChange={(o) => !o && setDeleteProduct(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa món "{deleteProduct?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Món sẽ bị xóa vĩnh viễn khỏi thực đơn. Không thể xóa nếu đã có trong đơn hàng.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry text-berry-foreground hover:bg-berry/90"
+              onClick={confirmDeleteProduct}
+            >
+              Xóa món
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteCategory} onOpenChange={(o) => !o && setDeleteCategory(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa danh mục "{deleteCategory?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Danh mục sẽ bị xóa vĩnh viễn. Không thể xóa nếu còn món trong đó.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry text-berry-foreground hover:bg-berry/90"
+              onClick={confirmDeleteCategory}
+            >
+              Xóa danh mục
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={toppingDialog} onOpenChange={setToppingDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editTopping ? `Sửa topping: ${editTopping.name}` : "Thêm topping mới"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="t-name">Tên topping</Label>
+              <Input id="t-name" value={toppingName} onChange={(e) => setToppingName(e.target.value)} className="mt-1.5" placeholder="Trân châu trắng" />
+            </div>
+            <div>
+              <Label htmlFor="t-price">Giá (₫)</Label>
+              <Input id="t-price" type="number" value={toppingPrice} onChange={(e) => setToppingPrice(e.target.value)} className="mt-1.5" />
+            </div>
+            <Button variant="hero" className="w-full" onClick={saveTopping} disabled={savingTopping}>
+              {savingTopping ? <Loader2 className="size-4 animate-spin" /> : editTopping ? "Lưu thay đổi" : "Thêm topping"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTopping} onOpenChange={(o) => !o && setDeleteTopping(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa topping "{deleteTopping?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Topping sẽ bị xóa khỏi menu. Hành động không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry text-berry-foreground hover:bg-berry/90"
+              onClick={confirmDeleteTopping}
+            >
+              Xóa topping
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={baseDialog} onOpenChange={setBaseDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{editBase ? `Sửa cốt trà: ${editBase.name}` : "Thêm cốt trà nền mới"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="b-name">Tên cốt trà</Label>
+              <Input id="b-name" value={baseName} onChange={(e) => setBaseName(e.target.value)} className="mt-1.5" placeholder="Lục Trà Lài" />
+            </div>
+            <Button variant="hero" className="w-full" onClick={saveBase} disabled={savingBase}>
+              {savingBase ? <Loader2 className="size-4 animate-spin" /> : editBase ? "Lưu thay đổi" : "Thêm cốt trà"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteBase} onOpenChange={(o) => !o && setDeleteBase(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa cốt trà "{deleteBase?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cốt trà sẽ bị xóa khỏi danh sách lựa chọn. Hành động không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry text-berry-foreground hover:bg-berry/90"
+              onClick={confirmDeleteBase}
+            >
+              Xóa cốt trà
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
 
 function ProductForm({
   categories,
+  bases,
   onSaved,
   product,
   onClearEdit,
 }: {
   categories: Category[];
+  bases: { id: number; name: string }[];
   onSaved: () => void;
   product: Product | null;
   onClearEdit: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const [price, setPrice] = useState("49000");
   const [categoryId, setCategoryId] = useState("");
   const [baseTea, setBaseTea] = useState("");
   const [description, setDescription] = useState("");
+  const [image, setImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open || !product) return;
     setName(product.name);
-    setSlug(product.slug);
     setPrice(String(product.price));
     setCategoryId(String(product.category_id));
     setBaseTea(product.base_tea);
     setDescription(product.description || "");
+    setImage(product.image_url);
   }, [open, product]);
 
   useEffect(() => {
     if (!product) {
       setName("");
-      setSlug("");
       setPrice("49000");
       setCategoryId(String(categories[0]?.id ?? ""));
       setBaseTea("");
       setDescription("");
+      setImage(null);
     }
   }, [product, categories]);
 
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast.error("Vui lòng chọn file ảnh");
+    if (file.size > 2 * 1024 * 1024) return toast.error("Ảnh tối đa 2MB");
+    const reader = new FileReader();
+    reader.onload = () => setImage(String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
   async function save() {
-    if (!name.trim() || !slug.trim() || !price.trim()) {
-      return toast.error("Vui lòng nhập tên, slug và giá");
+    if (!name.trim() || !price.trim()) {
+      return toast.error("Vui lòng nhập tên và giá");
     }
+    const slug = slugify(name.trim());
     setSaving(true);
     try {
       const payload = {
         category_id: Number(categoryId),
         name: name.trim(),
-        slug: slug.trim(),
+        slug,
         base_tea: baseTea.trim() || "Lục Trà",
         description: description.trim() || null,
         price: Number(price),
-        image_url: null,
+        image_url: image,
         calories: 0,
       };
       if (product) {
@@ -388,12 +733,34 @@ function ProductForm({
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label htmlFor="p-name">Tên sản phẩm</Label>
-            <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
+            <Label>Ảnh sản phẩm</Label>
+            <div className="mt-1.5 flex items-start gap-3">
+              <div className="bg-muted flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border">
+                {image ? (
+                  <img src={image} alt="Ảnh sản phẩm" className="h-full w-full object-cover" />
+                ) : (
+                  <Image className="text-muted-foreground size-8" />
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="cursor-pointer">
+                  <span className="bg-berry text-berry-foreground hover:bg-berry/90 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium">
+                    <Upload className="size-4" /> {image ? "Đổi ảnh" : "Chọn ảnh"}
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                </label>
+                <p className="text-muted-foreground text-xs">Ảnh lưu trực tiếp vào DB, tối đa 2MB</p>
+                {image && (
+                  <Button variant="ghost" size="sm" className="w-fit" onClick={() => setImage(null)}>
+                    <X className="mr-1 size-4" /> Gỡ ảnh
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
           <div>
-            <Label htmlFor="p-slug">SEO Slug</Label>
-            <Input id="p-slug" value={slug} onChange={(e) => setSlug(e.target.value)} className="mt-1.5" />
+            <Label htmlFor="p-name">Tên sản phẩm</Label>
+            <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -418,7 +785,18 @@ function ProductForm({
           </div>
           <div>
             <Label htmlFor="p-base">Cốt trà nền</Label>
-            <Input id="p-base" value={baseTea} onChange={(e) => setBaseTea(e.target.value)} className="mt-1.5" />
+            <Select value={baseTea} onValueChange={setBaseTea}>
+              <SelectTrigger id="p-base" className="mt-1.5">
+                <SelectValue placeholder="Chọn cốt trà nền" />
+              </SelectTrigger>
+              <SelectContent>
+                {bases.map((b) => (
+                  <SelectItem key={b.id} value={b.name}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="p-desc">Mô tả</Label>
@@ -433,51 +811,84 @@ function ProductForm({
   );
 }
 
-function CategoryForm({ onSaved }: { onSaved: () => void }) {
+function CategoryForm({
+  onSaved,
+  category,
+  onClearEdit,
+}: {
+  onSaved: () => void;
+  category: Category | null;
+  onClearEdit: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!category) return;
+    setName(category.name);
+  }, [category]);
+
+  useEffect(() => {
+    if (!category) {
+      setName("");
+    }
+  }, [category]);
+
   async function save() {
-    if (!name.trim() || !slug.trim()) return toast.error("Vui lòng nhập tên và slug");
+    if (!name.trim()) return toast.error("Vui lòng nhập tên danh mục");
+    const slug = slugify(name.trim());
     setSaving(true);
     try {
-      await apiPost("/admin/menu/categories", { name: name.trim(), slug: slug.trim(), sort_order: 0, is_visible: 1 });
-      toast.success("Đã tạo danh mục");
+      if (category) {
+        await apiPut(`/admin/menu/categories/${category.id}`, {
+          name: name.trim(),
+          slug,
+          sort_order: category.sort_order,
+          is_visible: category.is_visible ? 1 : 0,
+        });
+        toast.success("Đã cập nhật danh mục");
+        onClearEdit();
+      } else {
+        await apiPost("/admin/menu/categories", { name: name.trim(), slug, sort_order: 0, is_visible: 1 });
+        toast.success("Đã tạo danh mục");
+      }
       setOpen(false);
       setName("");
-      setSlug("");
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tạo danh mục thất bại");
+      toast.error(err instanceof Error ? err.message : "Lưu danh mục thất bại");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open || !!category}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) onClearEdit();
+      }}
+    >
       <DialogTrigger asChild>
-        <Button variant="soft" size="sm">
-          <Plus className="mr-1 size-4" /> Thêm danh mục
-        </Button>
+        {!category && (
+          <Button variant="soft" size="sm">
+            <Plus className="mr-1 size-4" /> Thêm danh mục
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Thêm danh mục mới</DialogTitle>
+          <DialogTitle>{category ? `Sửa danh mục: ${category.name}` : "Thêm danh mục mới"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label htmlFor="c-name">Tên danh mục</Label>
-            <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
-          </div>
-          <div>
-            <Label htmlFor="c-slug">Slug</Label>
-            <Input id="c-slug" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="tra-trai-cay-moi" className="mt-1.5" />
+            <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" placeholder="Trà Sen" />
           </div>
           <Button variant="hero" className="w-full" onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : "Lưu danh mục"}
+            {saving ? <Loader2 className="size-4 animate-spin" /> : category ? "Lưu thay đổi" : "Lưu danh mục"}
           </Button>
         </div>
       </DialogContent>

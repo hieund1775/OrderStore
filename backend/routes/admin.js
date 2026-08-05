@@ -439,6 +439,38 @@ router.put('/menu/products/:id/toggle', async (req,res) => {
   try { await db.query('UPDATE products SET is_available = CASE WHEN is_available = 1 THEN 0 ELSE 1 END WHERE id=?',[req.params.id]); const [r]=await db.query('SELECT is_available FROM products WHERE id=?',[req.params.id]); await logAudit(req.user.sub, `Bật/tắt món #${req.params.id}`, r[0].is_available ? 'Đang bán' : 'Tạm ngưng', req); res.json({is_available:!!r[0].is_available,message:r[0].is_available?'Đã bật':'Đã tạm ngưng'}); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
+router.delete('/menu/products/:id', async (req,res) => {
+  try {
+    const id = req.params.id;
+    const [exists] = await db.query('SELECT id, name FROM products WHERE id = ?', [id]);
+    if (!exists[0]) return res.status(404).json({ error: 'Không tìm thấy món' });
+    const [cnt] = await db.query('SELECT COUNT(*) AS c FROM order_items WHERE product_id = ?', [id]);
+    if (cnt[0].c > 0) {
+      return res.status(400).json({ error: 'Không thể xóa món đã có trong đơn hàng (' + cnt[0].c + ' lượt)' });
+    }
+    await db.transaction(async (tx) => {
+      await tx.query('DELETE FROM reviews WHERE product_id = ?', [id]);
+      await tx.query('DELETE FROM wishlists WHERE product_id = ?', [id]);
+      await tx.query('DELETE FROM products WHERE id = ?', [id]);
+    });
+    await logAudit(req.user.sub, 'Xóa món', `#${id} ${exists[0].name}`, req);
+    res.json({ message: 'Đã xóa món' });
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.delete('/menu/categories/:id', async (req,res) => {
+  try {
+    const id = req.params.id;
+    const [exists] = await db.query('SELECT id, name FROM categories WHERE id = ?', [id]);
+    if (!exists[0]) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
+    const [cnt] = await db.query('SELECT COUNT(*) AS c FROM products WHERE category_id = ?', [id]);
+    if (cnt[0].c > 0) {
+      return res.status(400).json({ error: 'Không thể xóa danh mục còn ' + cnt[0].c + ' món' });
+    }
+    await db.query('DELETE FROM categories WHERE id = ?', [id]);
+    await logAudit(req.user.sub, 'Xóa danh mục', `#${id} ${exists[0].name}`, req);
+    res.json({ message: 'Đã xóa danh mục' });
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
 router.get('/menu/options', async (req,res) => {
   try {
     const [sizes]=await db.query('SELECT * FROM size_options ORDER BY sort_order');
@@ -447,6 +479,65 @@ router.get('/menu/options', async (req,res) => {
     const [ices]=await db.query('SELECT * FROM ice_options ORDER BY sort_order');
     const [toppings]=await db.query('SELECT * FROM toppings ORDER BY sort_order');
     res.json({sizes,bases,sugars,ices,toppings});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.post('/menu/toppings', async (req,res) => {
+  try {
+    const {name,price,is_available}=req.body;
+    if(!name?.trim()) return res.status(400).json({error:'Thiếu tên topping'});
+    const [r]=await db.query('INSERT INTO toppings (name,price,is_available,sort_order) OUTPUT INSERTED.* VALUES (?,?,?,0)',[name.trim(),Number(price)||0,is_available===undefined?1:is_available]);
+    await logAudit(req.user.sub,'Thêm topping',`${name} (+${price||0})`,req);
+    res.status(201).json(r[0]);
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.put('/menu/toppings/:id', async (req,res) => {
+  try {
+    const {name,price,is_available}=req.body;
+    const fields=[],params=[];
+    if(name!==undefined){fields.push('name=?');params.push(name.trim());}
+    if(price!==undefined){fields.push('price=?');params.push(Number(price)||0);}
+    if(is_available!==undefined){fields.push('is_available=?');params.push(is_available);}
+    if(!fields.length) return res.status(400).json({error:'Không có trường để cập nhật'});
+    params.push(req.params.id);
+    await db.query(`UPDATE toppings SET ${fields.join(',')} WHERE id=?`,params);
+    await logAudit(req.user.sub,`Cập nhật topping #${req.params.id}`,fields.join(', '),req);
+    res.json({message:'Đã cập nhật'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.delete('/menu/toppings/:id', async (req,res) => {
+  try {
+    const [exists]=await db.query('SELECT id,name FROM toppings WHERE id=?',[req.params.id]);
+    if(!exists[0]) return res.status(404).json({error:'Không tìm thấy topping'});
+    await db.query('DELETE FROM toppings WHERE id=?',[req.params.id]);
+    await logAudit(req.user.sub,'Xóa topping',`#${req.params.id} ${exists[0].name}`,req);
+    res.json({message:'Đã xóa topping'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+router.post('/menu/bases', async (req,res) => {
+  try {
+    const {name}=req.body;
+    if(!name?.trim()) return res.status(400).json({error:'Thiếu tên cốt trà'});
+    const [r]=await db.query('INSERT INTO base_options (name,sort_order) OUTPUT INSERTED.* VALUES (?,0)',[name.trim()]);
+    await logAudit(req.user.sub,'Thêm cốt trà nền',name.trim(),req);
+    res.status(201).json(r[0]);
+  } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Cốt trà này đã tồn tại'}); res.status(500).json({error:err.message}); }
+});
+router.put('/menu/bases/:id', async (req,res) => {
+  try {
+    const {name}=req.body;
+    if(!name?.trim()) return res.status(400).json({error:'Thiếu tên cốt trà'});
+    await db.query('UPDATE base_options SET name=? WHERE id=?',[name.trim(),req.params.id]);
+    await logAudit(req.user.sub,`Cập nhật cốt trà #${req.params.id}`,name.trim(),req);
+    res.json({message:'Đã cập nhật'});
+  } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Cốt trà này đã tồn tại'}); res.status(500).json({error:err.message}); }
+});
+router.delete('/menu/bases/:id', async (req,res) => {
+  try {
+    const [exists]=await db.query('SELECT id,name FROM base_options WHERE id=?',[req.params.id]);
+    if(!exists[0]) return res.status(404).json({error:'Không tìm thấy cốt trà'});
+    await db.query('DELETE FROM base_options WHERE id=?',[req.params.id]);
+    await logAudit(req.user.sub,'Xóa cốt trà nền',`#${req.params.id} ${exists[0].name}`,req);
+    res.json({message:'Đã xóa cốt trà'});
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
@@ -505,6 +596,24 @@ router.post('/branches', async (req,res) => {
 router.put('/branches/:id', async (req,res) => {
   try { const {name,city,district,address,lat,lng,hours,phone,amenities,is_active}=req.body; await db.query('UPDATE stores SET name=?,city=?,district=?,address=?,lat=?,lng=?,hours=?,phone=?,amenities=?,is_active=? WHERE id=?',[name,city,district,address,lat??null,lng??null,hours,phone,amenities?JSON.stringify(amenities):null,is_active,req.params.id]); await logAudit(req.user.sub, `Cập nhật chi nhánh #${req.params.id}`, name, req); res.json({message:'Đã cập nhật'}); }
   catch(err) { res.status(500).json({error:err.message}); }
+});
+router.delete('/branches/:id', async (req,res) => {
+  try {
+    const id = req.params.id;
+    const [exists] = await db.query('SELECT id, name FROM stores WHERE id = ?', [id]);
+    if (!exists[0]) return res.status(404).json({ error: 'Không tìm thấy chi nhánh' });
+    const [cnt] = await db.query('SELECT COUNT(*) AS c FROM orders WHERE store_id = ?', [id]);
+    if (cnt[0].c > 0) {
+      return res.status(400).json({ error: 'Không thể xóa chi nhánh đã có đơn hàng (' + cnt[0].c + ' đơn)' });
+    }
+    await db.transaction(async (tx) => {
+      await tx.query('DELETE FROM promotion_stores WHERE store_id = ?', [id]);
+      await tx.query('DELETE FROM tables WHERE store_id = ?', [id]);
+      await tx.query('DELETE FROM stores WHERE id = ?', [id]);
+    });
+    await logAudit(req.user.sub, 'Xóa chi nhánh', `#${id} ${exists[0].name}`, req);
+    res.json({ message: 'Đã xóa chi nhánh' });
+  } catch(err) { res.status(500).json({error:err.message}); }
 });
 
 // ═══════════ PROMOTIONS ═══════════
@@ -614,6 +723,12 @@ router.post('/tables', async (req, res) => {
   try {
     const { store_id, name } = req.body;
     if (!store_id || !name) return res.status(400).json({ error: 'Thiếu store_id hoặc name' });
+    const num = Number((String(name).match(/(\d+)/) || [])[0] || 0);
+    const [existing] = await db.query('SELECT name FROM tables WHERE store_id = ?', [store_id]);
+    const dup = existing.find(
+      (t) => Number((t.name.match(/(\d+)/) || [])[0] || 0) === num && num > 0,
+    );
+    if (dup) return res.status(400).json({ error: 'Số bàn này đã tồn tại trong chi nhánh' });
     const token = crypto.randomBytes(16).toString('hex');
     const [r] = await db.query(
       'INSERT INTO tables (store_id, name, qr_code_token, is_active) OUTPUT INSERTED.* VALUES (?, ?, ?, 1)',
@@ -626,6 +741,16 @@ router.post('/tables', async (req, res) => {
 router.put('/tables/:id', async (req, res) => {
   try {
     const { name, is_active } = req.body;
+    const [cur] = await db.query('SELECT id, store_id, name FROM tables WHERE id = ?', [req.params.id]);
+    if (!cur[0]) return res.status(404).json({ error: 'Không tìm thấy bàn' });
+    if (name) {
+      const num = Number((String(name).match(/(\d+)/) || [])[0] || 0);
+      const [existing] = await db.query('SELECT id, name FROM tables WHERE store_id = ?', [cur[0].store_id]);
+      const dup = existing.find(
+        (t) => t.id !== cur[0].id && Number((t.name.match(/(\d+)/) || [])[0] || 0) === num && num > 0,
+      );
+      if (dup) return res.status(400).json({ error: 'Số bàn này đã tồn tại trong chi nhánh' });
+    }
     await db.query(
       'UPDATE tables SET name = ?, is_active = ? WHERE id = ?',
       [name ?? null, is_active ?? 1, req.params.id],

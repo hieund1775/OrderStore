@@ -644,6 +644,33 @@ var Heart = createLucideIcon("heart", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Image = createLucideIcon("image", [
+	["rect", {
+		width: "18",
+		height: "18",
+		x: "3",
+		y: "3",
+		rx: "2",
+		ry: "2",
+		key: "1m3agn"
+	}],
+	["circle", {
+		cx: "9",
+		cy: "9",
+		r: "2",
+		key: "af1f0g"
+	}],
+	["path", {
+		d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
+		key: "1xmnt7"
+	}]
+]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var LayoutDashboard = createLucideIcon("layout-dashboard", [
 	["rect", {
 		width: "7",
@@ -1611,4 +1638,4 @@ var X = createLucideIcon("x", [["path", {
 	key: "d8bk6v"
 }]]);
 //#endregion
-export { CreditCard as $, Navigation as A, Leaf as B, Plus as C, PanelLeftOpen as D, PartyPopper as E, Mail as F, Flame as G, LayoutDashboard as H, Lock as I, Facebook as J, FileText as K, LocateFixed as L, Menu as M, Megaphone as N, PanelLeftClose as O, MapPin as P, CupSoda as Q, LoaderCircle as R, Printer as S, Pencil as T, Heart as U, LayoutGrid as V, Funnel as W, Download as X, Eye as Y, DatabaseBackup as Z, Settings as _, ArrowRight as _t, UserPlus as a, CircleX as at, RotateCcw as b, Trash2 as c, ChevronDown as ct, Store as d, ChartColumn as dt, Coins as et, Star as f, Briefcase as ft, ShieldCheck as g, ArrowUp as gt, ShoppingBag as h, Ban as ht, User as i, Circle as it, MessageCircle as j, PackageX as k, Timer as l, ChefHat as lt, SlidersHorizontal as m, Bell as mt, Volume2 as n, ClipboardList as nt, Upload as o, ChevronUp as ot, Sparkles as p, Bike as pt, FileSpreadsheet as q, UtensilsCrossed as r, ClipboardCheck as rt, TriangleAlert as s, ChevronRight as st, X as t, Clock as tt, Ticket as u, Check as ut, Settings2 as v, Phone as w, QrCode as x, Search as y, List as z };
+export { CupSoda as $, Navigation as A, Leaf as B, Plus as C, PanelLeftOpen as D, PartyPopper as E, Mail as F, Funnel as G, LayoutDashboard as H, Lock as I, FileSpreadsheet as J, Flame as K, LocateFixed as L, Menu as M, Megaphone as N, PanelLeftClose as O, MapPin as P, DatabaseBackup as Q, LoaderCircle as R, Printer as S, Pencil as T, Image as U, LayoutGrid as V, Heart as W, Eye as X, Facebook as Y, Download as Z, Settings as _, ArrowUp as _t, UserPlus as a, Circle as at, RotateCcw as b, Trash2 as c, ChevronRight as ct, Store as d, Check as dt, CreditCard as et, Star as f, ChartColumn as ft, ShieldCheck as g, Ban as gt, ShoppingBag as h, Bell as ht, User as i, ClipboardCheck as it, MessageCircle as j, PackageX as k, Timer as l, ChevronDown as lt, SlidersHorizontal as m, Bike as mt, Volume2 as n, Clock as nt, Upload as o, CircleX as ot, Sparkles as p, Briefcase as pt, FileText as q, UtensilsCrossed as r, ClipboardList as rt, TriangleAlert as s, ChevronUp as st, X as t, Coins as tt, Ticket as u, ChefHat as ut, Settings2 as v, ArrowRight as vt, Phone as w, QrCode as x, Search as y, List as z };
