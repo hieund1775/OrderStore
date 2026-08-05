@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Eye, Filter, LayoutGrid, List } from "lucide-react";
+import { Eye, Filter, LayoutGrid, List, Printer } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import {
   Dialog,
   DialogContent,
@@ -48,12 +49,13 @@ export const Route = createFileRoute("/admin/don-hang")({
   component: OrdersPage,
 });
 
-const statuses = ["Tất cả", "Chờ xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành", "Đã hủy"];
+const statuses = ["Tất cả", "Chờ xác nhận", "Đã xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành", "Đã hủy"];
 const types = ["Tất cả", "Delivery", "Take-away", "POS"];
 const payments = ["Tất cả", "COD", "VietQR", "MoMo", "ZaloPay"];
 
 const statusTone: Record<string, string> = {
   "Chờ xác nhận": "bg-primary/15 text-primary",
+  "Đã xác nhận": "bg-chart-5/15 text-chart-5",
   "Đang chuẩn bị": "bg-chart-5/15 text-chart-5",
   "Đang giao": "bg-accent text-accent-foreground",
   "Hoàn thành": "bg-leaf/15 text-leaf",
@@ -257,8 +259,28 @@ function FilterSelect({
 }
 
 function OrderDetail({ order }: { order: AdminOrder }) {
+  const [billOpen, setBillOpen] = useState(false);
+  const billOrder: BillOrder = {
+    id: Number(order.id.replace(/\D/g, "")) || 0,
+    order_code: order.id,
+    store_name: order.branch,
+    customer_name: order.customer,
+    customer_phone: order.phone,
+    payment_method: order.payment,
+    created_at: new Date().toISOString(),
+    items: order.items.map((it) => ({
+      product_name: it.name,
+      qty: it.qty,
+      line_total: 0,
+      note: it.options || null,
+    })),
+    subtotal: order.total,
+    discount_amount: 0,
+    total: order.total,
+  };
   return (
-    <Dialog>
+    <>
+      <Dialog>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm">
           <Eye className="mr-1 size-4" /> Chi tiết
@@ -305,10 +327,15 @@ function OrderDetail({ order }: { order: AdminOrder }) {
             <Button variant="outline" className="flex-1">
               Hủy đơn
             </Button>
+            <Button variant="outline" className="flex-1" onClick={() => setBillOpen(true)}>
+              <Printer className="mr-1 size-4" /> In bill
+            </Button>
           </div>
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <InBillModal order={billOrder} open={billOpen} onClose={() => setBillOpen(false)} />
+    </>
   );
 }
 

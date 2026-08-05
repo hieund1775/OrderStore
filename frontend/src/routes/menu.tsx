@@ -1,14 +1,18 @@
-import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { ChevronRight, MapPin, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { useCart } from "@/lib/cart";
 import { fruitGroups, products, teaLines, vnd } from "@/lib/data";
+import { apiGet } from "@/lib/api";
 
 export const Route = createFileRoute("/menu")({
+  validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
+    table_id: typeof search.table_id === "string" ? search.table_id : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
@@ -31,6 +35,37 @@ function MenuPage() {
   const [line, setLine] = useState<string>("Tất cả");
   const [fruit, setFruit] = useState<string>("Tất cả");
   const { items, subtotal, count } = useCart();
+  const { table_id } = useSearch({ from: "/menu" });
+  const [tableInfo, setTableInfo] = useState<{
+    table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
+  } | null>(null);
+
+  useEffect(() => {
+    if (table_id) {
+      // Giữ table_id qua các trang (link "Thanh toán" không mang search params)
+      sessionStorage.setItem("teaplus_table_id", table_id);
+    }
+  }, [table_id]);
+
+  useEffect(() => {
+    if (!table_id) {
+      setTableInfo(null);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ table: { id: number; name: string; store_id: number; store_name: string; store_address: string } }>(
+      `/api/table/resolve?table_id=${encodeURIComponent(table_id)}`,
+    )
+      .then((res) => {
+        if (!cancelled) setTableInfo(res);
+      })
+      .catch(() => {
+        if (!cancelled) setTableInfo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [table_id]);
 
   const filtered = useMemo(
     () =>
@@ -47,6 +82,29 @@ function MenuPage() {
         title="Thực đơn trà trái cây tươi"
         desc="Chọn dòng trà yêu thích, tùy chỉnh mức đường – đá – topping theo đúng khẩu vị của bạn."
       />
+
+      {tableInfo && (
+        <div className="container-page mt-6">
+          <div className="gradient-warm text-primary-foreground flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 px-5 py-4 shadow-glow">
+            <div className="flex items-center gap-3">
+              <span className="bg-white/20 flex size-11 shrink-0 items-center justify-center rounded-xl">
+                <MapPin className="size-6" />
+              </span>
+              <div>
+                <p className="font-display text-base font-bold">
+                  Bạn đang ngồi tại: {tableInfo.table.name}
+                </p>
+                <p className="text-sm opacity-90">
+                  {tableInfo.table.store_name} · {tableInfo.table.store_address}
+                </p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="bg-white/95">
+              Đặt món tại bàn
+            </Badge>
+          </div>
+        </div>
+      )}
 
       <div className="container-page grid gap-8 py-10 lg:grid-cols-[1fr_320px]">
         <div>

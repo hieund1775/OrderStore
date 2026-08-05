@@ -31,16 +31,6 @@ export function Footer() {
               </Link>
             </li>
             <li>
-              <Link to="/su-kien" className="hover:text-primary">
-                Khuyến mãi & sự kiện
-              </Link>
-            </li>
-            <li>
-              <Link to="/hoi-vien" className="hover:text-primary">
-                Thẻ hội viên
-              </Link>
-            </li>
-            <li>
               <Link to="/tuyen-dung" className="hover:text-primary">
                 Tuyển dụng
               </Link>

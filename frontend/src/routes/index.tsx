@@ -75,7 +75,7 @@ function Home() {
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link to="/su-kien">Xem ưu đãi</Link>
+                  <Link to="/cua-hang">Ghé cửa hàng</Link>
                 </Button>
               </div>
             </div>
@@ -180,13 +180,11 @@ function Home() {
               ))}
             <div className="gradient-warm text-primary-foreground flex flex-col justify-center rounded-2xl p-5">
               <Star className="mb-2 size-6" />
-              <p className="font-display text-lg font-bold">Tích điểm mỗi ly</p>
+              <p className="font-display text-lg font-bold">Voucher giảm giá %</p>
               <p className="mt-1 text-sm opacity-90">
-                1 điểm cho mỗi 10.000₫ — đổi voucher, topping và quà tặng.
+                Nhập mã giảm giá tại thanh toán — mã dùng 1 lần hoặc mã theo thời hạn, giới hạn lượt
+                dùng.
               </p>
-              <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
-                <Link to="/hoi-vien">Xem đặc quyền</Link>
-              </Button>
             </div>
           </div>
         </div>

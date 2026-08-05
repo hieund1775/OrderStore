@@ -26,7 +26,6 @@ export const kpis = [
 ];
 
 export const urgentKpis = [
-  { id: 'low', label: 'Nguyên liệu sắp hết', value: 4, tone: 'warn', to: '/admin/kho' },
   { id: 'paused', label: 'Món đang tạm ngưng', value: 2, tone: 'danger', to: '/admin/thuc-don' },
   { id: 'prep', label: 'Đơn đang chuẩn bị', value: 7, tone: 'info', to: '/admin/bep' },
   { id: 'late', label: 'Đơn giao trễ', value: 1, tone: 'danger', to: '/admin/don-hang' },
@@ -58,7 +57,13 @@ export const revenueByBranch = [
   { name: 'Hải Châu', value: 2580 },
 ];
 
-export type OrderStatus = 'Chờ xác nhận' | 'Đang chuẩn bị' | 'Đang giao' | 'Hoàn thành' | 'Đã hủy';
+export type OrderStatus =
+  | 'Chờ xác nhận'
+  | 'Đã xác nhận'
+  | 'Đang chuẩn bị'
+  | 'Đang giao'
+  | 'Hoàn thành'
+  | 'Đã hủy';
 
 export type AdminOrder = {
   id: string;

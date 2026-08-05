@@ -23,9 +23,9 @@ export const Route = createFileRoute("/theo-doi-don")({
 const steps = [
   { icon: Timer, label: "Chờ xác nhận", desc: "Hệ thống đã nhận đơn" },
   { icon: ClipboardCheck, label: "Đã xác nhận", desc: "Cửa hàng đã chấp nhận đơn" },
-  { icon: CupSoda, label: "Đang pha chế", desc: "Barista đang chuẩn bị trà" },
-  { icon: Bike, label: "Đang giao hàng", desc: "Shipper đang trên đường" },
-  { icon: PartyPopper, label: "Hoàn tất", desc: "Giao thành công" },
+  { icon: CupSoda, label: "Đang chuẩn bị", desc: "Barista đang pha chế trà" },
+  { icon: Bike, label: "Đang giao", desc: "Shipper đang trên đường" },
+  { icon: PartyPopper, label: "Hoàn thành", desc: "Giao thành công" },
 ];
 
 const currentStep = 2;
