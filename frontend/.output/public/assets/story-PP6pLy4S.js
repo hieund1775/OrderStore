@@ -1,0 +1,1 @@
+var e=`/assets/story-CEK2DH46.jpg`;export{e as t};
