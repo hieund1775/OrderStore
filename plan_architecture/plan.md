@@ -20,11 +20,11 @@
 
 ### 1.2. Tuân thủ Chuẩn Bảo mật OWASP Top 10
 - [x] **Chống SQL Injection (A03:2021-Injection)**: 100% câu lệnh truy vấn SQL Server sử dụng Prepared Statements / Parameterized Queries (`@param`).
-- [ ] **Xác thực & Phân quyền chuẩn RBAC (A01:2021-Broken Access Control)**: JWT Token & Auth Middleware kiểm tra quyền (`super`, `manager`, `kitchen`, `cashier`) tại các API `/admin/*`. Khách chỉ được truy cập đơn hàng của chính mình.
-- [ ] **Mã hóa Mật khẩu (A02:2021-Cryptographic Failures)**: Bcrypt hashing (salting factor >= 10). Mã QR token của Bàn được tạo ngẫu nhiên bằng chuỗi ngẫu nhiên bảo mật cao.
-- [ ] **Chống Brute-force & Dùng quá tải (A04:2021-Insecure Design)**: Express Rate Limiting tại các endpoint nhạy cảm (`POST /api/orders`, `POST /api/vouchers/apply`, `POST /admin/login`).
-- [ ] **Security Headers & CORS (A05:2021-Security Misconfiguration)**: Helmet.js bảo vệ HTTP Headers + CORS Policy chỉ cho phép Frontend domain.
-- [ ] **Audit Log (A09:2021-Security Logging)**: Tự động ghi lại các thao tác admin nhạy cảm vào bảng `audit_logs`.
+- [x] **Xác thực & Phân quyền chuẩn RBAC (A01:2021-Broken Access Control)**: JWT Token & Auth Middleware kiểm tra quyền (`super`, `manager`, `kitchen`, `cashier`) tại các API `/admin/*`. Khách chỉ được truy cập đơn hàng của chính mình.
+- [x] **Mã hóa Mật khẩu (A02:2021-Cryptographic Failures)**: Bcrypt hashing (salting factor >= 10). Mã QR token của Bàn được tạo ngẫu nhiên bằng chuỗi ngẫu nhiên bảo mật cao.
+- [x] **Chống Brute-force & Dùng quá tải (A04:2021-Insecure Design)**: Express Rate Limiting tại các endpoint nhạy cảm (`POST /api/orders`, `POST /api/vouchers/apply`, `POST /admin/login`).
+- [x] **Security Headers & CORS (A05:2021-Security Misconfiguration)**: Helmet.js bảo vệ HTTP Headers + CORS Policy chỉ cho phép Frontend domain.
+- [x] **Audit Log (A09:2021-Security Logging)**: Tự động ghi lại các thao tác admin nhạy cảm vào bảng `audit_logs` (đổi trạng thái/hủy đơn, CRUD bàn, CRUD khuyến mãi, CRUD thực đơn, cập nhật chi nhánh, in bill, gửi thông báo) — kèm `ip_address` + `user_agent`.
 
 ### 1.3. Quy Tắc Triệt Tiêu Lỗi Logic & Xử Lý Edge Cases (Technical Logic Guardrails)
 1. **SQL Server Transaction Atomic khi Đặt Hàng**:
@@ -45,9 +45,41 @@
    - Trạng thái đơn bắt buộc khớp 100% với SQL Server: `N'Chờ xác nhận'`, `N'Đã xác nhận'`, `N'Đang chuẩn bị'`, `N'Đang giao'`, `N'Hoàn thành'`, `N'Đã hủy'`.
 6. **Mã Đơn Hàng Duy Nhất (Unique Order Code)**:
    - Công thức `order_code`: `TP` + [YYMMDD] + [4 số ngẫu nhiên] (VD: `TP2608058921`), có kiểm tra trùng lặp.
-7. **Phân Định Rõ API Route Public vs Protected**:
-   - **Public**: Xem Menu, Chi tiết món, Lấy thông tin bàn từ mã QR (`GET /api/table/resolve`), Đặt hàng (`POST /api/orders`), Kiểm tra mã voucher (`POST /api/vouchers/apply`).
-   - **Protected Admin (Cần JWT + RBAC)**: Tất cả API `/admin/*` ngoại trừ `POST /admin/login`.
+8. **Chuẩn Hóa Quản Lý Chi Nhánh & Bản Đồ Thực Tế (Live Map Geocoding & Time Pickers)**:
+   - Sử dụng dữ liệu thực tế từ Bản đồ (Real-time Geocoding API) thay vì danh mục cứng để tự động cập nhật 100% tên Thành phố, Quận/Huyện, Tên đường và Tọa độ `lat, lng` mới nhất mà không tốn công chỉnh sửa thủ công.
+   - Giờ mở/đóng cửa bắt buộc dùng bộ chọn đồng hồ chuẩn `<input type="time">` (`openTime` & `closeTime`), tự động lưu dạng chuỗi chuẩn `"HH:mm – HH:mm"`.
+
+### 1.4. Hướng Dẫn Kỹ Thuật Chi Tiết Triển Khai Module Chi Nhánh & Bản Đồ (Technical Implementation Guide for Branch & Map)
+
+#### 🛠️ Kỹ thuật 1: Truy vấn Địa giới Thực tế (Live Reverse Geocoding via Nominatim / Google API)
+- **Cơ chế**: Khi bấm vào một điểm trên bản đồ hoặc gõ tìm địa chỉ, gửi HTTP GET request real-time đến Geocoding API:
+  `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=vn&q={query}`
+  hoặc Reverse Geocoding bằng tọa độ:
+  `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lng}`
+- **Bóc tách dữ liệu thực tế (Parsing Pipeline)**:
+  - `City/State`: Ưu tiên lấy từ `ISO3166-2-lvl4` mapping (VD: `VN-SG` ➔ `TP. Hồ Chí Minh`, `VN-HN` ➔ `Thành phố Hà Nội`, `VN-DN` ➔ `Thành phố Đà Nẵng`) hoặc `state_district`, `state`, `city`.
+  - `District`: Lấy từ `county`, `city_district`, `suburb` hoặc `district`.
+  - `Address`: Ghép chuẩn chuỗi `[house_number, road, suburb, district, city]` lọc các giá trị rỗng.
+- **Tự động điền State**: Cập nhật đồng thời `setCity()`, `setDistrict()`, `setAddress()`, `setLat()`, `setLng()` và di chuyển Marker trên bản đồ về đúng tọa độ `[lat, lng]`.
+
+#### 🛠️ Kỹ thuật 2: Đồng Bộ Giờ Mở Cửa Qua Bộ Chọn Đồng Hồ (Clock Time Pickers & Parsing)
+- **Giao diện Form Input**: Dùng 2 thẻ chọn giờ đồng hồ:
+  ```html
+  <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} />
+  <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} />
+  ```
+- **Hàm Parse Giờ (`parseHours`)**:
+  - Đọc từ DB: Dùng Regex `/\d{1,2}:\d{2}/g` bóc tách 2 mốc giờ `open` và `close` (Mặc định `"07:00"` và `"22:00"`).
+  - Lưu vào DB: Ghép chuỗi chuẩn dạng `${openTime} – ${closeTime}` (VD: `"07:30 – 22:00"`).
+- **Hàm Kiểm Tra Mở Cửa Real-time (`isStoreOpen`)**:
+  - Lấy giờ phút hiện tại (`nowMin = currentHour * 60 + currentMinute`).
+  - Đổi `openTime` & `closeTime` ra tổng số phút.
+  - So sánh `nowMin >= openMin && nowMin <= closeMin` ➔ Trả về boolean hiển thị Badge 🟢 *Đang mở cửa* hoặc 🔴 *Đã đóng cửa*.
+
+#### 🛠️ Kỹ thuật 3: Ẩn Dòng Bản Quyền & Định Vị Nút Zoom (+/-) Chuẩn Giao Diện
+- Khoá thanh bản quyền mặc định: `attributionControl: false` trên `L.map(...)`.
+- Khóa nút zoom mặc định `zoomControl: false`, khởi tạo lại nút zoom ở góc dưới bên phải:
+  `L.control.zoom({ position: "bottomright" }).addTo(map)`
 
 ---
 
@@ -85,8 +117,8 @@
 4. 🏪 **Trang Cửa Hàng (`/cua-hang`)**:
    - Bộ lọc Tỉnh/Thành -> Quận/Huyện.
    - Nút GPS "Tìm chi nhánh gần tôi nhất".
-   - Bản đồ tương tác Google Maps embed.
-   - Thẻ cửa hàng: Địa chỉ, giờ mở cửa, hotline, tiện ích (chỗ đỗ ô tô, máy lạnh, mua mang đi), nút Chỉ đường & "Đặt giao từ chi nhánh này".
+   - Bản đồ tương tác Google Maps embed *(hoàn thành 05/08/2026: iframe Google Maps không cần API key theo lat/lng thật từ DB, click thẻ cửa hàng → map di chuyển tới chi nhánh đó)*.
+   - Thẻ cửa hàng: Địa chỉ, giờ mở cửa, hotline, tiện ích (chỗ đỗ ô tô, máy lạnh, mua mang đi), nút Chỉ đường & "Đặt giao từ chi nhánh này" *(hoàn thành 05/08/2026: Chỉ đường = Google Maps directions URL; Đặt từ chi nhánh = lưu `teaplus_store_id` → `/menu`, checkout tự chọn chi nhánh)*.
 5. 💼 **Trang Tuyển Dụng (`/tuyen-dung`)** *(ngoài lõi, giữ sẵn có)*:
    - Danh sách vị trí (Barista, Thu ngân, Quản lý, Part-time), JD, Mức lương.
    - Popup Form nộp hồ sơ (Họ tên, SĐT, Email, Chi nhánh làm việc, File CV PDF/Word).
@@ -95,9 +127,9 @@
    - Tự động nhận dạng thông tin Bàn từ `table_id` khi quét QR.
    - Ô nhập Mã Voucher giảm giá % (real-time phản hồi số tiền giảm).
    - PTTT: COD, VietQR, MoMo, ZaloPay.
-7. 📦 **Trang Theo Dõi Đơn Real-time (`/theo-doi-don/:id`)**:
-   - Timeline 5 bước: `Chờ xác nhận` -> `Đã xác nhận` -> `Đang chuẩn bị` -> `Đang giao` -> `Hoàn tất` / `Đã hủy` *(chuỗi trạng thái khớp 100% CHECK constraint `order_status_history`)*.
-   - Nút **Hủy đơn hàng** khi đơn ở trạng thái "Chờ xác nhận".
+7. 📦 **Trang Theo Dõi Đơn Real-time (`/theo-doi-don?code=...`)**:
+   - Timeline 5 bước: `Chờ xác nhận` -> `Đã xác nhận` -> `Đang chuẩn bị` -> `Đang giao` -> `Hoàn tất` / `Đã hủy` *(chuỗi trạng thái khớp 100% CHECK constraint `order_status_history`)* — **dữ liệu thật qua `GET /api/orders/lookup?code=`, polling mỗi 5 giây (hoàn thành 05/08/2026)**.
+   - Nút **Hủy đơn hàng** khi đơn ở trạng thái "Chờ xác nhận" — gọi `POST /api/orders/:id/cancel` (chỉ hủy được khi `Chờ xác nhận`, ghi lịch sử `Đã hủy` + lý do — **hoàn thành 05/08/2026**).
 8. 👤 **Trang Profile Cá Nhân (`/ho-so`)** *(ngoài lõi, giữ sẵn có)*:
    - Thông tin cá nhân & Danh sách địa chỉ đã lưu.
    - Lịch sử đơn hàng + Nút **"Đặt lại đơn này" (Re-order 1-click)**.
@@ -214,7 +246,7 @@ graph TD
 ### 🔹 GIAI ĐOẠN 0: ĐỒNG BỘ PHẠM VI & LÀM CHẠY ĐƠN HÀNG (ƯU TIÊN CAO NHẤT)
 - [x] Ẩn/gỡ route frontend thừa: `admin.kho.tsx`, `admin.khach-hang.tsx`, `su-kien.tsx`, `hoi-vien.tsx` (xóa khỏi Sidebar + route tree — **hoàn thành 05/08/2026**, build ✅).
 - [x] Đồng bộ chuỗi trạng thái frontend ↔ SQL CHECK constraint (sửa `theo-doi-don.tsx` "Đang giao hàng" → "Đang giao"; bổ sung `'Đã xác nhận'` vào type `OrderStatus` — **hoàn thành 05/08/2026**).
-- [ ] Kiểm tra khớp API contract frontend ↔ backend hiện có (menu, options, stores, promotions) — sửa lệch nếu có.
+- [x] Kiểm tra khớp API contract frontend ↔ backend hiện có (menu, options, stores, promotions) — sửa lệch nếu có (**hoàn thành 05/08/2026**: nối toàn bộ trang admin còn dùng mock data vào API thật).
 
 ### 🔹 GIAI ĐẠN 1: CORE BACKEND & DATABASE ENGINE
 - [x] Cập nhật CSDL SQL Server `schema.sql`: Bổ sung bảng `tables`, `voucher_usage_history`, cột `table_id`, `location_name`, `is_printed`, `kitchen_notified_at`, `voucher_type`.
@@ -248,6 +280,17 @@ graph TD
 ### 🔹 GIAI ĐẠN 6: DASHBOARD & BÁO CÁO TINH GỌN
 - [x] Tinh gọn Báo cáo Admin (`admin.bao-cao.tsx`): Loại bỏ kho nguyên liệu rườm rà, tập trung KPI Doanh thu, Đơn hàng, Top 10 món trà bán chạy, AOV và Export Excel/PDF (**hoàn thành 05/08/2026**).
 - [x] API Báo cáo: `GET /admin/reports/summary`, `GET /admin/reports/kpi-summary`, `GET /admin/dashboard/*` (**hoàn thành 05/08/2026**).
+
+### 🔹 GIAI ĐOẠN 7: KẾT NỐI TOÀN HỆ THỐNG & ĐÓNG LỖ HỔNG CÒN LẠI (HOÀN THÀNH 05/08/2026)
+- [x] API tra cứu đơn công khai: `GET /api/orders/lookup?code=` (trả đơn + món + topping + lịch sử trạng thái — phục vụ QR bill và trang theo dõi đơn).
+- [x] API hủy đơn khách: `POST /api/orders/:id/cancel` (transaction, chỉ hủy được khi đơn ở `Chờ xác nhận`, ghi history `Đã hủy` + `cancel_reason`).
+- [x] Trang `/theo-doi-don` real-time: đọc `?code=` từ URL/QR, polling 5 giây, timeline 5 bước thật, chi tiết đơn, nút Hủy đơn (chỉ khi `Chờ xác nhận`); `thanh-toan.tsx` điều hướng kèm mã đơn.
+- [x] Audit log tự động: `services/audit.js` ghi vào `audit_logs` (user, action, detail, IP, user-agent) cho mọi thao tác admin nhạy cảm; UI `admin.cai-dat` hiển thị log thật.
+- [x] Nối `admin.don-hang` vào API thật: danh sách + lọc (chi nhánh/trạng thái/loại/PTTT/tìm kiếm), chi tiết đơn (món + toppings + lịch sử trạng thái), chuyển trạng thái 1-click, hủy đơn có lý do, InBill dữ liệu thật, Kanban view.
+- [x] Nối `admin.index` (Dashboard) vào API thật: KPI, cảnh báo khẩn, doanh thu theo giờ, đơn đang chờ.
+- [x] Nối `admin.thuc-don` vào API thật: CRUD danh mục + sản phẩm, bật/tắt món, xem tùy chọn.
+- [x] Nối `admin.thong-bao` + `admin.chi-nhanh` + `admin.cai-dat` (tài khoản + audit log) vào API thật.
+- [x] Export báo cáo **Excel (.xlsx qua SheetJS)** và **PDF (jsPDF + autotable)** bên cạnh CSV.
 
 ---
 

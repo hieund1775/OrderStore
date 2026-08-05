@@ -237,3 +237,71 @@
 
 - `bun run build` — hết lỗi TS.
 - Chạy dev: `/admin/login` → vào `/admin/vi-tri` tạo bàn → scan QR → `/menu?table_id=X` hiện banner → đặt món → `/thanh-toan` gắn bàn → đặt đơn thành công → đơn hiện ở `/admin/don-hang`.
+
+---
+
+# GIAI ĐOẠN 7: KẾT NỐI TOÀN HỆ THỐNG & ĐÓNG LỖ HỔNG (05/08/2026)
+
+> Sau khi đối chiếu `plan_architecture/plan.md` với code: các trang `/theo-doi-don`, `admin.don-hang`, `admin.index`, `admin.thuc-don`, `admin.thong-bao`, `admin.chi-nhanh`, `admin.cai-dat` còn dùng **data demo**; thiếu API khách tra cứu/hủy đơn; audit log chưa tự ghi; export chỉ có CSV. Giai đoạn này đóng toàn bộ.
+
+## 7.1. Backend
+
+- [x] `backend/routes/public.js` — thêm `GET /api/orders/lookup?code=` (đơn + items + toppings + status_history) và `POST /api/orders/:id/cancel` (transaction, chỉ hủy khi `Chờ xác nhận`, ghi `Đã hủy` + `cancel_reason`)
+- [x] `backend/services/audit.js` (mới) — `logAudit(user, action, detail, req)` ghi `audit_logs` kèm IP + user-agent, không fail thao tác chính
+- [x] `backend/routes/admin.js` — gắn audit log vào: đổi trạng thái đơn, hủy đơn, in bill, CRUD bàn, CRUD danh mục/món + toggle, CRUD khuyến mãi, cập nhật chi nhánh, gửi thông báo
+
+## 7.2. Frontend
+
+- [x] `theo-doi-don.tsx` — viết lại: đọc `?code=` (QR/URL), polling 5s, timeline 5 bước thật + trạng thái Đã hủy, chi tiết đơn (món/topping/tổng), nút Hủy đơn (AlertDialog + lý do, chỉ khi `Chờ xác nhận`), trạng thái không có mã → ô nhập mã
+- [x] `thanh-toan.tsx` — navigate kèm `code` sau đặt đơn
+- [x] `admin.don-hang.tsx` — viết lại: list/kanban từ `GET /admin/orders` (lọc chi nhánh/trạng thái/loại/PTTT/tìm kiếm), chi tiết từ `GET /admin/orders/:id` (items + toppings + history), chuyển trạng thái 1-click, hủy có lý do, InBill dữ liệu thật
+- [x] `admin.index.tsx` — viết lại: KPI + cảnh báo khẩn + doanh thu theo giờ + đơn đang chờ từ `/admin/dashboard/*` + `/admin/orders`
+- [x] `admin.thuc-don.tsx` — viết lại: CRUD danh mục/món thật, toggle bật/tắt, tab tùy chọn từ `/admin/menu/*`
+- [x] `admin.thong-bao.tsx` — viết lại từ `GET /admin/notifications`
+- [x] `admin.chi-nhanh.tsx` — viết lại từ `GET /admin/branches` + PUT (chỉnh sửa + bật/tắt)
+- [x] `admin.cai-dat.tsx` — tài khoản + audit log thật từ `/admin/settings/*`
+- [x] `admin.login.tsx` — bỏ hardcode `localhost:5000`, dùng API client chung
+- [x] `admin.bao-cao.tsx` — thêm export **Excel** (xlsx) + **PDF** (jspdf + jspdf-autotable); cài `xlsx`, `jspdf`, `jspdf-autotable`
+
+## Verify Giai đoạn 7 (05/08/2026) ✅
+
+- [x] `npx tsc --noEmit` sạch + `npm run build` OK
+- [x] Backend chạy thật + curl: lookup VX26072801 (200) / mã rác (404); tạo đơn TP2608054348 (Zero-Trust 65.000₫ = 45.000 + 10.000 size + 10.000 topping) → hủy thành công → hủy lại bị 400; hủy đơn `Đang chuẩn bị` bị 400
+- [x] Audit log: PATCH đơn 2 → `Đã xác nhận` → `audit_logs` có dòng mới (user Quân, action, detail, ip ::1)
+- [x] Dashboard KPI trả số thật; `/admin/orders?status=Đã xác nhận` lọc đúng
+
+## 7.3. Google Maps — trang cửa hàng & sửa bug checkout chi nhánh (05/08/2026)
+
+- [x] `cua-hang.tsx` — viết lại: store thật từ `GET /api/stores` (id số + lat/lng từ DB), iframe **Google Maps embed** (không cần API key, `q=lat,lng&output=embed`) căn giữa chi nhánh đang chọn, click thẻ → map di chuyển; nút **GPS** (geolocation + Haversine → chi nhánh gần nhất + toast khoảng cách); nút **Chỉ đường** (Google Maps directions URL); nút **"Đặt từ chi nhánh này"** → lưu `teaplus_store_id` → `/menu`
+- [x] `thanh-toan.tsx` — sửa bug tiềm ẩn: trước đây Select chi nhánh dùng store mock (id 'q1'...) → `Number(branch)` = NaN → đơn lỗi khi không quét QR; giờ load `/api/stores` thật (id số), mặc định đọc `teaplus_store_id` từ trang cửa hàng, guard thiếu chi nhánh khi submit
+
+## Verify 7.3 (05/08/2026) ✅
+
+- [x] `npx tsc --noEmit` sạch + `npm run build` OK
+- [x] `/api/stores` trả 5 cửa hàng đủ `lat/lng` (10.773/106.703...) + `is_active`
+- [x] SSR `/cua-hang` render 200; map iframe render client-side sau khi fetch store
+
+## 7.4. Hệ thống cửa hàng — tìm kiếm địa chỉ bằng bản đồ thật (05/08/2026)
+
+> Hoàn thiện nốt phần còn dở của `admin.chi-nhanh.tsx` theo yêu cầu: địa chỉ phải chọn được từ bản đồ thật, giờ mở cửa phải là đồng hồ.
+
+- [x] `admin.chi-nhanh.tsx` — thêm ô **tìm kiếm địa chỉ** (Nominatim search, debounce 400ms, giới hạn VN): gõ → xổ list gợi ý thật từ bản đồ → chọn → **tự điền** Thành phố / Quận-Huyện / Địa chỉ + đặt marker + di chuyển bản đồ tới vị trí đó
+- [x] Bấm trên bản đồ (Leaflet/OSM) vẫn reverse-geocode để điền địa chỉ như cũ
+- [x] Giờ mở cửa dùng **picker đồng hồ** `type="time"` (Giờ bắt đầu → Giờ kết thúc) — không còn nhập chuỗi số
+- [x] **Badge realtime 🟢 Đang mở cửa / 🔴 Đã đóng cửa** (`isStoreOpen` so giờ hiện tại, ticker mỗi 60s) trên card chi nhánh ở cả `admin.chi-nhanh` và `cua-hang` — helper dùng chung `lib/store-hours.ts`
+- [x] Bản đồ: `attributionControl: false` + nút zoom dời góc **dưới-phải** (`L.control.zoom position bottomright`) — Kỹ thuật 3 plan.md
+- [x] **Fix SSR crash**: Leaflet trước đây import top-level → server render nổ `window is not defined` → trang không hydrate → **dropdown tìm kiếm không hoạt động**. Chuyển sang `import type` + `import("leaflet")` trong `useEffect` (client-only), build + SSR 200 sạch
+- [x] **Rà soát 2 trang (05/08/2026)**: thống nhất tên thành phố 1 chuẩn (`TP. Hồ Chí Minh`/`Hà Nội`/`Đà Nẵng`/`Cần Thơ`/`Hải Phòng`) qua `ISO_CITY` + dropdown (khớp seed + `CITY_CENTERS` map); thêm import `ui/select` (dropddown TP/Quận); chặn đặt món chi nhánh `is_active=false`; chặn giờ rỗng khi lưu; đồng bộ ô tìm kiếm khi bấm bản đồ
+- [x] `npx tsc --noEmit` sạch + `npm run build` OK
+
+## 7.5. Mở rộng trang chi nhánh admin (05/08/2026)
+
+> Theo yêu cầu: mở rộng trang `/admin/chi-nhanh` thêm quản lý tiện hơn (không đổi DB).
+
+- [x] Backend `GET /admin/branches` — bổ sung theo từng chi nhánh: `table_count` (số bàn), `today_orders` + `today_revenue` (hôm nay, trừ đơn Đã hủy, chuẩn `CAST(GETDATE() AS DATE)` như dashboard)
+- [x] `admin.chi-nhanh.tsx` — ô **tìm kiếm** chi nhánh (tên/địa chỉ/quận/SĐT) + **lọc theo thành phố**; card thêm khối thống kê **Bàn · Đơn hôm nay · Doanh thu hôm nay**; nút **Xem bản đồ** (modal Google Maps embed); nút **Quản lý bàn** → `/admin/vi-tri?store_id=X` lọc sẵn chi nhánh
+- [x] `admin.vi-tri.tsx` — thêm `validateSearch {store_id?}` + khởi tạo `branchFilter` từ query param (cùng pattern `/menu?table_id`)
+- [x] **Fix quận/huyện khi bấm map**: Nominatim VN không trả `county/district` mà trả `suburb` (Phường/Xã) + `city` (tên thành phố) → logic cũ lấy nhầm city làm quận ("Thành phố Hà Nội"/"Thủ Đức") không khớp dropdown. Sửa: ưu tiên `county→district→city_district→town→suburb` + bỏ tiền tố "Phường/Xã/Thị trấn"; dropdown quận tự thêm item fallback nếu giá trị từ map chưa có trong danh sách
+- [x] **Mở rộng tỉnh/thành ngoài 5 thành phố**: thêm `Huế, Nha Trang, Bình Dương, Đồng Nai, Vũng Tàu, Đà Lạt, Quảng Ninh` vào `ISO_CITY` + dropdown thành phố + `CITY_CENTERS` (trang cửa hàng); làm sạch tên city từ map (bỏ "Tỉnh/Thành phố" prefix); dropdown thành phố cũng có item fallback cho city lạ → bấm map ở bất kỳ đâu vẫn điền đầy đủ
+- [x] **Badge mở/đóng theo nút bật/tắt**: trước đây badge 🟢/🔴 tính theo giờ (`isStoreOpen`) nên bật nút mà ngoài khung giờ vẫn báo "Đã đóng cửa" → không theo nút. Giờ badge = `is_active` trực tiếp (admin + trang cửa hàng): ON → "🟢 Đang mở cửa", OFF → "🔴 Đã đóng cửa"; giờ mở/đóng vẫn hiện cạnh badge. Verify bằng Playwright thật (toggle OFF → badge đổi, toggle ON → badge đổi)
+- [x] `npx tsc --noEmit` sạch + `npm run build` OK; API `/admin/branches` trả stats thật (VD chi nhánh 1: 6 bàn, 5 đơn, 264.250₫)

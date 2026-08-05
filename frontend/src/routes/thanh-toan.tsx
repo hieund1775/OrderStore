@@ -17,7 +17,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
-import { stores, vnd } from "@/lib/data";
+import { vnd } from "@/lib/data";
 import { apiGet, apiPost } from "@/lib/api";
 
 export const Route = createFileRoute("/thanh-toan")({
@@ -65,7 +65,8 @@ function Checkout() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [addr, setAddr] = useState("");
-  const [branch, setBranch] = useState(stores[0].id);
+  const [branch, setBranch] = useState<string | null>(null);
+  const [storeOptions, setStoreOptions] = useState<{ id: number; name: string }[]>([]);
   const [note, setNote] = useState("");
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherDiscount, setVoucherDiscount] = useState(0);
@@ -116,10 +117,36 @@ function Checkout() {
     }
   }
 
+  // Chi nhánh thật từ API — ưu tiên chi nhánh đã chọn từ trang cửa hàng (teaplus_store_id)
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ id: number; name: string }[]>("/api/stores")
+      .then((rows) => {
+        if (cancelled || rows.length === 0) return;
+        setStoreOptions(rows);
+        const savedId = Number(sessionStorage.getItem("teaplus_store_id"));
+        const tableStoreId = Number(tableId);
+        const initial =
+          rows.find((s) => s.id === savedId)?.id ??
+          rows.find((s) => s.id === tableStoreId)?.id ??
+          rows[0].id;
+        setBranch((prev) => prev ?? String(initial));
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Không tải được danh sách chi nhánh");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function submitOrder() {
     if (items.length === 0) return;
     if (!name.trim() || !phone.trim()) {
       return toast.error("Vui lòng nhập họ tên và số điện thoại");
+    }
+    if (!branch && !tableInfo) {
+      return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     }
     setSubmitting(true);
     try {
@@ -169,7 +196,7 @@ function Checkout() {
       toast.success("Đặt hàng thành công!", {
         description: `Mã đơn ${res.order_code} · ${vnd(res.total)} — đang chờ xác nhận.`,
       });
-      navigate({ to: "/theo-doi-don" });
+      navigate({ to: "/theo-doi-don", search: { code: res.order_code } });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại");
     } finally {
@@ -309,13 +336,17 @@ function Checkout() {
               ) : (
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Chi nhánh nhận hàng</Label>
-                  <Select value={branch} onValueChange={setBranch} disabled={!!tableInfo}>
+                  <Select
+                    value={branch ?? undefined}
+                    onValueChange={setBranch}
+                    disabled={!!tableInfo || storeOptions.length === 0}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {stores.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
+                      {storeOptions.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
                           {s.name}
                         </SelectItem>
                       ))}

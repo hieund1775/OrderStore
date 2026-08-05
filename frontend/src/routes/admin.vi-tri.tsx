@@ -39,6 +39,9 @@ import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import { adminBranches } from "@/lib/admin-data";
 
 export const Route = createFileRoute("/admin/vi-tri")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    store_id: typeof search.store_id === "string" ? search.store_id : undefined,
+  }),
   head: () => ({ meta: [{ title: "Vị trí & Mã QR bàn | Admin" }, { name: "robots", content: "noindex" }] }),
   component: TablesPage,
 });
@@ -57,8 +60,9 @@ function qrUrl(table: TableRow) {
 }
 
 function TablesPage() {
+  const search = Route.useSearch();
   const [tables, setTables] = useState<TableRow[]>([]);
-  const [branchFilter, setBranchFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState(search.store_id ?? "all");
   const [loading, setLoading] = useState(true);
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
   const [dialogOpen, setDialogOpen] = useState(false);

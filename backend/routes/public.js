@@ -475,6 +475,65 @@ router.get('/search/suggestions', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════ ORDER LOOKUP (mã đơn / QR bill) ═══════════
+router.get('/orders/lookup', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });
+    const [rows] = await db.query(
+      `SELECT o.*, s.name AS store_name,
+        (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC) AS current_status
+       FROM orders o JOIN stores s ON o.store_id = s.id WHERE o.order_code = ?`,
+      [code],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+    const order = rows[0];
+    const [items] = await db.query(
+      `SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id = oi.id FOR JSON PATH) AS toppings
+       FROM order_items oi WHERE oi.order_id = ?`,
+      [order.id],
+    );
+    order.items = items.map((i) => {
+      let t = [];
+      try { t = JSON.parse(i.toppings || '[]'); } catch {}
+      return { ...i, toppings: t };
+    });
+    const [history] = await db.query(
+      'SELECT id, status, note, created_at FROM order_status_history WHERE order_id = ? ORDER BY created_at',
+      [order.id],
+    );
+    order.status_history = history;
+    res.json({ order });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════ CANCEL ORDER (khách tự hủy — chỉ khi Chờ xác nhận) ═══════════
+router.post('/orders/:id/cancel', async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const result = await db.transaction(async (tx) => {
+      const [rows] = await tx.query('SELECT 1 AS x FROM orders WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) throw new Error('Không tìm thấy đơn hàng');
+      const [cur] = await tx.query(
+        'SELECT TOP 1 status FROM order_status_history WHERE order_id = ? ORDER BY created_at DESC, id DESC',
+        [req.params.id],
+      );
+      if (cur[0]?.status !== 'Chờ xác nhận') {
+        throw new Error('Chỉ có thể hủy đơn đang ở trạng thái Chờ xác nhận');
+      }
+      await tx.query(
+        "INSERT INTO order_status_history (order_id, status, note, created_at) VALUES (?, N'Đã hủy', ?, GETDATE())",
+        [req.params.id, reason || 'Khách yêu cầu hủy'],
+      );
+      await tx.query('UPDATE orders SET cancel_reason = ?, updated_at = GETDATE() WHERE id = ?', [reason || '', req.params.id]);
+      return { order_id: Number(req.params.id), status: 'Đã hủy' };
+    });
+    res.json({ ...result, message: 'Đã hủy đơn hàng' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // ═══════════ TABLE RESOLVE (QR) ═══════════
 router.get('/table/resolve', async (req, res) => {
   try {

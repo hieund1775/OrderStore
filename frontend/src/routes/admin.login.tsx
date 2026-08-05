@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { setToken } from "@/lib/api";
+import { apiPost, setToken } from "@/lib/api";
 import { brand } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/login")({
@@ -32,15 +32,12 @@ function AdminLogin() {
     }
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password }),
+      const res = await apiPost<{ token: string; user: { fullname: string } }>("/admin/login", {
+        phone,
+        password,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Đăng nhập thất bại");
-      setToken(data.token);
-      toast.success(`Xin chào ${data.user.fullname}`);
+      setToken(res.token);
+      toast.success(`Xin chào ${res.user.fullname}`);
       navigate({ to: "/admin" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đăng nhập thất bại");

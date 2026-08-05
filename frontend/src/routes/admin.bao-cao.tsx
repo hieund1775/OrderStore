@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Download, Loader2 } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Bar,
   BarChart,
@@ -18,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -126,6 +130,76 @@ function ReportsPage() {
     URL.revokeObjectURL(a.href);
   }
 
+  function exportExcel() {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["Chỉ số", "Giá trị"],
+        ["Doanh thu", kpi?.revenue ?? 0],
+        ["Tổng đơn hoàn thành", kpi?.total_orders ?? 0],
+        ["Giá trị đơn trung bình (AOV)", kpi?.avg_order ?? 0],
+        ["Số đơn hủy", kpi?.cancelled ?? 0],
+        ["Tỷ lệ hủy đơn (%)", kpi?.cancel_rate ?? 0],
+      ]),
+      "Tổng quan",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(topProducts.map((p) => ({ "Món": p.name, "Số ly": p.qty, "Doanh thu": p.revenue }))),
+      "Top món bán chạy",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(byBranch.map((b) => ({ "Chi nhánh": b.name, "Doanh thu": b.value }))),
+      "Doanh thu chi nhánh",
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(byCategory.map((c) => ({ "Danh mục": c.name, "Doanh thu": c.value }))),
+      "Doanh thu danh mục",
+    );
+    XLSX.writeFile(wb, `bao-cao-${from}-${to}.xlsx`);
+    toast.success("Đã xuất file Excel");
+  }
+
+  function exportPdf() {
+    const doc = new jsPDF();
+    const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+    doc.setFontSize(16);
+    doc.text("Báo cáo doanh thu", 14, 18);
+    doc.setFontSize(10);
+    doc.text(`Kỳ báo cáo: ${from} → ${to} · Trà Trái Cây Tô`, 14, 26);
+    autoTable(doc, {
+      startY: 32,
+      head: [["Chỉ số", "Giá trị"]],
+      body: [
+        ["Doanh thu", vnd(kpi?.revenue ?? 0)],
+        ["Tổng đơn hoàn thành", String(kpi?.total_orders ?? 0)],
+        ["Giá trị đơn trung bình (AOV)", vnd(kpi?.avg_order ?? 0)],
+        ["Số đơn hủy", String(kpi?.cancelled ?? 0)],
+        ["Tỷ lệ hủy đơn (%)", `${kpi?.cancel_rate ?? 0}%`],
+      ],
+    });
+    autoTable(doc, {
+      startY: lastY() + 10,
+      head: [["Top món bán chạy", "Số ly", "Doanh thu"]],
+      body: topProducts.map((p) => [p.name, String(p.qty), vnd(p.revenue)]),
+    });
+    autoTable(doc, {
+      startY: lastY() + 10,
+      head: [["Chi nhánh", "Doanh thu"]],
+      body: byBranch.map((b) => [b.name, vnd(b.value)]),
+    });
+    autoTable(doc, {
+      startY: lastY() + 10,
+      head: [["Danh mục", "Doanh thu"]],
+      body: byCategory.map((c) => [c.name, vnd(c.value)]),
+    });
+    doc.save(`bao-cao-${from}-${to}.pdf`);
+    toast.success("Đã xuất file PDF");
+  }
+
   return (
     <>
       <AdminPageHeader
@@ -154,6 +228,12 @@ function ReportsPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={exportCsv}>
               <Download className="size-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportExcel}>
+              <FileSpreadsheet className="size-4" /> Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportPdf}>
+              <FileText className="size-4" /> PDF
             </Button>
           </div>
         }

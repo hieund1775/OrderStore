@@ -108,3 +108,24 @@ graph TD
 - [x] Bấm nút *"In Bill"* tại chi tiết đơn -> Mở giao diện preview in bill. ✅ Test thật 05/08/2026 (đơn TP2608053919)
 - [x] **Kỳ vọng**: Hiển thị sắc nét Logo Tiệm Trà, Mã đơn (VD `#VX26072801`), Vị trí bàn (VD `Bàn 01 - Tầng 1`), Danh sách món + Size + Topping + Ghi chú, Tổng tiền, Số tiền giảm giá, Mã QR kiểm tra đơn. ✅ (TRÀ TRÁI CÂY TÔ, Mã đơn, Khách, 1× Trà Cam Sả, 45.000₫, TỔNG CỘNG, QR đơn)
 - [x] CSS `@media print`: Khi bấm in thật hoặc `Ctrl+P`, toàn bộ giao diện website ẩn đi, chỉ in duy nhất mẫu bill K80 chuẩn lề. ✅ (print window riêng HTML 80mm `@media print`); `is_printed=true` ghi nhận
+
+---
+
+## 📦 6. KIỂM THỬ TRA CỨU ĐƠN, HỦY ĐƠN KHÁCH & AUDIT LOG (THÊM 05/08/2026)
+
+### Test Case 6.1: Tra cứu đơn công khai theo mã đơn (`GET /api/orders/lookup?code=`)
+- [x] Mã hợp lệ (VD `VX26072801`): HTTP 200, trả đơn kèm `items` + `toppings` + `status_history` + `current_status`. ✅
+- [x] Mã không tồn tại: HTTP 404 `"Không tìm thấy đơn hàng"`. ✅
+
+### Test Case 6.2: Khách tự hủy đơn (`POST /api/orders/:id/cancel`)
+- [x] Đơn đang `Chờ xác nhận`: hủy thành công, `order_status_history` ghi `Đã hủy` + `cancel_reason`. ✅ (đơn TP2608054348 — tạo mới rồi hủy)
+- [x] Hủy lại đơn đã hủy: HTTP 400 `"Chỉ có thể hủy đơn đang ở trạng thái Chờ xác nhận"`. ✅
+- [x] Đơn đã qua `Chờ xác nhận` (VD đang `Đang chuẩn bị`): HTTP 400 — không hủy được. ✅ (đơn VX26072802)
+
+### Test Case 6.3: Audit Log tự động ghi (A09 Security Logging)
+- [x] Admin đổi trạng thái đơn → bảng `audit_logs` tự sinh dòng mới: user, action `"Cập nhật trạng thái đơn #2"`, detail, IP, user-agent. ✅ (dòng id=5, ip ::1)
+- [x] `GET /admin/settings/audit-logs` trả log mới nhất trước, UI `admin.cai-dat` hiển thị thật. ✅
+
+### Test Case 6.4: Export báo cáo Excel / PDF (`admin.bao-cao`)
+- [x] Nút **Excel** → tải `.xlsx` 4 sheet (Tổng quan, Top món bán chạy, Doanh thu chi nhánh, Doanh thu danh mục) qua SheetJS. ✅ (build OK)
+- [x] Nút **PDF** → tải `.pdf` gồm KPI + bảng top món/chi nhánh/danh mục qua jsPDF + autotable. ✅ (build OK)

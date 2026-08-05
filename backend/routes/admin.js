@@ -270,6 +270,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../config/db.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { logAudit } from '../services/audit.js';
 
 const router = Router();
 
@@ -369,6 +370,7 @@ const updateOrderStatus = async (req, res) => {
       }
       return { order_id: Number(req.params.id), status };
     });
+    await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
     res.json({ ...result, message: `Đơn hàng → ${status}` });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -383,6 +385,7 @@ router.put('/orders/:id/cancel', async (req,res) => {
     const {reason,changed_by}=req.body;
     await db.query("INSERT INTO order_status_history (order_id,status,note,changed_by) VALUES (?,N'Đã hủy',?,?)",[req.params.id,reason||'Hủy bởi admin',changed_by||null]);
     await db.query('UPDATE orders SET cancel_reason=? WHERE id=?',[reason||'',req.params.id]);
+    await logAudit(req.user.sub, `Hủy đơn #${req.params.id}`, reason || 'Hủy bởi admin', req);
     res.json({message:'Đơn hàng đã bị hủy'});
   } catch(err) { res.status(500).json({error:err.message}); }
 });
@@ -397,6 +400,7 @@ router.post('/menu/categories', async (req,res) => {
   try {
     const {name,slug,sort_order,is_visible}=req.body;
     const [r]=await db.query('INSERT INTO categories (name,slug,sort_order,is_visible) OUTPUT INSERTED.id VALUES (?,?,?,?)',[name,slug,sort_order||0,is_visible!==undefined?is_visible:1]);
+    await logAudit(req.user.sub, 'Tạo danh mục', `${name} (${slug})`, req);
     res.status(201).json({id:r[0].id,message:'Đã tạo danh mục'});
   } catch(err) {
     if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Slug đã tồn tại'});
@@ -404,7 +408,7 @@ router.post('/menu/categories', async (req,res) => {
   }
 });
 router.put('/menu/categories/:id', async (req,res) => {
-  try { const {name,slug,sort_order,is_visible}=req.body; await db.query('UPDATE categories SET name=?,slug=?,sort_order=?,is_visible=? WHERE id=?',[name,slug,sort_order,is_visible,req.params.id]); res.json({message:'Đã cập nhật'}); }
+  try { const {name,slug,sort_order,is_visible}=req.body; await db.query('UPDATE categories SET name=?,slug=?,sort_order=?,is_visible=? WHERE id=?',[name,slug,sort_order,is_visible,req.params.id]); await logAudit(req.user.sub, `Cập nhật danh mục #${req.params.id}`, name, req); res.json({message:'Đã cập nhật'}); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 router.get('/menu/products', async (req,res) => {
@@ -415,6 +419,7 @@ router.post('/menu/products', async (req,res) => {
   try {
     const {category_id,name,slug,base_tea,description,price,image_url,calories,fruit_group,tags}=req.body;
     const [r]=await db.query('INSERT INTO products (category_id,name,slug,base_tea,description,price,image_url,calories,fruit_group,tags) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?)',[category_id,name,slug,base_tea,description||null,price,image_url||null,calories||0,fruit_group||null,tags?JSON.stringify(tags):null]);
+    await logAudit(req.user.sub, 'Thêm món mới', `${name} (${slug})`, req);
     res.status(201).json({id:r[0].id,message:'Đã thêm món'});
   } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Slug đã tồn tại'}); res.status(500).json({error:err.message}); }
 });
@@ -426,11 +431,12 @@ router.put('/menu/products/:id', async (req,res) => {
     if(req.body.tags!==undefined){sets.push('tags=?');params.push(JSON.stringify(req.body.tags));}
     if(!sets.length) return res.status(400).json({error:'Không có trường để cập nhật'});
     params.push(req.params.id); await db.query(`UPDATE products SET ${sets.join(',')} WHERE id=?`,params);
+    await logAudit(req.user.sub, `Cập nhật món #${req.params.id}`, sets.join(', '), req);
     res.json({message:'Đã cập nhật'});
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 router.put('/menu/products/:id/toggle', async (req,res) => {
-  try { await db.query('UPDATE products SET is_available = CASE WHEN is_available = 1 THEN 0 ELSE 1 END WHERE id=?',[req.params.id]); const [r]=await db.query('SELECT is_available FROM products WHERE id=?',[req.params.id]); res.json({is_available:!!r[0].is_available,message:r[0].is_available?'Đã bật':'Đã tạm ngưng'}); }
+  try { await db.query('UPDATE products SET is_available = CASE WHEN is_available = 1 THEN 0 ELSE 1 END WHERE id=?',[req.params.id]); const [r]=await db.query('SELECT is_available FROM products WHERE id=?',[req.params.id]); await logAudit(req.user.sub, `Bật/tắt món #${req.params.id}`, r[0].is_available ? 'Đang bán' : 'Tạm ngưng', req); res.json({is_available:!!r[0].is_available,message:r[0].is_available?'Đã bật':'Đã tạm ngưng'}); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 router.get('/menu/options', async (req,res) => {
@@ -469,9 +475,35 @@ router.get('/customers/:id', async (req,res) => {
 });
 
 // ═══════════ BRANCHES ═══════════
-router.get('/branches', async (req,res) => { try { const [r]=await db.query('SELECT * FROM stores ORDER BY id'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
+router.get('/branches', async (req,res) => {
+  try {
+    const [r]=await db.query(`
+      SELECT s.id, s.name, s.city, s.district, s.address, s.lat, s.lng, s.hours, s.phone, s.amenities, s.is_active, s.created_at,
+        (SELECT COUNT(*) FROM tables t WHERE t.store_id = s.id) AS table_count,
+        (SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
+          AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')) AS today_orders,
+        ISNULL((SELECT SUM(o.total) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
+          AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')), 0) AS today_revenue
+      FROM stores s ORDER BY s.id`);
+    res.json(r);
+  } catch(err){res.status(500).json({error:err.message});}
+});
+router.post('/branches', async (req,res) => {
+  try {
+    const {name,city,district,address,lat,lng,hours,phone,amenities,is_active}=req.body;
+    if(!name?.trim()||!city?.trim()||!district?.trim()||!address?.trim()||!phone?.trim()){
+      return res.status(400).json({error:'Thiếu thông tin chi nhánh (tên, thành phố, quận/huyện, địa chỉ, SĐT)'});
+    }
+    const [r]=await db.query(
+      'INSERT INTO stores (name,city,district,address,lat,lng,hours,phone,amenities,is_active) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [name.trim(),city.trim(),district.trim(),address.trim(),lat??null,lng??null,hours||'07:00 – 22:00',phone.trim(),amenities?JSON.stringify(amenities):null,is_active!==undefined?is_active:1],
+    );
+    await logAudit(req.user.sub,'Tạo chi nhánh',`${name} (${city})`,req);
+    res.status(201).json({id:r[0].id,message:'Đã tạo chi nhánh'});
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
 router.put('/branches/:id', async (req,res) => {
-  try { const {name,city,district,address,hours,phone,amenities,is_active}=req.body; await db.query('UPDATE stores SET name=?,city=?,district=?,address=?,hours=?,phone=?,amenities=?,is_active=? WHERE id=?',[name,city,district,address,hours,phone,amenities?JSON.stringify(amenities):null,is_active,req.params.id]); res.json({message:'Đã cập nhật'}); }
+  try { const {name,city,district,address,lat,lng,hours,phone,amenities,is_active}=req.body; await db.query('UPDATE stores SET name=?,city=?,district=?,address=?,lat=?,lng=?,hours=?,phone=?,amenities=?,is_active=? WHERE id=?',[name,city,district,address,lat??null,lng??null,hours,phone,amenities?JSON.stringify(amenities):null,is_active,req.params.id]); await logAudit(req.user.sub, `Cập nhật chi nhánh #${req.params.id}`, name, req); res.json({message:'Đã cập nhật'}); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
@@ -482,6 +514,7 @@ router.post('/promotions', async (req,res) => {
     const {title,type,code,description,rule,emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,audience,scope,voucher_type,usage_limit}=req.body;
     const st=new Date(start_date)>new Date()?'Lên lịch':new Date(end_date)<new Date()?'Đã kết thúc':'Đang diễn ra';
     const [r]=await db.query('INSERT INTO promotions (title,type,code,description,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope,voucher_type,usage_limit) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[title,type,code||null,description||null,rule||null,emoji||null,discount_value||null,discount_type||null,max_discount||null,min_order||null,start_date,end_date,st,audience||null,scope||null,voucher_type||'time_bounded',usage_limit||null]);
+    await logAudit(req.user.sub, 'Tạo khuyến mãi', `${title} (${code || 'không mã'})`, req);
     res.status(201).json({id:r[0].id,message:'Đã tạo KM'});
   } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Mã KM đã tồn tại'}); res.status(500).json({error:err.message}); }
 });
@@ -493,6 +526,7 @@ router.put('/promotions/:id', async (req,res) => {
       if(req.body[fn]!==undefined){sets.push(`${fs}=?`);params.push(req.body[fn]);}
     }
     params.push(req.params.id); await db.query(`UPDATE promotions SET ${sets.join(',')} WHERE id=?`,params);
+    await logAudit(req.user.sub, `Cập nhật khuyến mãi #${req.params.id}`, sets.join(', '), req);
     res.json({message:'Đã cập nhật'});
   } catch(err) { res.status(500).json({error:err.message}); }
 });
@@ -562,7 +596,7 @@ router.get('/settings/audit-logs', async (req,res) => {
 // ═══════════ NOTIFICATIONS ═══════════
 router.get('/notifications', async (req,res) => { try { const [r]=await db.query('SELECT TOP 50 * FROM notifications ORDER BY created_at DESC'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
 router.post('/notifications', async (req,res) => {
-  try { const {user_id,type,title,body,link}=req.body; const [r]=await db.query('INSERT INTO notifications (user_id,type,title,body,link) OUTPUT INSERTED.id VALUES (?,?,?,?,?)',[user_id||null,type,title,body||null,link||null]); res.status(201).json({id:r[0].id,message:'Đã gửi'}); }
+  try { const {user_id,type,title,body,link}=req.body; const [r]=await db.query('INSERT INTO notifications (user_id,type,title,body,link) OUTPUT INSERTED.id VALUES (?,?,?,?,?)',[user_id||null,type,title,body||null,link||null]); await logAudit(req.user.sub, 'Gửi thông báo', title, req); res.status(201).json({id:r[0].id,message:'Đã gửi'}); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
@@ -585,6 +619,7 @@ router.post('/tables', async (req, res) => {
       'INSERT INTO tables (store_id, name, qr_code_token, is_active) OUTPUT INSERTED.* VALUES (?, ?, ?, 1)',
       [store_id, name, token],
     );
+    await logAudit(req.user.sub, 'Tạo vị trí bàn', `${name} (store ${store_id})`, req);
     res.status(201).json(r[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -595,6 +630,7 @@ router.put('/tables/:id', async (req, res) => {
       'UPDATE tables SET name = ?, is_active = ? WHERE id = ?',
       [name ?? null, is_active ?? 1, req.params.id],
     );
+    await logAudit(req.user.sub, `Cập nhật vị trí bàn #${req.params.id}`, name || '', req);
     res.json({ message: 'Đã cập nhật bàn' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -602,6 +638,7 @@ router.delete('/tables/:id', async (req, res) => {
   try {
     const [, affected] = await db.query('DELETE FROM tables WHERE id = ?', [req.params.id]);
     if (affected === 0) return res.status(404).json({ error: 'Không tìm thấy bàn' });
+    await logAudit(req.user.sub, `Xóa vị trí bàn #${req.params.id}`, '', req);
     res.json({ message: 'Đã xóa bàn' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -614,6 +651,7 @@ router.post('/orders/:id/print', async (req, res) => {
       [req.params.id],
     );
     if (affected === 0) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+    await logAudit(req.user.sub, `In hóa đơn đơn #${req.params.id}`, '', req);
     res.json({ message: 'Đã đánh dấu in hóa đơn' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

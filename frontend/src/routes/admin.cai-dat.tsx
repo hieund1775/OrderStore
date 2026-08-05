@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DatabaseBackup, Download, Plus, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { DatabaseBackup, Download, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader, SectionCard } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { adminAccounts, auditLogs } from "@/lib/admin-data";
+import { apiGet } from "@/lib/api";
 import { brand } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/cai-dat")({
@@ -39,7 +40,57 @@ export const Route = createFileRoute("/admin/cai-dat")({
   component: SettingsPage,
 });
 
+type AccountRow = {
+  id: number;
+  fullname: string;
+  email: string | null;
+  role: string;
+  branch: string;
+  active: boolean;
+};
+
+type AuditRow = {
+  id: number;
+  user_name: string;
+  action: string;
+  detail: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+};
+
+const roleLabels: Record<string, string> = {
+  super: "Super Admin",
+  manager: "Store Manager",
+  kitchen: "Kitchen Staff",
+  cashier: "Cashier Staff",
+};
+
 function SettingsPage() {
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [logs, setLogs] = useState<AuditRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiGet<AccountRow[]>("/admin/settings/accounts"),
+      apiGet<AuditRow[]>("/admin/settings/audit-logs"),
+    ])
+      .then(([accs, als]) => {
+        if (cancelled) return;
+        setAccounts(accs);
+        setLogs(als);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Không tải được cài đặt"))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <>
       <AdminPageHeader
@@ -59,9 +110,6 @@ function SettingsPage() {
           <Card className="shadow-soft overflow-hidden">
             <div className="flex items-center justify-between border-b p-4">
               <p className="font-display font-bold">Tài khoản nội bộ</p>
-              <Button variant="hero" size="sm">
-                <Plus className="mr-1 size-4" /> Thêm tài khoản
-              </Button>
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -74,21 +122,29 @@ function SettingsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {adminAccounts.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell>
-                        <p className="text-sm font-medium">{u.name}</p>
-                        <p className="text-muted-foreground text-xs">{u.email}</p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{u.role}</Badge>
-                      </TableCell>
-                      <TableCell className="hidden text-sm md:table-cell">{u.branch}</TableCell>
-                      <TableCell className="text-right">
-                        <Switch defaultChecked={u.active} />
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground py-10 text-center">
+                        <Loader2 className="mx-auto size-5 animate-spin" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    accounts.map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell>
+                          <p className="text-sm font-medium">{u.fullname}</p>
+                          <p className="text-muted-foreground text-xs">{u.email || "—"}</p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{roleLabels[u.role] ?? u.role}</Badge>
+                        </TableCell>
+                        <TableCell className="hidden text-sm md:table-cell">{u.branch}</TableCell>
+                        <TableCell className="text-right">
+                          <Switch checked={u.active} disabled />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -146,23 +202,37 @@ function SettingsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {auditLogs.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="text-sm">{l.user}</TableCell>
-                      <TableCell className="text-sm font-medium">{l.action}</TableCell>
-                      <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
-                        {l.detail}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                        {l.ip}
-                        <br />
-                        {l.device}
-                      </TableCell>
-                      <TableCell className="text-right text-sm whitespace-nowrap">
-                        {l.time}
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-muted-foreground py-10 text-center">
+                        <Loader2 className="mx-auto size-5 animate-spin" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : logs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-muted-foreground py-10 text-center">
+                        Chưa có nhật ký hoạt động
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    logs.map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="text-sm">{l.user_name}</TableCell>
+                        <TableCell className="text-sm font-medium">{l.action}</TableCell>
+                        <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
+                          {l.detail || "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
+                          {l.ip_address || "—"}
+                          <br />
+                          {l.user_agent?.split(" ").slice(0, 2).join(" ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-sm whitespace-nowrap">
+                          {new Date(l.created_at).toLocaleString("vi-VN")}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
