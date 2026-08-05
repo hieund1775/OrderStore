@@ -1,0 +1,65 @@
+# QUY TRÌNH PHÁT TRIỂN DỰ ÁN REACT + NODE.JS
+
+## 1. Nguyên tắc làm việc (Workflow)
+
+- KHÔNG ĐƯỢC tự ý sửa code nhiều file cùng lúc khi chưa được duyệt.
+- Trước khi code tính năng mới: Phải phân tích dự án và ghi kế hoạch ra file `PLAN.md` (gồm: các file sẽ sửa/tạo mới, API contract, state management).
+- Sau khi tôi duyệt `PLAN.md` mới được bắt đầu triển khai từng bước.
+- Làm xong bước nào, tick hoàn thành bước đó trong `PLAN.md`.
+
+## 2. Quy chuẩn Frontend (React)
+
+- Kiến trúc: Chia rõ `components`, `pages`, `hooks`, `services`, `context/store`.
+- Component: Ưu tiên Functional Components, dùng TypeScript/Prop-types rõ ràng. Không viết logic API hay state quá nặng trực tiếp inside UI component (tách ra Custom Hooks).
+- Style: Dùng Tailwind CSS (hoặc thư viện UI hiện tại của dự án), đảm bảo clean code và responsive.
+
+## 3. Quy chuẩn Backend (Node.js/Express)
+
+- Kiến trúc Layered Architecture: `Routes` -> `Controllers` -> `Services` -> `Models/Database`.
+- Controller chỉ xử lý req/res, Service chứa Business Logic, Route chỉ làm nhiệm vụ điều hướng.
+- Xử lý lỗi: Mọi Controller phải có `try-catch` hoặc dùng `asyncHandler`, trả về đúng HTTP Status Code và format JSON lỗi nhất quán: `{ success: false, message: "..." }`.
+
+## 4. Kiểm tra chất lượng (Verification)
+
+- Sau khi viết code xong:
+  - Chạy `npm run lint` hoặc `npx tsc --noEmit` để đảm bảo không lỗi type/format.
+  - Chạy `npm test` nếu có unit test.
+- Đảm bảo kiểm tra validate dữ liệu đầu vào (dùng Zod/Joi ở Backend) trước khi lưu DB.
+
+## Scope Lock
+
+Chỉ được phép sửa đúng các file nằm trong PLAN.md.
+
+Nếu trong quá trình triển khai phát hiện cần sửa thêm file khác:
+
+- Dừng lại.
+- Cập nhật PLAN.md.
+- Chờ tôi duyệt.
+- Không được tự ý sửa.
+
+## Project Analysis
+
+Trước khi lập kế hoạch phải khảo sát:
+
+- Folder structure
+- Routing
+- State Management
+- API Layer
+- Shared Components
+- Existing Coding Style
+
+Không được suy đoán.
+
+## Refactor Policy
+
+Không được refactor, đổi tên file, đổi cấu trúc thư mục, format hàng loạt hoặc tối ưu code ngoài phạm vi yêu cầu.
+
+Nếu phát hiện code cần cải thiện:
+
+- Ghi vào PLAN.md.
+- Chờ tôi phê duyệt.
+
+## Tự động sử dụng Skills (.agents/skills)
+
+- Trước khi thực hiện bất kỳ yêu cầu nào, hãy chủ động kiểm tra danh sách skills trong `.agents/skills`.
+- Tự động gọi skill phù hợp nhất với ngữ cảnh công việc (ví dụ: dùng `brainstorming` khi lên kế hoạch, `frontend-design` khi viết UI, `find-skills` khi thiếu công cụ).
