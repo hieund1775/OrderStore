@@ -1,0 +1,77 @@
+import { f as stores } from "./data-Z_klJ5jj.mjs";
+//#region node_modules/.nitro/vite/services/ssr/assets/admin-data-DQyKx2Ql.js
+var adminBranches = [{
+	id: "all",
+	name: "Tất cả chi nhánh"
+}, ...stores.map((s) => ({
+	id: s.id,
+	name: s.name
+}))];
+var adminRoles = [
+	{
+		id: "super",
+		label: "Super Admin",
+		desc: "Toàn quyền quản trị hệ thống"
+	},
+	{
+		id: "manager",
+		label: "Store Manager",
+		desc: "Quản lý chi nhánh được phân quyền"
+	},
+	{
+		id: "kitchen",
+		label: "Kitchen Staff",
+		desc: "Màn hình bếp (KDS Mode)"
+	},
+	{
+		id: "cashier",
+		label: "Cashier Staff",
+		desc: "Ghi nhận đơn tại quầy (POS Mode)"
+	}
+];
+var adminNotifications = [
+	{
+		id: "an1",
+		type: "order",
+		title: "Đơn online mới VX26072801",
+		time: "1 phút trước",
+		tone: "info"
+	},
+	{
+		id: "an2",
+		type: "stock",
+		title: "Dưa hấu đã hết hàng tại Q7",
+		time: "12 phút trước",
+		tone: "danger"
+	},
+	{
+		id: "an3",
+		type: "stock",
+		title: "Dâu tây còn 20% tại Q1",
+		time: "40 phút trước",
+		tone: "warn"
+	},
+	{
+		id: "an4",
+		type: "voucher",
+		title: "Voucher SNOW30 sắp hết lượt dùng",
+		time: "2 giờ trước",
+		tone: "warn"
+	},
+	{
+		id: "an5",
+		type: "staff",
+		title: "Yêu cầu duyệt tài khoản nhân viên mới",
+		time: "Hôm qua",
+		tone: "info"
+	},
+	{
+		id: "an6",
+		type: "payment",
+		title: "Lỗi cổng thanh toán ZaloPay (mã 502)",
+		time: "Hôm qua",
+		tone: "danger"
+	}
+];
+//#endregion
+export { adminNotifications as n, adminRoles as r, adminBranches as t };
