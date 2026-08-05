@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import db from '../config/db.js';
+import { calcLineTotals, validateVoucher, consumeVoucher, generateOrderCode } from '../services/price-engine.js';
 
 const router = Router();
 
@@ -472,6 +473,142 @@ router.get('/search/suggestions', async (req, res) => {
     const [toppings] = await db.query("SELECT DISTINCT TOP 3 name FROM toppings WHERE is_available = 1 AND name LIKE ?", [`%${q || ''}%`]);
     res.json({ products: products.map(p => p.name), toppings: toppings.map(t => t.name) });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════ TABLE RESOLVE (QR) ═══════════
+router.get('/table/resolve', async (req, res) => {
+  try {
+    const { table_id } = req.query;
+    if (!table_id) return res.status(400).json({ error: 'Thiếu table_id' });
+    const [rows] = await db.query(
+      `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address
+       FROM tables t JOIN stores s ON s.id = t.store_id
+       WHERE t.id = ? AND t.is_active = 1`,
+      [table_id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy bàn hoặc bàn đã ngưng hoạt động' });
+    res.json({ table: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════ VOUCHER APPLY ═══════════
+router.post('/vouchers/apply', async (req, res) => {
+  try {
+    const { code, subtotal, customer_phone } = req.body;
+    if (!code) return res.status(400).json({ valid: false, message: 'Thiếu mã voucher' });
+    const { discount_amount } = await validateVoucher({
+      code,
+      subtotal: Number(subtotal) || 0,
+      customer_phone: customer_phone || '',
+    });
+    res.json({ valid: true, discount_amount, code, message: 'Áp dụng thành công' });
+  } catch (err) {
+    res.status(400).json({ valid: false, message: err.message });
+  }
+});
+
+// ═══════════ CREATE ORDER (Zero-Trust Price Engine) ═══════════
+router.post('/orders', async (req, res) => {
+  try {
+    const {
+      store_id, table_id, order_type = 'Take-away', payment_method = 'COD',
+      customer_name, customer_phone, delivery_addr = null,
+      voucher_code = null, note = null, items = [],
+    } = req.body;
+
+    if (!store_id || !customer_name || !customer_phone || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Thiếu thông tin đơn hàng (store_id, tên, SĐT, items)' });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      // 1) Tính giá 100% từ DB — bỏ qua mọi giá client gửi lên
+      const lines = [];
+      let subtotal = 0;
+      for (const item of items) {
+        const line = await calcLineTotals(item, tx.query);
+        lines.push({ ...item, ...line });
+        subtotal += line.line_total;
+      }
+
+      // 2) Validate + tiêu hao voucher (atomic, chống race condition)
+      const { discount_amount, promotion_id } = await validateVoucher(
+        { code: voucher_code, subtotal, customer_phone },
+        tx.query,
+      );
+      if (promotion_id) {
+        const ok = await consumeVoucher(promotion_id, tx.query);
+        if (!ok) throw new Error('Voucher đã hết lượt sử dụng');
+      }
+
+      const total = Math.max(0, subtotal - discount_amount);
+
+      // 3) Lấy tên vị trí bàn nếu có table_id
+      let location_name = null;
+      if (table_id) {
+        const [tables] = await tx.query('SELECT name FROM tables WHERE id = ? AND is_active = 1', [table_id]);
+        if (tables[0]) location_name = tables[0].name;
+      }
+
+      // 4) Tạo đơn
+      const order_code = await generateOrderCode(tx.query);
+      const [orderRows] = await tx.query(
+        `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name,
+           order_type, payment_method, customer_name, customer_phone, delivery_addr,
+           voucher_code, discount_amount, points_used, points_earned, subtotal, total,
+           is_printed, kitchen_notified_at, note, created_at, updated_at)
+         OUTPUT INSERTED.id
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
+        [order_code, store_id, table_id || null, location_name,
+         order_type, payment_method, customer_name, customer_phone, delivery_addr,
+         voucher_code, discount_amount, Math.floor(total / 1000), subtotal, total,
+         order_type === 'POS' ? null : new Date(), note || null],
+      );
+      const orderId = orderRows[0].id;
+
+      // 5) Món + Topping
+      for (const line of lines) {
+        const [prodRows] = await tx.query('SELECT name FROM products WHERE id = ?', [line.product_id]);
+        const product_name = prodRows[0]?.name || `Món #${line.product_id}`;
+        const [itemRows] = await tx.query(
+          `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label,
+             base_tea, sugar_level, ice_level, note, unit_price, line_total)
+           OUTPUT INSERTED.id
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [orderId, line.product_id, product_name, line.qty,
+           line.size_label || 'M', line.base_tea || '', line.sugar_level || '', line.ice_level || '',
+           line.note || null, line.unit_price, line.line_total],
+        );
+        const itemId = itemRows[0].id;
+        for (const t of line.toppings) {
+          await tx.query(
+            'INSERT INTO order_item_toppings (order_item_id, topping_name, topping_price) VALUES (?, ?, ?)',
+            [itemId, t.name, t.price],
+          );
+        }
+      }
+
+      // 6) Lịch sử trạng thái ban đầu
+      await tx.query(
+        `INSERT INTO order_status_history (order_id, status, note, changed_by, created_at)
+         VALUES (?, N'Chờ xác nhận', NULL, NULL, GETDATE())`,
+        [orderId],
+      );
+
+      // 7) Ghi lịch sử dùng mã 1 lần
+      if (promotion_id && voucher_code) {
+        await tx.query(
+          'INSERT INTO voucher_usage_history (promotion_id, user_phone, order_id, used_at) VALUES (?, ?, ?, GETDATE())',
+          [promotion_id, customer_phone, orderId],
+        );
+      }
+
+      return { order_id: orderId, order_code, subtotal, discount_amount, total };
+    });
+
+    res.status(201).json({ ...result, status: 'Chờ xác nhận' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 export default router;

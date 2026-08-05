@@ -1,11 +1,16 @@
 // init-db.js — Tạo database + import schema + seed vào SQL Server
 // Chạy: node init-db.js
-import sql from 'mssql';
+import sqlAuth from 'mssql';
+import sqlTrusted from 'mssql/msnodesqlv8.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 dotenv.config();
+
+// Windows Auth → msnodesqlv8 (ODBC); SQL Auth → mssql (tedious)
+const isTrusted = process.env.DB_TRUSTED === 'true';
+const sql = isTrusted ? sqlTrusted : sqlAuth;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -12,13 +12,25 @@ INSERT INTO stores (id, name, city, district, address, lat, lng, hours, phone, a
 (5,N'Vườn Xanh – Hải Châu',N'Đà Nẵng',N'Hải Châu',N'45 Bạch Đằng, Hải Châu 1, Hải Châu',16.067,108.221,N'07:30 – 22:30','0236 3812 345',N'["View sông Hàn","Chỗ đỗ ô tô","Máy lạnh"]');
 SET IDENTITY_INSERT stores OFF;
 
+-- TABLES
+SET IDENTITY_INSERT tables ON;
+INSERT INTO tables (id, store_id, name, qr_code_token, is_active) VALUES
+(1, 1, N'Bàn 01 - Tầng 1', 'QR-STORE1-TBL01', 1),
+(2, 1, N'Bàn 02 - Tầng 1', 'QR-STORE1-TBL02', 1),
+(3, 1, N'Bàn 03 - Tầng 1', 'QR-STORE1-TBL03', 1),
+(4, 1, N'Bàn 04 - Tầng 2', 'QR-STORE1-TBL04', 1),
+(5, 1, N'Bàn 05 - Tầng 2', 'QR-STORE1-TBL05', 1),
+(6, 2, N'Bàn 01 - Trệt',   'QR-STORE2-TBL01', 1),
+(7, 2, N'Bàn 02 - Trệt',   'QR-STORE2-TBL02', 1);
+SET IDENTITY_INSERT tables OFF;
+
 -- USERS
 SET IDENTITY_INSERT users ON;
 INSERT INTO users (id,fullname,phone,email,password_hash,tier,points,total_spent,is_admin,admin_role,admin_branch_id) VALUES
-(1,N'Nguyễn Hoàng Quân','0900 000 001','quan@travuonxanh.vn','$2b$10$placeholder',N'Kim Cương',0,0,1,'super',NULL),
-(2,N'Trần Bảo Ngọc','0900 000 002','ngoc@travuonxanh.vn','$2b$10$placeholder',N'Kim Cương',0,0,1,'manager',1),
-(3,N'Lý Thanh Tùng','0900 000 003','tung@travuonxanh.vn','$2b$10$placeholder',N'Kim Cương',0,0,1,'cashier',2),
-(4,N'Hồ Mai Chi','0900 000 004','chi@travuonxanh.vn','$2b$10$placeholder',N'Kim Cương',0,0,1,'kitchen',3);
+(1,N'Nguyễn Hoàng Quân','0900 000 001','quan@travuonxanh.vn','$2b$10$wmXs8Y4ldFIIEBvAAAMY9ODPKLbz1.cMjzfO5ge5UVY8wSoMrLd0G',N'Kim Cương',0,0,1,'super',NULL),
+(2,N'Trần Bảo Ngọc','0900 000 002','ngoc@travuonxanh.vn','$2b$10$wmXs8Y4ldFIIEBvAAAMY9ODPKLbz1.cMjzfO5ge5UVY8wSoMrLd0G',N'Kim Cương',0,0,1,'manager',1),
+(3,N'Lý Thanh Tùng','0900 000 003','tung@travuonxanh.vn','$2b$10$wmXs8Y4ldFIIEBvAAAMY9ODPKLbz1.cMjzfO5ge5UVY8wSoMrLd0G',N'Kim Cương',0,0,1,'cashier',2),
+(4,N'Hồ Mai Chi','0900 000 004','chi@travuonxanh.vn','$2b$10$wmXs8Y4ldFIIEBvAAAMY9ODPKLbz1.cMjzfO5ge5UVY8wSoMrLd0G',N'Kim Cương',0,0,1,'kitchen',3);
 INSERT INTO users (id,fullname,phone,email,tier,points,total_spent) VALUES
 (5,N'Nguyễn Minh Anh','0903 118 226','minhanh@gmail.com',N'Kim Cương',3240,12480000),
 (6,N'Trần Quốc Bảo','0987 442 019','quocbao@gmail.com',N'Vàng',1780,6420000),
@@ -57,14 +69,16 @@ SET IDENTITY_INSERT toppings ON; INSERT INTO toppings (id,name,price,sort_order)
 -- PROMOTIONS
 SET IDENTITY_INSERT promotions ON;
 INSERT INTO promotions (id,title,type,code,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope) VALUES
-(1,N'Mua 1 Tặng 1 Trà Cam Sả',N'Mua 1 Tặng 1','CAMSA11',N'Đơn tại quầy & online 14:00–17:00.','🍊',100,'percent',45000,45000,'2026-07-01','2026-07-31',N'Đang diễn ra',N'Tất cả khách hàng',N'Toàn chuỗi'),
-(2,N'Giảm 30% Trà Trái Cây Tuyết',N'Giảm giá','SNOW30',N'Giảm tối đa 30.000₫.','🍉',30,'percent',30000,89000,'2026-07-10','2026-07-20',N'Đang diễn ra',N'Tất cả khách hàng',N'Toàn chuỗi'),
-(3,N'Freeship 0đ Cuối Tuần','Freeship','FREESHIPW',N'Freeship 5km, hạng Bạc trở lên.','🚚',100,'percent',15000,0,'2026-08-05','2026-08-07',N'Sắp diễn ra',N'Hạng Bạc trở lên',N'Toàn chuỗi'),
+(1,N'Mua 1 Tặng 1 Trà Cam Sả',N'Mua 1 Tặng 1','CAMSA11',N'Đơn tại quầy & online 14:00–17:00.','🍊',100,'percent',45000,45000,'2026-08-01','2026-08-31',N'Đang diễn ra',N'Tất cả khách hàng',N'Toàn chuỗi'),
+(2,N'Giảm 30% Trà Trái Cây Tuyết',N'Giảm giá','SNOW30',N'Giảm tối đa 30.000₫.','🍉',30,'percent',30000,89000,'2026-08-01','2026-08-31',N'Đang diễn ra',N'Tất cả khách hàng',N'Toàn chuỗi'),
+(3,N'Freeship 0đ Cuối Tuần','Freeship','FREESHIPW',N'Freeship 5km, hạng Bạc trở lên.','🚚',100,'percent',15000,0,'2026-08-05','2026-08-07',N'Đang diễn ra',N'Hạng Bạc trở lên',N'Toàn chuỗi'),
 (4,N'Tặng Topping Trái Cây Dầm',N'Tặng topping','TOPPINGFREE',N'Tặng topping đơn từ 69.000₫.','🍓',NULL,NULL,NULL,69000,'2026-06-01','2026-06-30',N'Đã kết thúc',N'Tất cả khách hàng',N'Toàn chuỗi'),
 (5,N'Flash Sale 15h Vàng','Flash Sale',NULL,N'Giảm giá 15:00–16:00.',NULL,NULL,NULL,NULL,NULL,'2026-07-01','2026-12-31',N'Đang chạy',N'Tất cả khách hàng',N'Toàn chuỗi'),
 (6,N'Happy Hour Trà Tuyết','Happy Hour',NULL,N'T2–T6 · 14:00–16:00.',NULL,NULL,NULL,NULL,NULL,'2026-07-01','2026-12-31',N'Đang chạy',N'Hạng Bạc trở lên','Q1, Q3, Q7'),
 (7,N'Mua 2 Tặng 1 Cam Sả',N'Mua 2 Tặng 1',NULL,N'Áp dụng cho khách mới.',NULL,NULL,NULL,NULL,NULL,'2026-08-01','2026-08-07',N'Lên lịch',N'Khách mới',N'Toàn chuỗi'),
 (8,N'Combo Trà + Bánh 79K','Combo',NULL,N'Combo 1 trà + 1 bánh 79.000₫.',NULL,NULL,NULL,NULL,NULL,'2026-06-01','2026-06-30',N'Kết thúc',N'Tất cả khách hàng',N'Hà Nội, Đà Nẵng');
+INSERT INTO promotions (id,title,type,code,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope,voucher_type) VALUES
+(9,N'Mã 1 lần – Giảm 10%','Giảm giá','SINGLE10',N'Mã dùng 1 lần cho mỗi SĐT.','🎟️',10,'percent',10000,0,'2026-08-01','2026-08-31',N'Đang diễn ra',N'Tất cả khách hàng',N'Toàn chuỗi','single_use');
 SET IDENTITY_INSERT promotions OFF;
 
 -- ORDERS

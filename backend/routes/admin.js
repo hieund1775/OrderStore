@@ -267,10 +267,14 @@
  *     responses: { 201: { description: Created } }
  */
 import { Router } from 'express';
+import crypto from 'crypto';
 import db from '../config/db.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = Router();
-router.use((req, res, next) => { /* TODO: JWT */ next(); });
+
+// Toàn bộ /admin/* (trừ POST /admin/login đã nằm trong routes/auth.js) cần JWT + RBAC
+router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier'));
 
 // ═══════════ DASHBOARD ═══════════
 
@@ -292,10 +296,9 @@ router.get('/dashboard/kpi', async (req, res) => {
 
 router.get('/dashboard/urgent', async (req,res) => {
   try {
-    const [a]=await db.query('SELECT COUNT(*) AS v FROM ingredients WHERE stock < safe_level * 0.3');
     const [b]=await db.query('SELECT COUNT(*) AS v FROM products WHERE is_available = 0');
     const [c]=await db.query("SELECT COUNT(*) AS v FROM order_status_history WHERE status=N'Đang chuẩn bị' AND id IN (SELECT MAX(id) FROM order_status_history GROUP BY order_id)");
-    res.json({lowStock:a[0].v,paused:b[0].v,preparing:c[0].v});
+    res.json({paused:b[0].v,preparing:c[0].v});
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
@@ -349,15 +352,31 @@ router.get('/orders/:id', async (req,res) => {
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
-router.put('/orders/:id/status', async (req,res) => {
+const updateOrderStatus = async (req, res) => {
+  const { status, note } = req.body;
+  const v = ['Chờ xác nhận', 'Đã xác nhận', 'Đang chuẩn bị', 'Đang giao', 'Hoàn thành', 'Đã hủy'];
+  if (!v.some((s) => s === status)) return res.status(400).json({ error: 'Trạng thái không hợp lệ' });
   try {
-    const {status,note,changed_by}=req.body;
-    const v=['Chờ xác nhận','Đã xác nhận','Đang chuẩn bị','Đang giao','Hoàn thành','Đã hủy'];
-    if(!v.some(s=>s===status)) return res.status(400).json({error:'Trạng thái không hợp lệ'});
-    await db.query('INSERT INTO order_status_history (order_id,status,note,changed_by) VALUES (?,?,?,?)',[req.params.id,status,note||null,changed_by||null]);
-    res.json({message:`Đơn hàng → ${status}`});
-  } catch(err) { res.status(500).json({error:err.message}); }
-});
+    const result = await db.transaction(async (tx) => {
+      const [rows] = await tx.query('SELECT 1 AS x FROM orders WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) throw new Error('Không tìm thấy đơn hàng');
+      await tx.query(
+        'INSERT INTO order_status_history (order_id, status, note, changed_by, created_at) VALUES (?, ?, ?, ?, GETDATE())',
+        [req.params.id, status, note || null, req.user.sub],
+      );
+      if (status === 'Đang chuẩn bị') {
+        await tx.query('UPDATE orders SET kitchen_notified_at = GETDATE(), updated_at = GETDATE() WHERE id = ?', [req.params.id]);
+      }
+      return { order_id: Number(req.params.id), status };
+    });
+    res.json({ ...result, message: `Đơn hàng → ${status}` });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+router.put('/orders/:id/status', updateOrderStatus);
+router.patch('/orders/:id/status', updateOrderStatus);
 
 router.put('/orders/:id/cancel', async (req,res) => {
   try {
@@ -460,15 +479,15 @@ router.put('/branches/:id', async (req,res) => {
 router.get('/promotions', async (req,res) => { try { const [r]=await db.query('SELECT * FROM promotions ORDER BY start_date DESC'); res.json(r); } catch(err){res.status(500).json({error:err.message});} });
 router.post('/promotions', async (req,res) => {
   try {
-    const {title,type,code,description,rule,emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,audience,scope}=req.body;
+    const {title,type,code,description,rule,emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,audience,scope,voucher_type,usage_limit}=req.body;
     const st=new Date(start_date)>new Date()?'Lên lịch':new Date(end_date)<new Date()?'Đã kết thúc':'Đang diễn ra';
-    const [r]=await db.query('INSERT INTO promotions (title,type,code,description,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[title,type,code||null,description||null,rule||null,emoji||null,discount_value||null,discount_type||null,max_discount||null,min_order||null,start_date,end_date,st,audience||null,scope||null]);
+    const [r]=await db.query('INSERT INTO promotions (title,type,code,description,[rule],emoji,discount_value,discount_type,max_discount,min_order,start_date,end_date,status,audience,scope,voucher_type,usage_limit) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[title,type,code||null,description||null,rule||null,emoji||null,discount_value||null,discount_type||null,max_discount||null,min_order||null,start_date,end_date,st,audience||null,scope||null,voucher_type||'time_bounded',usage_limit||null]);
     res.status(201).json({id:r[0].id,message:'Đã tạo KM'});
   } catch(err) { if(err.message&&err.message.includes('UNIQUE')) return res.status(409).json({error:'Mã KM đã tồn tại'}); res.status(500).json({error:err.message}); }
 });
 router.put('/promotions/:id', async (req,res) => {
   try {
-    const fields=[{name:'rule',sql:'[rule]'},'title','type','code','description','emoji','discount_value','discount_type','max_discount','min_order','start_date','end_date','status','audience','scope','is_active'];
+    const fields=[{name:'rule',sql:'[rule]'},'title','type','code','description','emoji','discount_value','discount_type','max_discount','min_order','start_date','end_date','status','audience','scope','is_active','voucher_type','usage_limit'];
     const sets=[],params=[]; for(const f of fields){
       const fn=typeof f==='string'?f:f.name; const fs=typeof f==='string'?f:f.sql;
       if(req.body[fn]!==undefined){sets.push(`${fs}=?`);params.push(req.body[fn]);}
@@ -495,13 +514,31 @@ router.post('/inventory/:id/log', async (req,res) => {
 // ═══════════ KITCHEN ═══════════
 router.get('/kitchen/orders', async (req,res) => {
   try {
-    const [orders]=await db.query("SELECT o.id,o.order_code,o.order_type,o.customer_name,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Chờ xác nhận',N'Đã xác nhận',N'Đang chuẩn bị') ORDER BY o.created_at");
+    const [orders]=await db.query("SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.table_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Chờ xác nhận',N'Đã xác nhận',N'Đang chuẩn bị') ORDER BY o.created_at");
     for(const o of orders){const [items]=await db.query("SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id=oi.id FOR JSON PATH) AS toppings FROM order_items oi WHERE oi.order_id=?",[o.id]);o.items=items.map(i=>{let t=[];try{t=JSON.parse(i.toppings||'[]');}catch{}return{...i,toppings:t};});}
     res.json(orders);
   } catch(err) { res.status(500).json({error:err.message}); }
 });
 
 // ═══════════ REPORTS ═══════════
+router.get('/reports/kpi-summary', async (req,res) => {
+  try {
+    const {from,to}=req.query; const df=from||new Date().toISOString().split('T')[0]; const dt=to||new Date().toISOString().split('T')[0];
+    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [cancel]=await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[df,dt]);
+    const totalOrders=ord[0].total+cancel[0].v;
+    res.json({
+      period:{from:df,to:dt},
+      revenue:rev[0].v,
+      total_orders:ord[0].total,
+      avg_order:Math.round(ord[0].avg),
+      cancelled:cancel[0].v,
+      cancel_rate:totalOrders>0?Number(((cancel[0].v/totalOrders)*100).toFixed(1)):0,
+    });
+  } catch(err) { res.status(500).json({error:err.message}); }
+});
+
 router.get('/reports/summary', async (req,res) => {
   try {
     const {from,to}=req.query; const df=from||new Date().toISOString().split('T')[0]; const dt=to||new Date().toISOString().split('T')[0];
@@ -527,6 +564,58 @@ router.get('/notifications', async (req,res) => { try { const [r]=await db.query
 router.post('/notifications', async (req,res) => {
   try { const {user_id,type,title,body,link}=req.body; const [r]=await db.query('INSERT INTO notifications (user_id,type,title,body,link) OUTPUT INSERTED.id VALUES (?,?,?,?,?)',[user_id||null,type,title,body||null,link||null]); res.status(201).json({id:r[0].id,message:'Đã gửi'}); }
   catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// ═══════════ TABLES & QR (CRUD) ═══════════
+router.get('/tables', async (req, res) => {
+  try {
+    const [r] = await db.query(
+      `SELECT t.id, t.store_id, s.name AS store_name, t.name, t.qr_code_token, t.is_active
+       FROM tables t JOIN stores s ON s.id = t.store_id ORDER BY t.store_id, t.id`,
+    );
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/tables', async (req, res) => {
+  try {
+    const { store_id, name } = req.body;
+    if (!store_id || !name) return res.status(400).json({ error: 'Thiếu store_id hoặc name' });
+    const token = crypto.randomBytes(16).toString('hex');
+    const [r] = await db.query(
+      'INSERT INTO tables (store_id, name, qr_code_token, is_active) OUTPUT INSERTED.* VALUES (?, ?, ?, 1)',
+      [store_id, name, token],
+    );
+    res.status(201).json(r[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.put('/tables/:id', async (req, res) => {
+  try {
+    const { name, is_active } = req.body;
+    await db.query(
+      'UPDATE tables SET name = ?, is_active = ? WHERE id = ?',
+      [name ?? null, is_active ?? 1, req.params.id],
+    );
+    res.json({ message: 'Đã cập nhật bàn' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.delete('/tables/:id', async (req, res) => {
+  try {
+    const [, affected] = await db.query('DELETE FROM tables WHERE id = ?', [req.params.id]);
+    if (affected === 0) return res.status(404).json({ error: 'Không tìm thấy bàn' });
+    res.json({ message: 'Đã xóa bàn' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════ PRINT TRACKING ═══════════
+router.post('/orders/:id/print', async (req, res) => {
+  try {
+    const [, affected] = await db.query(
+      'UPDATE orders SET is_printed = 1, updated_at = GETDATE() WHERE id = ?',
+      [req.params.id],
+    );
+    if (affected === 0) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+    res.json({ message: 'Đã đánh dấu in hóa đơn' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 export default router;
