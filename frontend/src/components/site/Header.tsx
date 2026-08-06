@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
+import { getCustomerToken, getCustomerUser, setCustomerToken, setCustomerUser, clearCustomerToken } from '@/lib/api';
 import { brand, notifications, products, searchSuggestions, stores, vnd } from '@/lib/data';
 
 const navItems = [
@@ -289,20 +290,35 @@ function NotificationButton() {
 }
 
 function ProfileButton() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken());
   const [phone, setPhone] = useState('');
-  const [userName, setUserName] = useState('');
-  const [userTier, setUserTier] = useState('Đồng');
+  const [userName, setUserName] = useState(() => getCustomerUser()?.fullname || '');
+  const [userTier, setUserTier] = useState(() => getCustomerUser()?.tier || 'Đồng');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [demoOtp, setDemoOtp] = useState('');
+  const [nameInput, setNameInput] = useState('');
 
   const API_BASE = 'http://localhost:5000';
 
   async function handleSendOtp() {
+    const name = nameInput.trim();
+    if (!name) {
+      setError('Vui lòng nhập tên của bạn');
+      return;
+    }
+    if (name.length < 2) {
+      setError('Tên quá ngắn, vui lòng nhập họ tên đầy đủ');
+      return;
+    }
+    // Chỉ cho phép chữ cái (có dấu tiếng Việt), khoảng trắng và dấu nháy đơn
+    if (!/^[\p{L}\s']+$/u.test(name)) {
+      setError('Tên không được chứa số hoặc ký tự đặc biệt');
+      return;
+    }
     if (!phone || phone.replace(/\s/g, '').length < 10) {
       setError('Vui lòng nhập số điện thoại hợp lệ (ít nhất 10 số)');
       return;
@@ -313,7 +329,7 @@ function ProfileButton() {
       const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, fullname: nameInput.trim() }),
       });
       const data = await res.json();
       if (data.error) {
@@ -341,12 +357,14 @@ function ProfileButton() {
       const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code: otp }),
+        body: JSON.stringify({ phone, code: otp, fullname: nameInput.trim() }),
       });
       const data = await res.json();
       if (data.error) {
         setError(data.error);
       } else {
+        setCustomerToken(data.token);
+        setCustomerUser(data.user);
         setUserName(data.user.fullname);
         setUserTier(data.user.tier);
         setLoggedIn(true);
@@ -359,6 +377,7 @@ function ProfileButton() {
   }
 
   function resetLogin() {
+    clearCustomerToken();
     setLoggedIn(false);
     setPhone('');
     setOtp('');
@@ -367,6 +386,7 @@ function ProfileButton() {
     setOtpSent(false);
     setDemoOtp('');
     setUserName('');
+    setNameInput('');
   }
 
   if (!loggedIn) {
@@ -387,6 +407,11 @@ function ProfileButton() {
             {step === 'phone' ? (
               <>
                 <Input
+                  placeholder="Tên của bạn"
+                  value={nameInput}
+                  onChange={(e) => { setNameInput(e.target.value); setError(''); }}
+                />
+                <Input
                   placeholder="Số điện thoại"
                   inputMode="tel"
                   value={phone}
@@ -403,7 +428,7 @@ function ProfileButton() {
                   Tiếp tục với Google
                 </Button>
                 <p className="text-muted-foreground text-center text-xs">
-                  Nhập SĐT để nhận mã OTP xác thực.
+                  Nhập tên & SĐT để nhận mã OTP xác thực.
                 </p>
               </>
             ) : (

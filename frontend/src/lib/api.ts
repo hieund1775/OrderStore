@@ -90,3 +90,38 @@ export function logout() {
     window.location.href = '/admin/login';
   }
 }
+
+// ─── Customer auth helpers ───
+const CUSTOMER_TOKEN_KEY = 'teaplus_customer_token';
+const CUSTOMER_USER_KEY = 'teaplus_customer_user';
+
+export function getCustomerToken() {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(CUSTOMER_TOKEN_KEY);
+}
+
+export function setCustomerToken(token: string) {
+  window.localStorage.setItem(CUSTOMER_TOKEN_KEY, token);
+}
+
+export function clearCustomerToken() {
+  window.localStorage.removeItem(CUSTOMER_TOKEN_KEY);
+  window.localStorage.removeItem(CUSTOMER_USER_KEY);
+}
+
+export function getCustomerUser() {
+  if (typeof window === 'undefined') return null;
+  const stored = window.localStorage.getItem(CUSTOMER_USER_KEY);
+  if (stored) {
+    try { return JSON.parse(stored); } catch { return null; }
+  }
+  return null;
+}
+
+export function setCustomerUser(u: { id: number; fullname: string; phone: string; tier: string; points: number } | null) {
+  if (u) {
+    window.localStorage.setItem(CUSTOMER_USER_KEY, JSON.stringify(u));
+  } else {
+    window.localStorage.removeItem(CUSTOMER_USER_KEY);
+  }
+}
