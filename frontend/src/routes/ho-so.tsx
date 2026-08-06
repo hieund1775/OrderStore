@@ -110,7 +110,7 @@ function Profile() {
                     <RotateCcw className="size-4" /> Đặt lại đơn này
                   </Button>
                   <Button asChild variant="outline" size="sm">
-                    <Link to="/theo-doi-don">Xem chi tiết</Link>
+                    <Link to="/theo-doi-don" search={{ code: undefined }}>Xem chi tiết</Link>
                   </Button>
                 </div>
               </article>

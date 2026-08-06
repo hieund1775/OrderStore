@@ -290,9 +290,88 @@ function NotificationButton() {
 
 function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [userName, setUserName] = useState('');
+  const [userTier, setUserTier] = useState('Đồng');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [demoOtp, setDemoOtp] = useState('');
+
+  const API_BASE = 'http://localhost:5000';
+
+  async function handleSendOtp() {
+    if (!phone || phone.replace(/\s/g, '').length < 10) {
+      setError('Vui lòng nhập số điện thoại hợp lệ (ít nhất 10 số)');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setStep('otp');
+        setOtpSent(true);
+        setDemoOtp(data.demo_otp || '');
+      }
+    } catch (e) {
+      setError('Không thể kết nối đến máy chủ');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!otp || otp.length < 6) {
+      setError('Vui lòng nhập đủ 6 số mã OTP');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code: otp }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setUserName(data.user.fullname);
+        setUserTier(data.user.tier);
+        setLoggedIn(true);
+      }
+    } catch (e) {
+      setError('Không thể kết nối đến máy chủ');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetLogin() {
+    setLoggedIn(false);
+    setPhone('');
+    setOtp('');
+    setStep('phone');
+    setError('');
+    setOtpSent(false);
+    setDemoOtp('');
+    setUserName('');
+  }
+
   if (!loggedIn) {
     return (
-      <Dialog>
+      <Dialog onOpenChange={(open) => { if (!open) { setStep('phone'); setError(''); setOtp(''); setOtpSent(false); } }}>
         <DialogTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-full" aria-label="Tài khoản">
             <User className="size-5" />
@@ -300,38 +379,80 @@ function ProfileButton() {
         </DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-display text-center">Đăng nhập / Đăng ký</DialogTitle>
+            <DialogTitle className="font-display text-center">
+              {step === 'phone' ? 'Đăng nhập / Đăng ký' : 'Nhập mã OTP'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="Số điện thoại" inputMode="tel" />
-            <Button variant="hero" className="w-full" onClick={() => setLoggedIn(true)}>
-              Nhận mã OTP
-            </Button>
-            <div className="text-muted-foreground flex items-center gap-3 text-xs">
-              <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
-            </div>
-            <Button variant="outline" className="w-full" onClick={() => setLoggedIn(true)}>
-              Tiếp tục với Google
-            </Button>
-            <p className="text-muted-foreground text-center text-xs">
-              Tích điểm tự động cho mọi đơn hàng khi đăng nhập.
-            </p>
+            {step === 'phone' ? (
+              <>
+                <Input
+                  placeholder="Số điện thoại"
+                  inputMode="tel"
+                  value={phone}
+                  onChange={(e) => { setPhone(e.target.value); setError(''); }}
+                />
+                {error && <p className="text-berry text-xs">{error}</p>}
+                <Button variant="hero" className="w-full" onClick={handleSendOtp} disabled={loading}>
+                  {loading ? 'Đang gửi mã…' : 'Nhận mã OTP'}
+                </Button>
+                <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                  <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
+                </div>
+                <Button variant="outline" className="w-full" disabled>
+                  Tiếp tục với Google
+                </Button>
+                <p className="text-muted-foreground text-center text-xs">
+                  Nhập SĐT để nhận mã OTP xác thực.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-muted-foreground text-center text-sm">
+                  Mã OTP đã được gửi đến <strong>{phone}</strong>
+                </p>
+                {demoOtp && (
+                  <p className="text-leaf text-center text-xs font-semibold bg-leaf/10 rounded py-1">
+                    🔢 Demo OTP: {demoOtp}
+                  </p>
+                )}
+                <Input
+                  placeholder="Nhập mã OTP 6 số"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                  className="text-center text-lg tracking-[0.3em]"
+                />
+                {error && <p className="text-berry text-xs">{error}</p>}
+                <Button variant="hero" className="w-full" onClick={handleVerifyOtp} disabled={loading}>
+                  {loading ? 'Đang xác thực…' : 'Xác nhận'}
+                </Button>
+                <button
+                  className="text-muted-foreground text-xs text-center w-full underline"
+                  onClick={() => { setStep('phone'); setError(''); setOtp(''); setOtpSent(false); }}
+                >
+                  Quay lại
+                </button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
     );
   }
+  const initial = userName.charAt(0).toUpperCase();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full" aria-label="Tài khoản">
           <span className="gradient-warm text-primary-foreground flex size-7 items-center justify-center rounded-full text-xs font-bold">
-            MT
+            {initial}
           </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>Minh Trang · Hạng Vàng</DropdownMenuLabel>
+        <DropdownMenuLabel>{userName} · Hạng {userTier}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
@@ -340,10 +461,10 @@ function ProfileButton() {
           <Link to="/ho-so">QR tích điểm</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/theo-doi-don">Theo dõi đơn hàng</Link>
+          <Link to="/theo-doi-don" search={{ code: undefined }}>Theo dõi đơn hàng</Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setLoggedIn(false)}>Đăng xuất</DropdownMenuItem>
+        <DropdownMenuItem onClick={resetLogin}>Đăng xuất</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
