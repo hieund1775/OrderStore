@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Leaf, Lock, Phone, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiPost, setToken } from "@/lib/api";
+import { apiPost, getToken, setToken, getUser, setUser } from "@/lib/api";
 import { brand } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/login")({
@@ -23,6 +23,17 @@ function AdminLogin() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const existing = getUser() || getToken();
+    if (existing) {
+      navigate({ to: "/admin" });
+    } else {
+      setChecking(false);
+    }
+  }, [navigate]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +48,7 @@ function AdminLogin() {
         password,
       });
       setToken(res.token);
+      if (res.user) setUser(res.user as any);
       toast.success(`Xin chào ${res.user.fullname}`);
       navigate({ to: "/admin" });
     } catch (err) {
@@ -44,6 +56,14 @@ function AdminLogin() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Đang kiểm tra...</p>
+      </div>
+    );
   }
 
   return (
