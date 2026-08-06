@@ -3,7 +3,7 @@ import { u as require_react } from "../_libs/@floating-ui/react-dom+[...].mjs";
 import { P as require_jsx_runtime } from "../_libs/@radix-ui/react-alert-dialog+[...].mjs";
 import { r as cn, t as Button } from "./button-CZwUJQdE.mjs";
 import { t as Badge } from "./badge-Csfx8X-2.mjs";
-import { C as Plus, U as Heart, f as Star, ut as Check, v as Settings2 } from "../_libs/lucide-react.mjs";
+import { C as Plus, W as Heart, dt as Check, f as Star, v as Settings2 } from "../_libs/lucide-react.mjs";
 import { n as CheckboxIndicator, t as Checkbox$1 } from "../_libs/@radix-ui/react-checkbox+[...].mjs";
 import { _ as vnd, d as sizeOptions, g as toppingOptions, i as iceOptions, m as tagLabel, p as sugarOptions, t as baseOptions } from "./data-Z_klJ5jj.mjs";
 import { n as toast } from "../_libs/sonner.mjs";

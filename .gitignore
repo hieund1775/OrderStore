@@ -1,31 +1,75 @@
-# Ignore Order.md as requested
-Order.md
-Order2.md
+# ==========================================
+# GITIGNORE — ORDER STORE (TEA PLUS / JUICEBOX)
+# ==========================================
 
-# Dependencies
-node_modules/
-.pnpm-store/
+# ------------------------------------------
+# 1. Internal Drafts & AI Prompts (Private)
+# ------------------------------------------
+Order*.md
+Order2*.md
+JUICY_PROMPT.md
+Requirment.md
+ARCHITECTURE.md
+plan_architecture/*
+!plan_architecture/plan.md
+!plan_architecture/testing.md
+plan/
 
-# Production / Build
-dist/
-build/
-*.log
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.production.local
-
-# IDE & OS files
-.DS_Store
+# ------------------------------------------
+# 2. AI Agents & Editor Settings
+# ------------------------------------------
+.agents/
+.claude/
+.cursorrules
+skills-lock.json
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 
-# Archive files
+# ------------------------------------------
+# 3. Dependencies
+# ------------------------------------------
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+.pnpm-store/
+
+# ------------------------------------------
+# 4. Build & Output Directories
+# ------------------------------------------
+dist/
+build/
+**/dist/
+**/build/
+.tanstack/
+.lovable/
+*.tsbuildinfo
+coverage/
+
+# ------------------------------------------
+# 5. Environment & Sensitive Configs
+# ------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+
+# ------------------------------------------
+# 6. Logs & Temporary Files
+# ------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.lockb
+
+# ------------------------------------------
+# 7. Compressed & Archive Files
+# ------------------------------------------
 *.rar
 *.zip
 *.7z
-
-# Claude Code local config
-.claude/
+*.gz

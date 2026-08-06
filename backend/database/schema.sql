@@ -65,7 +65,7 @@ CREATE TABLE products (
     base_tea     NVARCHAR(100) NOT NULL,
     description  NVARCHAR(MAX) NULL,
     price        INT NOT NULL,
-    image_url    NVARCHAR(500) NULL,
+    image_url    NVARCHAR(MAX) NULL,
     rating       DECIMAL(2,1) NOT NULL DEFAULT 0,
     review_count INT NOT NULL DEFAULT 0,
     calories     INT NOT NULL DEFAULT 0,
@@ -87,11 +87,23 @@ CREATE TABLE ice_options (id INT IDENTITY(1,1) PRIMARY KEY, label NVARCHAR(50) N
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[toppings]') AND type = 'U')
 CREATE TABLE toppings (id INT IDENTITY(1,1) PRIMARY KEY, name NVARCHAR(150) NOT NULL, price INT NOT NULL, is_available BIT NOT NULL DEFAULT 1, sort_order INT NOT NULL DEFAULT 0);
 
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[tables]') AND type = 'U')
+CREATE TABLE tables (
+    id             INT IDENTITY(1,1) PRIMARY KEY,
+    store_id       INT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    name           NVARCHAR(100) NOT NULL,
+    qr_code_token  NVARCHAR(100) NOT NULL UNIQUE,
+    is_active      BIT NOT NULL DEFAULT 1,
+    created_at     DATETIME2 NOT NULL DEFAULT GETDATE()
+);
+
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[promotions]') AND type = 'U')
 CREATE TABLE promotions (
     id INT IDENTITY(1,1) PRIMARY KEY, title NVARCHAR(300) NOT NULL, type NVARCHAR(100) NOT NULL,
     code NVARCHAR(50) NULL, description NVARCHAR(MAX) NULL, [rule] NVARCHAR(MAX) NULL, emoji NVARCHAR(10) NULL,
     discount_value INT NULL, discount_type NVARCHAR(20) NULL CHECK(discount_type IN ('percent','fixed')),
+    voucher_type NVARCHAR(30) NOT NULL DEFAULT 'time_bounded' CHECK(voucher_type IN ('single_use','time_bounded')),
+    usage_limit INT NULL, used_count INT NOT NULL DEFAULT 0,
     max_discount INT NULL, min_order INT NULL, start_date DATE NOT NULL, end_date DATE NOT NULL,
     status NVARCHAR(30) NOT NULL DEFAULT N'Lên lịch' CHECK(status IN (N'Sắp diễn ra',N'Đang diễn ra',N'Đã kết thúc',N'Lên lịch',N'Đang chạy',N'Kết thúc')),
     audience NVARCHAR(200) NULL, scope NVARCHAR(200) NULL, is_active BIT NOT NULL DEFAULT 1,
@@ -109,14 +121,25 @@ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[or
 CREATE TABLE orders (
     id INT IDENTITY(1,1) PRIMARY KEY, order_code NVARCHAR(20) NOT NULL UNIQUE,
     user_id INT NULL REFERENCES users(id), store_id INT NOT NULL REFERENCES stores(id),
+    table_id INT NULL REFERENCES tables(id), location_name NVARCHAR(200) NULL,
     order_type NVARCHAR(20) NOT NULL DEFAULT 'Take-away' CHECK(order_type IN ('Delivery','Take-away','POS')),
     payment_method NVARCHAR(20) NOT NULL DEFAULT 'COD' CHECK(payment_method IN ('COD','VietQR','MoMo','ZaloPay')),
     customer_name NVARCHAR(120) NOT NULL, customer_phone NVARCHAR(20) NOT NULL,
     delivery_addr NVARCHAR(300) NULL, voucher_code NVARCHAR(50) NULL,
     discount_amount INT NOT NULL DEFAULT 0, points_used INT NOT NULL DEFAULT 0, points_earned INT NOT NULL DEFAULT 0,
     subtotal INT NOT NULL, total INT NOT NULL,
+    is_printed BIT NOT NULL DEFAULT 0, kitchen_notified_at DATETIME2 NULL,
     note NVARCHAR(500) NULL, cancel_reason NVARCHAR(300) NULL,
     created_at DATETIME2 NOT NULL DEFAULT GETDATE(), updated_at DATETIME2 NOT NULL DEFAULT GETDATE()
+);
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[voucher_usage_history]') AND type = 'U')
+CREATE TABLE voucher_usage_history (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    promotion_id INT NOT NULL REFERENCES promotions(id),
+    user_phone NVARCHAR(20) NOT NULL,
+    order_id INT NOT NULL REFERENCES orders(id),
+    used_at DATETIME2 NOT NULL DEFAULT GETDATE()
 );
 
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[order_items]') AND type = 'U')

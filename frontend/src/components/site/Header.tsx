@@ -47,9 +47,7 @@ const navItems = [
   { to: '/gioi-thieu', label: 'Giới thiệu' },
   { to: '/menu', label: 'Menu' },
   { to: '/cua-hang', label: 'Cửa hàng' },
-  { to: '/su-kien', label: 'Sự kiện' },
   { to: '/tuyen-dung', label: 'Tuyển dụng' },
-  { to: '/hoi-vien', label: 'Thẻ hội viên' },
 ] as const;
 
 function Logo() {

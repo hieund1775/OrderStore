@@ -4,10 +4,9 @@ import {
   ClipboardList,
   ChefHat,
   UtensilsCrossed,
-  Boxes,
+  QrCode,
   Store,
   Megaphone,
-  Users,
   BarChart3,
   Bell,
   Settings,
@@ -21,11 +20,10 @@ export const adminNav = [
   { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
   { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList },
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat },
+  { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode },
   { to: '/admin/thuc-don', label: 'Thực đơn', icon: UtensilsCrossed },
-  { to: '/admin/kho', label: 'Tồn kho & Nguyên liệu', icon: Boxes },
   { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store },
-  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Marketing', icon: Megaphone },
-  { to: '/admin/khach-hang', label: 'Khách hàng & Loyalty', icon: Users },
+  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone },
   { to: '/admin/bao-cao', label: 'Báo cáo & Thống kê', icon: BarChart3 },
   { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell },
   { to: '/admin/cai-dat', label: 'Cài đặt hệ thống', icon: Settings },
@@ -56,7 +54,7 @@ export function AdminSidebar({
         {!collapsed && (
           <div className="min-w-0">
             <p className="font-display truncate text-sm font-bold">Trà Trái Cây Tô Admin</p>
-            <p className="text-muted-foreground truncate text-[11px]">Bảng điều khiển v3.0</p>
+            <p className="text-muted-foreground truncate text-[11px]">Bảng điều khiển v4.0</p>
           </div>
         )}
         <button

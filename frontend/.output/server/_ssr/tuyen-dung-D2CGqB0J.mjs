@@ -4,7 +4,7 @@ import { P as require_jsx_runtime } from "../_libs/@radix-ui/react-alert-dialog+
 import { t as Button } from "./button-CZwUJQdE.mjs";
 import { t as Input } from "./input-Cs1vpLuO.mjs";
 import { t as Badge } from "./badge-Csfx8X-2.mjs";
-import { ft as Briefcase, o as Upload } from "../_libs/lucide-react.mjs";
+import { o as Upload, pt as Briefcase } from "../_libs/lucide-react.mjs";
 import { a as jobs, f as stores } from "./data-Z_klJ5jj.mjs";
 import { t as Label } from "./label-Cn9N_lgh.mjs";
 import { n as toast } from "../_libs/sonner.mjs";

@@ -4,7 +4,7 @@ import { P as require_jsx_runtime } from "../_libs/@radix-ui/react-alert-dialog+
 import { r as cn, t as Button } from "./button-CZwUJQdE.mjs";
 import { t as Input } from "./input-Cs1vpLuO.mjs";
 import { t as Badge } from "./badge-Csfx8X-2.mjs";
-import { U as Heart, b as RotateCcw, f as Star, x as QrCode } from "../_libs/lucide-react.mjs";
+import { W as Heart, b as RotateCcw, f as Star, x as QrCode } from "../_libs/lucide-react.mjs";
 import { _ as vnd, c as products, o as notifications, s as orderHistory } from "./data-Z_klJ5jj.mjs";
 import { g as Link } from "../_libs/@tanstack/react-router+[...].mjs";
 import { t as Label } from "./label-Cn9N_lgh.mjs";

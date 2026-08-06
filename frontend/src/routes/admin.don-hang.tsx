@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Eye, Filter, LayoutGrid, List } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Eye, Filter, LayoutGrid, List, Loader2, Printer, XCircle } from "lucide-react";
+import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +23,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -28,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { adminBranches, adminOrders, type AdminOrder } from "@/lib/admin-data";
+import { apiGet, apiPatch, apiPut } from "@/lib/api";
 import { vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/don-hang")({
@@ -48,12 +60,70 @@ export const Route = createFileRoute("/admin/don-hang")({
   component: OrdersPage,
 });
 
-const statuses = ["Tất cả", "Chờ xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành", "Đã hủy"];
+type OrderStatus =
+  | "Chờ xác nhận"
+  | "Đã xác nhận"
+  | "Đang chuẩn bị"
+  | "Đang giao"
+  | "Hoàn thành"
+  | "Đã hủy";
+
+type AdminOrderRow = {
+  id: number;
+  order_code: string;
+  store_id: number;
+  store_name: string;
+  order_type: "Delivery" | "Take-away" | "POS";
+  payment_method: string;
+  customer_name: string;
+  customer_phone: string;
+  location_name: string | null;
+  delivery_addr: string | null;
+  subtotal: number;
+  discount_amount: number;
+  total: number;
+  created_at: string;
+  current_status: OrderStatus;
+};
+
+type OrderItem = {
+  product_name: string;
+  qty: number;
+  size_label: string | null;
+  base_tea: string;
+  sugar_level: string;
+  ice_level: string;
+  note: string | null;
+  unit_price: number;
+  line_total: number;
+  toppings: { name: string; price: number }[];
+};
+
+type AdminOrderFull = AdminOrderRow & {
+  items: OrderItem[];
+  status_history: {
+    status: OrderStatus;
+    note: string | null;
+    changed_by_name: string | null;
+    created_at: string;
+  }[];
+};
+
+const statuses: ("Tất cả" | OrderStatus)[] = [
+  "Tất cả",
+  "Chờ xác nhận",
+  "Đã xác nhận",
+  "Đang chuẩn bị",
+  "Đang giao",
+  "Hoàn thành",
+  "Đã hủy",
+];
 const types = ["Tất cả", "Delivery", "Take-away", "POS"];
 const payments = ["Tất cả", "COD", "VietQR", "MoMo", "ZaloPay"];
 
 const statusTone: Record<string, string> = {
   "Chờ xác nhận": "bg-primary/15 text-primary",
+  "Đã xác nhận": "bg-chart-5/15 text-chart-5",
   "Đang chuẩn bị": "bg-chart-5/15 text-chart-5",
   "Đang giao": "bg-accent text-accent-foreground",
   "Hoàn thành": "bg-leaf/15 text-leaf",
@@ -65,28 +135,64 @@ function OrdersPage() {
   const [status, setStatus] = useState("Tất cả");
   const [type, setType] = useState("Tất cả");
   const [payment, setPayment] = useState("Tất cả");
-  const [branch, setBranch] = useState("all");
+  const [branchId, setBranchId] = useState("all");
   const [q, setQ] = useState("");
+  const [orders, setOrders] = useState<AdminOrderRow[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const filtered = useMemo(
-    () =>
-      adminOrders.filter(
-        (o) =>
-          (status === "Tất cả" || o.status === status) &&
-          (type === "Tất cả" || o.type === type) &&
-          (payment === "Tất cả" || o.payment === payment) &&
-          (branch === "all" || o.branch === adminBranches.find((b) => b.id === branch)?.name) &&
-          (q.trim() === "" ||
-            `${o.id} ${o.customer} ${o.phone}`.toLowerCase().includes(q.toLowerCase())),
-      ),
-    [status, type, payment, branch, q],
-  );
+  useEffect(() => {
+    apiGet<{ id: number; name: string }[]>("/admin/branches")
+      .then(setBranches)
+      .catch(() => setBranches([]));
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (status !== "Tất cả") params.set("status", status);
+      if (branchId !== "all") params.set("store_id", branchId);
+      if (q.trim()) params.set("search", q.trim());
+      const rows = await apiGet<AdminOrderRow[]>(`/admin/orders?${params.toString()}`);
+      setOrders(
+        rows.filter(
+          (o) =>
+            (type === "Tất cả" || o.order_type === type) &&
+            (payment === "Tất cả" || o.payment_method === payment),
+        ),
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không tải được đơn hàng");
+    } finally {
+      setLoading(false);
+    }
+  }, [status, type, payment, branchId, q]);
+
+  useEffect(() => {
+    const t = window.setTimeout(load, 250);
+    return () => window.clearTimeout(t);
+  }, [load]);
+
+  async function setStatusAndReload(orderId: number, next: OrderStatus) {
+    setActionLoading(true);
+    try {
+      await apiPatch(`/admin/orders/${orderId}/status`, { status: next });
+      toast.success(`Đơn #${orderId} → ${next}`);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   return (
     <>
       <AdminPageHeader
         title="Quản lý đơn hàng"
-        desc={`${filtered.length} đơn khớp bộ lọc · cập nhật real-time`}
+        desc={`${orders.length} đơn khớp bộ lọc · cập nhật real-time`}
         actions={
           <div className="bg-muted flex rounded-xl p-1">
             <Button
@@ -117,10 +223,13 @@ function OrdersPage() {
             />
           </div>
           <FilterSelect
-            value={branch}
-            onChange={setBranch}
+            value={branchId}
+            onChange={setBranchId}
             label="Chi nhánh"
-            options={adminBranches.map((b) => ({ v: b.id, l: b.name }))}
+            options={[
+              { v: "all", l: "Tất cả chi nhánh" },
+              ...branches.map((b) => ({ v: String(b.id), l: b.name })),
+            ]}
           />
           <FilterSelect
             value={status}
@@ -143,7 +252,11 @@ function OrdersPage() {
         </CardContent>
       </Card>
 
-      {view === "list" ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : view === "list" ? (
         <Card className="shadow-soft overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
@@ -160,30 +273,37 @@ function OrdersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((o) => (
+                {orders.map((o) => (
                   <TableRow key={o.id}>
-                    <TableCell className="font-medium">{o.id}</TableCell>
+                    <TableCell className="font-medium">{o.order_code}</TableCell>
                     <TableCell>
-                      <p className="text-sm">{o.customer}</p>
-                      <p className="text-muted-foreground text-xs">{o.time}</p>
+                      <p className="text-sm">{o.customer_name}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {new Date(o.created_at).toLocaleString("vi-VN")}
+                      </p>
                     </TableCell>
-                    <TableCell className="hidden text-sm md:table-cell">{o.branch}</TableCell>
-                    <TableCell className="text-sm">{o.type}</TableCell>
-                    <TableCell className="hidden text-sm lg:table-cell">{o.payment}</TableCell>
+                    <TableCell className="hidden text-sm md:table-cell">{o.store_name}</TableCell>
+                    <TableCell className="text-sm">{o.order_type}</TableCell>
+                    <TableCell className="hidden text-sm lg:table-cell">{o.payment_method}</TableCell>
                     <TableCell>
                       <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[o.status]}`}
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[o.current_status]}`}
                       >
-                        {o.status}
+                        {o.current_status}
                       </span>
                     </TableCell>
                     <TableCell className="text-right font-semibold">{vnd(o.total)}</TableCell>
                     <TableCell className="text-right">
-                      <OrderDetail order={o} />
+                      <OrderDetail
+                        orderId={o.id}
+                        onChanged={load}
+                        actionLoading={actionLoading}
+                        setActionLoading={setActionLoading}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
-                {filtered.length === 0 && (
+                {orders.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={8}
@@ -203,20 +323,25 @@ function OrdersPage() {
             <div key={col} className="bg-card rounded-2xl border p-3">
               <p className="mb-3 flex items-center justify-between text-sm font-semibold">
                 {col}
-                <Badge variant="secondary">{filtered.filter((o) => o.status === col).length}</Badge>
+                <Badge variant="secondary">{orders.filter((o) => o.current_status === col).length}</Badge>
               </p>
               <div className="space-y-3">
-                {filtered
-                  .filter((o) => o.status === col)
+                {orders
+                  .filter((o) => o.current_status === col)
                   .map((o) => (
                     <div key={o.id} className="bg-background rounded-xl border p-3">
-                      <p className="text-sm font-semibold">{o.id}</p>
+                      <p className="text-sm font-semibold">{o.order_code}</p>
                       <p className="text-muted-foreground text-xs">
-                        {o.customer} · {o.type}
+                        {o.customer_name} · {o.order_type}
                       </p>
                       <p className="text-primary mt-1 text-sm font-bold">{vnd(o.total)}</p>
                       <div className="mt-2">
-                        <OrderDetail order={o} />
+                        <OrderDetail
+                          orderId={o.id}
+                          onChanged={load}
+                          actionLoading={actionLoading}
+                          setActionLoading={setActionLoading}
+                        />
                       </div>
                     </div>
                   ))}
@@ -256,59 +381,271 @@ function FilterSelect({
   );
 }
 
-function OrderDetail({ order }: { order: AdminOrder }) {
+function toBillOrder(o: AdminOrderFull): BillOrder {
+  return {
+    id: o.id,
+    order_code: o.order_code,
+    store_name: o.store_name,
+    location_name: o.location_name ?? null,
+    customer_name: o.customer_name,
+    customer_phone: o.customer_phone,
+    payment_method: o.payment_method,
+    created_at: o.created_at,
+    items: o.items.map((it) => ({
+      product_name: it.product_name,
+      qty: it.qty,
+      size_label: it.size_label ?? null,
+      note: it.note ?? null,
+      toppings: (it.toppings ?? []).map((t) => ({ name: t.name })),
+      line_total: it.line_total,
+    })),
+    subtotal: o.subtotal,
+    discount_amount: o.discount_amount,
+    total: o.total,
+  };
+}
+
+function OrderDetail({
+  orderId,
+  onChanged,
+  actionLoading,
+  setActionLoading,
+}: {
+  orderId: number;
+  onChanged: () => void;
+  actionLoading: boolean;
+  setActionLoading: (v: boolean) => void;
+}) {
+  const [detail, setDetail] = useState<AdminOrderFull | null>(null);
+  const [billOpen, setBillOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    apiGet<AdminOrderFull>(`/admin/orders/${orderId}`)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Không tải được chi tiết"));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, orderId]);
+
+  async function changeStatus(next: string) {
+    setActionLoading(true);
+    try {
+      await apiPatch(`/admin/orders/${orderId}/status`, { status: next });
+      toast.success(`Đơn #${orderId} → ${next}`);
+      setOpen(false);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleCancel() {
+    setActionLoading(true);
+    try {
+      await apiPut(`/admin/orders/${orderId}/cancel`, {
+        reason: cancelReason.trim() || null,
+      });
+      toast.success("Đã hủy đơn hàng");
+      setCancelOpen(false);
+      setOpen(false);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Hủy đơn thất bại");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  const st = detail?.current_status;
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <Eye className="mr-1 size-4" /> Chi tiết
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Đơn {order.id}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-2">
-            <Info label="Khách hàng" value={order.customer} />
-            <Info label="Số điện thoại" value={order.phone} />
-            <Info label="Chi nhánh" value={order.branch} />
-            <Info label="Loại đơn" value={order.type} />
-            <Info label="Thanh toán" value={order.payment} />
-            <Info label="Trạng thái" value={order.status} />
-          </div>
-          <div className="rounded-xl border p-3">
-            <p className="mb-2 text-xs font-semibold tracking-wide uppercase">Món đã đặt</p>
-            <ul className="space-y-2">
-              {order.items.map((it) => (
-                <li key={it.name} className="flex justify-between gap-3">
-                  <span>
-                    <span className="font-medium">
-                      {it.qty}× {it.name}
+    <>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="sm">
+            <Eye className="mr-1 size-4" /> Chi tiết
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Đơn {detail?.order_code ?? `#${orderId}`}</DialogTitle>
+          </DialogHeader>
+          {!detail ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <Info label="Khách hàng" value={detail.customer_name} />
+                <Info label="Số điện thoại" value={detail.customer_phone} />
+                <Info label="Chi nhánh" value={detail.store_name} />
+                <Info label="Loại đơn" value={detail.order_type} />
+                <Info label="Thanh toán" value={detail.payment_method} />
+                <Info label="Trạng thái" value={st ?? ""} />
+                {detail.location_name && <Info label="Vị trí" value={detail.location_name} />}
+                {detail.delivery_addr && <Info label="Địa chỉ" value={detail.delivery_addr} />}
+              </div>
+              <div className="rounded-xl border p-3">
+                <p className="mb-2 text-xs font-semibold tracking-wide uppercase">Món đã đặt</p>
+                <ul className="space-y-2">
+                  {detail.items.map((it, idx) => (
+                    <li key={idx} className="flex justify-between gap-3">
+                      <span>
+                        <span className="font-medium">
+                          {it.qty}× {it.product_name}
+                        </span>
+                        <span className="text-muted-foreground block text-xs">
+                          {[
+                            it.size_label ? `Size ${it.size_label}` : null,
+                            it.base_tea || null,
+                            it.sugar_level ? `${it.sugar_level} đường` : null,
+                            it.ice_level ? `${it.ice_level} đá` : null,
+                            it.toppings.length > 0 ? it.toppings.map((t) => t.name).join(", ") : null,
+                            it.note ? `(${it.note})` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </span>
+                      </span>
+                      <span className="font-semibold whitespace-nowrap">{vnd(it.line_total)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {detail.status_history.length > 0 && (
+                <div className="rounded-xl border p-3">
+                  <p className="mb-2 text-xs font-semibold tracking-wide uppercase">Lịch sử trạng thái</p>
+                  <ul className="text-muted-foreground space-y-1 text-xs">
+                    {detail.status_history.map((h, idx) => (
+                      <li key={idx} className="flex justify-between gap-2">
+                        <span>
+                          {h.status}
+                          {h.changed_by_name ? ` · ${h.changed_by_name}` : ""}
+                        </span>
+                        <span className="whitespace-nowrap">
+                          {new Date(h.created_at).toLocaleString("vi-VN")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t pt-3">
+                <span className="font-semibold">Tổng thanh toán</span>
+                <span className="text-primary font-display text-lg font-extrabold">
+                  {vnd(detail.total)}
+                  {detail.discount_amount > 0 && (
+                    <span className="text-muted-foreground text-xs font-normal">
+                      {" "}
+                      (giảm {vnd(detail.discount_amount)})
                     </span>
-                    <span className="text-muted-foreground block text-xs">{it.options}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="flex items-center justify-between border-t pt-3">
-            <span className="font-semibold">Tổng thanh toán</span>
-            <span className="text-primary font-display text-lg font-extrabold">
-              {vnd(order.total)}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="hero" className="flex-1">
-              Xác nhận đơn
-            </Button>
-            <Button variant="outline" className="flex-1">
-              Hủy đơn
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {st === "Chờ xác nhận" && (
+                  <Button
+                    variant="hero"
+                    className="flex-1"
+                    disabled={actionLoading}
+                    onClick={() => changeStatus("Đã xác nhận")}
+                  >
+                    Xác nhận đơn
+                  </Button>
+                )}
+                {st === "Đã xác nhận" && (
+                  <Button
+                    variant="hero"
+                    className="flex-1"
+                    disabled={actionLoading}
+                    onClick={() => changeStatus("Đang chuẩn bị")}
+                  >
+                    Bắt đầu làm
+                  </Button>
+                )}
+                {st === "Đang chuẩn bị" && (
+                  <Button
+                    variant="hero"
+                    className="flex-1"
+                    disabled={actionLoading}
+                    onClick={() => changeStatus("Hoàn thành")}
+                  >
+                    Hoàn thành
+                  </Button>
+                )}
+                {st === "Đang giao" && (
+                  <Button
+                    variant="hero"
+                    className="flex-1"
+                    disabled={actionLoading}
+                    onClick={() => changeStatus("Hoàn thành")}
+                  >
+                    Xác nhận giao xong
+                  </Button>
+                )}
+                {st !== "Đã hủy" && st !== "Hoàn thành" && (
+                  <Button
+                    variant="outline"
+                    className="text-berry flex-1"
+                    disabled={actionLoading}
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <XCircle className="mr-1 size-4" /> Hủy đơn
+                  </Button>
+                )}
+                <Button variant="outline" className="flex-1" onClick={() => setBillOpen(true)}>
+                  <Printer className="mr-1 size-4" /> In bill
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <InBillModal
+        order={detail ? toBillOrder(detail) : null}
+        open={billOpen}
+        onClose={() => setBillOpen(false)}
+      />
+
+      <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hủy đơn {detail?.order_code ?? `#${orderId}`}?</AlertDialogTitle>
+            <AlertDialogDescription>Hành động này không thể hoàn tác.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Lý do hủy"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Thoát</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-berry hover:bg-berry/90"
+              disabled={actionLoading}
+              onClick={(e) => {
+                e.preventDefault();
+                handleCancel();
+              }}
+            >
+              Xác nhận hủy
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

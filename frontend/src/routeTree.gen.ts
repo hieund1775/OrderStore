@@ -14,10 +14,8 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
 import { Route as HoSoRouteImport } from './routes/ho-so'
-import { Route as HoiVienRouteImport } from './routes/hoi-vien'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as SuKienRouteImport } from './routes/su-kien'
 import { Route as ThanhToanRouteImport } from './routes/thanh-toan'
 import { Route as TheoDoiDonRouteImport } from './routes/theo-doi-don'
 import { Route as TuyenDungRouteImport } from './routes/tuyen-dung'
@@ -27,11 +25,11 @@ import { Route as AdminBepRouteImport } from './routes/admin.bep'
 import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminChiNhanhRouteImport } from './routes/admin.chi-nhanh'
 import { Route as AdminDonHangRouteImport } from './routes/admin.don-hang'
-import { Route as AdminKhachHangRouteImport } from './routes/admin.khach-hang'
-import { Route as AdminKhoRouteImport } from './routes/admin.kho'
 import { Route as AdminKhuyenMaiRouteImport } from './routes/admin.khuyen-mai'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminThongBaoRouteImport } from './routes/admin.thong-bao'
 import { Route as AdminThucDonRouteImport } from './routes/admin.thuc-don'
+import { Route as AdminViTriRouteImport } from './routes/admin.vi-tri'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,11 +56,6 @@ const HoSoRoute = HoSoRouteImport.update({
   path: '/ho-so',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HoiVienRoute = HoiVienRouteImport.update({
-  id: '/hoi-vien',
-  path: '/hoi-vien',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const MenuRoute = MenuRouteImport.update({
   id: '/menu',
   path: '/menu',
@@ -71,11 +64,6 @@ const MenuRoute = MenuRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SuKienRoute = SuKienRouteImport.update({
-  id: '/su-kien',
-  path: '/su-kien',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ThanhToanRoute = ThanhToanRouteImport.update({
@@ -123,19 +111,14 @@ const AdminDonHangRoute = AdminDonHangRouteImport.update({
   path: '/don-hang',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminKhachHangRoute = AdminKhachHangRouteImport.update({
-  id: '/khach-hang',
-  path: '/khach-hang',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminKhoRoute = AdminKhoRouteImport.update({
-  id: '/kho',
-  path: '/kho',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminKhuyenMaiRoute = AdminKhuyenMaiRouteImport.update({
   id: '/khuyen-mai',
   path: '/khuyen-mai',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminThongBaoRoute = AdminThongBaoRouteImport.update({
@@ -148,6 +131,11 @@ const AdminThucDonRoute = AdminThucDonRouteImport.update({
   path: '/thuc-don',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminViTriRoute = AdminViTriRouteImport.update({
+  id: '/vi-tri',
+  path: '/vi-tri',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -155,10 +143,8 @@ export interface FileRoutesByFullPath {
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
-  '/hoi-vien': typeof HoiVienRoute
   '/menu': typeof MenuRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/su-kien': typeof SuKienRoute
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
@@ -167,11 +153,11 @@ export interface FileRoutesByFullPath {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
-  '/admin/khach-hang': typeof AdminKhachHangRoute
-  '/admin/kho': typeof AdminKhoRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
+  '/admin/login': typeof AdminLoginRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/vi-tri': typeof AdminViTriRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
@@ -179,10 +165,8 @@ export interface FileRoutesByTo {
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
-  '/hoi-vien': typeof HoiVienRoute
   '/menu': typeof MenuRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/su-kien': typeof SuKienRoute
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
@@ -191,11 +175,11 @@ export interface FileRoutesByTo {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
-  '/admin/khach-hang': typeof AdminKhachHangRoute
-  '/admin/kho': typeof AdminKhoRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
+  '/admin/login': typeof AdminLoginRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/vi-tri': typeof AdminViTriRoute
   '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
@@ -205,10 +189,8 @@ export interface FileRoutesById {
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
-  '/hoi-vien': typeof HoiVienRoute
   '/menu': typeof MenuRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/su-kien': typeof SuKienRoute
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
@@ -217,11 +199,11 @@ export interface FileRoutesById {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
-  '/admin/khach-hang': typeof AdminKhachHangRoute
-  '/admin/kho': typeof AdminKhoRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
+  '/admin/login': typeof AdminLoginRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/vi-tri': typeof AdminViTriRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -232,10 +214,8 @@ export interface FileRouteTypes {
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
-    | '/hoi-vien'
     | '/menu'
     | '/sitemap.xml'
-    | '/su-kien'
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
@@ -244,11 +224,11 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
-    | '/admin/khach-hang'
-    | '/admin/kho'
     | '/admin/khuyen-mai'
+    | '/admin/login'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/vi-tri'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -256,10 +236,8 @@ export interface FileRouteTypes {
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
-    | '/hoi-vien'
     | '/menu'
     | '/sitemap.xml'
-    | '/su-kien'
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
@@ -268,11 +246,11 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
-    | '/admin/khach-hang'
-    | '/admin/kho'
     | '/admin/khuyen-mai'
+    | '/admin/login'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/vi-tri'
     | '/admin'
   id:
     | '__root__'
@@ -281,10 +259,8 @@ export interface FileRouteTypes {
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
-    | '/hoi-vien'
     | '/menu'
     | '/sitemap.xml'
-    | '/su-kien'
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
@@ -293,11 +269,11 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
-    | '/admin/khach-hang'
-    | '/admin/kho'
     | '/admin/khuyen-mai'
+    | '/admin/login'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/vi-tri'
     | '/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -307,10 +283,8 @@ export interface RootRouteChildren {
   CuaHangRoute: typeof CuaHangRoute
   GioiThieuRoute: typeof GioiThieuRoute
   HoSoRoute: typeof HoSoRoute
-  HoiVienRoute: typeof HoiVienRoute
   MenuRoute: typeof MenuRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  SuKienRoute: typeof SuKienRoute
   ThanhToanRoute: typeof ThanhToanRoute
   TheoDoiDonRoute: typeof TheoDoiDonRoute
   TuyenDungRoute: typeof TuyenDungRoute
@@ -353,13 +327,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HoSoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/hoi-vien': {
-      id: '/hoi-vien'
-      path: '/hoi-vien'
-      fullPath: '/hoi-vien'
-      preLoaderRoute: typeof HoiVienRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/menu': {
       id: '/menu'
       path: '/menu'
@@ -372,13 +339,6 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/su-kien': {
-      id: '/su-kien'
-      path: '/su-kien'
-      fullPath: '/su-kien'
-      preLoaderRoute: typeof SuKienRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/thanh-toan': {
@@ -444,25 +404,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDonHangRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/khach-hang': {
-      id: '/admin/khach-hang'
-      path: '/khach-hang'
-      fullPath: '/admin/khach-hang'
-      preLoaderRoute: typeof AdminKhachHangRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/kho': {
-      id: '/admin/kho'
-      path: '/kho'
-      fullPath: '/admin/kho'
-      preLoaderRoute: typeof AdminKhoRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/khuyen-mai': {
       id: '/admin/khuyen-mai'
       path: '/khuyen-mai'
       fullPath: '/admin/khuyen-mai'
       preLoaderRoute: typeof AdminKhuyenMaiRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/thong-bao': {
@@ -479,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminThucDonRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/vi-tri': {
+      id: '/admin/vi-tri'
+      path: '/vi-tri'
+      fullPath: '/admin/vi-tri'
+      preLoaderRoute: typeof AdminViTriRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
@@ -488,11 +448,11 @@ interface AdminRouteChildren {
   AdminCaiDatRoute: typeof AdminCaiDatRoute
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
   AdminDonHangRoute: typeof AdminDonHangRoute
-  AdminKhachHangRoute: typeof AdminKhachHangRoute
-  AdminKhoRoute: typeof AdminKhoRoute
   AdminKhuyenMaiRoute: typeof AdminKhuyenMaiRoute
+  AdminLoginRoute: typeof AdminLoginRoute
   AdminThongBaoRoute: typeof AdminThongBaoRoute
   AdminThucDonRoute: typeof AdminThucDonRoute
+  AdminViTriRoute: typeof AdminViTriRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -502,11 +462,11 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCaiDatRoute: AdminCaiDatRoute,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
   AdminDonHangRoute: AdminDonHangRoute,
-  AdminKhachHangRoute: AdminKhachHangRoute,
-  AdminKhoRoute: AdminKhoRoute,
   AdminKhuyenMaiRoute: AdminKhuyenMaiRoute,
+  AdminLoginRoute: AdminLoginRoute,
   AdminThongBaoRoute: AdminThongBaoRoute,
   AdminThucDonRoute: AdminThucDonRoute,
+  AdminViTriRoute: AdminViTriRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -518,10 +478,8 @@ const rootRouteChildren: RootRouteChildren = {
   CuaHangRoute: CuaHangRoute,
   GioiThieuRoute: GioiThieuRoute,
   HoSoRoute: HoSoRoute,
-  HoiVienRoute: HoiVienRoute,
   MenuRoute: MenuRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  SuKienRoute: SuKienRoute,
   ThanhToanRoute: ThanhToanRoute,
   TheoDoiDonRoute: TheoDoiDonRoute,
   TuyenDungRoute: TuyenDungRoute,

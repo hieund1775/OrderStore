@@ -1,46 +1,25 @@
-# Ignore Order.md as requested
-Order.md
-Order2.md
-
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
 .pnpm-store/
 
 # Build
 dist/
 build/
+.tanstack/
+.lovable/
 *.tsbuildinfo
+.output/
+.wrangler/
 
 # Environment
 .env
 .env.local
 .env.*.local
 
-# IDE & OS files
-.DS_Store
-.vscode/
-.idea/
-*.swp
-*.swo
-Thumbs.db
-
 # Logs
-logs/
 *.log
-npm-debug.log*
+logs/
 
-# Coverage
-coverage/
-
-# Bun
-bun.lockb
-
-# Claude & Agent skill files & directories
-.claude/
-.agents/
-*.claude*
-skills-lock.json
-
-./Order2
+# IDE & System
+.DS_Store
+Thumbs.db
