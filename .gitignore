@@ -20,6 +20,7 @@ plan/
 # ------------------------------------------
 .agents/
 .claude/
+CLAUDE.md
 .cursorrules
 skills-lock.json
 .vscode/
