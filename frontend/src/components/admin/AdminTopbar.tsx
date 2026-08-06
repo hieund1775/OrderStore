@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Menu, Search, ShieldCheck } from 'lucide-react';
+import { Bell, ChevronDown, Menu, Search, ShieldCheck, LogOut } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { adminBranches, adminNotifications, adminRoles } from '@/lib/admin-data';
+import { getUser, logout } from '@/lib/api';
 
 export function AdminTopbar({
   branch,
@@ -28,6 +29,9 @@ export function AdminTopbar({
 }) {
   const currentBranch = adminBranches.find((b) => b.id === branch) ?? adminBranches[0];
   const currentRole = adminRoles.find((r) => r.id === role) ?? adminRoles[0];
+  const adminUser = getUser();
+  const initials = adminUser ? adminUser.fullname.split(' ').pop()?.charAt(0)?.toUpperCase() || 'A' : 'NQ';
+  const displayName = adminUser ? adminUser.fullname : 'Hoàng Quân';
 
   return (
     <header className="bg-background/90 sticky top-0 z-30 flex h-16 items-center gap-2 border-b px-4 backdrop-blur md:px-6">
@@ -95,10 +99,10 @@ export function AdminTopbar({
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="gap-2 px-2">
             <span className="bg-gradient-to-br from-primary to-primary-glow text-primary-foreground grid size-8 place-items-center rounded-full text-xs font-bold">
-              NQ
+              {initials}
             </span>
             <span className="hidden text-left leading-tight sm:block">
-              <span className="block text-xs font-semibold">Hoàng Quân</span>
+              <span className="block text-xs font-semibold">{displayName}</span>
               <span className="text-muted-foreground block text-[11px]">{currentRole.label}</span>
             </span>
           </Button>
@@ -122,7 +126,9 @@ export function AdminTopbar({
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuItem>Đăng xuất</DropdownMenuItem>
+          <DropdownMenuItem onSelect={logout}>
+            <LogOut className="size-4 mr-2" /> Đăng xuất
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </header>

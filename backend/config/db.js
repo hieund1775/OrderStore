@@ -62,6 +62,9 @@ async function run(holder, string, params = []) {
 }
 
 const db = {
+  async getPool() {
+    return getPool();
+  },
   async query(string, params = []) {
     return run(await getPool(), string, params);
   },
