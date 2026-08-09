@@ -32,19 +32,22 @@ export function setUser(u: { id: number; fullname: string; phone: string; role: 
   }
 }
 
-export async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> | undefined),
+    ...(options?.headers as Record<string, string>),
   };
-  const token = getToken();
+
+  const customerToken = typeof window !== 'undefined' ? getCustomerToken() : null;
+  const adminToken = typeof window !== 'undefined' ? getToken() : null;
+  const token = path.startsWith('/admin') ? adminToken : customerToken || adminToken;
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    if (res.status === 401 && path !== "/admin/login" && typeof window !== "undefined") {
+    if (res.status === 401 && path.startsWith('/admin') && path !== '/admin/login' && typeof window !== "undefined") {
       clearToken();
       if (window.location.pathname !== "/admin/login") {
         window.location.href = "/admin/login";

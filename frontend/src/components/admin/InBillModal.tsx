@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiPost } from "@/lib/api";
-import { vnd } from "@/lib/data";
+import { fmtDateTime, vnd } from "@/lib/data";
 
 export type BillItem = {
   product_name: string;
@@ -83,7 +83,7 @@ function billHtml(order: BillOrder, qrDataUrl: string | null) {
   <div class="sep"></div>
   <p><strong>Mã đơn:</strong> ${order.order_code}</p>
   <p>${order.location_name ? `<strong>Bàn:</strong> ${order.location_name}` : `<strong>Loại:</strong> ${order.payment_method || "Take-away"}`}</p>
-  <p><strong>Giờ:</strong> ${new Date(order.created_at).toLocaleString("vi-VN")}</p>
+  <p><strong>Giờ:</strong> ${fmtDateTime(order.created_at)}</p>
   ${order.customer_name ? `<p><strong>Khách:</strong> ${order.customer_name}${order.customer_phone ? " · " + order.customer_phone : ""}</p>` : ""}
   <div class="sep"></div>
   <table>${rows}</table>
@@ -177,7 +177,7 @@ export function InBillModal({
                 ? `Bàn: ${order.location_name}`
                 : `Loại: ${order.payment_method || "Take-away"}`}
             </p>
-            <p>Giờ: {new Date(order.created_at).toLocaleString("vi-VN")}</p>
+            <p>Giờ: {fmtDateTime(order.created_at)}</p>
             {order.customer_name && (
               <p>
                 Khách: {order.customer_name}

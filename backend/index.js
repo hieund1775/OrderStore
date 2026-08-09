@@ -8,6 +8,7 @@ import swaggerSpec from './config/swagger.js';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
+import customerAuthRoutes from './routes/customerAuth.js';
 
 dotenv.config();
 
@@ -23,9 +24,17 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000,http:
   .filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 
+// Rate limiters
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
+});
+app.use('/api', generalLimiter);
+
 const sensitiveLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 15 phút' },
@@ -33,6 +42,7 @@ const sensitiveLimiter = rateLimit({
 app.use('/api/orders', sensitiveLimiter);
 app.use('/api/vouchers/apply', sensitiveLimiter);
 app.use('/admin/login', sensitiveLimiter);
+app.use('/api/auth', sensitiveLimiter);
 
 app.use(express.json());
 
@@ -45,8 +55,10 @@ app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 // ─────────────────────────────────────────────
 // Public API           → /api/*
+// Customer Auth API    → /api/auth/*
 // Admin API            → /admin/*  (auth: POST /admin/login public, còn lại cần JWT)
 // ─────────────────────────────────────────────
+app.use('/api/auth', customerAuthRoutes);
 app.use('/api',   publicRoutes);
 app.use('/admin', authRoutes);
 app.use('/admin', adminRoutes);

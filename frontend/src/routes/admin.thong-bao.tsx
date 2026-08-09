@@ -14,6 +14,7 @@ import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { apiGet } from "@/lib/api";
+import { fmtDateTime } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/thong-bao")({
   head: () => ({
@@ -126,7 +127,7 @@ function NotificationsPage() {
                   <p className="text-sm font-semibold">{n.title}</p>
                   {n.body && <p className="text-muted-foreground text-xs">{n.body}</p>}
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    {new Date(n.created_at).toLocaleString("vi-VN")}
+                    {fmtDateTime(n.created_at)}
                   </p>
                 </div>
                 {!n.is_read && (

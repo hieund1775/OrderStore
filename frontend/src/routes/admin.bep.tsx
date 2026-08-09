@@ -5,14 +5,12 @@ import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { apiGet, apiPatch } from "@/lib/api";
+import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/admin/bep")({
   head: () => ({
@@ -49,6 +47,7 @@ type KitchenOrder = {
   customer_name: string;
   customer_phone: string;
   table_id: number | null;
+  store_id: number;
   location_name: string | null;
   note: string | null;
   subtotal: number;
@@ -85,23 +84,20 @@ function toBillOrder(o: KitchenOrder): BillOrder {
   };
 }
 
-type Lane = "wait" | "prep" | "done";
+type Lane = "prep" | "done";
 
 const lanes: { id: Lane; label: string; ring: string }[] = [
-  { id: "wait", label: "🔴 Chờ làm", ring: "border-primary/40 bg-primary/5" },
-  { id: "prep", label: "🟡 Đang chuẩn bị", ring: "border-chart-5/40 bg-chart-5/5" },
+  { id: "prep", label: "🔴 Đang chuẩn bị (Pha chế)", ring: "border-primary/40 bg-primary/5" },
   { id: "done", label: "🟢 Hoàn thành", ring: "border-leaf/40 bg-leaf/5" },
 ];
 
-const WAIT_STATUSES = ["Chờ xác nhận", "Đã xác nhận"];
 const DONE_AFTER_MS = 5 * 60 * 1000;
 const LATE_AFTER_MINUTES = 15;
 const POLL_MS = 10_000;
 
 function laneOf(status: string): Lane {
-  if (WAIT_STATUSES.includes(status)) return "wait";
-  if (status === "Đang chuẩn bị") return "prep";
-  return "done";
+  if (status === "Hoàn thành" || status === "Đang giao") return "done";
+  return "prep";
 }
 
 function fmtMinutes(ms: number) {
@@ -145,11 +141,20 @@ function KdsPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [storeFilter, setStoreFilter] = useState("all");
   const prevIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    apiGet<{ id: number; name: string }[]>("/admin/branches")
+      .then(setBranches)
+      .catch(() => {});
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     try {
-      const rows = await apiGet<KitchenOrder[]>("/admin/kitchen/orders");
+      const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
+      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`);
       setOrders(rows);
       const ids = new Set(rows.map((o) => o.id));
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
@@ -171,7 +176,7 @@ function KdsPage() {
     } catch {
       /* server tạm ngắt — giữ trạng thái cũ */
     }
-  }, [soundEnabled]);
+  }, [soundEnabled, storeFilter]);
 
   // Polling realtime
   useEffect(() => {
@@ -228,7 +233,23 @@ function KdsPage() {
         desc="Đơn quá 15 phút sẽ chuyển đỏ — đơn hoàn thành tự ẩn sau 5 phút"
       />
 
-      <div className="mb-4 flex items-center justify-end">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground">Lọc bếp chi nhánh:</span>
+          <Select value={storeFilter} onValueChange={setStoreFilter}>
+            <SelectTrigger className="w-48 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả chi nhánh</SelectItem>
+              {branches.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button
           variant={soundEnabled ? "hero" : "outline"}
           size="sm"
@@ -243,7 +264,7 @@ function KdsPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         {lanes.map((lane) => {
           const laneOrders = orderInLane(lane.id);
           return (
@@ -256,7 +277,7 @@ function KdsPage() {
               </p>
               <div className="space-y-4">
                 {laneOrders.map((o) => {
-                  const age = now - new Date(o.created_at).getTime();
+                  const age = now - parseLocalDate(o.created_at).getTime();
                   const late = lane.id !== "done" && age > LATE_AFTER_MINUTES * 60000;
                   const isNew = !!newIds[o.id];
                   return (
@@ -274,14 +295,14 @@ function KdsPage() {
                       <div className="flex items-center justify-between">
                         <p className="font-display text-lg font-extrabold">{o.order_code}</p>
                         <span
-                          className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${
+                          className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
                             late
                               ? "bg-berry text-berry-foreground"
                               : "bg-muted text-muted-foreground"
                           }`}
                         >
-                          {late ? <Flame className="size-3" /> : <Clock className="size-3" />}{" "}
-                          {fmtMinutes(age)}
+                          {late ? <Flame className="size-3" /> : <Clock className="size-3" />}
+                          Đặt lúc {fmtTime(o.created_at)} {late ? `(Trễ ${Math.floor(age / 60000)}p)` : `(${fmtMinutes(age)})`}
                         </span>
                       </div>
                       <p className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
@@ -305,9 +326,7 @@ function KdsPage() {
                                 ` · ${it.toppings.map((t) => t.name).join(", ")}`}
                             </p>
                             {it.note && (
-                              <p className="text-muted-foreground text-xs italic">
-                                📝 {it.note}
-                              </p>
+                              <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>
                             )}
                           </li>
                         ))}
@@ -333,10 +352,10 @@ function KdsPage() {
                               className="flex-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                move(o, lane.id === "wait" ? "prep" : "done");
+                                move(o, "done");
                               }}
                             >
-                              {lane.id === "wait" ? "Bắt đầu làm" : "Hoàn thành"}
+                              Hoàn thành
                             </Button>
                           </>
                         )}
@@ -345,9 +364,7 @@ function KdsPage() {
                   );
                 })}
                 {laneOrders.length === 0 && (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    Chưa có đơn nào.
-                  </p>
+                  <p className="text-muted-foreground py-8 text-center text-sm">Chưa có đơn nào.</p>
                 )}
               </div>
             </section>
@@ -392,7 +409,7 @@ function KdsPage() {
                 </p>
                 <p className="text-muted-foreground mt-1">
                   Loại đơn: {selected.order_type} · Tạo lúc{" "}
-                  {new Date(selected.created_at).toLocaleTimeString("vi-VN")}
+                  {fmtDateTime(selected.created_at)}
                 </p>
               </div>
               <ul className="space-y-2">
@@ -403,8 +420,7 @@ function KdsPage() {
                     </p>
                     <p className="text-muted-foreground text-xs">
                       {it.size_label} · {it.base_tea} · {it.sugar_level} đường · {it.ice_level} đá
-                      {it.toppings.length > 0 &&
-                        ` · ${it.toppings.map((t) => t.name).join(", ")}`}
+                      {it.toppings.length > 0 && ` · ${it.toppings.map((t) => t.name).join(", ")}`}
                     </p>
                     {it.note && (
                       <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>

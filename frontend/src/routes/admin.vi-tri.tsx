@@ -63,6 +63,10 @@ function qrUrl(table: TableRow) {
   return `${window.location.origin}/menu?table_id=${table.id}`;
 }
 
+function storeQrUrl(storeId: number) {
+  return `${window.location.origin}/menu?store_id=${storeId}`;
+}
+
 function TablesPage() {
   const search = Route.useSearch();
   const [tables, setTables] = useState<TableRow[]>([]);
@@ -70,6 +74,7 @@ function TablesPage() {
   const [branchFilter, setBranchFilter] = useState(search.store_id ?? "all");
   const [loading, setLoading] = useState(true);
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
+  const [storeQrMap, setStoreQrMap] = useState<Record<number, string>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TableRow | null>(null);
   const [deleting, setDeleting] = useState<TableRow | null>(null);
@@ -102,7 +107,16 @@ function TablesPage() {
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
-      .then(setBranches)
+      .then(async (rows) => {
+        setBranches(rows);
+        const map: Record<number, string> = {};
+        await Promise.all(
+          rows.map(async (b) => {
+            map[b.id] = await QRCode.toDataURL(storeQrUrl(b.id), { width: 220, margin: 1 });
+          })
+        );
+        setStoreQrMap(map);
+      })
       .catch(() => {});
   }, []);
 
@@ -148,17 +162,20 @@ function TablesPage() {
     }
     const name = `Bàn ${num}`;
     const dup = tables.some(
-      (x) => String(x.store_id) === formStore && x.id !== editing?.id && tableNumber(x.name) === num,
+      (t) => String(t.store_id) === formStore && t.name === name && t.id !== editing?.id,
     );
-    if (dup) return toast.error(`Số bàn ${num} đã tồn tại trong chi nhánh này`);
+    if (dup) {
+      return toast.error(`Bàn ${num} đã tồn tại trong chi nhánh này`);
+    }
+
     setSaving(true);
     try {
       if (editing) {
-        await apiPut(`/admin/tables/${editing.id}`, { name });
-        toast.success("Đã cập nhật bàn");
+        await apiPut(`/admin/tables/${editing.id}`, { name, store_id: Number(formStore) });
+        toast.success(`Đã cập nhật ${name}`);
       } else {
-        await apiPost("/admin/tables", { store_id: Number(formStore), name });
-        toast.success("Đã tạo bàn mới");
+        await apiPost("/admin/tables", { name, store_id: Number(formStore) });
+        toast.success(`Đã tạo ${name}`);
       }
       setDialogOpen(false);
       load();
@@ -173,7 +190,7 @@ function TablesPage() {
     if (!deleting) return;
     try {
       await apiDelete(`/admin/tables/${deleting.id}`);
-      toast.success("Đã xóa bàn");
+      toast.success(`Đã xóa ${deleting.name}`);
       setDeleting(null);
       load();
     } catch (err) {
@@ -214,6 +231,44 @@ function TablesPage() {
     w.document.close();
   }
 
+  function downloadStoreQr(b: { id: number; name: string }) {
+    const dataUrl = storeQrMap[b.id];
+    if (!dataUrl) return;
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `qr-chinhanh-${b.name.replace(/\s+/g, "-").toLowerCase()}.png`;
+    a.click();
+  }
+
+  function printStoreQr(b: { id: number; name: string }) {
+    const w = window.open("", "_blank", "width=400,height=520");
+    if (!w) return toast.error("Trình duyệt chặn cửa sổ in — hãy cho phép popup");
+    const img = storeQrMap[b.id];
+    w.document.write(`
+      <html><head><title>Mã QR Chi nhánh - ${b.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 24px; }
+        h2 { margin: 8px 0 2px; color: #16a34a; }
+        h3 { margin: 4px 0 12px; }
+        p { margin: 4px 0; color: #555; font-size: 13px; }
+        img { width: 240px; height: 240px; margin: 12px 0; }
+        .badge { display: inline-block; background: #e0f2fe; color: #0369a1; font-weight: bold; font-size: 11px; padding: 4px 12px; border-radius: 12px; margin-bottom: 8px; }
+        @media print { .no-print { display: none; } }
+      </style></head>
+      <body>
+        <div class="badge">📍 MÃ QR TỔNG CHI NHÁNH</div>
+        <h2>TRÀ TRÁI CÂY TÔ</h2>
+        <h3>${b.name}</h3>
+        <img src="${img}" alt="QR ${b.name}" />
+        <p>Quét mã để chọn menu và đặt món tự động tại chi nhánh này</p>
+        <p style="font-size: 11px; color: #888;">(Dán tại quầy order hoặc cửa ra vào)</p>
+        <button class="no-print" onclick="window.print()" style="margin-top:16px;padding:8px 20px;font-size:14px;cursor:pointer">In mã QR Chi Nhánh</button>
+        <script>setTimeout(() => window.print(), 300)</script>
+      </body></html>
+    `);
+    w.document.close();
+  }
+
   return (
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -242,6 +297,62 @@ function TablesPage() {
           </Button>
         </div>
       </div>
+
+      {/* Khối Mã QR Tổng Chi Nhánh */}
+      {!loading && branches.length > 0 && (
+        <Card className="mb-6 border-primary/30 bg-gradient-to-br from-primary/5 via-background to-leaf/5 shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary font-bold">
+                  📍 Mã QR Tổng Chi Nhánh
+                </Badge>
+                <span className="text-muted-foreground text-xs hidden sm:inline">
+                  (Dán tại quầy order / cửa vào — Tự động đi kèm Cửa hàng, không có nút xóa lẻ)
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(branchFilter === "all" ? branches : branches.filter((b) => String(b.id) === branchFilter)).map((b) => (
+                <div key={b.id} className="bg-card flex items-center gap-4 rounded-xl border p-3.5 shadow-sm">
+                  <div className="bg-white shrink-0 rounded-lg border p-1.5">
+                    {storeQrMap[b.id] ? (
+                      <img src={storeQrMap[b.id]} alt={`QR Chi nhánh ${b.name}`} className="size-20" />
+                    ) : (
+                      <div className="bg-muted size-20 animate-pulse rounded" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-display font-bold text-sm truncate">{b.name}</p>
+                    <p className="text-muted-foreground text-xs">Mã QR Cửa Hàng #{b.id}</p>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => downloadStoreQr(b)}
+                        title="Tải ảnh QR Chi nhánh"
+                      >
+                        <Download className="mr-1 size-3" /> Tải QR
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => printStoreQr(b)}
+                        title="In mã QR Chi nhánh"
+                      >
+                        <Printer className="mr-1 size-3" /> In QR
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-muted-foreground">

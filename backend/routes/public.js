@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import db from '../config/db.js';
 import { calcLineTotals, validateVoucher, consumeVoucher, generateOrderCode } from '../services/price-engine.js';
 
@@ -384,11 +385,26 @@ router.get('/users/:id', async (req, res) => {
 
 router.get('/users/:id/orders', async (req, res) => {
   try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'Vui lòng đăng nhập để xem lịch sử đơn hàng' });
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'teaplus-dev-secret-change-me');
+    } catch {
+      return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+    }
+    const requestedId = Number(req.params.id);
+    const userId = Number(decoded.id || decoded.sub);
+    if (requestedId !== userId && decoded.role !== 'super') {
+      return res.status(403).json({ error: 'Bạn không có quyền xem đơn hàng của người dùng khác' });
+    }
+
     const [orders] = await db.query(`
       SELECT o.*, s.name AS store_name,
         (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC) AS current_status
       FROM orders o JOIN stores s ON o.store_id = s.id WHERE o.user_id = ? ORDER BY o.created_at DESC
-    `, [req.params.id]);
+    `, [requestedId]);
     for (const order of orders) {
       const [items] = await db.query(`
         SELECT oi.*,
@@ -518,8 +534,8 @@ router.post('/orders/:id/cancel', async (req, res) => {
         'SELECT TOP 1 status FROM order_status_history WHERE order_id = ? ORDER BY created_at DESC, id DESC',
         [req.params.id],
       );
-      if (cur[0]?.status !== 'Chờ xác nhận') {
-        throw new Error('Chỉ có thể hủy đơn đang ở trạng thái Chờ xác nhận');
+      if (cur[0]?.status !== 'Chờ xác nhận' && cur[0]?.status !== 'Đang chuẩn bị') {
+        throw new Error('Chỉ có thể hủy đơn đang ở trạng thái Đang chuẩn bị');
       }
       await tx.query(
         "INSERT INTO order_status_history (order_id, status, note, created_at) VALUES (?, N'Đã hủy', ?, GETDATE())",
@@ -579,6 +595,19 @@ router.post('/orders', async (req, res) => {
       return res.status(400).json({ error: 'Thiếu thông tin đơn hàng (store_id, tên, SĐT, items)' });
     }
 
+    // Trích xuất customer user_id từ JWT Token nếu có (Zero-Trust)
+    let customerUserId = null;
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'teaplus-dev-secret-change-me');
+        if (decoded && (decoded.id || decoded.sub)) {
+          customerUserId = Number(decoded.id || decoded.sub);
+        }
+      } catch {}
+    }
+
     const result = await db.transaction(async (tx) => {
       // 1) Tính giá 100% từ DB — bỏ qua mọi giá client gửi lên
       const lines = [];
@@ -616,8 +645,8 @@ router.post('/orders', async (req, res) => {
            voucher_code, discount_amount, points_used, points_earned, subtotal, total,
            is_printed, kitchen_notified_at, note, created_at, updated_at)
          OUTPUT INSERTED.id
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
-        [order_code, store_id, table_id || null, location_name,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
+        [order_code, customerUserId, store_id, table_id || null, location_name,
          order_type, payment_method, customer_name, customer_phone, delivery_addr,
          voucher_code, discount_amount, Math.floor(total / 1000), subtotal, total,
          order_type === 'POS' ? null : new Date(), note || null],
@@ -649,7 +678,7 @@ router.post('/orders', async (req, res) => {
       // 6) Lịch sử trạng thái ban đầu
       await tx.query(
         `INSERT INTO order_status_history (order_id, status, note, changed_by, created_at)
-         VALUES (?, N'Chờ xác nhận', NULL, NULL, GETDATE())`,
+         VALUES (?, N'Đang chuẩn bị', NULL, NULL, GETDATE())`,
         [orderId],
       );
 
@@ -664,7 +693,7 @@ router.post('/orders', async (req, res) => {
       return { order_id: orderId, order_code, subtotal, discount_amount, total };
     });
 
-    res.status(201).json({ ...result, status: 'Chờ xác nhận' });
+    res.status(201).json({ ...result, status: 'Đang chuẩn bị' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -16,6 +16,86 @@ export function vnd(value: number) {
   return value.toLocaleString('vi-VN') + '₫';
 }
 
+/**
+ * Parse date string from SQL Server / ISO into local Date object without timezone offset shift
+ */
+export function parseLocalDate(dateInput: string | Date): Date {
+  if (dateInput instanceof Date) return dateInput;
+  if (!dateInput) return new Date();
+  const s = String(dateInput);
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  if (match) {
+    const [, y, m, d, hh, mm, ss] = match;
+    return new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+  }
+  const parsed = new Date(s);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+/**
+ * Format exact local time HH:mm (e.g. 21:30)
+ */
+export function fmtTime(dateInput: string | Date): string {
+  const d = parseLocalDate(dateInput);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Format exact local time with seconds HH:mm:ss (e.g. 21:30:45)
+ */
+export function fmtTimeFull(dateInput: string | Date): string {
+  const d = parseLocalDate(dateInput);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/**
+ * Format full Vietnam date-time: HH:mm - DD/MM/YYYY
+ */
+export function fmtDateTime(dateInput: string | Date): string {
+  const d = parseLocalDate(dateInput);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${hh}:${mm} - ${day}/${month}/${year}`;
+}
+
+/**
+ * Format full store address cleanly without duplicate district or city names
+ */
+export function formatFullAddress(address?: string, district?: string, city?: string): string {
+  const parts: string[] = [];
+  const addr = (address || '').trim();
+  const dist = (district || '').trim();
+  const cty = (city || '').trim();
+
+  if (addr) parts.push(addr);
+
+  if (dist) {
+    const lowerAddr = addr.toLowerCase();
+    const lowerDist = dist.toLowerCase();
+    if (!lowerAddr.includes(lowerDist)) {
+      parts.push(dist);
+    }
+  }
+
+  if (cty) {
+    const lowerAddr = addr.toLowerCase();
+    const lowerCty = cty.toLowerCase();
+    if (!lowerAddr.includes(lowerCty)) {
+      parts.push(cty);
+    }
+  }
+
+  return parts.join(', ');
+}
+
 export type ProductTag = 'best-seller' | 'new' | 'seasonal';
 
 export type Product = {
@@ -173,7 +253,7 @@ export const stores = [
     name: 'Trà Trái Cây Tô – Nguyễn Huệ',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 1',
-    address: '125 Nguyễn Huệ, P. Bến Nghé, Quận 1',
+    address: '125 Nguyễn Huệ, P. Bến Nghé',
     hours: '07:00 – 22:30',
     phone: '028 3822 1188',
     amenities: ['Chỗ đỗ ô tô', 'Máy lạnh', 'Mua mang đi'],
@@ -183,7 +263,7 @@ export const stores = [
     name: 'Trà Trái Cây Tô – Võ Văn Tần',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 3',
-    address: '88 Võ Văn Tần, P.6, Quận 3',
+    address: '88 Võ Văn Tần, P.6',
     hours: '07:30 – 22:00',
     phone: '028 3930 6677',
     amenities: ['Máy lạnh', 'Mua mang đi', 'Giao hàng 24/7'],
@@ -193,7 +273,7 @@ export const stores = [
     name: 'Trà Trái Cây Tô – Phú Mỹ Hưng',
     city: 'TP. Hồ Chí Minh',
     district: 'Quận 7',
-    address: 'R4-15 Hưng Phước, Phú Mỹ Hưng, Quận 7',
+    address: 'R4-15 Hưng Phước, Phú Mỹ Hưng',
     hours: '08:00 – 23:00',
     phone: '028 5410 2299',
     amenities: ['Chỗ đỗ ô tô', 'Không gian rộng', 'Máy lạnh'],
@@ -203,7 +283,7 @@ export const stores = [
     name: 'Trà Trái Cây Tô – Hoàn Kiếm',
     city: 'Hà Nội',
     district: 'Hoàn Kiếm',
-    address: '12 Hàng Bài, P. Tràng Tiền, Hoàn Kiếm',
+    address: '12 Hàng Bài, P. Tràng Tiền',
     hours: '07:00 – 22:00',
     phone: '024 3936 5544',
     amenities: ['Máy lạnh', 'Mua mang đi'],
@@ -213,7 +293,7 @@ export const stores = [
     name: 'Trà Trái Cây Tô – Hải Châu',
     city: 'Đà Nẵng',
     district: 'Hải Châu',
-    address: '45 Bạch Đằng, Hải Châu 1, Hải Châu',
+    address: '45 Bạch Đằng, Hải Châu 1',
     hours: '07:30 – 22:30',
     phone: '0236 3812 345',
     amenities: ['View sông Hàn', 'Chỗ đỗ ô tô', 'Máy lạnh'],
