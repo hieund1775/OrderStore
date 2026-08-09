@@ -271,4 +271,34 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
 - ✅ **Nghiệm thu cuối cùng**: Lệnh `npm run build` chạy thành công sạch 100% (built in 2.27s). Toàn bộ dự án đạt trạng thái hoàn hảo tuyệt đối.
 
 ---
+
+## 11. ĐĂNG NHẬP GOOGLE (Google Auth) — ĐÃ IMPLEMENT 10/08/2026
+
+> Giai đoạn 2 của Customer Auth — làm sau khi OTP chạy thông. Đã implement bởi Claude, chờ test thực tế trên browser.
+
+### 🔑 Đã làm
+- **Backend** `customerAuth.js`:
+  - `POST /api/auth/google`: nhận `{ credential }` → verify ID token bằng `google-auth-library` (OAuth2Client.verifyIdToken, check `aud` = GOOGLE_CLIENT_ID) → lấy `email`/`name` → tìm/tạo user (`is_admin=0`) → trả `{ token, user }` (role `customer`).
+  - Lỗi token rác trả 400 message sạch, không lộ lỗi thư viện.
+- **DB migration** (`update.sql` + đã áp DB thật): `ALTER TABLE users ALTER COLUMN phone NVARCHAR(20) NULL` — Google chỉ cung cấp email, không có SĐT → cho phép user Google có `phone = NULL` (bảng `users.phone` trước đây `NOT NULL UNIQUE`).
+- **Env**: `backend/.env` thêm `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` (đã gitignore, secret không vào frontend).
+- **Frontend** `Header.tsx`:
+  - Load script **GIS** (`accounts.google.com/gsi/client`), `google.accounts.id.initialize({ client_id, callback })`, render nút Google thật (theme outline, width 280) thay nút `disabled` cũ.
+  - `handleGoogleCredential` → `apiPost('/api/auth/google', { credential })` → `setCustomerToken` + `setCustomerUser` → đăng nhập.
+- **Verify**: nút không còn disabled; endpoint test token rác → 400 sạch; `tsc` sạch; `npm run build` thành công.
+
+### 🧪 Cần test thực tế (browser)
+- Mở `http://localhost:8080` → bấm icon tài khoản → nút Google hiện → bấm → chọn tài khoản Google → đăng nhập thành công → header hiện tên + `/ho-so` hiện lịch sử đơn.
+- Lưu ý: nếu Google báo "origin not allowed" → kiểm tra Client ID đã khai `http://localhost:8080` trong Authorized JavaScript origins.
+
+### 🐛 Fix bug nút Google biến mất (Claude 10/08/2026)
+- **Triệu chứng**: mở dialog đăng nhập không thấy nút Google (nút `disabled` cũ đã bỏ nhưng nút thật không hiện).
+- **Nguyên nhân**: effect render nút GIS chỉ chạy 1 lần khi script load — lúc đó dialog còn đóng nên ô chứa (`googleBtnRef`) chưa mount → early return → không bao giờ vẽ.
+- **Xử lý** (`Header.tsx`):
+  - Thêm state `open` điều khiển `Dialog`.
+  - Effect render nút phụ thuộc `[open, googleScriptLoaded, step]` → mỗi khi mở dialog / quay lại bước nhập → render nút Google vào ô chứa vừa mount.
+  - Bỏ guard `googleRendered` (gây treo không render lại).
+- **Verify**: `npx tsc --noEmit` sạch. Cần refresh browser để xác nhận nút hiện.
+
+---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*

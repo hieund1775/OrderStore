@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Bell,
@@ -289,6 +289,9 @@ function NotificationButton() {
   );
 }
 
+// Client ID Google OAuth — công khai, chỉ backend verify mới dùng secret
+const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.googleusercontent.com';
+
 function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken());
   const [phone, setPhone] = useState('');
@@ -301,6 +304,62 @@ function ProfileButton() {
   const [otpSent, setOtpSent] = useState(false);
   const [demoOtp, setDemoOtp] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [open, setOpen] = useState(false);
+  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  // Load Google Identity Services script (chỉ 1 lần)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as any;
+    if (w.google?.accounts?.id) {
+      setGoogleScriptLoaded(true);
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = () => setGoogleScriptLoaded(true);
+    document.head.appendChild(s);
+  }, []);
+
+  // Render nút Google khi dialog mở + script sẵn sàng + ô chứa đã mount
+  useEffect(() => {
+    if (!open || !googleScriptLoaded || !googleBtnRef.current) return;
+    const w = window as any;
+    if (!w.google?.accounts?.id) return;
+    w.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+    });
+    w.google.accounts.id.renderButton(googleBtnRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 280,
+      shape: 'pill',
+    });
+  }, [open, googleScriptLoaded, step]);
+
+  async function handleGoogleCredential(res: { credential: string }) {
+    try {
+      setLoading(true);
+      setError('');
+      const data = await apiPost<{
+        token: string;
+        user: { id: number; fullname: string; phone: string | null; tier: string; points: number };
+      }>('/api/auth/google', { credential: res.credential });
+      setCustomerToken(data.token);
+      setCustomerUser({ ...data.user, phone: data.user.phone || '' });
+      setUserName(data.user.fullname);
+      setUserTier(data.user.tier);
+      setLoggedIn(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Đăng nhập Google thất bại');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSendOtp() {
     const name = nameInput.trim();
@@ -381,7 +440,18 @@ function ProfileButton() {
 
   if (!loggedIn) {
     return (
-      <Dialog onOpenChange={(open) => { if (!open) { setStep('phone'); setError(''); setOtp(''); setOtpSent(false); } }}>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) {
+            setStep('phone');
+            setError('');
+            setOtp('');
+            setOtpSent(false);
+          }
+        }}
+      >
         <DialogTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-full" aria-label="Tài khoản">
             <User className="size-5" />
@@ -414,9 +484,7 @@ function ProfileButton() {
                 <div className="text-muted-foreground flex items-center gap-3 text-xs">
                   <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
                 </div>
-                <Button variant="outline" className="w-full" disabled>
-                  Tiếp tục với Google
-                </Button>
+                <div ref={googleBtnRef} className="flex justify-center" />
                 <p className="text-muted-foreground text-center text-xs">
                   Nhập tên & SĐT để nhận mã OTP xác thực.
                 </p>

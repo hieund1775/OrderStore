@@ -88,4 +88,11 @@ BEGIN
   PRINT N'✅ shipping driver columns added';
 END
 
+-- Allow NULL phone for Google-login users (Google chỉ cung cấp email, không có SĐT)
+IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'phone' AND IS_NULLABLE = 'NO')
+BEGIN
+  ALTER TABLE users ALTER COLUMN phone NVARCHAR(20) NULL;
+  PRINT N'✅ users.phone giờ cho phép NULL (dành cho đăng nhập Google)';
+END
+
 PRINT N'✅ Done';
