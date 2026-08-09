@@ -335,11 +335,12 @@ function ProfileButton() {
         client_id: GOOGLE_CLIENT_ID,
         callback: handleGoogleCredential,
       });
+      const width = Math.min(400, Math.max(250, googleBtnNode.clientWidth || 340));
       w.google.accounts.id.renderButton(googleBtnNode, {
         theme: 'outline',
         size: 'large',
-        width: 280,
-        shape: 'pill',
+        width,
+        shape: 'rectangular',
         text: 'signin_with',
       });
     } catch (e) {
@@ -490,7 +491,7 @@ function ProfileButton() {
                 <div className="text-muted-foreground flex items-center gap-3 text-xs">
                   <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
                 </div>
-                <div ref={setGoogleBtnNode} className="flex justify-center min-h-[40px] items-center" />
+                <div ref={setGoogleBtnNode} className="w-full flex justify-center min-h-[44px] items-center" />
                 <p className="text-muted-foreground text-center text-xs">
                   Nhập tên & SĐT để nhận mã OTP xác thực.
                 </p>
