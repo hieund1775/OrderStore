@@ -306,7 +306,7 @@ function ProfileButton() {
   const [nameInput, setNameInput] = useState('');
   const [open, setOpen] = useState(false);
   const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
-  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const [googleBtnNode, setGoogleBtnNode] = useState<HTMLDivElement | null>(null);
 
   // Load Google Identity Services script (chỉ 1 lần)
   useEffect(() => {
@@ -326,20 +326,26 @@ function ProfileButton() {
 
   // Render nút Google khi dialog mở + script sẵn sàng + ô chứa đã mount
   useEffect(() => {
-    if (!open || !googleScriptLoaded || !googleBtnRef.current) return;
+    if (!open || !googleScriptLoaded || !googleBtnNode) return;
     const w = window as any;
     if (!w.google?.accounts?.id) return;
-    w.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleGoogleCredential,
-    });
-    w.google.accounts.id.renderButton(googleBtnRef.current, {
-      theme: 'outline',
-      size: 'large',
-      width: 280,
-      shape: 'pill',
-    });
-  }, [open, googleScriptLoaded, step]);
+    try {
+      googleBtnNode.innerHTML = '';
+      w.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+      });
+      w.google.accounts.id.renderButton(googleBtnNode, {
+        theme: 'outline',
+        size: 'large',
+        width: 280,
+        shape: 'pill',
+        text: 'signin_with',
+      });
+    } catch (e) {
+      console.error('Google button render error:', e);
+    }
+  }, [open, googleScriptLoaded, googleBtnNode, step]);
 
   async function handleGoogleCredential(res: { credential: string }) {
     try {
@@ -484,7 +490,7 @@ function ProfileButton() {
                 <div className="text-muted-foreground flex items-center gap-3 text-xs">
                   <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
                 </div>
-                <div ref={googleBtnRef} className="flex justify-center" />
+                <div ref={setGoogleBtnNode} className="flex justify-center min-h-[40px] items-center" />
                 <p className="text-muted-foreground text-center text-xs">
                   Nhập tên & SĐT để nhận mã OTP xác thực.
                 </p>
