@@ -41,7 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiGet, apiPatch, apiPut } from "@/lib/api";
-import { vnd } from "@/lib/data";
+import { fmtDateTime, vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/don-hang")({
   head: () => ({
@@ -111,8 +111,6 @@ type AdminOrderFull = AdminOrderRow & {
 
 const statuses: ("Tất cả" | OrderStatus)[] = [
   "Tất cả",
-  "Chờ xác nhận",
-  "Đã xác nhận",
   "Đang chuẩn bị",
   "Đang giao",
   "Hoàn thành",
@@ -124,7 +122,7 @@ const payments = ["Tất cả", "COD", "VietQR", "MoMo", "ZaloPay"];
 const statusTone: Record<string, string> = {
   "Chờ xác nhận": "bg-primary/15 text-primary",
   "Đã xác nhận": "bg-chart-5/15 text-chart-5",
-  "Đang chuẩn bị": "bg-chart-5/15 text-chart-5",
+  "Đang chuẩn bị": "bg-primary/15 text-primary",
   "Đang giao": "bg-accent text-accent-foreground",
   "Hoàn thành": "bg-leaf/15 text-leaf",
   "Đã hủy": "bg-berry/15 text-berry",
@@ -279,7 +277,7 @@ function OrdersPage() {
                     <TableCell>
                       <p className="text-sm">{o.customer_name}</p>
                       <p className="text-muted-foreground text-xs">
-                        {new Date(o.created_at).toLocaleString("vi-VN")}
+                        {fmtDateTime(o.created_at)}
                       </p>
                     </TableCell>
                     <TableCell className="hidden text-sm md:table-cell">{o.store_name}</TableCell>
@@ -435,11 +433,17 @@ function OrderDetail({
     };
   }, [open, orderId]);
 
-  async function changeStatus(next: string) {
+  const [shipperOpen, setShipperOpen] = useState(false);
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [trackingUrl, setTrackingUrl] = useState("");
+
+  async function changeStatus(next: string, extraData?: { driver_name?: string; driver_phone?: string; tracking_url?: string }) {
     setActionLoading(true);
     try {
-      await apiPatch(`/admin/orders/${orderId}/status`, { status: next });
+      await apiPatch(`/admin/orders/${orderId}/status`, { status: next, ...extraData });
       toast.success(`Đơn #${orderId} → ${next}`);
+      setShipperOpen(false);
       setOpen(false);
       onChanged();
     } catch (err) {
@@ -534,7 +538,7 @@ function OrderDetail({
                           {h.changed_by_name ? ` · ${h.changed_by_name}` : ""}
                         </span>
                         <span className="whitespace-nowrap">
-                          {new Date(h.created_at).toLocaleString("vi-VN")}
+                          {fmtDateTime(h.created_at)}
                         </span>
                       </li>
                     ))}
@@ -554,35 +558,31 @@ function OrderDetail({
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {st === "Chờ xác nhận" && (
-                  <Button
-                    variant="hero"
-                    className="flex-1"
-                    disabled={actionLoading}
-                    onClick={() => changeStatus("Đã xác nhận")}
-                  >
-                    Xác nhận đơn
-                  </Button>
-                )}
-                {st === "Đã xác nhận" && (
-                  <Button
-                    variant="hero"
-                    className="flex-1"
-                    disabled={actionLoading}
-                    onClick={() => changeStatus("Đang chuẩn bị")}
-                  >
-                    Bắt đầu làm
-                  </Button>
-                )}
-                {st === "Đang chuẩn bị" && (
-                  <Button
-                    variant="hero"
-                    className="flex-1"
-                    disabled={actionLoading}
-                    onClick={() => changeStatus("Hoàn thành")}
-                  >
-                    Hoàn thành
-                  </Button>
+                {(st === "Đang chuẩn bị" || st === "Chờ xác nhận" || st === "Đã xác nhận") && (
+                  <>
+                    <Button
+                      variant="hero"
+                      className="flex-1"
+                      disabled={actionLoading}
+                      onClick={() => {
+                        if (detail.order_type === "Delivery") {
+                          setShipperOpen(true);
+                        } else {
+                          changeStatus("Đang giao");
+                        }
+                      }}
+                    >
+                      🚚 Chuyển Đang giao
+                    </Button>
+                    <Button
+                      variant="soft"
+                      className="flex-1"
+                      disabled={actionLoading}
+                      onClick={() => changeStatus("Hoàn thành")}
+                    >
+                      ✅ Hoàn thành
+                    </Button>
+                  </>
                 )}
                 {st === "Đang giao" && (
                   <Button
@@ -591,7 +591,7 @@ function OrderDetail({
                     disabled={actionLoading}
                     onClick={() => changeStatus("Hoàn thành")}
                   >
-                    Xác nhận giao xong
+                    Xác nhận giao xong (Hoàn thành)
                   </Button>
                 )}
                 {st !== "Đã hủy" && st !== "Hoàn thành" && (
@@ -610,6 +610,63 @@ function OrderDetail({
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Nhập thông tin Shipper & Link Tracking */}
+      <Dialog open={shipperOpen} onOpenChange={setShipperOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Giao hàng — Thông tin Shipper / Live Tracking</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <p className="text-muted-foreground text-xs">
+              Nhập thông tin tài xế Grab, Ahamove... để khách hàng có thể xem live tracking trên trang theo dõi đơn.
+            </p>
+            <div>
+              <label className="text-xs font-semibold">Tên Shipper</label>
+              <Input
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                placeholder="VD: Nguyễn Văn A (Grab)"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Số điện thoại Shipper</label>
+              <Input
+                value={driverPhone}
+                onChange={(e) => setDriverPhone(e.target.value)}
+                placeholder="VD: 0901234567"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Link Tracking (Grab / Ahamove)</label>
+              <Input
+                value={trackingUrl}
+                onChange={(e) => setTrackingUrl(e.target.value)}
+                placeholder="VD: https://express.grab.com/tracking/..."
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 border-t pt-3">
+            <Button variant="outline" onClick={() => setShipperOpen(false)}>Hủy</Button>
+            <Button
+              variant="hero"
+              disabled={actionLoading}
+              onClick={() =>
+                changeStatus("Đang giao", {
+                  driver_name: driverName.trim() || undefined,
+                  driver_phone: driverPhone.trim() || undefined,
+                  tracking_url: trackingUrl.trim() || undefined,
+                })
+              }
+            >
+              Xác nhận Đang giao
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

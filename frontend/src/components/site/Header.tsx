@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
-import { getCustomerToken, getCustomerUser, setCustomerToken, setCustomerUser, clearCustomerToken } from '@/lib/api';
+import { apiPost, getCustomerToken, getCustomerUser, setCustomerToken, setCustomerUser, clearCustomerToken } from '@/lib/api';
 import { brand, notifications, products, searchSuggestions, stores, vnd } from '@/lib/data';
 
 const navItems = [
@@ -302,8 +302,6 @@ function ProfileButton() {
   const [demoOtp, setDemoOtp] = useState('');
   const [nameInput, setNameInput] = useState('');
 
-  const API_BASE = 'http://localhost:5000';
-
   async function handleSendOtp() {
     const name = nameInput.trim();
     if (!name) {
@@ -326,21 +324,15 @@ function ProfileButton() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, fullname: nameInput.trim() }),
+      const data = await apiPost<{ message: string; demo_otp?: string }>('/api/auth/send-otp', {
+        phone,
+        fullname: nameInput.trim(),
       });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-      } else {
-        setStep('otp');
-        setOtpSent(true);
-        setDemoOtp(data.demo_otp || '');
-      }
+      setStep('otp');
+      setOtpSent(true);
+      setDemoOtp(data.demo_otp || '');
     } catch (e) {
-      setError('Không thể kết nối đến máy chủ');
+      setError(e instanceof Error ? e.message : 'Không thể kết nối đến máy chủ');
     } finally {
       setLoading(false);
     }
@@ -354,23 +346,21 @@ function ProfileButton() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code: otp, fullname: nameInput.trim() }),
+      const data = await apiPost<{
+        token: string;
+        user: { id: number; fullname: string; phone: string; tier: string; points: number };
+      }>('/api/auth/verify-otp', {
+        phone,
+        code: otp,
+        fullname: nameInput.trim(),
       });
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-      } else {
-        setCustomerToken(data.token);
-        setCustomerUser(data.user);
-        setUserName(data.user.fullname);
-        setUserTier(data.user.tier);
-        setLoggedIn(true);
-      }
+      setCustomerToken(data.token);
+      setCustomerUser(data.user);
+      setUserName(data.user.fullname);
+      setUserTier(data.user.tier);
+      setLoggedIn(true);
     } catch (e) {
-      setError('Không thể kết nối đến máy chủ');
+      setError(e instanceof Error ? e.message : 'Không thể kết nối đến máy chủ');
     } finally {
       setLoading(false);
     }

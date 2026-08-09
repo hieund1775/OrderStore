@@ -44,8 +44,11 @@ dist/
 build/
 **/dist/
 **/build/
+.output/
+**/.output/
 .tanstack/
 .lovable/
+multi-agent.js
 *.tsbuildinfo
 coverage/
 

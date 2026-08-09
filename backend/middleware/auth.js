@@ -31,6 +31,19 @@ export function signToken(user) {
   );
 }
 
+export function signCustomerToken(user) {
+  return jwt.sign(
+    {
+      sub: user.id,
+      id: user.id,
+      phone: user.phone,
+      role: 'customer',
+    },
+    SECRET,
+    { expiresIn: '30d' },
+  );
+}
+
 export function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;

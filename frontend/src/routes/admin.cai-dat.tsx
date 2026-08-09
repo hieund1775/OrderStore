@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiGet } from "@/lib/api";
-import { brand } from "@/lib/data";
+import { brand, fmtDateTime } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/cai-dat")({
   head: () => ({
@@ -228,7 +228,7 @@ function SettingsPage() {
                           {l.user_agent?.split(" ").slice(0, 2).join(" ") || "—"}
                         </TableCell>
                         <TableCell className="text-right text-sm whitespace-nowrap">
-                          {new Date(l.created_at).toLocaleString("vi-VN")}
+                          {fmtDateTime(l.created_at)}
                         </TableCell>
                       </TableRow>
                     ))

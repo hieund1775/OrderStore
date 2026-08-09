@@ -23,7 +23,7 @@ import { AdminPageHeader, SectionCard, StatCard } from "@/components/admin/Admin
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiGet } from "@/lib/api";
-import { vnd } from "@/lib/data";
+import { fmtDateTime, vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({
@@ -70,7 +70,7 @@ function AdminDashboard() {
       apiGet<{ revenue: Kpi; orders: Kpi; cancelRate: Kpi; cups: Kpi }>("/admin/dashboard/kpi"),
       apiGet<{ paused: number; preparing: number }>("/admin/dashboard/urgent"),
       apiGet<{ hour: number; value: number }[]>("/admin/dashboard/revenue-by-hour"),
-      apiGet<RecentOrder[]>(`/admin/orders?status=${encodeURIComponent("Chờ xác nhận")}`),
+      apiGet<RecentOrder[]>(`/admin/orders?status=${encodeURIComponent("Đang chuẩn bị")}`),
     ])
       .then(([k, u, hour, orders]) => {
         if (cancelled) return;
@@ -235,7 +235,7 @@ function AdminDashboard() {
                         <Badge variant="secondary">{o.current_status}</Badge>
                       </div>
                       <p className="text-muted-foreground mt-1 text-xs">
-                        {o.customer_name} · {o.order_type} · {new Date(o.created_at).toLocaleString("vi-VN")}
+                        {o.customer_name} · {o.order_type} · {fmtDateTime(o.created_at)}
                       </p>
                       <p className="text-primary mt-1 text-sm font-bold">{vnd(o.total)}</p>
                     </li>
