@@ -78,4 +78,14 @@ IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'promotio
 BEGIN
   UPDATE promotions SET voucher_type = 'time_bounded' WHERE code IS NOT NULL AND voucher_type IS NULL;
 END
+
+-- Add shipping driver info columns to orders table
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'orders' AND COLUMN_NAME = 'shipping_driver_name')
+BEGIN
+  ALTER TABLE orders ADD shipping_driver_name NVARCHAR(120) NULL;
+  ALTER TABLE orders ADD shipping_driver_phone NVARCHAR(20) NULL;
+  ALTER TABLE orders ADD shipping_tracking_url NVARCHAR(500) NULL;
+  PRINT N'✅ shipping driver columns added';
+END
+
 PRINT N'✅ Done';

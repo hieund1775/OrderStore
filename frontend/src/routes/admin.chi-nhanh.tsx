@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { formatFullAddress } from "@/lib/data";
 import { parseHours } from "@/lib/store-hours";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
@@ -157,7 +158,7 @@ function vnd(n: number) {
 function storeMapUrl(s: Store) {
   return s.lat != null && s.lng != null
     ? `https://maps.google.com/maps?q=${s.lat},${s.lng}&z=16&output=embed`
-    : `https://maps.google.com/maps?q=${encodeURIComponent(`${s.address}, ${s.district}, ${s.city}`)}&z=16&output=embed`;
+    : `https://maps.google.com/maps?q=${encodeURIComponent(formatFullAddress(s.address, s.district, s.city))}&z=16&output=embed`;
 }
 
 function fillFromPlace(place: NominatimPlace) {
@@ -451,7 +452,7 @@ function StoresAdminPage() {
                   </div>
                   <ul className="text-muted-foreground mt-4 space-y-2 text-sm">
                     <li className="flex gap-2">
-                      <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {s.address}
+                      <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {formatFullAddress(s.address, s.district, s.city)}
                     </li>
                     <li className="flex items-center gap-2">
                       <Clock className="text-primary mt-0.5 size-4 shrink-0" />
@@ -547,7 +548,7 @@ function StoresAdminPage() {
               />
             </div>
             <p className="text-muted-foreground text-sm">
-              {mapStore.address}, {mapStore.district}, {mapStore.city} · {mapStore.hours}
+              {formatFullAddress(mapStore.address, mapStore.district, mapStore.city)} · {mapStore.hours}
             </p>
           </DialogContent>
         </Dialog>

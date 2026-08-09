@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet } from "@/lib/api";
+import { formatFullAddress } from "@/lib/data";
 
 export const Route = createFileRoute("/cua-hang")({
   head: () => ({
@@ -293,7 +294,7 @@ function StoresPage() {
                 >
                   <p className="font-display font-bold">{s.name}</p>
                   <p className="text-muted-foreground mt-1 flex items-start gap-2 text-sm">
-                    <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {s.address}
+                    <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {formatFullAddress(s.address, s.district, s.city)}
                   </p>
                   <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
                     <Clock className="text-primary size-4 shrink-0" />
@@ -376,7 +377,7 @@ function StoresPage() {
                 <MapPin className="text-primary size-5 shrink-0" />
                 <div className="min-w-0">
                   <p className="font-display font-bold text-sm truncate">{mapCoords.title || selected.name}</p>
-                  <p className="text-muted-foreground text-xs truncate">{selected.address}</p>
+                  <p className="text-muted-foreground text-xs truncate">{formatFullAddress(selected.address, selected.district, selected.city)}</p>
                 </div>
               </div>
               <a

@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 import sqlAuth from 'mssql';
 import sqlTrusted from 'mssql/msnodesqlv8.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 // Windows Auth → msnodesqlv8 (ODBC); SQL Auth → mssql (tedious)

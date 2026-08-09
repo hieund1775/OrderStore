@@ -10,12 +10,18 @@ import { fruitGroups, products, teaLines, vnd } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 
 export const Route = createFileRoute("/menu")({
-  validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { table_id?: string; store_id?: string } => ({
     table_id:
       typeof search.table_id === "string"
         ? search.table_id
         : typeof search.table_id === "number"
           ? String(search.table_id)
+          : undefined,
+    store_id:
+      typeof search.store_id === "string"
+        ? search.store_id
+        : typeof search.store_id === "number"
+          ? String(search.store_id)
           : undefined,
   }),
   head: () => ({
@@ -40,10 +46,11 @@ function MenuPage() {
   const [line, setLine] = useState<string>("Tất cả");
   const [fruit, setFruit] = useState<string>("Tất cả");
   const { items, subtotal, count } = useCart();
-  const { table_id } = useSearch({ from: "/menu" });
+  const { table_id, store_id } = useSearch({ from: "/menu" });
   const [tableInfo, setTableInfo] = useState<{
     table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
   } | null>(null);
+  const [storeInfo, setStoreInfo] = useState<{ id: number; name: string; address?: string } | null>(null);
 
   useEffect(() => {
     if (table_id) {
@@ -51,6 +58,12 @@ function MenuPage() {
       sessionStorage.setItem("teaplus_table_id", table_id);
     }
   }, [table_id]);
+
+  useEffect(() => {
+    if (store_id) {
+      sessionStorage.setItem("teaplus_store_id", store_id);
+    }
+  }, [store_id]);
 
   useEffect(() => {
     if (!table_id) {
@@ -71,6 +84,24 @@ function MenuPage() {
       cancelled = true;
     };
   }, [table_id]);
+
+  useEffect(() => {
+    if (!store_id) {
+      setStoreInfo(null);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ id: number; name: string; address?: string }[]>("/api/stores")
+      .then((rows) => {
+        if (cancelled) return;
+        const found = rows.find((s) => String(s.id) === String(store_id));
+        if (found) setStoreInfo(found);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [store_id]);
 
   const filtered = useMemo(
     () =>
@@ -106,6 +137,29 @@ function MenuPage() {
             </div>
             <Badge variant="secondary" className="bg-white/95">
               Đặt món tại bàn
+            </Badge>
+          </div>
+        </div>
+      )}
+
+      {storeInfo && !tableInfo && (
+        <div className="container-page mt-6">
+          <div className="gradient-warm text-primary-foreground flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 px-5 py-4 shadow-glow">
+            <div className="flex items-center gap-3">
+              <span className="bg-white/20 flex size-11 shrink-0 items-center justify-center rounded-xl">
+                <MapPin className="size-6" />
+              </span>
+              <div>
+                <p className="font-display text-base font-bold">
+                  Quý khách đang quét Mã QR Chi nhánh: {storeInfo.name}
+                </p>
+                <p className="text-sm opacity-90">
+                  {storeInfo.address || "Chi nhánh chính thức Trà Trái Cây Tô"}
+                </p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="bg-white/95">
+              Mang đi / Tại quầy
             </Badge>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Heart, QrCode, Star, LogIn } from "lucide-react";
 import { toast } from "sonner";
@@ -10,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
-import { getCustomerToken, getCustomerUser } from "@/lib/api";
-import { notifications, products, vnd } from "@/lib/data";
+import { apiGet, getCustomerToken, getCustomerUser } from "@/lib/api";
+import { fmtDateTime, notifications, products, vnd } from "@/lib/data";
 
 const tiers = [
   { name: "Đồng", min: 0, color: "from-stone-400 to-stone-500" },
@@ -48,6 +49,44 @@ function Profile() {
   const saved = products.filter((p) => wishlist.includes(p.id));
   const user = getCustomerUser();
   const isLoggedIn = !!getCustomerToken();
+
+  const [userOrders, setUserOrders] = useState<{
+    id: number;
+    order_code: string;
+    total: number;
+    current_status: string;
+    created_at: string;
+    store_name: string;
+    items: { product_name: string; qty: number; size_label: string }[];
+  }[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id) return;
+    let cancelled = false;
+    setOrdersLoading(true);
+    apiGet<{
+      id: number;
+      order_code: string;
+      total: number;
+      current_status: string;
+      created_at: string;
+      store_name: string;
+      items: { product_name: string; qty: number; size_label: string }[];
+    }[]>(`/api/users/${user.id}/orders`)
+      .then((rows) => {
+        if (!cancelled) setUserOrders(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setUserOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setOrdersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, user?.id]);
 
   if (!isLoggedIn || !user) {
     return (
@@ -88,23 +127,17 @@ function Profile() {
         <aside className="space-y-4">
           <div className="gradient-warm text-primary-foreground rounded-2xl p-5 shadow-glow">
             <p className="text-xs tracking-widest uppercase opacity-80">Thẻ hội viên điện tử</p>
-            <p className="font-display mt-1 text-2xl font-extrabold">{userName}</p>
-            <p className="text-sm opacity-90">Hạng {userTier} · {userPoints.toLocaleString()} điểm</p>
-            {nextTier && (
-              <div className="mt-4">
-                <div className="mb-1 flex justify-between text-xs opacity-90">
-                  <span>Còn {nextTierMin - userPoints} điểm lên {nextTier.name}</span>
-                  <span>{progressPct}%</span>
-                </div>
-                <Progress value={progressPct} className="h-2" />
+            <p className="font-display my-2 text-xl font-bold">{userName}</p>
+            <div className="flex items-center justify-between text-sm opacity-90">
+              <span>Hạng: {userTier}</span>
+              <span>Tích điểm: {userPoints} điểm</span>
+            </div>
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-xs opacity-80">
+                <span>Tiến trình nâng hạng</span>
+                <span>{progressPct}%</span>
               </div>
-            )}
-            <div className="bg-card mt-5 flex items-center gap-3 rounded-xl p-3">
-              <QrCode className="text-foreground size-14" />
-              <div className="text-foreground">
-                <p className="text-sm font-semibold">Mã QR tích điểm</p>
-                <p className="text-muted-foreground text-xs">Đưa mã này cho thu ngân tại quầy</p>
-              </div>
+              <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
 
@@ -121,19 +154,63 @@ function Profile() {
 
         <Tabs defaultValue="orders">
           <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="orders">Lịch sử đơn hàng</TabsTrigger>
+            <TabsTrigger value="orders">Lịch sử đơn hàng ({userOrders.length})</TabsTrigger>
             <TabsTrigger value="wishlist">Yêu thích</TabsTrigger>
             <TabsTrigger value="review">Đánh giá</TabsTrigger>
             <TabsTrigger value="info">Thông tin</TabsTrigger>
           </TabsList>
 
           <TabsContent value="orders" className="space-y-4">
-            <div className="bg-card rounded-2xl border p-8 text-center">
-              <p className="text-muted-foreground text-sm">Chưa có đơn hàng nào.</p>
-              <Button asChild variant="hero" size="sm" className="mt-3">
-                <Link to="/menu">Đặt món ngay</Link>
-              </Button>
-            </div>
+            {ordersLoading ? (
+              <div className="bg-card rounded-2xl border p-8 text-center text-muted-foreground text-sm">
+                Đang tải lịch sử đơn hàng…
+              </div>
+            ) : userOrders.length === 0 ? (
+              <div className="bg-card rounded-2xl border p-8 text-center">
+                <p className="text-muted-foreground text-sm">Chưa có đơn hàng nào.</p>
+                <Button asChild variant="hero" size="sm" className="mt-3">
+                  <Link to="/menu">Đặt món ngay</Link>
+                </Button>
+              </div>
+            ) : (
+              userOrders.map((o) => (
+                <div key={o.id} className="bg-card rounded-2xl border p-5 shadow-sm space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                    <div>
+                      <p className="font-display font-bold text-base">Đơn hàng #{o.order_code}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {fmtDateTime(o.created_at)} · {o.store_name}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
+                        {o.current_status || "Đang xử lý"}
+                      </Badge>
+                      <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+                        <Link to="/theo-doi-don" search={{ code: o.order_code }}>
+                          Theo dõi
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    {o.items?.map((item, idx) => (
+                      <p key={idx} className="text-sm flex justify-between">
+                        <span>
+                          {item.qty}x {item.product_name} ({item.size_label})
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2 border-t text-sm font-semibold">
+                    <span>Tổng thanh toán:</span>
+                    <span className="text-primary font-bold text-base">{vnd(o.total)}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </TabsContent>
 
           <TabsContent value="wishlist">

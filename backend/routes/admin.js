@@ -354,7 +354,7 @@ router.get('/orders/:id', async (req,res) => {
 });
 
 const updateOrderStatus = async (req, res) => {
-  const { status, note } = req.body;
+  const { status, note, driver_name, driver_phone, tracking_url } = req.body;
   const v = ['Chờ xác nhận', 'Đã xác nhận', 'Đang chuẩn bị', 'Đang giao', 'Hoàn thành', 'Đã hủy'];
   if (!v.some((s) => s === status)) return res.status(400).json({ error: 'Trạng thái không hợp lệ' });
   try {
@@ -367,6 +367,12 @@ const updateOrderStatus = async (req, res) => {
       );
       if (status === 'Đang chuẩn bị') {
         await tx.query('UPDATE orders SET kitchen_notified_at = GETDATE(), updated_at = GETDATE() WHERE id = ?', [req.params.id]);
+      }
+      if (status === 'Đang giao' && (driver_name || driver_phone || tracking_url)) {
+        await tx.query(
+          'UPDATE orders SET shipping_driver_name = ?, shipping_driver_phone = ?, shipping_tracking_url = ?, updated_at = GETDATE() WHERE id = ?',
+          [driver_name || null, driver_phone || null, tracking_url || null, req.params.id],
+        );
       }
       return { order_id: Number(req.params.id), status };
     });
@@ -657,7 +663,15 @@ router.post('/inventory/:id/log', async (req,res) => {
 // ═══════════ KITCHEN ═══════════
 router.get('/kitchen/orders', async (req,res) => {
   try {
-    const [orders]=await db.query("SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.table_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Chờ xác nhận',N'Đã xác nhận',N'Đang chuẩn bị') ORDER BY o.created_at");
+    const { store_id } = req.query;
+    let sql = "SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.table_id,o.store_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Đang chuẩn bị', N'Chờ xác nhận')";
+    const params = [];
+    if (store_id && store_id !== 'all') {
+      sql += " AND o.store_id = ?";
+      params.push(store_id);
+    }
+    sql += " ORDER BY o.created_at";
+    const [orders] = await db.query(sql, params);
     for(const o of orders){const [items]=await db.query("SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id=oi.id FOR JSON PATH) AS toppings FROM order_items oi WHERE oi.order_id=?",[o.id]);o.items=items.map(i=>{let t=[];try{t=JSON.parse(i.toppings||'[]');}catch{}return{...i,toppings:t};});}
     res.json(orders);
   } catch(err) { res.status(500).json({error:err.message}); }

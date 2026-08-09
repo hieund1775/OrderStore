@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet, apiPost } from "@/lib/api";
-import { vnd } from "@/lib/data";
+import { fmtDateTime, vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/theo-doi-don")({
   validateSearch: (search: Record<string, unknown>): { code?: string } => ({
@@ -58,13 +58,17 @@ type OrderStatus =
   | "Hoàn thành"
   | "Đã hủy";
 
-const steps: { status: OrderStatus; icon: typeof Timer; desc: string }[] = [
-  { status: "Chờ xác nhận", icon: Timer, desc: "Hệ thống đã nhận đơn" },
-  { status: "Đã xác nhận", icon: ClipboardCheck, desc: "Cửa hàng đã chấp nhận đơn" },
-  { status: "Đang chuẩn bị", icon: CupSoda, desc: "Barista đang pha chế trà" },
-  { status: "Đang giao", icon: Bike, desc: "Shipper đang trên đường" },
-  { status: "Hoàn thành", icon: PartyPopper, desc: "Giao thành công" },
+const steps: { status: string; icon: typeof CupSoda; desc: string }[] = [
+  { status: "Đang chuẩn bị", icon: CupSoda, desc: "Bếp đang pha chế & đóng gói món" },
+  { status: "Đang giao", icon: Bike, desc: "Shipper đang giao / Đã mang ra bàn" },
+  { status: "Hoàn thành", icon: PartyPopper, desc: "Đơn hàng hoàn tất" },
 ];
+
+function getStepIndex(status: string): number {
+  if (status === "Đang giao") return 1;
+  if (status === "Hoàn thành") return 2;
+  return 0; // "Chờ xác nhận", "Đã xác nhận", "Đang chuẩn bị"
+}
 
 type LookupItem = {
   product_name: string;
@@ -92,6 +96,9 @@ type LookupOrder = {
   discount_amount: number;
   subtotal: number;
   total: number;
+  shipping_driver_name?: string | null;
+  shipping_driver_phone?: string | null;
+  shipping_tracking_url?: string | null;
   note: string | null;
   created_at: string;
   current_status: OrderStatus;
@@ -224,7 +231,7 @@ function Tracking() {
   }
 
   const cancelled = order.current_status === "Đã hủy";
-  const currentStep = steps.findIndex((s) => s.status === order.current_status);
+  const currentStep = getStepIndex(order.current_status);
   const completed = order.current_status === "Hoàn thành";
 
   return (
@@ -253,14 +260,14 @@ function Tracking() {
 
           <ol className="mt-8 space-y-0">
             {steps.map((s, i) => {
-              const done = !cancelled && currentStep >= 0 && i < currentStep;
-              const active = !cancelled && i === currentStep;
+              const done = !cancelled && (currentStep > i || completed);
+              const active = !cancelled && currentStep === i && !completed;
               return (
                 <li key={s.status} className="relative flex gap-4 pb-8 last:pb-0">
                   {i < steps.length - 1 && (
                     <span
                       className={`absolute top-10 left-5 h-full w-0.5 ${
-                        cancelled ? "bg-berry/20" : done || (completed && i < steps.length - 1) ? "bg-leaf" : "bg-border"
+                        cancelled ? "bg-berry/20" : done ? "bg-leaf" : "bg-border"
                       }`}
                     />
                   )}
@@ -270,7 +277,7 @@ function Tracking() {
                         ? i === 0
                           ? "bg-berry/15 border-berry/40 text-berry"
                           : "bg-card border-border text-muted-foreground opacity-50"
-                        : done || completed
+                        : done
                           ? "bg-leaf border-leaf text-leaf-foreground"
                           : active
                             ? "gradient-warm border-primary text-primary-foreground animate-pulse"
@@ -283,7 +290,7 @@ function Tracking() {
                       ) : (
                         <Check className="size-5" />
                       )
-                    ) : done || completed ? (
+                    ) : done ? (
                       <Check className="size-5" />
                     ) : (
                       <s.icon className="size-5" />
@@ -292,7 +299,7 @@ function Tracking() {
                   <div className="pt-1.5">
                     <p
                       className={`text-sm font-bold ${
-                        active ? "text-primary" : done || completed ? "text-foreground" : "text-muted-foreground"
+                        active ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"
                       }`}
                     >
                       {s.status}
@@ -308,9 +315,33 @@ function Tracking() {
             })}
           </ol>
 
-          {order.current_status === "Chờ xác nhận" && (
-            <Button variant="outline" className="text-berry w-full" onClick={() => setCancelOpen(true)}>
-              <XCircle className="size-4" /> Hủy đơn hàng
+          {/* Shipper & Live Tracking link when order is Đang giao */}
+          {order.current_status === "Đang giao" && (
+            <div className="bg-primary/5 border-primary/20 mt-6 rounded-xl border p-4 space-y-3">
+              <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                <Bike className="size-5" /> Thông tin giao hàng / Tài xế
+              </div>
+              {order.shipping_driver_name && (
+                <p className="text-sm text-foreground">
+                  <span className="font-semibold">Tài xế:</span> {order.shipping_driver_name}{" "}
+                  {order.shipping_driver_phone ? `(${order.shipping_driver_phone})` : ""}
+                </p>
+              )}
+              {order.shipping_tracking_url ? (
+                <Button asChild className="w-full mt-2" variant="hero">
+                  <a href={order.shipping_tracking_url} target="_blank" rel="noopener noreferrer">
+                    <Bike className="mr-2 size-4" /> Xem hành trình tài xế (Grab / Ahamove)
+                  </a>
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">Tài xế đang vận chuyển đơn hàng tới bạn.</p>
+              )}
+            </div>
+          )}
+
+          {!cancelled && !completed && currentStep === 0 && (
+            <Button variant="outline" className="text-berry mt-6 w-full" onClick={() => setCancelOpen(true)}>
+              <XCircle className="size-4 mr-1" /> Hủy đơn hàng
             </Button>
           )}
         </section>
@@ -361,7 +392,7 @@ function Tracking() {
               </p>
               <p className="text-muted-foreground text-xs">
                 {order.customer_name} · {order.payment_method} ·{" "}
-                {new Date(order.created_at).toLocaleString("vi-VN")}
+                {fmtDateTime(order.created_at)}
               </p>
             </CardContent>
           </Card>
@@ -373,7 +404,7 @@ function Tracking() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hủy đơn {order.order_code}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Đơn chỉ hủy được khi đang ở trạng thái "Chờ xác nhận". Hành động này không thể hoàn tác.
+              Đơn chỉ hủy được khi đang ở trạng thái "Đang chuẩn bị". Hành động này không thể hoàn tác.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input

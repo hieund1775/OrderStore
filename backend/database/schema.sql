@@ -128,6 +128,9 @@ CREATE TABLE orders (
     delivery_addr NVARCHAR(300) NULL, voucher_code NVARCHAR(50) NULL,
     discount_amount INT NOT NULL DEFAULT 0, points_used INT NOT NULL DEFAULT 0, points_earned INT NOT NULL DEFAULT 0,
     subtotal INT NOT NULL, total INT NOT NULL,
+    shipping_driver_name NVARCHAR(120) NULL,
+    shipping_driver_phone NVARCHAR(20) NULL,
+    shipping_tracking_url NVARCHAR(500) NULL,
     is_printed BIT NOT NULL DEFAULT 0, kitchen_notified_at DATETIME2 NULL,
     note NVARCHAR(500) NULL, cancel_reason NVARCHAR(300) NULL,
     created_at DATETIME2 NOT NULL DEFAULT GETDATE(), updated_at DATETIME2 NOT NULL DEFAULT GETDATE()
