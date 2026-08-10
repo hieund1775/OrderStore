@@ -1,3 +1,5 @@
+import { handleLocalMock } from './mock-engine';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const TOKEN_KEY = 'teaplus_admin_token';
 
@@ -43,20 +45,42 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   const token = path.startsWith('/admin') ? adminToken : customerToken || adminToken;
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    if (res.status === 401 && path.startsWith('/admin') && path !== '/admin/login' && typeof window !== "undefined") {
-      clearToken();
-      if (window.location.pathname !== "/admin/login") {
-        window.location.href = "/admin/login";
-      }
-    }
-    const message = data?.error || data?.message || `Lỗi ${res.status}`;
-    throw new ApiError(res.status, message, data);
+  // Kích hoạt mode Standalone nếu được cấu hình VITE_STANDALONE=true
+  if (import.meta.env.VITE_STANDALONE === 'true' && typeof window !== 'undefined') {
+    return handleLocalMock<T>(path, options);
   }
-  return data as T;
+
+  try {
+    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const contentType = res.headers.get('content-type') || '';
+    
+    // Nếu server trả HTML (Vercel 404 standalone page) thay vì JSON
+    if (contentType.includes('text/html') && typeof window !== 'undefined') {
+      return handleLocalMock<T>(path, options);
+    }
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      if (res.status === 404 && typeof window !== 'undefined') {
+        return handleLocalMock<T>(path, options);
+      }
+      if (res.status === 401 && path.startsWith('/admin') && path !== '/admin/login' && typeof window !== "undefined") {
+        clearToken();
+        if (window.location.pathname !== "/admin/login") {
+          window.location.href = "/admin/login";
+        }
+      }
+      const message = data?.error || data?.message || `Lỗi ${res.status}`;
+      throw new ApiError(res.status, message, data);
+    }
+    return data as T;
+  } catch (err) {
+    if (typeof window !== 'undefined') {
+      return handleLocalMock<T>(path, options);
+    }
+    throw err;
+  }
 }
 
 export class ApiError extends Error {

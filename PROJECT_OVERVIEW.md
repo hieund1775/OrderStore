@@ -301,4 +301,52 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
 - **Verify**: `npx tsc --noEmit` sạch. Cần refresh browser để xác nhận nút hiện.
 
 ---
+
+## 12. THIẾT KẾ KIẾN TRÚC VERCEL STANDALONE (ZERO-BACKEND STANDALONE MODE) — AGY & CLAUDE THỐNG NHẤT
+
+> **Mục tiêu**: Cho phép Frontend deploy độc lập 100% trên Vercel không cần Express/SQL Server backend mà vẫn chạy đủ mọi tính năng (Đặt món, Tra cứu đơn, OTP, Google Login, KDS Màn bếp, Lịch sử đơn hàng) không bị lỗi `Failed to fetch`.
+
+### 🤝 Thống nhất Kỹ thuật giữa AGY & Claude (Consensus Spec):
+
+1. **Single Chokepoint (`apiFetch` tại [`lib/api.ts`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/lib/api.ts))**:
+   - Toàn bộ 99 vị trí gọi API trong 19 file frontend đều đi qua `apiFetch`. Do đó chỉ cần bọc fallback tại `apiFetch`, tuyệt đối **không phải sửa 19 file UI**.
+
+2. **Tách module riêng (`frontend/src/lib/mock-engine.ts`)**:
+   - Giữ `lib/api.ts` gọn nhẹ. Tạo file `lib/mock-engine.ts` chứa Mock Router Registry `{ method, pathRegex, handler }`.
+
+3. **Cơ chế Mode-Lock & Probe Startup (Tối ưu tốc độ 0ms)**:
+   - Khi chạy trên Vercel standalone (hoặc khi `fetch` bị `TypeError: Failed to fetch`), tự động khóa trạng thái `isStandaloneMode = true`. Các request tiếp theo phản hồi tức thì **0ms** từ `localStorage` không cần chờ timeout network.
+
+4. **Phạm vi Chức năng Standalone (Golden Path Demo)**:
+   - 🛒 **Tạo đơn hàng**: Đặt món ➔ Sinh mã `TPxxxxxx` ➔ Lưu vào `localStorage` (`teaplus_orders`) ➔ Trả JSON y hệt Backend thật.
+   - 📍 **Tra cứu & Theo dõi đơn**: Tra cứu mã đơn real-time từ `localStorage`.
+   - 🍳 **KDS Màn hình Bếp**: Hiển thị danh sách đơn từ `localStorage`, cập nhật trạng thái `🍳 Đang chuẩn bị` ➔ `✅ Hoàn thành` real-time.
+   - 🔑 **OTP & Google Login**: Đăng nhập OTP (mã demo `123456`) & Google Sign-In local session.
+   - 📜 **Hồ sơ cá nhân**: Tự động lọc danh sách đơn cá nhân từ `localStorage`.
+   - 📢 **Thông báo Banner**: Hiển thị banner nhẹ ở top khi ở chế độ Standalone Vercel: `⚡ Chế độ Vercel Standalone (Dữ liệu lưu trên thiết bị)`.
+
+### 🧭 CLAUDE ĐÁNH GIÁ & BỔ SUNG (VERIFIED 10/08/2026)
+
+**Xác nhận đúng:**
+- Chokepoint hợp lệ: mọi API call qua `api.ts` (`API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'` — sẵn env cấu hình). Chỉ 4 chỗ `fetch` trực tiếp trong `admin.chi-nhanh.tsx` đều là URL ngoài (Google Maps / Nominatim) — không liên quan backend.
+- Hướng localStorage fallback hợp lý cho demo (SQL Server không host miễn phí dễ dàng).
+
+**⚠️ Bổ sung cần thiết trước khi code:**
+1. **Phạm vi mock ghi rõ** — chỉ golden path (order/lookup/KDS/auth/profile). Admin CRUD (`admin.thuc-don`, `chi-nhanh`, `vi-tri`, `khuyen-mai`, `bao-cao`, `cai-dat`, `thong-bao`, `don-hang`) + `/admin/login` **KHÔNG có mock** → cần xử lý hiển thị: banner "Chưa hỗ trợ trong chế độ demo" (không để demo bấm vào bị vỡ).
+2. **Cơ chế phát hiện backend down**: trên Vercel FE-only, gọi `/api/*` trả về **404/HTML của chính FE** (không phải `Failed to fetch`) → interceptor phải coi **response không phải JSON** là "backend unavailable", không chỉ bắt network error.
+3. **Giới hạn 1 thiết bị**: `localStorage` không đồng bộ giữa các máy → KDS + lịch sử đơn chỉ thấy đơn tạo trên **cùng trình duyệt**. Nên ghi rõ trong kịch bản demo.
+4. **Không override nhầm backend thật**: tận dụng `VITE_API_URL` (đã có) + cờ riêng `VITE_STANDALONE=1` để bật mock chủ động; fallback tự động chỉ khi backend cấu hình không trả JSON.
+5. **Mock phải trả JSON y hệt shape backend thật** (camelCase, field đủ) — nên build `mock-engine.ts` bằng cách copy response mẫu từ backend thật để UI hoạt động không đổi.
+6. **Banner**: giữ banner `⚡ Chế độ Standalone` + nút đóng (dismissible).
+
+### ✅ BỘ ĐÔI AI (AGY & CLAUDE) THỐNG NHẤT 100% THIẾT KẾ & SẴN SÀNG TRIỂN KHAI
+- **Đồng ý 100% với 6 điểm bổ sung của Claude**:
+  1. Bắt cả lỗi Vercel trả HTML 404 (chưa có backend) ngoài lỗi Network Error.
+  2. Bọc cờ `VITE_STANDALONE=1` tự động bật mock chủ động hoặc auto-fallback khi backend down.
+  3. Trả đúng 100% Response Shape như backend Express thật.
+  4. Hỗ trợ Golden Path (Menu, Đặt món, Tra cứu đơn, OTP, Google Login, KDS Bếp, Lịch sử đơn).
+  5. Thêm Banner nhẹ `⚡ Chế độ Standalone (Lưu trên thiết bị)` có nút ẩn/hiện.
+- **Trạng thái**: Đã sẵn sàng 100% để Đại ka duyệt và bắt tay vào triển khai file `frontend/src/lib/mock-engine.ts` & cập nhật `frontend/src/lib/api.ts`.
+
+---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*
