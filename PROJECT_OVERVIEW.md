@@ -536,5 +536,97 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
 **🟡 Lưu ý nhỏ (không chặn):**
 - Mode **Bluetooth BLE** hiện chỉ là **cờ cấu hình** (localStorage) — chưa kết nối thật với máy in BLE (badge hiện "🟢 Đã nối Bluetooth BLE" dù chưa quét/ghép). Đúng theo thiết kế Giai đoạn 2 mở rộng — khi demo nói rõ: mới là "cấu hình chọn mode", chưa phải "kết nối thật".
 
+### ✅ BIÊN BẢN NGHIỆM THU — TÊN MÁY IN CHỈNH SỬA ĐƯỢC TRÊN BADGE KDS (Claude VERIFIED 10/08/2026)
+
+**Kết quả: ✅ ĐẠT — cho qua.**
+
+| # | Kiểm tra | Trạng thái |
+|---|---|---|
+| 1 | `PrinterPairingModal` — ô nhập **Tên/Model máy in** (mặc định theo mode: Xprinter XP-Q808 USB / XP-P300 BLE) | ✅ |
+| 2 | Lưu `device_name` tuỳ chỉnh vào `teaplus_active_printer`, fallback mặc định nếu để trống | ✅ |
+| 3 | Badge KDS hiển thị `🟢 Đã nối: {tên máy in}` thay label chung | ✅ |
+| 4 | Hint text hướng dẫn nhân viên | ✅ |
+| 5 | `npx tsc --noEmit` + `npm run build` | ✅ Sạch |
+
+**Nhận xét:** Cải thiện UX tốt — nhân viên đặt tên máy in theo tiệm và thấy ngay trên header KDS, tránh nhầm máy khi nhiều máy in. Không phát hiện lỗi.
+
+---
+
+## 18. CHỐT 100% THIẾT KẾ: PHÂN LOẠI HÌNH THỨC ĐƠN & MÃ QR TRÊN HÓA ĐƠN (RECEIPT FORMATTING & BILL QR UNIFIED CONSENSUS) — AGY & CLAUDE
+
+> **Mục tiêu**: Chuẩn hóa hiển thị Hình thức đơn (Giao tận nơi vs Tại bàn vs Mang đi) trên Hóa đơn/Ticket in ấn, validate bắt buộc địa chỉ giao hàng ở backend, và chốt cơ chế Mã QR kép trên Hóa đơn.
+
+### 🎯 1. Phân loại Hình thức Đơn & Tự động Format Chuẩn (Strict System Formatting):
+- **Nguyên tắc**: 100% do hệ thống tự động trích xuất và format từ dữ liệu đơn hàng (Rủi ro 0%), không cho phép gõ tự do làm sai lệch dữ liệu.
+- **3 Dạng hiển thị chuẩn hóa**:
+  1. **Giao hàng tận nơi (Delivery)**:
+     - Dòng tiêu đề: `🚚 GIAO HÀNG TẬN NƠI`
+     - Thông tin chi tiết: `📍 ĐC Giao: [delivery_addr]` | `👤 Khách: [customer_name] - 📞 SĐT: [customer_phone]`
+     - **Ràng buộc Backend (Zero-Trust Validation)**: Bắt buộc `POST /api/orders` kiểm tra `if (order_type === 'Delivery' && !delivery_addr?.trim()) throw Error('Chưa có địa chỉ giao hàng')`.
+  2. **Tại bàn (Dine-in)**:
+     - Dòng tiêu đề: `🏢 TẠI BÀN: [location_name / Bàn N]` (Tự động nhận diện từ `table_id`)
+     - Chi nhánh: `[store_name]`
+  3. **Mang đi (Take-away)**:
+     - Dòng tiêu đề: `🛍️ MANG ĐI (Tại quầy)`
+     - Chi nhánh: `[store_name]`
+
+### 🎯 2. Chốt Kiến trúc Mã QR Kép trên Hóa đơn (Dual Bill QR Code Strategy):
+- **QR Chính (Mặc định)**: **Mã QR Live Tracking Đơn hàng (`/theo-doi-don?code=TPxxxxxx`)**.
+  - *Lý do*: Khách cầm Bill in ấn có thể dùng camera điện thoại quét ngay lập tức để theo dõi Tiến độ pha chế/vận chuyển 3 bước real-time 0ms.
+- **QR Phụ (Có điều kiện - Conditional VietQR)**:
+  - Nếu đơn chọn `payment_method === 'Chuyển khoản (VietQR)'` và chưa hoàn tất thanh toán ➔ Tự động sinh **Mã QR VietQR Chuyển khoản Ngân hàng** ở chân bill cho khách quét trả tiền tại quầy.
+- **Cấu hình Domain linh hoạt (`VITE_APP_URL`)**: Sử dụng `VITE_APP_URL` cấu hình Domain công khai (như Vercel/Domain riêng) làm Prefix cho mã QR thay vì hardcode `localhost`.
+
+### 🎯 CHỐT 4 QUYẾT ĐỊNH KỸ THUẬT TRIỂN KHAI MỤC 18 (AGY & CLAUDE UNIFIED)
+
+1. **Phân loại Hiển thị Hình thức Đơn (Không sửa DB Schema)**:
+   - Giữ nguyên enum DB `('Delivery', 'Take-away', 'POS')`. Tự động format hiển thị chuẩn trên Bill & Ticket Bếp:
+     - `order_type === 'Delivery'`: `🚚 GIAO HÀNG TẬN NƠI` (kèm `📍 Địa chỉ` & `👤 Khách - 📞 SĐT`).
+     - Có `table_id` / `location_name`: `🏢 TẠI BÀN: [location_name / Bàn N]`.
+     - `order_type === 'Take-away'` (không có bàn): `🛍️ MANG ĐI (Tại quầy)`.
+2. **Backend & Standalone Validation địa chỉ**:
+   - Bắt buộc kiểm tra: `if (order_type === 'Delivery' && !delivery_addr?.trim()) throw new Error('Vui lòng nhập địa chỉ giao hàng')`.
+3. **Kiến trúc Mã QR trên Hóa đơn**:
+   - **Mặc định**: Mã QR Live Tracking Đơn hàng (`${appBaseUrl}/theo-doi-don?code=TPxxxxxx`).
+   - **Khi `payment_method === 'Chuyển khoản (VietQR)'`**: Hiển thị Mã QR VietQR Chuyển khoản với thông tin số tài khoản cửa hàng.
+4. **Cấu hình Domain linh hoạt (`VITE_APP_URL`)**:
+   - Sử dụng `import.meta.env.VITE_APP_URL || window.location.origin` làm Prefix cho Mã QR, không bị dính `localhost` khi in từ máy quầy.
+
+---
+
+## 19. CHỐT KẾT NỐI VẬN HÀNH THỰC TẾ: MÃ QR QUẢNG BÁ CỬA HÀNG & NGUYÊN TẮC THANH TOÁN TRƯỚC (REAL-WORLD POS BILL QR SPEC) — AGY & CLAUDE
+
+> **Mục tiêu**: Loại bỏ triệt để rủi ro vận hành (chặn in QR chuyển khoản trên bill giấy vì quy tắc POS phải trả tiền trước mới nhả bill) và chốt **Mã QR Thương hiệu Cửa hàng / Menu Re-order & Tích điểm** ở chân Hóa đơn.
+
+### 💡 1. Phản biện Vận hành Thực tế của Đại ka (100% Sắc bén & Chính xác):
+1. **Nguyên tắc POS Thu ngân**: `Đã thanh toán (Tiền mặt / Chuyển khoản verified) ➔ Mới in Bill xuất cho khách`.
+   - ❌ *In QR VietQR chờ chuyển khoản trên bill*: Rủi ro cực lớn! Khách cầm bill đi mất mà chưa chuyển tiền, gây nhầm lẫn cho thu ngân và thất thoát doanh thu. **Chốt loại bỏ 100% QR thanh toán trên bill!**
+2. **Khách hàng Giao hàng / Từ xa**: Đã theo dõi trực tiếp trên giao diện điện thoại (Web/App), không đọc bill giấy tại quầy.
+
+### 🎯 2. Chốt Chuẩn hóa Mã QR Chân Hóa đơn — Mã QR Thương hiệu & Menu Cửa hàng (Store Brand QR Code):
+- **Nội dung Mã QR**: Dẫn về Trang Menu Chi nhánh của tiệm (`${appBaseUrl}/menu?store_id=${order.store_id}`).
+- **Thông điệp hiển thị dưới Mã QR**:
+  ```text
+  📱 Quét mã QR để xem Menu & Đặt món đơn tiếp theo
+  ⭐ Cảm ơn quý khách! Chúc quý khách ngon miệng! ⭐
+  ```
+- **Lưu ý Kỹ thuật**:
+  - Truyền `store_id` vào `BillOrder` interface tại [`InBillModal.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/InBillModal.tsx).
+  - Sử dụng `import.meta.env.VITE_APP_URL || window.location.origin` làm Domain Prefix cho Mã QR, không bị dính `localhost` khi in từ máy quầy.
+- **Giá trị Thực tế**:
+  - Khách cầm bill về nhà/văn phòng có thể dễ dàng dùng camera điện thoại quét mã QR trên tờ bill để **mở Menu đặt món tiếp cho lần sau** hoặc **xem thông tin tích điểm thành viên**.
+  - Đúng chuẩn vận hành của các chuỗi F&B lớn (Highlands, Phúc Long, Gong Cha).
+
+### ✅ CLAUDE CHỐT THEO ĐẠI KA — BILL CHỈ CÓ 1 MÃ QR STORE-BRAND (VERIFIED 10/08/2026)
+
+- **Chốt (a)**: Bill in ra chỉ có **1 Mã QR duy nhất = Store Brand Menu** (`${appBaseUrl}/menu?store_id=X`) — **thay thế** QR tracking cũ ở `InBillModal.tsx`. Gọn cho bill 80mm, đúng chuẩn F&B.
+- **Lưu ý đồng bộ**: Mục 19 **thay thế mục 18 #3** (bỏ hẳn QR VietQR thanh toán trên bill). Khi code chỉ dựa vào mục 19.
+- **Việc cần làm khi code**:
+  1. `InBillModal.tsx`: đổi QR từ `/theo-doi-don?code=...` → `/menu?store_id=${order.store_id}`.
+  2. Truyền `store_id` vào `BillOrder` interface (từ order data).
+  3. Dùng prefix `import.meta.env.VITE_APP_URL || window.location.origin`.
+  4. Backend `public.js`: thêm validate `if (order_type === 'Delivery' && !delivery_addr?.trim())` trả 400.
+  5. Hiển thị hình thức đơn trên Bill/Ticket: `🚚 GIAO HÀNG TẬN NƠI` / `🏢 TẠI BÀN: [Bàn N]` (khi có table_id) / `🛍️ MANG ĐI (Tại quầy)` — display-only, không sửa DB.
+
 ---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*

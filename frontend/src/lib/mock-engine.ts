@@ -36,6 +36,9 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
   // 1. POST /api/orders (Tạo đơn hàng Client-side Standalone)
   if (path.startsWith('/api/orders') && method === 'POST' && !path.includes('/cancel')) {
+    if (body.order_type === 'Delivery' && (!body.delivery_addr || !body.delivery_addr.trim())) {
+      return Promise.reject(new Error('Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng'));
+    }
     const items = body.items || [];
     let subtotal = 0;
     const itemsWithDetails = items.map((item: any) => {

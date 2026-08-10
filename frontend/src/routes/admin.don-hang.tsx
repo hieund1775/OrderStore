@@ -383,8 +383,11 @@ function toBillOrder(o: AdminOrderFull): BillOrder {
   return {
     id: o.id,
     order_code: o.order_code,
+    store_id: o.store_id,
     store_name: o.store_name,
     location_name: o.location_name ?? null,
+    order_type: o.order_type,
+    delivery_addr: o.delivery_addr ?? null,
     customer_name: o.customer_name,
     customer_phone: o.customer_phone,
     payment_method: o.payment_method,
