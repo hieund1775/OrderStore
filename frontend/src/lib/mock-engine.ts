@@ -84,6 +84,9 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       total: subtotal,
       created_at: new Date().toISOString(),
       items: itemsWithDetails,
+      status_history: [
+        { status: 'Đang chuẩn bị', note: 'Đơn hàng mới tạo', created_at: new Date().toISOString() }
+      ],
     };
 
     const existing = getLocalOrders();
@@ -124,6 +127,9 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
         { product_name: 'Trà Cam Sả Mật Ong', qty: 1, size_label: 'M', base_tea: 'Lục Trà Lài', sugar_level: '100%', ice_level: '100%', note: null, unit_price: 45000, line_total: 45000, toppings: [] },
         { product_name: 'Trà Dâu Tây Tuyết', qty: 1, size_label: 'L', base_tea: 'Hồng Trà', sugar_level: '100%', ice_level: '100%', note: null, unit_price: 40000, line_total: 40000, toppings: [] },
       ],
+      status_history: [
+        { status: 'Đang chuẩn bị', note: 'Đơn hàng mới tạo', created_at: new Date().toISOString() }
+      ],
     };
 
     if (path.startsWith('/api/orders/lookup')) {
@@ -139,7 +145,15 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const orders = getLocalOrders();
     const updated = orders.map((o: any) => {
       if (String(o.id) === idStr || o.order_code === idStr) {
-        return { ...o, current_status: 'Đã hủy' };
+        const history = o.status_history || [];
+        return {
+          ...o,
+          current_status: 'Đã hủy',
+          status_history: [
+            ...history,
+            { status: 'Đã hủy', note: 'Khách hàng yêu cầu hủy đơn', created_at: new Date().toISOString() }
+          ]
+        };
       }
       return o;
     });
