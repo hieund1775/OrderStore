@@ -62,9 +62,6 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
-      if (res.status === 404 && typeof window !== 'undefined') {
-        return handleLocalMock<T>(path, options);
-      }
       if (res.status === 401 && path.startsWith('/admin') && path !== '/admin/login' && typeof window !== "undefined") {
         clearToken();
         if (window.location.pathname !== "/admin/login") {

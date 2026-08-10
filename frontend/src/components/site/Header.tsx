@@ -560,9 +560,28 @@ function ProfileButton() {
   );
 }
 
+function StandaloneBanner() {
+  const [show, setShow] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return import.meta.env.VITE_STANDALONE === 'true' || window.location.hostname.includes('vercel.app');
+  });
+
+  if (!show) return null;
+
+  return (
+    <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-300 py-1.5 px-4 text-center text-xs flex items-center justify-center gap-2">
+      <span>⚡ Đang chạy Chế độ Vercel Standalone (Dữ liệu lưu trên thiết bị này)</span>
+      <button onClick={() => setShow(false)} className="hover:opacity-100 opacity-60 font-bold ml-2" aria-label="Đóng thông báo">
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export function Header() {
   return (
     <header className="bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
+      <StandaloneBanner />
       <div className="bg-primary text-primary-foreground py-1.5 text-center text-xs">
         🍓 Freeship 0đ cho đơn từ 99.000₫ · Hotline {brand.hotline}
       </div>

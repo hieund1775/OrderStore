@@ -1,5 +1,4 @@
 import { products, stores } from './data';
-import { getCustomerUser } from './api';
 
 export function getLocalOrders(): any[] {
   if (typeof window === 'undefined') return [];
@@ -16,6 +15,16 @@ export function saveLocalOrders(orders: any[]) {
   localStorage.setItem('teaplus_orders', JSON.stringify(orders));
 }
 
+function getStoredCustomerUser() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('teaplus_customer_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function handleLocalMock<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase();
   let body: any = {};
@@ -29,7 +38,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
   if (path.startsWith('/api/orders') && method === 'POST' && !path.includes('/cancel')) {
     const items = body.items || [];
     let subtotal = 0;
-    const itemsWithNames = items.map((item: any) => {
+    const itemsWithDetails = items.map((item: any) => {
       const p = products.find((prod) => prod.id === item.product_id || prod.name === item.product_id) || products[0];
       const price = p ? p.price : 45000;
       const qty = item.qty || 1;
@@ -39,6 +48,13 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
         product_name: p ? p.name : 'Trà Trái Cây',
         qty,
         size_label: item.size_id === 2 ? 'L' : 'M',
+        base_tea: item.base_tea || 'Lục Trà Lài',
+        sugar_level: item.sugar_level || '100%',
+        ice_level: item.ice_level || '100%',
+        note: item.note || null,
+        unit_price: price,
+        line_total: itemTotal,
+        toppings: [],
         price,
         itemTotal,
       };
@@ -48,7 +64,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const store = stores.find((s) => String(s.id) === String(storeId)) || stores[0];
 
     const orderCode = 'TP' + Math.floor(100000 + Math.random() * 900000);
-    const user = getCustomerUser();
+    const user = getStoredCustomerUser();
     const newOrder = {
       id: Date.now(),
       order_code: orderCode,
@@ -60,12 +76,14 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       payment_method: body.payment_method || 'COD',
       store_id: Number(storeId),
       store_name: store.name,
-      current_status: '🍳 Đang chuẩn bị',
+      location_name: null,
+      voucher_code: body.voucher_code || null,
+      current_status: 'Đang chuẩn bị',
       subtotal,
       discount_amount: 0,
       total: subtotal,
       created_at: new Date().toISOString(),
-      items: itemsWithNames,
+      items: itemsWithDetails,
     };
 
     const existing = getLocalOrders();
@@ -80,34 +98,38 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     } as T);
   }
 
-  // 2. GET /api/orders/track?code=X (Tra cứu đơn hàng)
-  if (path.startsWith('/api/orders/track')) {
+  // 2. GET /api/orders/lookup?code=X & /api/orders/track?code=X (Tra cứu đơn hàng)
+  if (path.startsWith('/api/orders/lookup') || path.startsWith('/api/orders/track')) {
     const code = new URLSearchParams(path.split('?')[1] || '').get('code');
     const orders = getLocalOrders();
     const found = orders.find((o: any) => o.order_code === code);
 
-    if (found) {
-      return Promise.resolve(found as T);
-    }
-    // Fallback demo order nếu chưa có trong localStorage
-    return Promise.resolve({
+    const orderData = found || {
       id: 999,
       order_code: code || 'TP123456',
-      current_status: '🍳 Đang chuẩn bị',
+      current_status: 'Đang chuẩn bị',
       order_type: 'Delivery',
+      payment_method: 'COD',
       customer_name: 'Khách hàng Demo',
       customer_phone: '0901234567',
       delivery_addr: '123 Nguyễn Huệ, Q.1, TP.HCM',
+      store_name: 'Trà Trái Cây Tô – Nguyễn Huệ',
+      location_name: null,
+      voucher_code: null,
       total: 85000,
       subtotal: 85000,
       discount_amount: 0,
       created_at: new Date().toISOString(),
-      store_name: 'Trà Trái Cây Tô – Nguyễn Huệ',
       items: [
-        { product_name: 'Trà Cam Sả Mật Ong', qty: 1, size_label: 'M', price: 45000 },
-        { product_name: 'Trà Dâu Tây Tuyết', qty: 1, size_label: 'L', price: 40000 },
+        { product_name: 'Trà Cam Sả Mật Ong', qty: 1, size_label: 'M', base_tea: 'Lục Trà Lài', sugar_level: '100%', ice_level: '100%', note: null, unit_price: 45000, line_total: 45000, toppings: [] },
+        { product_name: 'Trà Dâu Tây Tuyết', qty: 1, size_label: 'L', base_tea: 'Hồng Trà', sugar_level: '100%', ice_level: '100%', note: null, unit_price: 40000, line_total: 40000, toppings: [] },
       ],
-    } as T);
+    };
+
+    if (path.startsWith('/api/orders/lookup')) {
+      return Promise.resolve({ order: orderData } as T);
+    }
+    return Promise.resolve(orderData as T);
   }
 
   // 3. POST /api/orders/:id/cancel
@@ -117,7 +139,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const orders = getLocalOrders();
     const updated = orders.map((o: any) => {
       if (String(o.id) === idStr || o.order_code === idStr) {
-        return { ...o, current_status: '❌ Đã hủy' };
+        return { ...o, current_status: 'Đã hủy' };
       }
       return o;
     });
@@ -194,12 +216,27 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     } as T);
   }
 
-  // 11. Stores & Products fallback
+  // 11. Stores & Products & Options fallback
   if (path.startsWith('/admin/stores') || path.startsWith('/api/stores')) {
     return Promise.resolve(stores as T);
   }
   if (path.startsWith('/admin/products') || path.startsWith('/api/products')) {
     return Promise.resolve(products as T);
+  }
+  if (path.startsWith('/api/options/sizes')) {
+    return Promise.resolve([{ id: 1, label: 'M', base_price_multiplier: 1.0 }, { id: 2, label: 'L', base_price_multiplier: 1.2 }] as T);
+  }
+  if (path.startsWith('/api/options/toppings')) {
+    return Promise.resolve([
+      { id: 1, name: 'Trân Châu Đen', price: 10000 },
+      { id: 2, name: 'Thạch Trái Cây', price: 10000 },
+      { id: 3, name: 'Kem Cheese', price: 15000 }
+    ] as T);
+  }
+  if (path.startsWith('/api/table/resolve')) {
+    return Promise.resolve({
+      table: { id: 1, name: 'Bàn 01', store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', store_address: '125 Nguyễn Huệ, Q.1' }
+    } as T);
   }
 
   return Promise.resolve({} as T);
