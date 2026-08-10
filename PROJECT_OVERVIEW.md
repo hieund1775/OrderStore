@@ -659,5 +659,19 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
 - ✅ **Kết quả**: Đã thực hiện untrack thư mục `frontend/.output/` an toàn. 
 - ✅ **Bảo toàn**: Các file trên đĩa local vẫn nguyên vẹn 100%, ứng dụng biên dịch và chạy `npm run dev`/`npm run build` bình thường.
 
+### ✅ BIÊN BẢN NGHIỆM THU MỤC 20 — GIT CLEANUP (Claude VERIFIED 10/08/2026)
+
+**Kết quả: ✅ ĐẠT — cho qua.**
+
+| Kiểm tra | Trạng thái |
+|---|---|
+| `.output` không còn trong git track | ✅ (0 file trong `git ls-files`) |
+| `.gitignore` có `.output/` + `**/.output/` | ✅ (giữ untrack vĩnh viễn) |
+| File local `.output` còn nguyên | ✅ (nitro.json, public, server...) |
+| Working tree sạch | ✅ |
+
+**🟡 Lưu ý nhỏ (không chặn):**
+- Untrack chỉ làm repo nhẹ cho commit **tương lai**; lịch sử git cũ vẫn chứa blob `.output` → dung lượng push lên remote chưa giảm hẳn. Muốn giảm tuyệt đối phải rewrite history (`git filter-repo` + force-push) — **không khuyến nghị** cho đồ án SV (rủi ro phá lịch sử/đồng bộ nhóm).
+
 ---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*
