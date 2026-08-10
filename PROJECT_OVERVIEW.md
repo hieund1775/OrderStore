@@ -628,5 +628,11 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
   4. Backend `public.js`: thêm validate `if (order_type === 'Delivery' && !delivery_addr?.trim())` trả 400.
   5. Hiển thị hình thức đơn trên Bill/Ticket: `🚚 GIAO HÀNG TẬN NƠI` / `🏢 TẠI BÀN: [Bàn N]` (khi có table_id) / `🛍️ MANG ĐI (Tại quầy)` — display-only, không sửa DB.
 
+### 🎉 TRẠNG THÁI TRIỂN KHAI MỤC 19 (COMPLETED & VERIFIED)
+- ✅ **Chuẩn hóa Phân loại Đơn trên Hóa đơn (`InBillModal.tsx`)**: Đã hiển thị chính xác tiêu đề `🚚 GIAO HÀNG TẬN NƠI` (kèm ĐC Giao), `🏢 TẠI BÀN` (kèm số bàn) hoặc `🛍️ MANG ĐI (Tại quầy)`. Sửa dứt điểm lỗi hiển thị nhầm PTTT cũ.
+- ✅ **Bảo vệ Zero-Trust địa chỉ Delivery**: Đã thêm validation bắt buộc `delivery_addr` khi `order_type === 'Delivery'` trên cả Backend `public.js` và Standalone `mock-engine.ts`.
+- ✅ **Mã QR Menu Cửa hàng (`InBillModal.tsx`)**: Đã chuyển Mã QR chân bill thành Mã QR dẫn về Menu Chi nhánh (`${appBaseUrl}/menu?store_id=${storeId}`) với Domain Prefix `VITE_APP_URL` linh hoạt.
+- ✅ **Nghiệm thu Build**: `npx tsc --noEmit` & `npm run build` biên dịch sạch 100% (built in 1.73s).
+
 ---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*

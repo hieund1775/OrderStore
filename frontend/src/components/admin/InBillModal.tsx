@@ -182,16 +182,23 @@ export function InBillModal({
             <div className="my-2 border-t border-dashed border-black" />
             <p className="font-bold">Mã đơn: {order.order_code}</p>
             <p>
-              {order.location_name
-                ? `Bàn: ${order.location_name}`
-                : `Loại: ${order.payment_method || "Take-away"}`}
+              <strong>Hình thức:</strong>{' '}
+              {order.order_type === 'Delivery'
+                ? '🚚 GIAO HÀNG TẬN NƠI'
+                : order.location_name
+                ? `🏢 TẠI BÀN (${order.location_name})`
+                : '🛍️ MANG ĐI (Tại quầy)'}
             </p>
             <p>Giờ: {fmtDateTime(order.created_at)}</p>
+            <p>PTTT: {order.payment_method || 'Tiền mặt'}</p>
             {order.customer_name && (
               <p>
                 Khách: {order.customer_name}
-                {order.customer_phone ? ` · ${order.customer_phone}` : ""}
+                {order.customer_phone ? ` · ${order.customer_phone}` : ''}
               </p>
+            )}
+            {order.delivery_addr && (
+              <p className="text-amber-700 font-semibold">ĐC Giao: {order.delivery_addr}</p>
             )}
             <div className="my-2 border-t border-dashed border-black" />
             {order.items.map((it, idx) => (
@@ -204,12 +211,12 @@ export function InBillModal({
                     {[
                       it.size_label || null,
                       it.toppings && it.toppings.length > 0
-                        ? it.toppings.map((t) => t.name).join(", ")
+                        ? it.toppings.map((t) => t.name).join(', ')
                         : null,
                       it.note ? `(${it.note})` : null,
                     ]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .join(' · ')}
                   </span>
                   <span className="font-medium">{vnd(it.line_total)}</span>
                 </div>
@@ -222,7 +229,7 @@ export function InBillModal({
             </div>
             <div className="flex justify-between">
               <span>Giảm giá</span>
-              <span>{order.discount_amount ? `− ${vnd(order.discount_amount)}` : "0₫"}</span>
+              <span>{order.discount_amount ? `− ${vnd(order.discount_amount)}` : '0₫'}</span>
             </div>
             <div className="mt-1 flex justify-between text-sm font-bold">
               <span>TỔNG CỘNG</span>
@@ -231,11 +238,11 @@ export function InBillModal({
             <div className="my-2 border-t border-dashed border-black" />
             {qrDataUrl && (
               <div className="flex justify-center py-1">
-                <img src={qrDataUrl} alt="QR theo dõi đơn" className="size-28" />
+                <img src={qrDataUrl} alt="QR Menu Cửa Hàng" className="size-28" />
               </div>
             )}
             <p className="text-center text-[10px] text-neutral-500">
-              Quét mã QR để theo dõi đơn hàng
+              📱 Quét mã QR để xem Menu & Đặt món đơn tiếp theo
             </p>
             <p className="mt-1 text-center font-bold">Cảm ơn quý khách!</p>
           </div>

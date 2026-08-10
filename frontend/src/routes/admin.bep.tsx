@@ -49,6 +49,7 @@ type KitchenOrder = {
   order_type: string;
   customer_name: string;
   customer_phone: string;
+  delivery_addr: string | null;
   table_id: number | null;
   store_id: number;
   location_name: string | null;
@@ -71,6 +72,7 @@ function toBillOrder(o: KitchenOrder): BillOrder {
     store_name: o.store_name,
     location_name: o.location_name,
     order_type: o.order_type,
+    delivery_addr: o.delivery_addr,
     customer_name: o.customer_name,
     customer_phone: o.customer_phone,
     payment_method: o.payment_method,
