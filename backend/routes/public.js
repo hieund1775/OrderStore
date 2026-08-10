@@ -595,6 +595,10 @@ router.post('/orders', async (req, res) => {
       return res.status(400).json({ error: 'Thiếu thông tin đơn hàng (store_id, tên, SĐT, items)' });
     }
 
+    if (order_type === 'Delivery' && (!delivery_addr || !delivery_addr.trim())) {
+      return res.status(400).json({ error: 'Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng' });
+    }
+
     // Trích xuất customer user_id từ JWT Token nếu có (Zero-Trust)
     let customerUserId = null;
     const authHeader = req.headers.authorization || '';

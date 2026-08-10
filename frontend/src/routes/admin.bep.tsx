@@ -5,10 +5,13 @@ import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
+import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
 import { apiGet, apiPatch } from "@/lib/api";
 import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
+import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -46,6 +49,7 @@ type KitchenOrder = {
   order_type: string;
   customer_name: string;
   customer_phone: string;
+  delivery_addr: string | null;
   table_id: number | null;
   store_id: number;
   location_name: string | null;
@@ -64,8 +68,11 @@ function toBillOrder(o: KitchenOrder): BillOrder {
   return {
     id: o.id,
     order_code: o.order_code,
+    store_id: o.store_id,
     store_name: o.store_name,
     location_name: o.location_name,
+    order_type: o.order_type,
+    delivery_addr: o.delivery_addr,
     customer_name: o.customer_name,
     customer_phone: o.customer_phone,
     payment_method: o.payment_method,
@@ -141,6 +148,9 @@ function KdsPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(() => isAutoPrintEnabled());
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const [printerConfig, setPrinterConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [storeFilter, setStoreFilter] = useState("all");
   const prevIds = useRef<Set<number>>(new Set());
@@ -164,6 +174,16 @@ function KdsPage() {
           playDingDong();
           toast.success(`Có ${fresh.length} đơn mới!`, { description: fresh[0].order_code });
         }
+
+        // Tự động in ticket bếp nếu tính năng Auto-Print được bật
+        if (isAutoPrintEnabled()) {
+          fresh.forEach((o) => {
+            if (!isOrderPrinted(o.order_code)) {
+              silentPrintTicket(o);
+            }
+          });
+        }
+
         setTimeout(() => {
           setNewIds((s) => {
             const next = { ...s };
@@ -178,11 +198,20 @@ function KdsPage() {
     }
   }, [soundEnabled, storeFilter]);
 
-  // Polling realtime
+  // Polling realtime & Storage Event Listener cho Standalone mode
   useEffect(() => {
     fetchOrders();
     const t = setInterval(fetchOrders, POLL_MS);
-    return () => clearInterval(t);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "teaplus_orders") {
+        fetchOrders();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [fetchOrders]);
 
   // Tick 1 giây: đồng hồ phút + tự ẩn đơn hoàn thành sau 5 phút
@@ -250,18 +279,50 @@ function KdsPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button
-          variant={soundEnabled ? "hero" : "outline"}
-          size="sm"
-          onClick={() => {
-            setSoundEnabled((v) => !v);
-            if (!soundEnabled) playDingDong();
-          }}
-          aria-pressed={soundEnabled}
-        >
-          <Volume2 className="size-4" />
-          {soundEnabled ? "Chuông báo: BẬT" : "Chuông báo: TẮT"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Printer Recognition Status Badge Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPairingOpen(true)}
+            className="text-xs font-semibold gap-1.5"
+          >
+            <Printer className="size-3.5 text-primary" />
+            {printerConfig ? (
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                🟢 Đã nối: {printerConfig.device_name}
+              </span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 font-bold">
+                🔴 Chưa cấu hình máy in
+              </span>
+            )}
+          </Button>
+
+          <div className="flex items-center gap-2 rounded-full border px-3 py-1 bg-card text-xs shadow-xs">
+            <span className="font-semibold">Tự động in ticket</span>
+            <Switch
+              checked={autoPrint}
+              onCheckedChange={(checked) => {
+                setAutoPrint(checked);
+                setAutoPrintEnabled(checked);
+                toast.info(checked ? "Đã bật tự động in ticket bếp khi có đơn mới" : "Đã tắt tự động in ticket bếp");
+              }}
+            />
+          </div>
+          <Button
+            variant={soundEnabled ? "hero" : "outline"}
+            size="sm"
+            onClick={() => {
+              setSoundEnabled((v) => !v);
+              if (!soundEnabled) playDingDong();
+            }}
+            aria-pressed={soundEnabled}
+          >
+            <Volume2 className="size-4" />
+            {soundEnabled ? "Chuông báo: BẬT" : "Chuông báo: TẮT"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -442,6 +503,12 @@ function KdsPage() {
         order={selected ? toBillOrder(selected) : null}
         open={billOpen}
         onClose={() => setBillOpen(false)}
+      />
+
+      <PrinterPairingModal
+        open={pairingOpen}
+        onOpenChange={setPairingOpen}
+        onConfigSaved={() => setPrinterConfig(getActivePrinterConfig())}
       />
     </>
   );
