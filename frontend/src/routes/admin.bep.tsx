@@ -286,7 +286,7 @@ function KdsPage() {
             <Printer className="size-3.5 text-primary" />
             {printerConfig ? (
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                🟢 {printerConfig.mode === 'kiosk' ? 'Đã cấu hình USB Kiosk' : 'Đã nối Bluetooth BLE'}
+                🟢 Đã nối: {printerConfig.device_name}
               </span>
             ) : (
               <span className="text-amber-600 dark:text-amber-400 font-bold">

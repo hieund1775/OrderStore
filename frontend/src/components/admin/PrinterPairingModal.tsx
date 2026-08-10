@@ -3,6 +3,7 @@ import { Printer, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,9 @@ type PrinterPairingModalProps = {
 export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: PrinterPairingModalProps) {
   const [config, setConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
   const [mode, setMode] = useState<'kiosk' | 'ble'>(config?.mode || 'kiosk');
+  const [deviceName, setDeviceName] = useState<string>(
+    config?.device_name || (config?.mode === 'ble' ? 'Xprinter XP-P300 (BLE)' : 'Xprinter XP-Q808 (USB 80mm)')
+  );
   const [testing, setTesting] = useState(false);
 
   const handleTestPrint = () => {
@@ -37,7 +41,7 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
       toast.success('Đã gửi lệnh in thử mẫu thành công! Kiểm tra giấy nhả ra tại máy in.');
       const newConfig: ActivePrinterConfig = {
         mode,
-        device_name: mode === 'kiosk' ? 'Máy in Nhiệt Kiosk 80mm (USB/Driver)' : 'Máy in Bluetooth BLE',
+        device_name: deviceName.trim() || (mode === 'kiosk' ? 'Xprinter XP-Q808 (USB 80mm)' : 'Xprinter XP-P300 (BLE)'),
         configured_at: new Date().toISOString(),
       };
       setConfig(newConfig);
@@ -49,14 +53,15 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
   };
 
   const handleSave = () => {
+    const finalName = deviceName.trim() || (mode === 'kiosk' ? 'Xprinter XP-Q808 (USB 80mm)' : 'Xprinter XP-P300 (BLE)');
     const newConfig: ActivePrinterConfig = {
       mode,
-      device_name: mode === 'kiosk' ? 'Máy in Nhiệt Kiosk 80mm (USB/Driver)' : 'Máy in Bluetooth BLE',
+      device_name: finalName,
       configured_at: new Date().toISOString(),
     };
     setConfig(newConfig);
     setActivePrinterConfig(newConfig);
-    toast.success('Đã lưu cấu hình máy in!');
+    toast.success(`Đã lưu kết nối máy in: ${finalName}`);
     onConfigSaved?.();
     onOpenChange(false);
   };
@@ -139,6 +144,20 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
                 <span className="text-[10px] font-normal text-muted-foreground mt-0.5">(Cửa hàng di động)</span>
               </button>
             </div>
+          </div>
+
+          {/* Device Name Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">Tên / Model máy in của tiệm:</label>
+            <Input
+              value={deviceName}
+              onChange={(e) => setDeviceName(e.target.value)}
+              placeholder="VD: Xprinter XP-Q808 hoặc GOOJPRT PT-210"
+              className="h-8 text-xs font-medium"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              * Tên này sẽ hiển thị trực tiếp ở thanh Header KDS để nhân viên dễ dàng nhận diện đúng máy.
+            </p>
           </div>
 
           {/* Test Print Section */}
