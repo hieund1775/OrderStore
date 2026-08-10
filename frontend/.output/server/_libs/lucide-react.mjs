@@ -293,6 +293,49 @@ var ChevronUp = createLucideIcon("chevron-up", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var CircleAlert = createLucideIcon("circle-alert", [
+	["circle", {
+		cx: "12",
+		cy: "12",
+		r: "10",
+		key: "1mglay"
+	}],
+	["line", {
+		x1: "12",
+		x2: "12",
+		y1: "8",
+		y2: "12",
+		key: "1pkeuh"
+	}],
+	["line", {
+		x1: "12",
+		x2: "12.01",
+		y1: "16",
+		y2: "16",
+		key: "4dfq90"
+	}]
+]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var CircleCheck = createLucideIcon("circle-check", [["circle", {
+	cx: "12",
+	cy: "12",
+	r: "10",
+	key: "1mglay"
+}], ["path", {
+	d: "m9 12 2 2 4-4",
+	key: "dzmm74"
+}]]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var CircleX = createLucideIcon("circle-x", [
 	["circle", {
 		cx: "12",
@@ -321,31 +364,6 @@ var Circle = createLucideIcon("circle", [["circle", {
 	r: "10",
 	key: "1mglay"
 }]]);
-/**
-* @license lucide-react v0.575.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
-var ClipboardCheck = createLucideIcon("clipboard-check", [
-	["rect", {
-		width: "8",
-		height: "4",
-		x: "8",
-		y: "2",
-		rx: "1",
-		ry: "1",
-		key: "tgr4d6"
-	}],
-	["path", {
-		d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2",
-		key: "116196"
-	}],
-	["path", {
-		d: "m9 14 2 2 4-4",
-		key: "df797q"
-	}]
-]);
 /**
 * @license lucide-react v0.575.0 - ISC
 *
@@ -872,6 +890,46 @@ var Lock = createLucideIcon("lock", [["rect", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var LogIn = createLucideIcon("log-in", [
+	["path", {
+		d: "m10 17 5-5-5-5",
+		key: "1bsop3"
+	}],
+	["path", {
+		d: "M15 12H3",
+		key: "6jk70r"
+	}],
+	["path", {
+		d: "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4",
+		key: "u53s6r"
+	}]
+]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var LogOut = createLucideIcon("log-out", [
+	["path", {
+		d: "m16 17 5-5-5-5",
+		key: "1bji2h"
+	}],
+	["path", {
+		d: "M21 12H9",
+		key: "dn1m92"
+	}],
+	["path", {
+		d: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4",
+		key: "1uf3rs"
+	}]
+]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var Mail = createLucideIcon("mail", [["path", {
 	d: "m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7",
 	key: "132q7q"
@@ -1215,13 +1273,24 @@ var QrCode = createLucideIcon("qr-code", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var RotateCcw = createLucideIcon("rotate-ccw", [["path", {
-	d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
-	key: "1357e3"
-}], ["path", {
-	d: "M3 3v5h5",
-	key: "1xhq8a"
-}]]);
+var RefreshCw = createLucideIcon("refresh-cw", [
+	["path", {
+		d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+		key: "v9h5vc"
+	}],
+	["path", {
+		d: "M21 3v5h-5",
+		key: "1q7to0"
+	}],
+	["path", {
+		d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+		key: "3uifl3"
+	}],
+	["path", {
+		d: "M8 16H3v5",
+		key: "1cv678"
+	}]
+]);
 /**
 * @license lucide-react v0.575.0 - ISC
 *
@@ -1443,34 +1512,6 @@ var Ticket = createLucideIcon("ticket", [
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var Timer = createLucideIcon("timer", [
-	["line", {
-		x1: "10",
-		x2: "14",
-		y1: "2",
-		y2: "2",
-		key: "14vaq8"
-	}],
-	["line", {
-		x1: "12",
-		x2: "15",
-		y1: "14",
-		y2: "11",
-		key: "17fdiu"
-	}],
-	["circle", {
-		cx: "12",
-		cy: "14",
-		r: "8",
-		key: "1e1u0o"
-	}]
-]);
-/**
-* @license lucide-react v0.575.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
 var Trash2 = createLucideIcon("trash-2", [
 	["path", {
 		d: "M10 11v6",
@@ -1638,4 +1679,4 @@ var X = createLucideIcon("x", [["path", {
 	key: "d8bk6v"
 }]]);
 //#endregion
-export { CupSoda as $, Navigation as A, Leaf as B, Plus as C, PanelLeftOpen as D, PartyPopper as E, Mail as F, Funnel as G, LayoutDashboard as H, Lock as I, FileSpreadsheet as J, Flame as K, LocateFixed as L, Menu as M, Megaphone as N, PanelLeftClose as O, MapPin as P, DatabaseBackup as Q, LoaderCircle as R, Printer as S, Pencil as T, Image as U, LayoutGrid as V, Heart as W, Eye as X, Facebook as Y, Download as Z, Settings as _, ArrowUp as _t, UserPlus as a, Circle as at, RotateCcw as b, Trash2 as c, ChevronRight as ct, Store as d, Check as dt, CreditCard as et, Star as f, ChartColumn as ft, ShieldCheck as g, Ban as gt, ShoppingBag as h, Bell as ht, User as i, ClipboardCheck as it, MessageCircle as j, PackageX as k, Timer as l, ChevronDown as lt, SlidersHorizontal as m, Bike as mt, Volume2 as n, Clock as nt, Upload as o, CircleX as ot, Sparkles as p, Briefcase as pt, FileText as q, UtensilsCrossed as r, ClipboardList as rt, TriangleAlert as s, ChevronUp as st, X as t, Coins as tt, Ticket as u, ChefHat as ut, Settings2 as v, ArrowRight as vt, Phone as w, QrCode as x, Search as y, List as z };
+export { DatabaseBackup as $, MessageCircle as A, List as B, Phone as C, PanelLeftClose as D, PanelLeftOpen as E, LogOut as F, Heart as G, LayoutGrid as H, LogIn as I, FileText as J, Funnel as K, Lock as L, Megaphone as M, MapPin as N, PackageX as O, Mail as P, Download as Q, LocateFixed as R, Plus as S, PartyPopper as T, LayoutDashboard as U, Leaf as V, Image as W, Facebook as X, FileSpreadsheet as Y, Eye as Z, Settings2 as _, Bell as _t, UserPlus as a, Circle as at, QrCode as b, ArrowRight as bt, Trash2 as c, CircleAlert as ct, Star as d, ChevronDown as dt, CupSoda as et, Sparkles as f, ChefHat as ft, Settings as g, Bike as gt, ShieldCheck as h, Briefcase as ht, User as i, ClipboardList as it, Menu as j, Navigation as k, Ticket as l, ChevronUp as lt, ShoppingBag as m, ChartColumn as mt, Volume2 as n, Coins as nt, Upload as o, CircleX as ot, SlidersHorizontal as p, Check as pt, Flame as q, UtensilsCrossed as r, Clock as rt, TriangleAlert as s, CircleCheck as st, X as t, CreditCard as tt, Store as u, ChevronRight as ut, Search as v, Ban as vt, Pencil as w, Printer as x, RefreshCw as y, ArrowUp as yt, LoaderCircle as z };
