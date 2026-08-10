@@ -306,7 +306,7 @@ function Tracking() {
                     </p>
                     <p className="text-muted-foreground text-xs">
                       {cancelled && i === 0
-                        ? order.status_history.find((h) => h.status === "Đã hủy")?.note || "Đã hủy"
+                        ? order.status_history?.find((h) => h.status === "Đã hủy")?.note || "Đã hủy"
                         : s.desc}
                     </p>
                   </div>

@@ -24,8 +24,11 @@ export type BillItem = {
 export type BillOrder = {
   id: number;
   order_code: string;
+  store_id?: number;
   store_name?: string;
   location_name?: string | null;
+  order_type?: string;
+  delivery_addr?: string | null;
   customer_name?: string;
   customer_phone?: string;
   payment_method?: string;
@@ -46,27 +49,29 @@ function billHtml(order: BillOrder, qrDataUrl: string | null) {
       ]
         .filter(Boolean)
         .join(" · ");
-      return `
-        <tr>
-          <td colspan="2"><strong>${it.qty}× ${it.product_name}</strong></td>
-        </tr>
-        ${opts ? `<tr><td class="dim" colspan="2">${opts}</td></tr>` : ""}
-        <tr><td></td><td class="right">${vnd(it.line_total)}</td></tr>`;
+      return `<tr>
+        <td><strong>${it.product_name}</strong>${opts ? `<br/><span class="dim">${opts}</span>` : ""}</td>
+        <td class="center">x${it.qty}</td>
+        <td class="right">${vnd(it.line_total)}</td>
+      </tr>`;
     })
     .join("");
 
+  const orderTypeTitle = order.order_type === 'Delivery'
+    ? '🚚 GIAO HÀNG TẬN NƠI'
+    : (order.location_name ? `🏢 TẠI BÀN (${order.location_name})` : '🛍️ MANG ĐI (Tại quầy)');
+
   return `<!DOCTYPE html>
-<html lang="vi">
+<html>
 <head>
-<meta charset="UTF-8" />
-<title>Hóa đơn ${order.order_code}</title>
+<meta charset="utf-8">
+<title>Bill - ${order.order_code}</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Courier New', monospace; width: 72mm; margin: 0 auto; color: #000; font-size: 12px; line-height: 1.45; }
-  h1 { font-size: 15px; text-align: center; }
+  body { font-family: monospace; font-size: 12px; margin: 0; padding: 8px; color: #000; }
+  h1 { font-size: 16px; margin: 0 0 4px; text-align: center; font-weight: bold; }
   .center { text-align: center; }
-  .dim { color: #444; font-size: 11px; }
-  table { width: 100%; border-collapse: collapse; }
+  .dim { font-size: 10px; color: #444; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
   td { vertical-align: top; padding: 1px 0; }
   .right { text-align: right; }
   .sep { border-top: 1px dashed #000; margin: 6px 0; }
@@ -82,9 +87,11 @@ function billHtml(order: BillOrder, qrDataUrl: string | null) {
   <p class="center dim">Hotline 1900 8386</p>
   <div class="sep"></div>
   <p><strong>Mã đơn:</strong> ${order.order_code}</p>
-  <p>${order.location_name ? `<strong>Bàn:</strong> ${order.location_name}` : `<strong>Loại:</strong> ${order.payment_method || "Take-away"}`}</p>
+  <p><strong>Hình thức:</strong> ${orderTypeTitle}</p>
   <p><strong>Giờ:</strong> ${fmtDateTime(order.created_at)}</p>
+  <p><strong>PTTT:</strong> ${order.payment_method || "Tiền mặt"}</p>
   ${order.customer_name ? `<p><strong>Khách:</strong> ${order.customer_name}${order.customer_phone ? " · " + order.customer_phone : ""}</p>` : ""}
+  ${order.delivery_addr ? `<p><strong>ĐC Giao:</strong> ${order.delivery_addr}</p>` : ""}
   <div class="sep"></div>
   <table>${rows}</table>
   <div class="sep"></div>
@@ -94,8 +101,8 @@ function billHtml(order: BillOrder, qrDataUrl: string | null) {
     <tr class="total"><td>TỔNG CỘNG</td><td class="right">${vnd(order.total)}</td></tr>
   </table>
   <div class="sep"></div>
-  ${qrDataUrl ? `<div class="qr"><img src="${qrDataUrl}" alt="QR đơn" /></div>` : ""}
-  <p class="center dim">Quét mã QR để theo dõi đơn hàng</p>
+  ${qrDataUrl ? `<div class="qr"><img src="${qrDataUrl}" alt="QR Menu Cửa Hàng" /></div>` : ""}
+  <p class="center dim">📱 Quét mã QR để xem Menu & Đặt món đơn tiếp theo</p>
   <p class="center"><strong>Cảm ơn quý khách!</strong></p>
   <p class="center dim">Trà đậm vị – Trái cây tươi mỗi ngày</p>
 </body>
@@ -117,8 +124,10 @@ export function InBillModal({
   useEffect(() => {
     if (!open || !order) return;
     let cancelled = false;
+    const appBaseUrl = import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080');
+    const storeId = order.store_id || 1;
     QRCode.toDataURL(
-      `${window.location.origin}/theo-doi-don?code=${order.order_code}`,
+      `${appBaseUrl}/menu?store_id=${storeId}`,
       { width: 180, margin: 1 },
     )
       .then((url) => {
@@ -173,16 +182,23 @@ export function InBillModal({
             <div className="my-2 border-t border-dashed border-black" />
             <p className="font-bold">Mã đơn: {order.order_code}</p>
             <p>
-              {order.location_name
-                ? `Bàn: ${order.location_name}`
-                : `Loại: ${order.payment_method || "Take-away"}`}
+              <strong>Hình thức:</strong>{' '}
+              {order.order_type === 'Delivery'
+                ? '🚚 GIAO HÀNG TẬN NƠI'
+                : order.location_name
+                ? `🏢 TẠI BÀN (${order.location_name})`
+                : '🛍️ MANG ĐI (Tại quầy)'}
             </p>
             <p>Giờ: {fmtDateTime(order.created_at)}</p>
+            <p>PTTT: {order.payment_method || 'Tiền mặt'}</p>
             {order.customer_name && (
               <p>
                 Khách: {order.customer_name}
-                {order.customer_phone ? ` · ${order.customer_phone}` : ""}
+                {order.customer_phone ? ` · ${order.customer_phone}` : ''}
               </p>
+            )}
+            {order.delivery_addr && (
+              <p className="text-amber-700 font-semibold">ĐC Giao: {order.delivery_addr}</p>
             )}
             <div className="my-2 border-t border-dashed border-black" />
             {order.items.map((it, idx) => (
@@ -195,12 +211,12 @@ export function InBillModal({
                     {[
                       it.size_label || null,
                       it.toppings && it.toppings.length > 0
-                        ? it.toppings.map((t) => t.name).join(", ")
+                        ? it.toppings.map((t) => t.name).join(', ')
                         : null,
                       it.note ? `(${it.note})` : null,
                     ]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .join(' · ')}
                   </span>
                   <span className="font-medium">{vnd(it.line_total)}</span>
                 </div>
@@ -213,7 +229,7 @@ export function InBillModal({
             </div>
             <div className="flex justify-between">
               <span>Giảm giá</span>
-              <span>{order.discount_amount ? `− ${vnd(order.discount_amount)}` : "0₫"}</span>
+              <span>{order.discount_amount ? `− ${vnd(order.discount_amount)}` : '0₫'}</span>
             </div>
             <div className="mt-1 flex justify-between text-sm font-bold">
               <span>TỔNG CỘNG</span>
@@ -222,11 +238,11 @@ export function InBillModal({
             <div className="my-2 border-t border-dashed border-black" />
             {qrDataUrl && (
               <div className="flex justify-center py-1">
-                <img src={qrDataUrl} alt="QR theo dõi đơn" className="size-28" />
+                <img src={qrDataUrl} alt="QR Menu Cửa Hàng" className="size-28" />
               </div>
             )}
             <p className="text-center text-[10px] text-neutral-500">
-              Quét mã QR để theo dõi đơn hàng
+              📱 Quét mã QR để xem Menu & Đặt món đơn tiếp theo
             </p>
             <p className="mt-1 text-center font-bold">Cảm ơn quý khách!</p>
           </div>

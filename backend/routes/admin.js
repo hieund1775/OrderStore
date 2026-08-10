@@ -664,7 +664,7 @@ router.post('/inventory/:id/log', async (req,res) => {
 router.get('/kitchen/orders', async (req,res) => {
   try {
     const { store_id } = req.query;
-    let sql = "SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.table_id,o.store_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Đang chuẩn bị', N'Chờ xác nhận')";
+    let sql = "SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.delivery_addr,o.table_id,o.store_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Đang chuẩn bị', N'Chờ xác nhận')";
     const params = [];
     if (store_id && store_id !== 'all') {
       sql += " AND o.store_id = ?";

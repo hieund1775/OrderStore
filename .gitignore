@@ -10,6 +10,7 @@ Order2*.md
 JUICY_PROMPT.md
 Requirment.md
 ARCHITECTURE.md
+PROJECT_OVERVIEW.md
 plan_architecture/*
 !plan_architecture/plan.md
 !plan_architecture/testing.md

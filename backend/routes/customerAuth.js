@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import db from '../config/db.js';
+import { OAuth2Client } from 'google-auth-library';
 import { signCustomerToken } from '../middleware/auth.js';
 
 const router = Router();
 
 // In-memory OTP Store: Map<phone, { code, expiresAt, attempts }>
 const otpStore = new Map();
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /**
  * Clean phone number helper (removes spaces, dashes, etc.)
@@ -130,6 +133,74 @@ router.post('/verify-otp', async (req, res) => {
       user: {
         id: user.id,
         fullname: user.fullname || fullname || `Khách hàng ${cleanPhone.slice(-4)}`,
+        phone: user.phone,
+        tier: user.tier || 'Đồng',
+        points: user.points || 0,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/google
+ * Payload: { credential: string } — Google ID Token (JWT) từ GIS One-Tap
+ */
+router.post('/google', async (req, res) => {
+  try {
+    const { credential } = req.body || {};
+    if (!credential || typeof credential !== 'string') {
+      return res.status(400).json({ error: 'Thiếu credential Google' });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      return res.status(400).json({ error: 'Mã xác thực Google không hợp lệ hoặc đã hết hạn' });
+    }
+
+    if (!payload || !payload.email || !payload.email_verified) {
+      return res.status(400).json({ error: 'Xác thực Google thất bại' });
+    }
+
+    const email = String(payload.email).toLowerCase();
+    const fullname = payload.name || email.split('@')[0];
+
+    let [users] = await db.query(
+      'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
+      [email]
+    );
+    let user = users[0];
+
+    if (!user) {
+      await db.query(
+        'INSERT INTO users (phone, fullname, email, is_admin) VALUES (NULL, ?, ?, 0)',
+        [fullname, email]
+      );
+      [users] = await db.query(
+        'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
+        [email]
+      );
+      user = users[0];
+    }
+
+    if (!user) {
+      return res.status(500).json({ error: 'Không thể khởi tạo tài khoản Google' });
+    }
+
+    const token = signCustomerToken(user);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        fullname: user.fullname || fullname,
         phone: user.phone,
         tier: user.tier || 'Đồng',
         points: user.points || 0,
