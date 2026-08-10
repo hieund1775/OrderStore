@@ -527,7 +527,7 @@ function OrderDetail({
                   ))}
                 </ul>
               </div>
-              {detail.status_history.length > 0 && (
+              {detail.status_history && detail.status_history.length > 0 && (
                 <div className="rounded-xl border p-3">
                   <p className="mb-2 text-xs font-semibold tracking-wide uppercase">Lịch sử trạng thái</p>
                   <ul className="text-muted-foreground space-y-1 text-xs">
