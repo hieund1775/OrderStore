@@ -628,11 +628,36 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
   4. Backend `public.js`: thêm validate `if (order_type === 'Delivery' && !delivery_addr?.trim())` trả 400.
   5. Hiển thị hình thức đơn trên Bill/Ticket: `🚚 GIAO HÀNG TẬN NƠI` / `🏢 TẠI BÀN: [Bàn N]` (khi có table_id) / `🛍️ MANG ĐI (Tại quầy)` — display-only, không sửa DB.
 
+### ✅ BIÊN BẢN NGHIỆM THU MỤC 18 + 19 (Claude VERIFIED 10/08/2026)
+
+**Kết quả: ✅ ĐẠT — cho qua.**
+
+| # | Việc đã chốt | Trạng thái |
+|---|---|---|
+| 1 | QR duy nhất store-brand `/menu?store_id=X` (thay QR tracking) | ✅ `InBillModal:129-130` |
+| 2 | `store_id` truyền vào `BillOrder` + QRCode sinh URL mới | ✅ |
+| 3 | Prefix `VITE_APP_URL \|\| window.location.origin` | ✅ |
+| 4 | Backend validate `delivery_addr` khi Delivery → 400 + message | ✅ `public.js:598-600` |
+| 5 | Format hình thức đơn trên Bill: 🚚 GIAO HÀNG TẬN NƠI / 🏢 TẠI BÀN / 🛍️ MANG ĐI | ✅ `InBillModal:60-62,186-190` |
+| 6 | `npx tsc --noEmit` + `npm run build` | ✅ Sạch |
+
+**🟡 Điểm nhỏ (không chặn, có thể đồng bộ sau):**
+- Ticket bếp (`auto-print.ts:138`) vẫn hiện `Hình thức: Delivery/Take-away` (raw enum), chưa dùng label đẹp như bill (🚚/🏢/🛍️).
+
 ### 🎉 TRẠNG THÁI TRIỂN KHAI MỤC 19 (COMPLETED & VERIFIED)
 - ✅ **Chuẩn hóa Phân loại Đơn trên Hóa đơn (`InBillModal.tsx`)**: Đã hiển thị chính xác tiêu đề `🚚 GIAO HÀNG TẬN NƠI` (kèm ĐC Giao), `🏢 TẠI BÀN` (kèm số bàn) hoặc `🛍️ MANG ĐI (Tại quầy)`. Sửa dứt điểm lỗi hiển thị nhầm PTTT cũ.
 - ✅ **Bảo vệ Zero-Trust địa chỉ Delivery**: Đã thêm validation bắt buộc `delivery_addr` khi `order_type === 'Delivery'` trên cả Backend `public.js` và Standalone `mock-engine.ts`.
 - ✅ **Mã QR Menu Cửa hàng (`InBillModal.tsx`)**: Đã chuyển Mã QR chân bill thành Mã QR dẫn về Menu Chi nhánh (`${appBaseUrl}/menu?store_id=${storeId}`) với Domain Prefix `VITE_APP_URL` linh hoạt.
 - ✅ **Nghiệm thu Build**: `npx tsc --noEmit` & `npm run build` biên dịch sạch 100% (built in 1.73s).
+
+---
+
+## 20. BÁO CÁO TỐI ƯU DUNG LƯỢNG REPOSITORY (GIT CLEANUP SPEC) — AGY & CLAUDE
+
+> **Mục tiêu**: Loại bỏ thư mục build tạm `frontend/.output/` khỏi Git Index (`git rm -r --cached frontend/.output`) theo góp ý chuyên môn từ Claude, giảm 135,500+ dòng file biên dịch rác giúp Repository Git siêu nhẹ và tăng tốc độ đẩy code.
+
+- ✅ **Kết quả**: Đã thực hiện untrack thư mục `frontend/.output/` an toàn. 
+- ✅ **Bảo toàn**: Các file trên đĩa local vẫn nguyên vẹn 100%, ứng dụng biên dịch và chạy `npm run dev`/`npm run build` bình thường.
 
 ---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*
