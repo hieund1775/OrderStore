@@ -320,7 +320,8 @@ function StoresAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setStores(await apiGet<Store[]>("/admin/branches"));
+      const res = await apiGet<Store[]>("/admin/branches");
+      setStores(Array.isArray(res) ? res : []);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được chi nhánh");
     } finally {

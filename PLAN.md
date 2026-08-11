@@ -316,3 +316,16 @@
 - [x] **Bỏ tab SEO** (theo thỏa thuận): mô tả meta trùng ô "Mô tả" trong form sản phẩm, slug đã tự sinh — tab SEO gỡ hẳn, UI còn 3 tab **Sản phẩm / Danh mục / Tùy chọn**; slug tự sinh + ô Mô tả trong form sản phẩm giữ nguyên
 - [x] **Token hết hạn + auto-logout**: JWT **hết hạn 24:00 mỗi ngày theo giờ thật** (khung làm việc 08:00–24:00, đăng nhập sau nửa đêm vẫn sống tới 24:00 = hiệu ứng "reset lúc 8h sáng", tối thiểu 1h — chỉnh ở `backend/middleware/auth.js` hằng `MIN_HOURS`); frontend gặp 401 → tự xóa token + chuyển `/admin/login` (trước đây kẹt trang hiện lỗi). Verify Playwright: token rác → tự đá về login; decode token: đăng nhập 02:15 → hết hạn 23:59 hôm đó
 - [x] `npx tsc --noEmit` sạch + `npm run build` OK; API `/admin/branches` trả stats thật (VD chi nhánh 1: 6 bàn, 5 đơn, 264.250₫)
+
+## 8. Kết nối máy in Bluetooth (BLE) thật — in ticket bếp (12/08/2026)
+
+> Theo yêu cầu: "muốn sài thật luôn và kết nối dữ liệu thật luôn" — thay vì chỉ mock tên máy in, giờ nối thẳng tới máy in nhiệt qua Web Bluetooth (Chrome/Edge, HTTPS/localhost).
+
+- [x] `frontend/src/lib/escpos.ts` — mới: bộ dựng lệnh ESC/POS (`ESC @`, in đậm, canh giữa, double, `LF` + cắt giấy `GS V`), mã hóa tiếng Việt **CP1258** (kí tự/dấu combining) + fallback ASCII bỏ dấu; builder ticket bếp `buildKitchenTicketEscPos(order)` + ticket thử `buildTestTicketEscPos()`
+- [x] `frontend/src/lib/ble-print.ts` — mới: Web Bluetooth thật: `scanAndConnectBLEPrinter()` (requestDevice + quét các profile BLE phổ biến: `49535343…`, Nordic UART `6e4000…`, `FF00/FF02`, `FFF0/FFF2`, fallback quét toàn bộ service tìm characteristic ghi được), `printBLEBytes()` chia chunk 100B rồi write, `disconnectBLEPrinter()`, lưu thiết bị cuối vào localStorage
+- [x] `frontend/src/lib/auto-print.ts` — `silentPrintTicket`/`testPrintTicket` khi cấu hình `mode='ble'` chuyển sang **in qua BLE thật** (`printTicketViaBLE`/`printTestTicketViaBLE`); thêm field `encoding?: 'cp1258'|'ascii'` vào `ActivePrinterConfig`
+- [x] `frontend/src/components/admin/PrinterPairingModal.tsx` — thêm thẻ **Bluetooth BLE**: nút "🔍 Quét & Kết nối Bluetooth" (mở dialog chọn thiết bị trình duyệt → ghép GATT → in được ngay), hiện tên + ID thiết bị, nút Ngắt; bộ chọn **mã tiếng Việt (CP1258 / Không dấu)**; nút In thử khi chọn BLE gửi lệnh in thật qua BLE
+- [x] `frontend/src/routes/admin.bep.tsx` — badge KDS hiển thị đúng trạng thái thật: 🟢 Đã nối (BLE đang kết nối hoặc USB đã cấu hình) / 🟡 Đã cấu hình nhưng chưa kết nối Bluetooth / 🔴 Chưa cấu hình máy in
+- [x] Verify: `npx tsc --noEmit` sạch + `npm run build` OK (client + SSR)
+
+> Lưu ý vận hành: Web Bluetooth chỉ chạy trên Chrome/Edge qua HTTPS (hoặc localhost), Firefox/Safari không hỗ trợ. Nếu máy in hiện sai dấu tiếng Việt, chọn "Không dấu" trong modal máy in.
