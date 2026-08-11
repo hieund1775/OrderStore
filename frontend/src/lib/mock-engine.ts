@@ -250,10 +250,39 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       { id: 3, name: 'Kem Cheese', price: 15000 }
     ] as T);
   }
-  if (path.startsWith('/api/table/resolve')) {
+  // 12. Admin Dashboard Mock Fallback
+  if (path.startsWith('/admin/dashboard/kpi')) {
     return Promise.resolve({
-      table: { id: 1, name: 'Bàn 01', store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', store_address: '125 Nguyễn Huệ, Q.1' }
+      revenue: { value: 12500000, label: 'Doanh thu hôm nay' },
+      orders: { value: 148, label: 'Tổng đơn hôm nay' },
+      cancelRate: { value: '1.2%', label: 'Tỷ lệ hủy đơn' },
+      cups: { value: 312, label: 'Tổng ly bán ra' },
     } as T);
+  }
+  if (path.startsWith('/admin/dashboard/urgent')) {
+    return Promise.resolve({ paused: 0, preparing: 4 } as T);
+  }
+  if (path.startsWith('/admin/dashboard/revenue-by-hour')) {
+    const hours = [
+      { hour: 8, value: 450000 },
+      { hour: 9, value: 1200000 },
+      { hour: 10, value: 1850000 },
+      { hour: 11, value: 2400000 },
+      { hour: 12, value: 3100000 },
+      { hour: 13, value: 1900000 },
+      { hour: 14, value: 1600000 },
+      { hour: 15, value: 2100000 },
+      { hour: 16, value: 2800000 },
+      { hour: 17, value: 3400000 },
+      { hour: 18, value: 4200000 },
+      { hour: 19, value: 3800000 },
+      { hour: 20, value: 2900000 },
+    ];
+    return Promise.resolve(hours as T);
+  }
+  if (path.startsWith('/admin/orders')) {
+    const orders = getLocalOrders();
+    return Promise.resolve(orders as T);
   }
 
   return Promise.resolve({} as T);

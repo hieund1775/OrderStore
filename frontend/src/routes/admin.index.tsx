@@ -77,12 +77,14 @@ function AdminDashboard() {
         setKpis(k);
         setUrgent(u);
         setByHour(
-          Array.from({ length: 24 }, (_, h) => {
-            const found = hour.find((x) => Number(x.hour) === h);
-            return { hour: h, value: found?.value ?? 0 };
-          }).filter((x) => x.value > 0),
+          Array.isArray(hour)
+            ? Array.from({ length: 24 }, (_, h) => {
+                const found = hour.find((x) => Number(x.hour) === h);
+                return { hour: h, value: found?.value ?? 0 };
+              }).filter((x) => x.value > 0)
+            : [],
         );
-        setRecent(orders.slice(0, 6));
+        setRecent(Array.isArray(orders) ? orders.slice(0, 6) : []);
       })
       .catch((err) => console.error(err))
       .finally(() => {
@@ -100,12 +102,12 @@ function AdminDashboard() {
     year: "numeric",
   });
 
-  const kpiCards = kpis
+  const kpiCards = kpis?.revenue
     ? [
-        { id: "revenue", label: kpis.revenue.label, value: vnd(Number(kpis.revenue.value)), tone: "primary" as const },
-        { id: "orders", label: kpis.orders.label, value: Number(kpis.orders.value), tone: "leaf" as const },
-        { id: "cancel", label: kpis.cancelRate.label, value: String(kpis.cancelRate.value), tone: "berry" as const },
-        { id: "cups", label: kpis.cups.label, value: Number(kpis.cups.value), tone: "primary" as const },
+        { id: "revenue", label: kpis.revenue?.label ?? "Doanh thu hôm nay", value: vnd(Number(kpis.revenue?.value ?? 0)), tone: "primary" as const },
+        { id: "orders", label: kpis.orders?.label ?? "Tổng đơn hôm nay", value: Number(kpis.orders?.value ?? 0), tone: "leaf" as const },
+        { id: "cancel", label: kpis.cancelRate?.label ?? "Tỷ lệ hủy", value: String(kpis.cancelRate?.value ?? "0%"), tone: "berry" as const },
+        { id: "cups", label: kpis.cups?.label ?? "Tổng số ly", value: Number(kpis.cups?.value ?? 0), tone: "primary" as const },
       ]
     : [];
 
