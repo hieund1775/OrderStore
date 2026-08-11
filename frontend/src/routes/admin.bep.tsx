@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
 import { apiGet, apiPatch } from "@/lib/api";
 import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
+import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -151,14 +152,15 @@ function KdsPage() {
   const [autoPrint, setAutoPrint] = useState(() => isAutoPrintEnabled());
   const [pairingOpen, setPairingOpen] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
+  const [bleConnected, setBleConnected] = useState<boolean>(() => !!getConnectedPrinter());
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [storeFilter, setStoreFilter] = useState("all");
   const prevIds = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
-      .then(setBranches)
-      .catch(() => {});
+      .then((data) => setBranches(Array.isArray(data) ? data : []))
+      .catch(() => setBranches([]));
   }, []);
 
   const fetchOrders = useCallback(async () => {
@@ -288,7 +290,11 @@ function KdsPage() {
             className="text-xs font-semibold gap-1.5"
           >
             <Printer className="size-3.5 text-primary" />
-            {printerConfig ? (
+            {printerConfig?.mode === "ble" && !bleConnected ? (
+              <span className="text-amber-600 dark:text-amber-400 font-bold">
+                🟡 Đã cấu hình ({printerConfig.device_name}) — chưa kết nối Bluetooth
+              </span>
+            ) : printerConfig ? (
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                 🟢 Đã nối: {printerConfig.device_name}
               </span>
@@ -508,8 +514,9 @@ function KdsPage() {
       <PrinterPairingModal
         open={pairingOpen}
         onOpenChange={setPairingOpen}
-        onConfigSaved={() => setPrinterConfig(getActivePrinterConfig())}
+        onConfigSaved={() => { setPrinterConfig(getActivePrinterConfig()); setBleConnected(!!getConnectedPrinter()); }}
       />
     </>
   );
 }
+

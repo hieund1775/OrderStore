@@ -673,5 +673,20 @@ $$\text{1. 🍳 Đang chuẩn bị} \longrightarrow \text{2. 🚚 Đang giao / P
 **🟡 Lưu ý nhỏ (không chặn):**
 - Untrack chỉ làm repo nhẹ cho commit **tương lai**; lịch sử git cũ vẫn chứa blob `.output` → dung lượng push lên remote chưa giảm hẳn. Muốn giảm tuyệt đối phải rewrite history (`git filter-repo` + force-push) — **không khuyến nghị** cho đồ án SV (rủi ro phá lịch sử/đồng bộ nhóm).
 
+### ✅ BIÊN BẢN NGHIỆM THU COMMIT `1b1977b` — SYNC PREVIEW + delivery_addr KDS (Claude VERIFIED 10/08/2026)
+
+**Kết quả: ✅ ĐẠT — cho qua.**
+
+| Kiểm tra | Trạng thái |
+|---|---|
+| Backend `kitchen/orders` SELECT thêm `o.delivery_addr` (`admin.js:667`) | ✅ |
+| `KitchenOrder` type + `toBillOrder` truyền `delivery_addr` | ✅ |
+| Dialog preview đồng bộ với bill in: Hình thức 🚚/🏢/🛍️ + PTTT + ĐC Giao | ✅ `InBillModal:185-200` |
+| `billHtml` (bản in): Hình thức + ĐC Giao | ✅ `InBillModal:90,94` |
+| QR + message "Quét mã QR để xem Menu & Đặt món đơn tiếp theo" | ✅ |
+| `npx tsc --noEmit` + `npm run build` | ✅ Sạch |
+
+**Nhận xét:** Đồng bộ preview dialog với bill in thật, đưa địa chỉ giao hàng vào luồng KDS, cập nhật message QR đúng mục 19. Không phát hiện lỗi.
+
 ---
 *Báo cáo tổng quan được tự động cập nhật bởi Antigravity AI — Sẵn sàng cho Claude Code & các Agent phía đại ca overview.*
