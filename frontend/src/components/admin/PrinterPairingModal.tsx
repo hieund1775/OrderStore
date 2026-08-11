@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Printer, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Printer, CheckCircle2, AlertCircle, Bluetooth, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,8 +16,17 @@ import {
   getActivePrinterConfig,
   setActivePrinterConfig,
   testPrintTicket,
+  printTestTicketViaBLE,
   type ActivePrinterConfig,
 } from '@/lib/auto-print';
+import {
+  scanAndConnectBLEPrinter,
+  getConnectedPrinter,
+  disconnectBLEPrinter,
+  isWebBluetoothSupported,
+  type BLEPrinterInfo,
+} from '@/lib/ble-print';
+import type { EscPosEncoding } from '@/lib/escpos';
 
 type PrinterPairingModalProps = {
   open: boolean;
@@ -28,45 +37,87 @@ type PrinterPairingModalProps = {
 export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: PrinterPairingModalProps) {
   const [config, setConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
   const [mode, setMode] = useState<'kiosk' | 'ble'>(config?.mode || 'kiosk');
+  const [encoding, setEncoding] = useState<EscPosEncoding>(config?.encoding || 'cp1258');
   const [deviceName, setDeviceName] = useState<string>(
-    config?.device_name || (config?.mode === 'ble' ? 'Xprinter XP-P300 (BLE)' : 'Xprinter XP-Q808 (USB 80mm)')
+    config?.device_name || (config?.mode === 'ble' ? 'Xprinter XP-P300 (BLE)' : 'Xprinter XP-Q808 (USB 80mm)'),
   );
+  const [connected, setConnected] = useState<BLEPrinterInfo | null>(() => getConnectedPrinter());
+  const [scanning, setScanning] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  const handleTestPrint = () => {
+  const bleSupported = isWebBluetoothSupported();
+
+  const handleScan = async () => {
+    if (!bleSupported) {
+      toast.error('Trình duyệt không hỗ trợ Web Bluetooth. Hãy dùng Chrome/Edge và mở qua HTTPS/localhost.');
+      return;
+    }
+    setScanning(true);
+    try {
+      const info = await scanAndConnectBLEPrinter();
+      setConnected(info);
+      setDeviceName(info.name);
+      toast.success('Đã kết nối máy in Bluetooth: ' + info.name);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Không thể kết nối máy in Bluetooth.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    disconnectBLEPrinter();
+    setConnected(null);
+    toast.info('Đã ngắt kết nối máy in Bluetooth.');
+  };
+
+  const handleTestPrint = async () => {
     setTesting(true);
-    const ok = testPrintTicket();
-    setTesting(false);
-    if (ok) {
-      toast.success('Đã gửi lệnh in thử mẫu thành công! Kiểm tra giấy nhả ra tại máy in.');
-      const newConfig: ActivePrinterConfig = {
-        mode,
-        device_name: deviceName.trim() || (mode === 'kiosk' ? 'Xprinter XP-Q808 (USB 80mm)' : 'Xprinter XP-P300 (BLE)'),
-        configured_at: new Date().toISOString(),
-      };
-      setConfig(newConfig);
-      setActivePrinterConfig(newConfig);
-      onConfigSaved?.();
-    } else {
-      toast.error('Lỗi khi bắn lệnh in thử. Vui lòng kiểm tra cáp máy in hoặc trình duyệt.');
+    try {
+      if (mode === 'ble') {
+        if (!bleSupported || !connected) {
+          toast.error('Vui lòng kết nối máy in Bluetooth trước khi in thử.');
+          return;
+        }
+        const ok = await printTestTicketViaBLE();
+        if (ok) {
+          toast.success('Đã gửi lệnh in thử qua Bluetooth! Kiểm tra giấy nhả ra tại máy in.');
+        } else {
+          toast.error('Lỗi khi in thử qua Bluetooth. Kiểm tra kết nối máy in.');
+        }
+      } else {
+        const ok = testPrintTicket();
+        if (ok) {
+          toast.success('Đã gửi lệnh in thử mẫu thành công! Kiểm tra giấy nhả ra tại máy in.');
+        } else {
+          toast.error('Lỗi khi bắn lệnh in thử. Vui lòng kiểm tra cáp máy in hoặc trình duyệt.');
+        }
+      }
+    } finally {
+      setTesting(false);
     }
   };
 
   const handleSave = () => {
-    const finalName = deviceName.trim() || (mode === 'kiosk' ? 'Xprinter XP-Q808 (USB 80mm)' : 'Xprinter XP-P300 (BLE)');
+    const finalName =
+      deviceName.trim() ||
+      (mode === 'kiosk' ? 'Xprinter XP-Q808 (USB 80mm)' : connected?.name || 'Xprinter XP-P300 (BLE)');
     const newConfig: ActivePrinterConfig = {
       mode,
       device_name: finalName,
+      device_id: connected?.id,
+      encoding,
       configured_at: new Date().toISOString(),
     };
     setConfig(newConfig);
     setActivePrinterConfig(newConfig);
-    toast.success(`Đã lưu kết nối máy in: ${finalName}`);
+    toast.success('Đã lưu kết nối máy in: ' + finalName);
     onConfigSaved?.();
     onOpenChange(false);
   };
 
   const handleClear = () => {
+    handleDisconnect();
     setConfig(null);
     setActivePrinterConfig(null);
     toast.info('Đã xóa cấu hình máy in');
@@ -91,26 +142,29 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
           <div className="rounded-xl border p-3 bg-muted/40 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground font-medium">Trạng thái nhận diện:</span>
-              {config ? (
-                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 gap-1.5">
+              {(mode === 'ble' && connected) || (mode === 'kiosk' && config) ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 gap-1.5"
+                >
                   <CheckCircle2 className="size-3.5" />
-                  Đã cấu hình
+                  Đã sẵn sàng
                 </Badge>
               ) : (
                 <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 gap-1.5">
                   <AlertCircle className="size-3.5" />
-                  Chưa cấu hình
+                  Chưa kết nối
                 </Badge>
               )}
             </div>
-            {config && (
+            {(mode === 'ble' && connected) || (mode === 'kiosk' && config) ? (
               <div className="text-xs space-y-1">
-                <p className="font-semibold text-foreground">{config.device_name}</p>
+                <p className="font-semibold text-foreground">{mode === 'ble' ? connected?.name : config?.device_name}</p>
                 <p className="text-muted-foreground text-[11px]">
-                  Cấu hình lúc: {new Date(config.configured_at).toLocaleString('vi-VN')}
+                  {mode === 'ble' && connected ? 'ID thiết bị: ' + connected.id : ''}
                 </p>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Mode Selector */}
@@ -139,12 +193,107 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
                     : 'border-border hover:bg-accent text-muted-foreground'
                 }`}
               >
-                <RefreshCw className="size-5 mb-1" />
+                <Bluetooth className="size-5 mb-1" />
                 Bluetooth BLE
                 <span className="text-[10px] font-normal text-muted-foreground mt-0.5">(Cửa hàng di động)</span>
               </button>
             </div>
           </div>
+
+          {/* BLE Scan & Connect */}
+          {mode === 'ble' && (
+            <div className="rounded-xl border p-3.5 space-y-3 bg-card relative overflow-hidden transition-all shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex items-center justify-center">
+                    <span className="relative flex h-3 w-3">
+                      {scanning ? (
+                        <>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                        </>
+                      ) : connected ? (
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 shadow-emerald-500/50 shadow-sm"></span>
+                      ) : (
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold">Kết nối Máy in Bluetooth BLE:</p>
+                </div>
+                {connected && (
+                  <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 text-[10px] gap-1">
+                    📶 Tín hiệu tốt
+                  </Badge>
+                )}
+              </div>
+
+              {!bleSupported ? (
+                <p className="text-[11px] text-amber-600 font-medium bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20">
+                  ⚠️ Trình duyệt này không hỗ trợ Web Bluetooth. Dùng Chrome/Edge bản mới, mở qua HTTPS hoặc localhost để kết nối máy in BLE.
+                </p>
+              ) : (
+                <>
+                  {/* Radar Wave Animation Container */}
+                  {scanning && (
+                    <div className="my-2 py-4 flex flex-col items-center justify-center rounded-xl bg-primary/5 border border-primary/20 relative overflow-hidden animate-fade-in">
+                      <div className="relative flex items-center justify-center">
+                        <div className="absolute w-20 h-20 rounded-full border border-primary/30 animate-ping opacity-50"></div>
+                        <div className="absolute w-14 h-14 rounded-full border border-primary/40 animate-pulse"></div>
+                        <div className="p-3 rounded-full bg-primary/20 text-primary z-10">
+                          <Bluetooth className="size-6 animate-bounce" />
+                        </div>
+                      </div>
+                      <p className="text-xs font-semibold text-primary mt-3">Đang phát sóng Bluetooth tìm kiếm máy in...</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Vui lòng chọn máy in của tiệm ở khung trình duyệt hiện lên</p>
+                    </div>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant={connected ? "outline" : "hero"}
+                    size="sm"
+                    className="w-full text-xs font-medium h-9 shadow-sm gap-2"
+                    disabled={scanning}
+                    onClick={handleScan}
+                  >
+                    <Bluetooth className={`size-4 ${scanning ? "animate-spin" : "text-primary"}`} />
+                    {scanning ? 'Đang quét sóng & chờ kết nối...' : connected ? '🔄 Đổi máy in Bluetooth khác...' : '🔍 Quét & Kết nối Bluetooth'}
+                  </Button>
+
+                  {connected ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                      <div className="space-y-0.5">
+                        <span className="text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="size-3.5" />
+                          {connected.name}
+                        </span>
+                        <p className="text-[10px] text-muted-foreground">ID: {connected.id}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2.5 text-xs text-destructive hover:bg-destructive/10"
+                        onClick={handleDisconnect}
+                      >
+                        <Unplug className="size-3.5 mr-1" /> Ngắt kết nối
+                      </Button>
+                    </div>
+                  ) : !scanning ? (
+                    <div className="text-[11px] text-muted-foreground bg-muted/50 p-2.5 rounded-lg border space-y-1">
+                      <p className="font-medium text-foreground">💡 Hướng dẫn nhanh cho thu ngân:</p>
+                      <ol className="list-decimal list-inside space-y-0.5 text-[10.5px]">
+                        <li>Bật nguồn máy in nhiệt Bluetooth (Xprinter / GOOJPRT / Birch).</li>
+                        <li>Bấm nút <strong className="text-primary">"Quét & Kết nối Bluetooth"</strong> phía trên.</li>
+                        <li>Chọn đúng tên máy in trong cửa sổ hiển thị của trình duyệt.</li>
+                      </ol>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Device Name Input */}
           <div className="space-y-1.5">
@@ -160,6 +309,38 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
             </p>
           </div>
 
+          {/* Encoding Selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">Mã tiếng Việt khi in:</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEncoding('cp1258')}
+                className={`rounded-xl border px-3 py-2 text-xs font-medium transition-all ${
+                  encoding === 'cp1258'
+                    ? 'border-primary bg-primary/10 text-primary font-bold'
+                    : 'border-border hover:bg-accent text-muted-foreground'
+                }`}
+              >
+                Tiếng Việt có dấu (CP1258)
+              </button>
+              <button
+                type="button"
+                onClick={() => setEncoding('ascii')}
+                className={`rounded-xl border px-3 py-2 text-xs font-medium transition-all ${
+                  encoding === 'ascii'
+                    ? 'border-primary bg-primary/10 text-primary font-bold'
+                    : 'border-border hover:bg-accent text-muted-foreground'
+                }`}
+              >
+                Không dấu (in được mọi máy)
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Nếu máy in không hiển thị đúng dấu tiếng Việt, chuyển sang "Không dấu" để in chắc chắn.
+            </p>
+          </div>
+
           {/* Test Print Section */}
           <div className="rounded-xl border p-3 space-y-2 bg-card">
             <p className="text-xs font-semibold">Xác nhận hoạt động máy in:</p>
@@ -168,7 +349,7 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
               variant="outline"
               size="sm"
               className="w-full text-xs font-medium"
-              disabled={testing}
+              disabled={testing || (mode === 'ble' && !connected)}
               onClick={handleTestPrint}
             >
               <Printer className="size-3.5 mr-1.5 text-primary" />
@@ -185,7 +366,9 @@ export function PrinterPairingModal({ open, onOpenChange, onConfigSaved }: Print
             <Button type="button" variant="ghost" size="sm" onClick={handleClear} className="text-xs text-destructive">
               Xóa cấu hình
             </Button>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
           <div className="flex gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Hủy

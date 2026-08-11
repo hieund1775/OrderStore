@@ -1,4 +1,6 @@
 import { fmtDateTime, vnd } from './data';
+import { buildKitchenTicketEscPos, buildTestTicketEscPos, type EscPosEncoding } from './escpos';
+import { getConnectedPrinter, isWebBluetoothSupported, printBLEBytes } from './ble-print';
 
 const ACTIVE_PRINTER_KEY = 'teaplus_active_printer';
 const AUTO_PRINT_KEY = 'teaplus_auto_print_enabled';
@@ -8,6 +10,7 @@ export type ActivePrinterConfig = {
   mode: 'kiosk' | 'ble';
   device_name: string;
   device_id?: string;
+  encoding?: EscPosEncoding;
   configured_at: string;
 };
 
@@ -169,6 +172,13 @@ export function silentPrintTicket(order: any): boolean {
     const orderCode = order.order_code || String(order.id);
     markOrderPrinted(orderCode);
 
+    const config = getActivePrinterConfig();
+    if (config?.mode === 'ble') {
+      // In qua Bluetooth thật (ESC/POS) — thực hiện bất đồng bộ
+      void printTicketViaBLE(order);
+      return true;
+    }
+
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -200,8 +210,30 @@ export function silentPrintTicket(order: any): boolean {
   }
 }
 
+export async function printTicketViaBLE(order: any): Promise<boolean> {
+  const config = getActivePrinterConfig();
+  if (!config || config.mode !== 'ble') return false;
+  if (!isWebBluetoothSupported() || !getConnectedPrinter()) {
+    console.warn('Máy in Bluetooth chưa được kết nối — bỏ qua in tự động cho đơn này.');
+    return false;
+  }
+  try {
+    const bytes = buildKitchenTicketEscPos(order, config.encoding || 'cp1258');
+    await printBLEBytes(bytes);
+    return true;
+  } catch (err) {
+    console.error('Lỗi khi in qua Bluetooth:', err);
+    return false;
+  }
+}
+
 export function testPrintTicket(): boolean {
   if (typeof window === 'undefined') return false;
+  const config = getActivePrinterConfig();
+  if (config?.mode === 'ble') {
+    void printTestTicketViaBLE();
+    return true;
+  }
   const sampleOrder = {
     id: 9999,
     order_code: 'TEST-PRINT',
@@ -254,6 +286,20 @@ export function testPrintTicket(): boolean {
     return true;
   } catch (err) {
     console.error('Lỗi khi in thử bản mẫu:', err);
+    return false;
+  }
+}
+
+export async function printTestTicketViaBLE(): Promise<boolean> {
+  const config = getActivePrinterConfig();
+  if (!config || config.mode !== 'ble') return false;
+  if (!isWebBluetoothSupported() || !getConnectedPrinter()) return false;
+  try {
+    const bytes = buildTestTicketEscPos(config.encoding || 'cp1258');
+    await printBLEBytes(bytes);
+    return true;
+  } catch (err) {
+    console.error('Lỗi khi in thử qua Bluetooth:', err);
     return false;
   }
 }

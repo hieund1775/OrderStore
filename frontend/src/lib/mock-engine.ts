@@ -234,7 +234,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
   }
 
   // 11. Stores & Products & Options fallback
-  if (path.startsWith('/admin/stores') || path.startsWith('/api/stores')) {
+  if (path.startsWith('/admin/stores') || path.startsWith('/api/stores') || path.startsWith('/admin/branches')) {
     return Promise.resolve(stores as T);
   }
   if (path.startsWith('/admin/products') || path.startsWith('/api/products')) {
