@@ -85,7 +85,8 @@ function TablesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await apiGet<TableRow[]>("/admin/tables");
+      const rawRows = await apiGet<TableRow[]>("/admin/tables");
+      const rows = Array.isArray(rawRows) ? rawRows : [];
       setTables(rows);
       const map: Record<number, string> = {};
       await Promise.all(
@@ -107,7 +108,8 @@ function TablesPage() {
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
-      .then(async (rows) => {
+      .then(async (rawRows) => {
+        const rows = Array.isArray(rawRows) ? rawRows : [];
         setBranches(rows);
         const map: Record<number, string> = {};
         await Promise.all(
