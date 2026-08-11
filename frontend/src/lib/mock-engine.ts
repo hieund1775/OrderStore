@@ -237,6 +237,15 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
   if (path.startsWith('/admin/stores') || path.startsWith('/api/stores') || path.startsWith('/admin/branches')) {
     return Promise.resolve(stores as T);
   }
+  if (path.startsWith('/admin/tables') || path.startsWith('/api/tables')) {
+    const mockTables = [
+      { id: 1, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 01', qr_code_token: 'TBL-1-01', is_active: true },
+      { id: 2, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 02', qr_code_token: 'TBL-1-02', is_active: true },
+      { id: 3, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 03', qr_code_token: 'TBL-1-03', is_active: true },
+      { id: 4, store_id: 2, store_name: 'Trà Trái Cây Tô – Hàng Bài', name: 'Bàn 01', qr_code_token: 'TBL-2-01', is_active: true },
+    ];
+    return Promise.resolve(mockTables as T);
+  }
   if (path.startsWith('/admin/products') || path.startsWith('/api/products')) {
     return Promise.resolve(products as T);
   }
