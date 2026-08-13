@@ -68,7 +68,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
     const orderCode = 'TP' + Math.floor(100000 + Math.random() * 900000);
     const user = getStoredCustomerUser();
-    const isPayOS = body.payment_method === 'VietQR' && body.source !== 'pos';
+    const isPayOS = body.payment_method === 'VietQR';
     const payment_status = 'unpaid';
     const payment_provider = isPayOS ? 'payos' : body.payment_method?.toLowerCase() || 'cod';
     const checkout_url = isPayOS ? `https://payos.vn/demo-pay?code=${orderCode}` : undefined;

@@ -605,7 +605,7 @@ router.post('/orders', async (req, res) => {
     let payment_provider = 'cod';
 
     if (payment_method === 'VietQR') {
-      if (source === 'online' && isPayOSConfigured()) {
+      if (isPayOSConfigured()) {
         payment_provider = 'payos';
       } else {
         payment_provider = 'manual_vietqr';
@@ -670,7 +670,7 @@ router.post('/orders', async (req, res) => {
         [order_code, customerUserId, store_id, table_id || null, location_name,
          order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, delivery_addr,
          voucher_code, discount_amount, Math.floor(total / 1000), subtotal, total,
-         order_type === 'POS' ? null : new Date(), note || null],
+         new Date(), note || null],
       );
       const orderId = orderRows[0].id;
 
