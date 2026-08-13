@@ -48,8 +48,8 @@ export const Route = createFileRoute("/thanh-toan")({
 });
 
 const payMethods = [
+  { id: "qr", label: "Chuyển khoản online (VietQR / PayOS)" },
   { id: "cod", label: "Thanh toán khi nhận hàng (COD)" },
-  { id: "qr", label: "Chuyển khoản VietQR / VNPAY" },
   { id: "momo", label: "Ví MoMo" },
   { id: "zalopay", label: "Ví ZaloPay" },
 ];
@@ -60,13 +60,22 @@ type TableInfo = {
   table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
 };
 
+type PendingPayOSOrder = {
+  order_code: string;
+  order_id: number;
+  total: number;
+  checkout_url?: string;
+  qr_code?: string;
+  payment_expires_at?: string;
+};
+
 function Checkout() {
   const { items, subtotal, clear } = useCart();
   const navigate = useNavigate();
   const { table_id: searchTableId } = useSearch({ from: "/thanh-toan" });
 
   const [method, setMethod] = useState<"delivery" | "takeaway">("delivery");
-  const [pay, setPay] = useState("cod");
+  const [pay, setPay] = useState("qr");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [addr, setAddr] = useState("");
@@ -78,10 +87,67 @@ function Checkout() {
   const [appliedCode, setAppliedCode] = useState("");
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingOrder, setPendingOrder] = useState<PendingPayOSOrder | null>(null);
+  // Khôi phục đơn PayOS đang chờ thanh toán khi quay lại trang thanh toán
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("teaplus_pending_payment");
+      if (raw) {
+        const stored = JSON.parse(raw) as PendingPayOSOrder;
+        if (stored?.order_code) setPendingOrder(stored);
+      }
+    } catch {}
+  }, []);
+  const [countdownSec, setCountdownSec] = useState<number>(900);
   const [tableId, setTableId] = useState<string | null>(
     searchTableId ||
       (typeof window !== "undefined" ? sessionStorage.getItem("teaplus_table_id") : null),
   );
+
+  // Poll status when PayOS pending order is active
+  useEffect(() => {
+    if (!pendingOrder) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiGet<{ order: { payment_status: string } }>(
+          `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
+        );
+        if (res.order?.payment_status === "paid") {
+          clearInterval(interval);
+          clear();
+          sessionStorage.removeItem("teaplus_pending_payment");
+          toast.success("Thanh toán thành công!", {
+            description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
+          });
+          navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+        } else if (res.order?.payment_status === "expired") {
+          clearInterval(interval);
+          sessionStorage.removeItem("teaplus_pending_payment");
+          setPendingOrder(null);
+          toast.error("Đơn hàng đã hết hạn thanh toán!");
+        }
+      } catch {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [pendingOrder, navigate, clear]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!pendingOrder?.payment_expires_at) return;
+    const expiresMs = new Date(pendingOrder.payment_expires_at).getTime();
+
+    const timer = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((expiresMs - Date.now()) / 1000));
+      setCountdownSec(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [pendingOrder]);
 
   // Quét QR bàn → tự nhận diện bàn, mặc định "Tại bàn"
   useEffect(() => {
@@ -169,12 +235,15 @@ function Checkout() {
         store_id: tableInfo ? tableInfo.table.store_id : Number(branch),
         table_id: tableId ? Number(tableId) : null,
         order_type: method === "delivery" ? "Delivery" : "Take-away",
-        payment_method: PAY_MAP[pay] || "COD",
+        payment_method: PAY_MAP[pay] || "VietQR",
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         delivery_addr: method === "delivery" && addr.trim() ? addr.trim() : null,
         voucher_code: appliedCode || null,
         note: note.trim() || null,
+        source: "online",
+        return_url: `${window.location.origin}/theo-doi-don`,
+        cancel_url: `${window.location.origin}/thanh-toan`,
         items: items.map((i) => ({
           product_id: productIdBySlug.get(i.productId),
           size_id: sizeIdByLabel.get(i.size.toLowerCase()) ?? null,
@@ -195,18 +264,132 @@ function Checkout() {
         subtotal: number;
         discount_amount: number;
         total: number;
+        checkout_url?: string;
+        qr_code?: string;
+        payment_expires_at?: string;
       }>("/api/orders", payload);
 
-      clear();
-      toast.success("Đặt hàng thành công!", {
-        description: `Mã đơn ${res.order_code} · ${vnd(res.total)} — đang chờ xác nhận.`,
-      });
-      navigate({ to: "/theo-doi-don", search: { code: res.order_code } });
+      if (res.checkout_url || res.qr_code) {
+        const pending = {
+          order_code: res.order_code,
+          order_id: res.order_id,
+          total: res.total,
+          checkout_url: res.checkout_url,
+          qr_code: res.qr_code,
+          payment_expires_at: res.payment_expires_at,
+        };
+        setPendingOrder(pending);
+        sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
+        toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
+      } else {
+        clear();
+        toast.success("Đặt hàng thành công!", {
+          description: `Mã đơn ${res.order_code} · ${vnd(res.total)} — đang chờ xác nhận.`,
+        });
+        navigate({ to: "/theo-doi-don", search: { code: res.order_code } });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  const mins = Math.floor(countdownSec / 60);
+  const secs = countdownSec % 60;
+  const timeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+  if (pendingOrder) {
+    return (
+      <>
+        <PageHeader eyebrow="Thanh toán PayOS" title="Đang chờ chuyển khoản" />
+        <div className="container-page py-10 max-w-xl mx-auto">
+          <div className="bg-card rounded-2xl border p-6 text-center space-y-6 shadow-lg">
+            <div className="inline-flex items-center justify-center size-14 rounded-full bg-amber-500/10 text-amber-600 animate-pulse">
+              <Ticket className="size-7" />
+            </div>
+
+            <div>
+              <h2 className="font-display text-2xl font-bold">Vui lòng thanh toán đơn hàng</h2>
+              <p className="text-muted-foreground text-sm mt-1">
+                Mã đơn: <span className="font-mono font-bold text-foreground">{pendingOrder.order_code}</span>
+              </p>
+              <p className="text-primary font-display text-3xl font-extrabold mt-2">
+                {vnd(pendingOrder.total)}
+              </p>
+            </div>
+
+            {/* Countdown Badge */}
+            <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-xl p-3 inline-block font-mono text-sm font-semibold">
+              ⏳ Mã thanh toán hết hạn sau: <span className="text-base font-bold">{timeStr}</span>
+            </div>
+
+            {/* QR Image / Code */}
+            {pendingOrder.qr_code && (
+              <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-gray-200 max-w-xs mx-auto shadow-inner">
+                {pendingOrder.qr_code.startsWith("http") || pendingOrder.qr_code.startsWith("data:image") ? (
+                  <img
+                    src={pendingOrder.qr_code}
+                    alt="VietQR PayOS"
+                    className="size-56 object-contain rounded-lg"
+                  />
+                ) : (
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pendingOrder.qr_code)}`}
+                    alt="VietQR PayOS"
+                    className="size-56 object-contain rounded-lg"
+                  />
+                )}
+                <p className="text-xs text-gray-500 mt-2 font-medium">
+                  Mở ứng dụng Ngân hàng / VNPAY để quét mã
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-3 pt-2">
+              {pendingOrder.checkout_url && (
+                <Button
+                  asChild
+                  variant="hero"
+                  className="w-full text-base py-6"
+                >
+                  <a href={pendingOrder.checkout_url} target="_blank" rel="noopener noreferrer">
+                    Mở trang thanh toán PayOS ↗
+                  </a>
+                </Button>
+              )}
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    clear();
+                    navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+                  }}
+                >
+                  Theo dõi đơn hàng
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="flex-1 text-muted-foreground"
+                  onClick={() => {
+                    sessionStorage.removeItem("teaplus_pending_payment");
+                    setPendingOrder(null);
+                  }}
+                >
+                  Quay lại đặt lại
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground italic">
+              Hệ thống sẽ tự động chuyển trang ngay sau khi nhận tiền về thành công (0ms webhook).
+            </p>
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
