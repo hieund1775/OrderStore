@@ -68,6 +68,13 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
     const orderCode = 'TP' + Math.floor(100000 + Math.random() * 900000);
     const user = getStoredCustomerUser();
+    const isPayOS = body.payment_method === 'VietQR' && body.source !== 'pos';
+    const payment_status = 'unpaid';
+    const payment_provider = isPayOS ? 'payos' : body.payment_method?.toLowerCase() || 'cod';
+    const checkout_url = isPayOS ? `https://payos.vn/demo-pay?code=${orderCode}` : undefined;
+    const qr_code = isPayOS ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VIETQR-DEMO-${orderCode}` : undefined;
+    const payment_expires_at = isPayOS ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : undefined;
+
     const newOrder = {
       id: Date.now(),
       order_code: orderCode,
@@ -76,7 +83,10 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       customer_phone: body.customer_phone || '0900000000',
       delivery_addr: body.delivery_addr || null,
       order_type: body.order_type || 'Take-away',
-      payment_method: body.payment_method || 'COD',
+      payment_method: body.payment_method || 'VietQR',
+      payment_status,
+      payment_provider,
+      payment_expires_at,
       store_id: Number(storeId),
       store_name: store.name,
       location_name: null,
@@ -95,12 +105,31 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const existing = getLocalOrders();
     saveLocalOrders([newOrder, ...existing]);
 
+    // Demo auto-confirm after 8s for PayOS in Standalone mode
+    if (isPayOS) {
+      setTimeout(() => {
+        const curOrders = getLocalOrders();
+        const updated = curOrders.map((o: any) => {
+          if (o.order_code === orderCode && o.payment_status === 'unpaid') {
+            return { ...o, payment_status: 'paid', paid_at: new Date().toISOString() };
+          }
+          return o;
+        });
+        saveLocalOrders(updated);
+      }, 8000);
+    }
+
     return Promise.resolve({
       order_code: orderCode,
       order_id: newOrder.id,
       subtotal,
       discount_amount: 0,
       total: subtotal,
+      payment_status,
+      payment_provider,
+      checkout_url,
+      qr_code,
+      payment_expires_at,
     } as T);
   }
 
@@ -223,6 +252,21 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     });
     saveLocalOrders(updated);
     return Promise.resolve({ message: 'Cập nhật trạng thái thành công' } as T);
+  }
+
+  // 9b. PUT /admin/orders/:id/payment/confirm
+  if (path.startsWith('/admin/orders/') && path.endsWith('/payment/confirm')) {
+    const parts = path.split('/');
+    const idStr = parts[3];
+    const orders = getLocalOrders();
+    const updated = orders.map((o: any) => {
+      if (String(o.id) === idStr) {
+        return { ...o, payment_status: 'paid', paid_at: new Date().toISOString() };
+      }
+      return o;
+    });
+    saveLocalOrders(updated);
+    return Promise.resolve({ ok: true, message: 'Đã xác nhận thanh toán thành công', payment_status: 'paid' } as T);
   }
 
   // 10. POST /admin/login

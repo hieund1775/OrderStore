@@ -1,32 +1,30 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
-  LayoutDashboard,
   ClipboardList,
   ChefHat,
   UtensilsCrossed,
   QrCode,
   Store,
   Megaphone,
-  BarChart3,
   Bell,
   Settings,
   Leaf,
   PanelLeftClose,
   PanelLeftOpen,
+  ShoppingCart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const adminNav = [
-  { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
+  { to: '/admin/pos', label: 'Gọi món (POS)', icon: ShoppingCart },
   { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList },
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat },
   { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode },
   { to: '/admin/thuc-don', label: 'Thực đơn', icon: UtensilsCrossed },
   { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store },
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone },
-  { to: '/admin/bao-cao', label: 'Báo cáo & Thống kê', icon: BarChart3 },
   { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell },
-  { to: '/admin/cai-dat', label: 'Cài đặt hệ thống', icon: Settings },
+  { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings },
 ] as const;
 
 export function AdminSidebar({

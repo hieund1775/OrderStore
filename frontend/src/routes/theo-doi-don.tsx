@@ -90,6 +90,10 @@ type LookupOrder = {
   location_name: string | null;
   order_type: string;
   payment_method: string;
+  payment_status?: string;
+  payment_provider?: string;
+  paid_at?: string | null;
+  payment_expires_at?: string | null;
   customer_name: string;
   delivery_addr: string | null;
   voucher_code: string | null;
@@ -249,8 +253,10 @@ function Tracking() {
               <p className="text-muted-foreground text-xs">Mã đơn</p>
               <p className="font-display text-xl font-extrabold">{order.order_code}</p>
             </div>
-            {cancelled ? (
-              <Badge className="bg-berry/15 text-berry">Đã hủy</Badge>
+            {cancelled || order.payment_status === "expired" ? (
+              <Badge className="bg-berry/15 text-berry">
+                {order.payment_status === "expired" ? "Hết hạn thanh toán" : "Đã hủy"}
+              </Badge>
             ) : completed ? (
               <Badge className="bg-leaf/15 text-leaf">Hoàn thành</Badge>
             ) : (
@@ -258,62 +264,90 @@ function Tracking() {
             )}
           </div>
 
-          <ol className="mt-8 space-y-0">
-            {steps.map((s, i) => {
-              const done = !cancelled && (currentStep > i || completed);
-              const active = !cancelled && currentStep === i && !completed;
-              return (
-                <li key={s.status} className="relative flex gap-4 pb-8 last:pb-0">
-                  {i < steps.length - 1 && (
-                    <span
-                      className={`absolute top-10 left-5 h-full w-0.5 ${
-                        cancelled ? "bg-berry/20" : done ? "bg-leaf" : "bg-border"
-                      }`}
-                    />
-                  )}
-                  <span
-                    className={`relative z-10 flex size-10 shrink-0 items-center justify-center rounded-full border-2 ${
-                      cancelled
-                        ? i === 0
-                          ? "bg-berry/15 border-berry/40 text-berry"
-                          : "bg-card border-border text-muted-foreground opacity-50"
-                        : done
-                          ? "bg-leaf border-leaf text-leaf-foreground"
-                          : active
-                            ? "gradient-warm border-primary text-primary-foreground animate-pulse"
-                            : "bg-card border-border text-muted-foreground"
-                    }`}
-                  >
-                    {cancelled ? (
-                      i === 0 ? (
-                        <XCircle className="size-5" />
-                      ) : (
-                        <Check className="size-5" />
-                      )
-                    ) : done ? (
-                      <Check className="size-5" />
-                    ) : (
-                      <s.icon className="size-5" />
+          {/* Payment Status Banner */}
+          {order.payment_status === "unpaid" && !cancelled && (
+            <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 mt-4 rounded-xl border p-4">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(order.total)})
+              </div>
+              <p className="mt-1 text-xs opacity-90">
+                Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công (0ms webhook).
+              </p>
+              <Button asChild variant="hero" size="sm" className="mt-3">
+                <Link to="/thanh-toan">Thanh toán ngay / Xem mã QR</Link>
+              </Button>
+            </div>
+          )}
+
+          {order.payment_status === "expired" && (
+            <div className="bg-berry/10 border-berry/30 text-berry mt-4 rounded-xl border p-4">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <XCircle className="size-5" /> ❌ Đơn hàng đã hết hạn thanh toán
+              </div>
+              <p className="mt-1 text-xs opacity-90">
+                Mã thanh toán PayOS đã quá 15 phút không nhận được chuyển khoản. Đơn hàng đã bị hủy tự động.
+              </p>
+            </div>
+          )}
+
+          {!(order.payment_status === "unpaid" && !cancelled) && (
+            <ol className="mt-8 space-y-0">
+              {steps.map((s, i) => {
+                const done = !cancelled && (currentStep > i || completed);
+                const active = !cancelled && currentStep === i && !completed;
+                return (
+                  <li key={s.status} className="relative flex gap-4 pb-8 last:pb-0">
+                    {i < steps.length - 1 && (
+                      <span
+                        className={`absolute top-10 left-5 h-full w-0.5 ${
+                          cancelled ? "bg-berry/20" : done ? "bg-leaf" : "bg-border"
+                        }`}
+                      />
                     )}
-                  </span>
-                  <div className="pt-1.5">
-                    <p
-                      className={`text-sm font-bold ${
-                        active ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"
+                    <span
+                      className={`relative z-10 flex size-10 shrink-0 items-center justify-center rounded-full border-2 ${
+                        cancelled
+                          ? i === 0
+                            ? "bg-berry/15 border-berry/40 text-berry"
+                            : "bg-card border-border text-muted-foreground opacity-50"
+                          : done
+                            ? "bg-leaf border-leaf text-leaf-foreground"
+                            : active
+                              ? "gradient-warm border-primary text-primary-foreground animate-pulse"
+                              : "bg-card border-border text-muted-foreground"
                       }`}
                     >
-                      {s.status}
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {cancelled && i === 0
-                        ? order.status_history?.find((h) => h.status === "Đã hủy")?.note || "Đã hủy"
-                        : s.desc}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+                      {cancelled ? (
+                        i === 0 ? (
+                          <XCircle className="size-5" />
+                        ) : (
+                          <Check className="size-5" />
+                        )
+                      ) : done ? (
+                        <Check className="size-5" />
+                      ) : (
+                        <s.icon className="size-5" />
+                      )}
+                    </span>
+                    <div className="pt-1.5">
+                      <p
+                        className={`text-sm font-bold ${
+                          active ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"
+                        }`}
+                      >
+                        {s.status}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {cancelled && i === 0
+                          ? order.status_history?.find((h) => h.status === "Đã hủy")?.note || "Đã hủy"
+                          : s.desc}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
 
           {/* Shipper & Live Tracking link when order is Đang giao */}
           {order.current_status === "Đang giao" && (

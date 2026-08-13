@@ -503,9 +503,6 @@ function StoresAdminPage() {
                     <Button variant="outline" size="sm" onClick={() => setMapStore(s)}>
                       <MapPin className="mr-1 size-4" /> Xem bản đồ
                     </Button>
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/admin/bao-cao">Xem doanh thu</Link>
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

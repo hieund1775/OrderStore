@@ -75,6 +75,9 @@ type AdminOrderRow = {
   store_name: string;
   order_type: "Delivery" | "Take-away" | "POS";
   payment_method: string;
+  payment_status?: string;
+  payment_provider?: string;
+  paid_at?: string | null;
   customer_name: string;
   customer_phone: string;
   location_name: string | null;
@@ -282,7 +285,18 @@ function OrdersPage() {
                     </TableCell>
                     <TableCell className="hidden text-sm md:table-cell">{o.store_name}</TableCell>
                     <TableCell className="text-sm">{o.order_type}</TableCell>
-                    <TableCell className="hidden text-sm lg:table-cell">{o.payment_method}</TableCell>
+                    <TableCell className="hidden text-sm lg:table-cell">
+                      <div>
+                        <p>{o.payment_method}</p>
+                        {o.payment_status === "paid" ? (
+                          <span className="text-[11px] font-semibold text-leaf block">✓ Đã TT</span>
+                        ) : o.payment_status === "expired" ? (
+                          <span className="text-[11px] font-semibold text-berry block">✕ Hết hạn</span>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">⏳ Chưa TT</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[o.current_status]}`}
@@ -473,6 +487,20 @@ function OrderDetail({
     }
   }
 
+  async function confirmManualPayment() {
+    setActionLoading(true);
+    try {
+      await apiPut(`/admin/orders/${orderId}/payment/confirm`, {});
+      toast.success(`Đã xác nhận thanh toán cho đơn #${orderId}`);
+      setOpen(false);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xác nhận thất bại");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   const st = detail?.current_status;
 
   return (
@@ -498,7 +526,7 @@ function OrderDetail({
                 <Info label="Số điện thoại" value={detail.customer_phone} />
                 <Info label="Chi nhánh" value={detail.store_name} />
                 <Info label="Loại đơn" value={detail.order_type} />
-                <Info label="Thanh toán" value={detail.payment_method} />
+                <Info label="Thanh toán" value={`${detail.payment_method} (${detail.payment_status === "paid" ? "Đã thanh toán" : detail.payment_status === "expired" ? "Hết hạn" : "Chưa thanh toán"})`} />
                 <Info label="Trạng thái" value={st ?? ""} />
                 {detail.location_name && <Info label="Vị trí" value={detail.location_name} />}
                 {detail.delivery_addr && <Info label="Địa chỉ" value={detail.delivery_addr} />}
@@ -561,6 +589,16 @@ function OrderDetail({
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
+                {detail.payment_status === "unpaid" && detail.payment_provider !== "payos" && (
+                  <Button
+                    variant="default"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    disabled={actionLoading}
+                    onClick={confirmManualPayment}
+                  >
+                    💰 Xác nhận đã nhận tiền (Thủ công)
+                  </Button>
+                )}
                 {(st === "Đang chuẩn bị" || st === "Chờ xác nhận" || st === "Đã xác nhận") && (
                   <>
                     <Button

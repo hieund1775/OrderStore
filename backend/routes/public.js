@@ -2,6 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../config/db.js';
 import { calcLineTotals, validateVoucher, consumeVoucher, generateOrderCode } from '../services/price-engine.js';
+import { createPaymentLinkForOrder, isPayOSConfigured } from '../services/payos.js';
 
 const router = Router();
 
@@ -235,7 +236,6 @@ router.get('/jobs', async (req, res) => {
 router.post('/jobs/:id/apply', async (req, res) => {
   try {
     const { fullname, phone, email, store_id, cv_url } = req.body;
-    if (!fullname || !phone || !email) return res.status(400).json({ error: 'Vui lòng điền đầy đủ họ tên, SĐT, email' });
     const [r] = await db.query(
       'INSERT INTO job_applications (job_id, store_id, fullname, phone, email, cv_url) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?)',
       [req.params.id, store_id || null, fullname, phone, email, cv_url || null]
@@ -588,7 +588,8 @@ router.post('/orders', async (req, res) => {
     const {
       store_id, table_id, order_type = 'Take-away', payment_method = 'COD',
       customer_name, customer_phone, delivery_addr = null,
-      voucher_code = null, note = null, items = [],
+      voucher_code = null, note = null, items = [], source = 'online',
+      return_url, cancel_url,
     } = req.body;
 
     if (!store_id || !customer_name || !customer_phone || !Array.isArray(items) || items.length === 0) {
@@ -597,6 +598,22 @@ router.post('/orders', async (req, res) => {
 
     if (order_type === 'Delivery' && (!delivery_addr || !delivery_addr.trim())) {
       return res.status(400).json({ error: 'Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng' });
+    }
+
+    // Determine initial payment_status & payment_provider
+    let payment_status = 'unpaid';
+    let payment_provider = 'cod';
+
+    if (payment_method === 'VietQR') {
+      if (source === 'online' && isPayOSConfigured()) {
+        payment_provider = 'payos';
+      } else {
+        payment_provider = 'manual_vietqr';
+      }
+    } else if (payment_method === 'COD') {
+      payment_provider = 'cod';
+    } else {
+      payment_provider = payment_method.toLowerCase();
     }
 
     // Trích xuất customer user_id từ JWT Token nếu có (Zero-Trust)
@@ -645,13 +662,13 @@ router.post('/orders', async (req, res) => {
       const order_code = await generateOrderCode(tx.query);
       const [orderRows] = await tx.query(
         `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name,
-           order_type, payment_method, customer_name, customer_phone, delivery_addr,
+           order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, delivery_addr,
            voucher_code, discount_amount, points_used, points_earned, subtotal, total,
            is_printed, kitchen_notified_at, note, created_at, updated_at)
          OUTPUT INSERTED.id
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
         [order_code, customerUserId, store_id, table_id || null, location_name,
-         order_type, payment_method, customer_name, customer_phone, delivery_addr,
+         order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, delivery_addr,
          voucher_code, discount_amount, Math.floor(total / 1000), subtotal, total,
          order_type === 'POS' ? null : new Date(), note || null],
       );
@@ -694,8 +711,45 @@ router.post('/orders', async (req, res) => {
         );
       }
 
-      return { order_id: orderId, order_code, subtotal, discount_amount, total };
+      return { order_id: orderId, order_code, subtotal, discount_amount, total, payment_status, payment_provider };
     });
+
+    // PayOS payment link creation after DB transaction commit
+    if (payment_provider === 'payos' && isPayOSConfigured()) {
+      try {
+        const payosResult = await createPaymentLinkForOrder({
+          orderId: result.order_id,
+          orderCode: result.order_code,
+          total: result.total,
+          returnUrl: return_url,
+          cancelUrl: cancel_url,
+        });
+
+        await db.query(
+          `UPDATE orders
+           SET payment_link_id = ?, payos_order_code = ?, payment_expires_at = ?, payment_created_at = GETDATE()
+           WHERE id = ?`,
+          [payosResult.paymentLinkId, payosResult.payosOrderCode, payosResult.paymentExpiresAt, result.order_id]
+        );
+
+        result.checkout_url = payosResult.checkoutUrl;
+        result.qr_code = payosResult.qrCode;
+        result.payment_expires_at = payosResult.paymentExpiresAt;
+        result.payment_link_id = payosResult.paymentLinkId;
+        result.payos_order_code = payosResult.payosOrderCode;
+      } catch (payosErr) {
+        console.error('PayOS Link Creation Error:', payosErr.message);
+        await db.query(
+          `UPDATE orders SET payment_status = 'expired', updated_at = GETDATE() WHERE id = ?`,
+          [result.order_id]
+        );
+        return res.status(400).json({
+          error: 'Không tạo được link thanh toán. Vui lòng thử đặt lại đơn hàng: ' + payosErr.message,
+          order_id: result.order_id,
+          order_code: result.order_code,
+        });
+      }
+    }
 
     res.status(201).json({ ...result, status: 'Đang chuẩn bị' });
   } catch (err) {

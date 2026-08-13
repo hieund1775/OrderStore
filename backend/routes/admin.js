@@ -282,10 +282,10 @@ router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier'));
 router.get('/dashboard/kpi', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const [rev]    = await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
-    const [ord]    = await db.query("SELECT COUNT(*) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const [rev]    = await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND payment_status=N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const [ord]    = await db.query("SELECT COUNT(*) AS v FROM orders WHERE CAST(created_at AS DATE)=? AND payment_status=N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
     const [cancel] = await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE)=? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[today]);
-    const [cups]   = await db.query("SELECT COALESCE(SUM(oi.qty),0) AS v FROM order_items oi JOIN orders o ON oi.order_id=o.id WHERE CAST(o.created_at AS DATE)=? AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
+    const [cups]   = await db.query("SELECT COALESCE(SUM(oi.qty),0) AS v FROM order_items oi JOIN orders o ON oi.order_id=o.id WHERE CAST(o.created_at AS DATE)=? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[today]);
     const total = ord[0].v + cancel[0].v;
     res.json({
       revenue:{value:rev[0].v,label:'Doanh thu tạm tính'}, orders:{value:ord[0].v,label:'Đơn hoàn thành'},
@@ -304,22 +304,22 @@ router.get('/dashboard/urgent', async (req,res) => {
 });
 
 router.get('/dashboard/revenue-by-hour', async (req,res) => {
-  try { const [r]=await db.query("SELECT DATEPART(HOUR,created_at) AS hour, COALESCE(SUM(total),0) AS value FROM orders WHERE CAST(created_at AS DATE)=CAST(GETDATE() AS DATE) AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY DATEPART(HOUR,created_at) ORDER BY hour"); res.json(r); }
+  try { const [r]=await db.query("SELECT DATEPART(HOUR,created_at) AS hour, COALESCE(SUM(total),0) AS value FROM orders WHERE CAST(created_at AS DATE)=CAST(GETDATE() AS DATE) AND payment_status=N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY DATEPART(HOUR,created_at) ORDER BY hour"); res.json(r); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
 router.get('/dashboard/revenue-by-category', async (req,res) => {
-  try { const [r]=await db.query("SELECT c.name, COALESCE(SUM(oi.line_total),0) AS value FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN categories c ON p.category_id=c.id JOIN orders o ON oi.order_id=o.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY c.id,c.name ORDER BY value DESC"); res.json(r); }
+  try { const [r]=await db.query("SELECT c.name, COALESCE(SUM(oi.line_total),0) AS value FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN categories c ON p.category_id=c.id JOIN orders o ON oi.order_id=o.id WHERE o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY c.id,c.name ORDER BY value DESC"); res.json(r); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
 router.get('/dashboard/revenue-by-branch', async (req,res) => {
-  try { const [r]=await db.query("SELECT s.name, COALESCE(SUM(o.total),0) AS value FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY s.id,s.name ORDER BY value DESC"); res.json(r); }
+  try { const [r]=await db.query("SELECT s.name, COALESCE(SUM(o.total),0) AS value FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY s.id,s.name ORDER BY value DESC"); res.json(r); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
 router.get('/dashboard/top-products', async (req,res) => {
-  try { const [r]=await db.query("SELECT TOP 10 p.name, SUM(oi.qty) AS qty, SUM(oi.line_total) AS revenue FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN orders o ON oi.order_id=o.id WHERE o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY p.id,p.name ORDER BY qty DESC"); res.json(r); }
+  try { const [r]=await db.query("SELECT TOP 10 p.name, SUM(oi.qty) AS qty, SUM(oi.line_total) AS revenue FROM order_items oi JOIN products p ON oi.product_id=p.id JOIN orders o ON oi.order_id=o.id WHERE o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy') GROUP BY p.id,p.name ORDER BY qty DESC"); res.json(r); }
   catch(err) { res.status(500).json({error:err.message}); }
 });
 
@@ -394,6 +394,58 @@ router.put('/orders/:id/cancel', async (req,res) => {
     await logAudit(req.user.sub, `Hủy đơn #${req.params.id}`, reason || 'Hủy bởi admin', req);
     res.json({message:'Đơn hàng đã bị hủy'});
   } catch(err) { res.status(500).json({error:err.message}); }
+});
+
+// Admin xác nhận thanh toán thủ công (COD / VietQR tĩnh)
+router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashier'), async (req, res) => {
+  try {
+    const { note } = req.body;
+    const orderId = req.params.id;
+
+    const [orders] = await db.query(
+      'SELECT id, order_code, payment_status, payment_method, payment_provider FROM orders WHERE id = ?',
+      [orderId]
+    );
+
+    if (!orders.length) {
+      return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+    }
+
+    const order = orders[0];
+
+    if (order.payment_provider === 'payos') {
+      return res.status(400).json({
+        error: 'Đơn hàng PayOS được xác nhận tự động qua Webhook, không thể xác nhận thủ công'
+      });
+    }
+
+    if (order.payment_status === 'paid') {
+      return res.json({ ok: true, message: 'Đơn hàng đã được xác nhận thanh toán từ trước', payment_status: 'paid' });
+    }
+
+    if (order.payment_status === 'expired') {
+      return res.status(400).json({ error: 'Đơn hàng đã hết hạn thanh toán, không thể xác nhận thủ công' });
+    }
+
+    const provider = order.payment_method === 'VietQR' ? 'manual_vietqr' : (order.payment_method?.toLowerCase() || 'cod');
+
+    await db.query(
+      `UPDATE orders
+       SET payment_status = 'paid',
+           payment_provider = ?,
+           paid_at = GETDATE(),
+           paid_verified_by = ?,
+           updated_at = GETDATE()
+       WHERE id = ?`,
+      [provider, req.user.sub, orderId]
+    );
+
+    await logAudit(req.user.sub, `Xác nhận thanh toán thủ công đơn #${orderId}`, note || `Phương thức ${order.payment_method}`, req);
+
+    res.json({ ok: true, message: 'Đã xác nhận thanh toán thành công', payment_status: 'paid' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ═══════════ MENU ═══════════
@@ -552,7 +604,7 @@ router.delete('/menu/bases/:id', async (req,res) => {
 router.get('/customers', async (req,res) => {
   try {
     const {search,tier}=req.query;
-    let sql=`SELECT u.id,u.fullname,u.phone,u.email,u.tier,u.points,u.total_spent,(SELECT COUNT(*) FROM orders WHERE user_id=u.id) AS order_count,(SELECT MAX(created_at) FROM orders WHERE user_id=u.id) AS last_order FROM users u WHERE u.is_admin=0 AND u.is_active=1`;
+    let sql=`SELECT u.id,u.fullname,u.phone,u.email,u.tier,u.points,u.total_spent,(SELECT COUNT(*) FROM orders WHERE user_id=u.id AND payment_status=N'paid') AS order_count,(SELECT MAX(created_at) FROM orders WHERE user_id=u.id) AS last_order FROM users u WHERE u.is_admin=0 AND u.is_active=1`;
     const params=[];
     if(search){sql+=' AND (u.fullname LIKE ? OR u.phone LIKE ?)';params.push(`%${search}%`,`%${search}%`);}
     if(tier){sql+=' AND u.tier=?';params.push(tier);}
@@ -566,7 +618,7 @@ router.get('/customers/:id', async (req,res) => {
     const user=rows[0];
     const [orders]=await db.query('SELECT TOP 20 o.*, s.name AS store_name FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.user_id=? ORDER BY o.created_at DESC',[user.id]);
     user.recent_orders=orders;
-    const [ltvR]=await db.query('SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE user_id=?',[user.id]);
+    const [ltvR]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE user_id=? AND payment_status=N'paid'",[user.id]);
     user.ltv=ltvR[0].v; res.json(user);
   } catch(err) { res.status(500).json({error:err.message}); }
 });
@@ -578,9 +630,9 @@ router.get('/branches', async (req,res) => {
       SELECT s.id, s.name, s.city, s.district, s.address, s.lat, s.lng, s.hours, s.phone, s.amenities, s.is_active, s.created_at,
         (SELECT COUNT(*) FROM tables t WHERE t.store_id = s.id) AS table_count,
         (SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
-          AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')) AS today_orders,
+          AND o.payment_status = N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')) AS today_orders,
         ISNULL((SELECT SUM(o.total) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
-          AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')), 0) AS today_revenue
+          AND o.payment_status = N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')), 0) AS today_revenue
       FROM stores s ORDER BY s.id`);
     res.json(r);
   } catch(err){res.status(500).json({error:err.message});}
@@ -664,7 +716,7 @@ router.post('/inventory/:id/log', async (req,res) => {
 router.get('/kitchen/orders', async (req,res) => {
   try {
     const { store_id } = req.query;
-    let sql = "SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.delivery_addr,o.table_id,o.store_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Đang chuẩn bị', N'Chờ xác nhận')";
+    let sql = "SELECT o.id,o.order_code,o.order_type,o.customer_name,o.customer_phone,o.delivery_addr,o.table_id,o.store_id,o.location_name,o.note,o.subtotal,o.discount_amount,o.total,o.payment_method,o.payment_status,o.payment_provider,o.paid_at,o.created_at,s.name AS store_name,(SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE o.payment_status = N'paid' AND (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC) IN (N'Đang chuẩn bị', N'Chờ xác nhận')";
     const params = [];
     if (store_id && store_id !== 'all') {
       sql += " AND o.store_id = ?";
@@ -681,8 +733,8 @@ router.get('/kitchen/orders', async (req,res) => {
 router.get('/reports/kpi-summary', async (req,res) => {
   try {
     const {from,to}=req.query; const df=from||new Date().toISOString().split('T')[0]; const dt=to||new Date().toISOString().split('T')[0];
-    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
-    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
     const [cancel]=await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[df,dt]);
     const totalOrders=ord[0].total+cancel[0].v;
     res.json({
@@ -699,8 +751,8 @@ router.get('/reports/kpi-summary', async (req,res) => {
 router.get('/reports/summary', async (req,res) => {
   try {
     const {from,to}=req.query; const df=from||new Date().toISOString().split('T')[0]; const dt=to||new Date().toISOString().split('T')[0];
-    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
-    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [rev]=await db.query("SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
+    const [ord]=await db.query("SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')",[df,dt]);
     const [cancel]=await db.query("SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')",[df,dt]);
     res.json({period:{from:df,to:dt},revenue:rev[0].v,total_orders:ord[0].total,avg_order:Math.round(ord[0].avg),cancelled:cancel[0].v});
   } catch(err) { res.status(500).json({error:err.message}); }
