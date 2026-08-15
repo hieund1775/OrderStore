@@ -35,7 +35,7 @@ Tạo policy quyền tập trung cho các nhóm nghiệp vụ:
 | Nhóm API | super | manager | cashier | kitchen |
 |---|---:|---:|---:|---:|
 | Cấu hình hệ thống, tài khoản, audit | Có | Không | Không | Không |
-| Cửa hàng, bàn, thực đơn, voucher | Có | Có trong phạm vi được phép | Không | Không |
+| Cửa hàng, bàn, thực đơn, voucher | Có | Cập nhật cửa hàng/bàn/voucher của branch; không sửa menu global | Không | Không |
 | Danh sách đơn | Có | Chi nhánh của mình | Chi nhánh của mình | Chi nhánh của mình |
 | Xác nhận thanh toán thủ công | Có | Chi nhánh của mình | Chi nhánh của mình | Không |
 | KDS và cập nhật trạng thái bếp | Có | Chi nhánh của mình | Chỉ đọc nếu cần | Chi nhánh của mình |
@@ -49,6 +49,8 @@ Quy tắc scope:
 - Role khác: chỉ được truy cập `store_id === req.user.branch_id`.
 - Nếu request không gửi `store_id`, backend tự ép chi nhánh từ token.
 - Nếu gửi chi nhánh khác, trả `403`, không âm thầm đổi sang chi nhánh khác.
+- Vì menu hiện là dữ liệu global, chỉ `super` được CRUD category/product/options trong đợt 1. Không giả lập branch scope cho bảng chưa có quan hệ branch.
+- `manager` chỉ được cập nhật thông tin store của chính mình; tạo/xóa store vẫn là quyền `super`.
 
 ### 3.2. Bảo vệ dữ liệu khách và quyền hủy đơn
 
