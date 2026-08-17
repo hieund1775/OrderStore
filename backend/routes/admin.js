@@ -273,6 +273,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { resolveStoreScope, ScopeError } from '../middleware/branch-scope.js';
 import { logAudit } from '../services/audit.js';
 import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
+import { parseSingleDateBoundary, parseDateRangeBoundaries, getTodayBoundaries } from '../services/date-range.js';
 
 const router = Router();
 
@@ -284,27 +285,27 @@ router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier'));
 router.get('/dashboard/kpi', requireRole('super', 'manager'), async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
-    const today = new Date().toISOString().split('T')[0];
+    const { start, end } = req.query.date ? parseSingleDateBoundary(req.query.date) : getTodayBoundaries();
     let storeCondition = '';
-    const baseParams = [today];
+    const baseParams = [start, end];
     if (storeId) {
       storeCondition = ' AND o.store_id = ?';
       baseParams.push(storeId);
     }
     const [rev] = await db.query(
-      `SELECT COALESCE(SUM(o.total),0) AS v FROM orders o WHERE CAST(o.created_at AS DATE)=? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
+      `SELECT COALESCE(SUM(o.total),0) AS v FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
       baseParams
     );
     const [ord] = await db.query(
-      `SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE)=? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
+      `SELECT COUNT(*) AS v FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
       baseParams
     );
     const [cancel] = await db.query(
-      `SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE)=? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${storeCondition}`,
+      `SELECT COUNT(*) AS v FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${storeCondition}`,
       baseParams
     );
     const [cups] = await db.query(
-      `SELECT COALESCE(SUM(oi.qty),0) AS v FROM order_items oi JOIN orders o ON oi.order_id=o.id WHERE CAST(o.created_at AS DATE)=? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
+      `SELECT COALESCE(SUM(oi.qty),0) AS v FROM order_items oi JOIN orders o ON oi.order_id=o.id WHERE o.created_at >= ? AND o.created_at < ? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition}`,
       baseParams
     );
     const total = ord[0].v + cancel[0].v;
@@ -352,14 +353,15 @@ router.get('/dashboard/urgent', requireRole('super', 'manager'), async (req, res
 router.get('/dashboard/revenue-by-hour', requireRole('super', 'manager'), async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
+    const { start, end } = req.query.date ? parseSingleDateBoundary(req.query.date) : getTodayBoundaries();
     let storeCondition = '';
-    const params = [];
+    const params = [start, end];
     if (storeId) {
       storeCondition = ' AND o.store_id = ?';
       params.push(storeId);
     }
     const [r] = await db.query(
-      `SELECT DATEPART(HOUR, o.created_at) AS hour, COALESCE(SUM(o.total),0) AS value FROM orders o WHERE CAST(o.created_at AS DATE)=CAST(GETDATE() AS DATE) AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition} GROUP BY DATEPART(HOUR, o.created_at) ORDER BY hour`,
+      `SELECT DATEPART(HOUR, o.created_at) AS hour, COALESCE(SUM(o.total),0) AS value FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND o.payment_status=N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCondition} GROUP BY DATEPART(HOUR, o.created_at) ORDER BY hour`,
       params
     );
     res.json(r);
@@ -445,13 +447,18 @@ router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), asy
       sql += ' AND o.store_id=?';
       params.push(scopedStoreId);
     }
-    if (date_from) {
-      sql += ' AND CAST(o.created_at AS DATE)>=?';
-      params.push(date_from);
-    }
-    if (date_to) {
-      sql += ' AND CAST(o.created_at AS DATE)<=?';
-      params.push(date_to);
+    if (date_from && date_to) {
+      const { start, end } = parseDateRangeBoundaries(date_from, date_to);
+      sql += ' AND o.created_at >= ? AND o.created_at < ?';
+      params.push(start, end);
+    } else if (date_from) {
+      const { start } = parseSingleDateBoundary(date_from);
+      sql += ' AND o.created_at >= ?';
+      params.push(start);
+    } else if (date_to) {
+      const { end } = parseSingleDateBoundary(date_to);
+      sql += ' AND o.created_at < ?';
+      params.push(end);
     }
     if (search) {
       sql += ' AND (o.order_code LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ?)';
@@ -1009,15 +1016,16 @@ router.get('/customers/:id', requireRole('super', 'manager', 'cashier'), async (
 router.get('/branches', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
   try {
     const scopedStoreId = resolveStoreScope(req.user);
+    const { start, end } = getTodayBoundaries();
     let sql = `
       SELECT s.id, s.name, s.city, s.district, s.address, s.lat, s.lng, s.hours, s.phone, s.amenities, s.is_active, s.created_at,
         (SELECT COUNT(*) FROM tables t WHERE t.store_id = s.id) AS table_count,
-        (SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
+        (SELECT COUNT(*) FROM orders o WHERE o.store_id = s.id AND o.created_at >= ? AND o.created_at < ?
           AND o.payment_status = N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')) AS today_orders,
-        ISNULL((SELECT SUM(o.total) FROM orders o WHERE o.store_id = s.id AND CAST(o.created_at AS DATE) = CAST(GETDATE() AS DATE)
+        ISNULL((SELECT SUM(o.total) FROM orders o WHERE o.store_id = s.id AND o.created_at >= ? AND o.created_at < ?
           AND o.payment_status = N'paid' AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = N'Đã hủy')), 0) AS today_revenue
       FROM stores s`;
-    const params = [];
+    const params = [start, end, start, end];
     if (scopedStoreId) {
       sql += ' WHERE s.id = ?';
       params.push(scopedStoreId);
@@ -1227,15 +1235,16 @@ router.get('/reports/kpi-summary', requireRole('super', 'manager'), async (req, 
     const { from, to } = req.query;
     const df = from || new Date().toISOString().split('T')[0];
     const dt = to || new Date().toISOString().split('T')[0];
+    const { start, end } = parseDateRangeBoundaries(df, dt);
     let storeCond = '';
-    const params = [df, dt];
+    const params = [start, end];
     if (scopedStoreId) {
       storeCond = ' AND store_id = ?';
       params.push(scopedStoreId);
     }
-    const [rev] = await db.query(`SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
-    const [ord] = await db.query(`SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
-    const [cancel] = await db.query(`SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${scopedStoreId ? ' AND o.store_id = ?' : ''}`, scopedStoreId ? [df, dt, scopedStoreId] : [df, dt]);
+    const [rev] = await db.query(`SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE created_at >= ? AND created_at < ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
+    const [ord] = await db.query(`SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE created_at >= ? AND created_at < ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
+    const [cancel] = await db.query(`SELECT COUNT(*) AS v FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${scopedStoreId ? ' AND o.store_id = ?' : ''}`, scopedStoreId ? [start, end, scopedStoreId] : [start, end]);
     const totalOrders = ord[0].total + cancel[0].v;
     res.json({
       period: { from: df, to: dt },
@@ -1257,15 +1266,16 @@ router.get('/reports/summary', requireRole('super', 'manager'), async (req, res)
     const { from, to } = req.query;
     const df = from || new Date().toISOString().split('T')[0];
     const dt = to || new Date().toISOString().split('T')[0];
+    const { start, end } = parseDateRangeBoundaries(df, dt);
     let storeCond = '';
-    const params = [df, dt];
+    const params = [start, end];
     if (scopedStoreId) {
       storeCond = ' AND store_id = ?';
       params.push(scopedStoreId);
     }
-    const [rev] = await db.query(`SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
-    const [ord] = await db.query(`SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
-    const [cancel] = await db.query(`SELECT COUNT(*) AS v FROM orders o WHERE CAST(o.created_at AS DATE) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${scopedStoreId ? ' AND o.store_id = ?' : ''}`, scopedStoreId ? [df, dt, scopedStoreId] : [df, dt]);
+    const [rev] = await db.query(`SELECT COALESCE(SUM(total),0) AS v FROM orders WHERE created_at >= ? AND created_at < ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
+    const [ord] = await db.query(`SELECT COUNT(*) AS total, COALESCE(AVG(CAST(total AS DECIMAL)),0) AS avg FROM orders WHERE created_at >= ? AND created_at < ? AND payment_status = N'paid' AND id NOT IN (SELECT order_id FROM order_status_history WHERE status=N'Đã hủy')${storeCond}`, params);
+    const [cancel] = await db.query(`SELECT COUNT(*) AS v FROM orders o WHERE o.created_at >= ? AND o.created_at < ? AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id=o.id AND osh.status=N'Đã hủy')${scopedStoreId ? ' AND o.store_id = ?' : ''}`, scopedStoreId ? [start, end, scopedStoreId] : [start, end]);
     res.json({ period: { from: df, to: dt }, revenue: rev[0].v, total_orders: ord[0].total, avg_order: Math.round(ord[0].avg), cancelled: cancel[0].v });
   } catch (err) {
     const status = err.status || 500;
