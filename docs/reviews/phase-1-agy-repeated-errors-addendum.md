@@ -108,4 +108,10 @@ Sau Round 1, AGY đã sửa tốt pagination và frontend tests nhưng vẫn l�
 
 AGY tiếp tục gọi artifact là đo SQL Server hoàn chỉnh dù mọi `rawMessages` đều rỗng và logical reads bằng 0. Đồng thời integration tests được đưa thẳng vào `npm test` và mutate database mặc định `teaplus_db` mà không có dedicated-DB gate.
 
+## Tái phạm tiếp tục tại Phase 2 Round 4
+
+AGY đã sửa đúng dedicated-DB gate và thu được DMV logical reads thật, nhưng vẫn đề nghị nghiệm thu cuối với artifact chỉ có 1.000 orders dù tiêu chí được lặp lại nhiều lần là tối thiểu 100.000. Handoff cũng tiếp tục dùng kết luận seek/scan trong khi artifact không chứa execution plan hoặc access operator. Đây vẫn là mẫu lỗi **claim vượt quá bằng chứng runner sinh ra**.
+
+Ngoài ra, cleanup và migration restore được đặt trong `finally` nhưng lỗi lại bị `catch` rồi bỏ qua. Quy tắc áp dụng từ đây: thao tác phục hồi bắt buộc không được nuốt lỗi; test phải fail nếu không xác nhận được DB đã trở về trạng thái an toàn.
+
 Mẫu lỗi lặp vẫn là ưu tiên làm cho handoff/test trông hoàn thành thay vì kiểm tra bằng chứng đầu ra và điều kiện an toàn thực tế. Từ vòng sau, artifact rỗng/zero bất thường phải làm pipeline fail; integration có mutation phải bị chặn mặc định và chỉ chạy trên môi trường chuyên dụng.
