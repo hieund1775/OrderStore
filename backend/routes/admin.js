@@ -275,6 +275,7 @@ import { logAudit } from '../services/audit.js';
 import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries, getTodayBoundaries } from '../services/date-range.js';
 import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
+import { batchLoadOrderDetails } from '../services/order-batch-loader.js';
 
 const router = Router();
 
@@ -1243,14 +1244,7 @@ router.get('/kitchen/orders', requireRole('super', 'manager', 'kitchen'), async 
     }
     sql += ' ORDER BY o.created_at';
     const [orders] = await db.query(sql, params);
-    for (const o of orders) {
-      const [items] = await db.query("SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id=oi.id FOR JSON PATH) AS toppings FROM order_items oi WHERE oi.order_id=?", [o.id]);
-      o.items = items.map((i) => {
-        let t = [];
-        try { t = JSON.parse(i.toppings || '[]'); } catch {}
-        return { ...i, toppings: t };
-      });
-    }
+    await batchLoadOrderDetails(orders, db.query);
     res.json(orders);
   } catch (err) {
     const status = err.status || 500;
