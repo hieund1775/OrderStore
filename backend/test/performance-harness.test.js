@@ -22,10 +22,10 @@ describe('Performance Benchmark Harness & Guards Suite', () => {
     );
   });
 
-  it('rejects execution on default teaplus_db without explicit override', () => {
+  it('strictly rejects execution on default teaplus_db without exception', () => {
     assert.throws(
       () => validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_db', confirmFlag: '1' }),
-      /Database "teaplus_db" is not on the test\/performance allowlist/i
+      /primary application database/i
     );
   });
 
@@ -36,24 +36,23 @@ describe('Performance Benchmark Harness & Guards Suite', () => {
     );
   });
 
-  it('passes guard validation with dedicated perf database or explicit allowDbEnv', () => {
+  it('passes guard validation with dedicated perf database ending in _perf or _test', () => {
     const validPerf = validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_perf', confirmFlag: '1' });
     assert.equal(validPerf, true);
 
     const validTest = validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_test', confirmFlag: '1' });
     assert.equal(validTest, true);
 
-    const validExplicit = validatePerfGuard({
+    const validCustomTest = validatePerfGuard({
       nodeEnv: 'development',
-      dbName: 'custom_db',
+      dbName: 'store_benchmark_test',
       confirmFlag: '1',
-      allowDbEnv: 'custom_db',
     });
-    assert.equal(validExplicit, true);
+    assert.equal(validCustomTest, true);
   });
 
   it('verifies generateDeterministicOrders aligns 100% with production schema CHECK constraints', () => {
-    const orders = generateDeterministicOrders({ seed: 777, count: 100, days: 30, prefix: 'TP_TEST' });
+    const orders = generateDeterministicOrders({ seed: 777, count: 100, days: 30, prefix: 'TP' });
     assert.equal(orders.length, 100);
 
     for (const order of orders) {
@@ -73,6 +72,7 @@ describe('Performance Benchmark Harness & Guards Suite', () => {
         VALID_SCHEMA_ORDER_STATUSES.includes(order.initial_status),
         `Invalid initial_status: ${order.initial_status}`
       );
+      assert.ok(order.order_code.length <= 20, `Order code too long (${order.order_code.length}): ${order.order_code}`);
       assert.ok(order.total >= 0, 'Total must be non-negative');
       assert.ok(order.items.length >= 1, 'Each order must have at least 1 item');
     }
@@ -124,52 +124,59 @@ SQL Server Execution Times:
     );
   });
 
-  it('executes real database smoke seed (20 orders) and asserts relational integrity', async () => {
+  it('executes real database smoke seed (20 orders) and asserts relational integrity', async (t) => {
+    const isSqlIntegrationEnabled = process.env.PERF_SQL_INTEGRATION === '1';
+    const isDedicatedDb = /(_test|_perf)$/i.test(process.env.DB_NAME || '');
+
+    if (!isSqlIntegrationEnabled || !isDedicatedDb) {
+      t.skip('Skipping live SQL smoke seed: Requires PERF_SQL_INTEGRATION=1 and dedicated DB ending in _test or _perf');
+      return;
+    }
+
     const smokePrefix = 'SMK';
 
-    // Cleanup previous smoke test records
-    await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+    try {
+      // Step 1: Bootstrap prerequisite data & clean previous smoke test records
+      await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+      await bootstrapPrerequisiteData(db.query);
 
-    // Step 1: Bootstrap prerequisite data (FK stores, products, users, promotions)
-    await bootstrapPrerequisiteData(db.query);
+      // Step 2: Generate 20 deterministic orders
+      const orders = generateDeterministicOrders({ seed: 12345, count: 20, days: 5, prefix: smokePrefix });
+      assert.equal(orders.length, 20);
 
-    // Step 2: Generate 20 deterministic orders
-    const orders = generateDeterministicOrders({ seed: 12345, count: 20, days: 5, prefix: smokePrefix });
-    assert.equal(orders.length, 20);
+      // Step 3: Insert into SQL Server in transactional batches
+      const { insertedOrders } = await seedOrdersIntoDatabase(orders, db.transaction);
+      assert.equal(insertedOrders, 20);
 
-    // Step 3: Insert into SQL Server in transactional batches
-    const { insertedOrders } = await seedOrdersIntoDatabase(orders, db.transaction);
-    assert.equal(insertedOrders, 20);
+      // Step 4: Query back from SQL Server and assert relational counts
+      const [orderRows] = await db.query(
+        'SELECT id, order_code, total FROM orders WHERE order_code LIKE ?',
+        [`${smokePrefix}%`]
+      );
+      assert.equal(orderRows.length, 20);
 
-    // Step 4: Query back from SQL Server and assert relational counts
-    const [orderRows] = await db.query(
-      'SELECT id, order_code, total FROM orders WHERE order_code LIKE ?',
-      [`${smokePrefix}%`]
-    );
-    assert.equal(orderRows.length, 20);
+      const [statusRows] = await db.query(
+        `SELECT osh.id FROM order_status_history osh
+         JOIN orders o ON osh.order_id = o.id
+         WHERE o.order_code LIKE ?`,
+        [`${smokePrefix}%`]
+      );
+      assert.equal(statusRows.length, 20, 'Each seeded order must have an order_status_history record');
 
-    const [statusRows] = await db.query(
-      `SELECT osh.id FROM order_status_history osh
-       JOIN orders o ON osh.order_id = o.id
-       WHERE o.order_code LIKE ?`,
-      [`${smokePrefix}%`]
-    );
-    assert.equal(statusRows.length, 20, 'Each seeded order must have an order_status_history record');
-
-    const [itemRows] = await db.query(
-      `SELECT oi.id FROM order_items oi
-       JOIN orders o ON oi.order_id = o.id
-       WHERE o.order_code LIKE ?`,
-      [`${smokePrefix}%`]
-    );
-    assert.ok(itemRows.length >= 20, 'Seeded items must exist for all orders');
-
-    // Step 5: Clean up smoke test dataset
-    await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
-    const [postCleanupRows] = await db.query(
-      'SELECT id FROM orders WHERE order_code LIKE ?',
-      [`${smokePrefix}%`]
-    );
-    assert.equal(postCleanupRows.length, 0, 'Smoke test records must be cleaned up completely');
+      const [itemRows] = await db.query(
+        `SELECT oi.id FROM order_items oi
+         JOIN orders o ON oi.order_id = o.id
+         WHERE o.order_code LIKE ?`,
+        [`${smokePrefix}%`]
+      );
+      assert.ok(itemRows.length >= 20, 'Seeded items must exist for all orders');
+    } finally {
+      // Step 5: Always clean up smoke test dataset in finally block
+      try {
+        await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
   });
 });

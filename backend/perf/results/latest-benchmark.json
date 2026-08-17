@@ -1,81 +1,135 @@
 {
   "metadata": {
     "runner": "backend/perf/run-query-benchmarks.js",
-    "database": "teaplus_db",
-    "executed_at": "2026-08-17T08:20:54.753Z",
-    "query_count": 6
+    "database": "teaplus_perf",
+    "executed_at": "2026-08-17T08:36:57.265Z",
+    "query_count": 6,
+    "dataset_counts": {
+      "orders_count": 1000,
+      "items_count": 1968,
+      "status_history_count": 1000,
+      "voucher_usage_count": 201
+    }
   },
   "results": [
     {
       "name": "admin-orders",
-      "rowCount": 50,
-      "elapsedMs": 24.55,
-      "wallClockMs": 24.55,
-      "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "rowCount": 41,
+      "elapsedMs": 3,
+      "wallClockMs": 24.67,
+      "cpuTimeMs": 2,
+      "totalLogicalReads": 88,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 88,
+        "last_physical_reads": 13,
+        "last_elapsed_ms": 3,
+        "last_cpu_ms": 2,
+        "last_rows": 41
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.725Z",
+      "timestamp": "2026-08-17T08:36:57.127Z",
       "status": "success"
     },
     {
       "name": "customer-history",
       "rowCount": 6,
-      "elapsedMs": 6.25,
-      "wallClockMs": 6.25,
+      "elapsedMs": 0,
+      "wallClockMs": 9.31,
       "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "totalLogicalReads": 16,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 16,
+        "last_physical_reads": 2,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 6
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.732Z",
+      "timestamp": "2026-08-17T08:36:57.149Z",
       "status": "success"
     },
     {
       "name": "dashboard",
       "rowCount": 1,
-      "elapsedMs": 3.87,
-      "wallClockMs": 3.87,
+      "elapsedMs": 0,
+      "wallClockMs": 5.91,
       "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "totalLogicalReads": 6,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 6,
+        "last_physical_reads": 0,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 1
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.736Z",
+      "timestamp": "2026-08-17T08:36:57.167Z",
       "status": "success"
     },
     {
       "name": "kds-orders",
-      "rowCount": 66,
-      "elapsedMs": 4.97,
-      "wallClockMs": 4.97,
+      "rowCount": 51,
+      "elapsedMs": 0,
+      "wallClockMs": 7.16,
       "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "totalLogicalReads": 104,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 104,
+        "last_physical_reads": 0,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 51
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.741Z",
+      "timestamp": "2026-08-17T08:36:57.191Z",
       "status": "success"
     },
     {
       "name": "payos-expiry",
       "rowCount": 0,
-      "elapsedMs": 6.87,
-      "wallClockMs": 6.87,
+      "elapsedMs": 0,
+      "wallClockMs": 9.42,
       "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "totalLogicalReads": 3,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 3,
+        "last_physical_reads": 2,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 0
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.748Z",
+      "timestamp": "2026-08-17T08:36:57.213Z",
       "status": "success"
     },
     {
       "name": "voucher-usage",
       "rowCount": 1,
-      "elapsedMs": 3.53,
-      "wallClockMs": 3.53,
+      "elapsedMs": 0,
+      "wallClockMs": 5.84,
       "cpuTimeMs": 0,
-      "totalLogicalReads": 0,
+      "totalLogicalReads": 2,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 2,
+        "last_physical_reads": 1,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 1
+      },
       "tables": {},
       "rawMessages": [],
-      "timestamp": "2026-08-17T08:20:54.752Z",
+      "timestamp": "2026-08-17T08:36:57.251Z",
       "status": "success"
     }
   ]

@@ -6,8 +6,8 @@ import db from '../config/db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-// Strict allowlist: Only dedicated test or performance databases. Default 'teaplus_db' is strictly forbidden without override.
-const DEFAULT_ALLOWED_PATTERNS = [/_test$/i, /_perf$/i, /teaplus_test/i, /teaplus_perf/i];
+// Strict allowlist: Only dedicated test or performance databases. Default 'teaplus_db' is strictly forbidden.
+const DEFAULT_ALLOWED_PATTERNS = [/_test$/i, /_perf$/i, /teaplus_test$/i, /teaplus_perf$/i];
 
 export const VALID_SCHEMA_ORDER_TYPES = ['Delivery', 'Take-away', 'POS'];
 export const VALID_SCHEMA_PAYMENT_STATUSES = ['unpaid', 'paid', 'expired'];
@@ -18,22 +18,25 @@ export function validatePerfGuard({
   nodeEnv = process.env.NODE_ENV,
   dbName = process.env.DB_NAME,
   confirmFlag = process.env.PERF_SEED_CONFIRM,
-  allowDbEnv = process.env.PERF_ALLOW_DB,
 } = {}) {
   if (nodeEnv === 'production') {
     throw new Error('GUARDS VIOLATION: Seeding performance data is strictly forbidden in production mode (NODE_ENV=production).');
   }
 
-  const allowedPatterns = allowDbEnv
-    ? [new RegExp(allowDbEnv, 'i')]
-    : DEFAULT_ALLOWED_PATTERNS;
+  // Primary application database is strictly forbidden under all circumstances
+  if (/^teaplus_db$/i.test(String(dbName || ''))) {
+    throw new Error(
+      `GUARDS VIOLATION: Database "${dbName}" is the primary application database. ` +
+      `Seeding and benchmark mutations on the primary database are strictly forbidden. ` +
+      `You MUST connect to a dedicated test/performance database (e.g. "teaplus_perf" or "teaplus_test").`
+    );
+  }
 
-  const isAllowedDb = allowedPatterns.some((pattern) => pattern.test(String(dbName || '')));
+  const isAllowedDb = DEFAULT_ALLOWED_PATTERNS.some((pattern) => pattern.test(String(dbName || '')));
   if (!isAllowedDb) {
     throw new Error(
       `GUARDS VIOLATION: Database "${dbName}" is not on the test/performance allowlist. ` +
-      `Seeding is forbidden on default database. Use a dedicated test DB (e.g. "teaplus_perf" or "teaplus_test") ` +
-      `or explicitly set PERF_ALLOW_DB="${dbName}" in your test environment.`
+      `Database name MUST end with "_perf" or "_test" (e.g. "teaplus_perf").`
     );
   }
 
@@ -331,19 +334,35 @@ export async function seedOrdersIntoDatabase(orders, txRunner = db.transaction) 
   return { insertedOrders };
 }
 
-export async function runSeeder({ count = 1000, seed = 42, insertToDb = false } = {}) {
+export async function runSeeder({ count = 1000, seed = 42, insertToDb = false, prefix = 'TP', resetPrefix = false } = {}) {
   const args = process.argv.slice(2);
   const confirmArg = args.includes('--confirm') ? '1' : process.env.PERF_SEED_CONFIRM;
   const countArg = args.find((a) => a.startsWith('--orders='))?.split('=')[1];
   const finalCount = countArg ? parseInt(countArg, 10) : count;
+  const prefixArg = args.find((a) => a.startsWith('--prefix='))?.split('=')[1] || prefix;
+  const shouldResetPrefix = args.includes('--reset-prefix') || resetPrefix;
 
   validatePerfGuard({ confirmFlag: confirmArg });
 
-  console.log(`🚀 Starting performance seeder: Generating ${finalCount} orders with seed ${seed}...`);
-  const orders = generateDeterministicOrders({ seed, count: finalCount });
+  console.log(`🚀 Starting performance seeder: Generating ${finalCount} orders with seed ${seed} (prefix: ${prefixArg})...`);
+  const orders = generateDeterministicOrders({ seed, count: finalCount, prefix: prefixArg });
   console.log(`✅ Generated ${orders.length} in-memory records deterministically.`);
 
   if (insertToDb || args.includes('--insert')) {
+    const [existing] = await db.query('SELECT COUNT(id) AS cnt FROM orders WHERE order_code LIKE ?', [`${prefixArg}%`]);
+    const existingCount = existing?.[0]?.cnt || 0;
+
+    if (existingCount > 0) {
+      if (!shouldResetPrefix) {
+        throw new Error(
+          `Dataset with prefix "${prefixArg}" already exists (${existingCount} orders found). ` +
+          `Run with --reset-prefix to overwrite or specify a different prefix/seed.`
+        );
+      }
+      console.log(`🧹 Resetting existing ${existingCount} orders with prefix "${prefixArg}"...`);
+      await cleanupPerformanceDataset({ prefix: prefixArg, q: db.query });
+    }
+
     console.log('🔧 Bootstrapping prerequisite FK data (stores, categories, products, toppings, users)...');
     await bootstrapPrerequisiteData(db.query);
     console.log(`💾 Inserting ${orders.length} orders into SQL Server database in transactional batches...`);

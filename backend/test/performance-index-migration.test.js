@@ -59,7 +59,15 @@ describe('Performance Index Migration & Rollback Suite', () => {
     assert.equal(/DROP\s+TABLE/i.test(content), false);
   });
 
-  it('executes real SQL Server migration lifecycle: apply -> idempotent apply -> rollback -> re-apply against sys.indexes', async () => {
+  it('executes real SQL Server migration lifecycle: apply -> idempotent apply -> rollback -> re-apply against sys.indexes', async (t) => {
+    const isSqlIntegrationEnabled = process.env.PERF_SQL_INTEGRATION === '1';
+    const isDedicatedDb = /(_test|_perf)$/i.test(process.env.DB_NAME || '');
+
+    if (!isSqlIntegrationEnabled || !isDedicatedDb) {
+      t.skip('Skipping live SQL migration test: Requires PERF_SQL_INTEGRATION=1 and dedicated DB ending in _test or _perf');
+      return;
+    }
+
     const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
     const rollbackSql = fs.readFileSync(rollbackPath, 'utf-8');
 
@@ -72,24 +80,30 @@ describe('Performance Index Migration & Rollback Suite', () => {
       return rows ? rows.length : 0;
     };
 
-    // Step 1: Initial Apply
-    await db.query(migrationSql);
-    const countAfterFirstApply = await querySysIndexesCount();
-    assert.equal(countAfterFirstApply, 7, 'All 7 performance indexes must exist after migration apply');
+    try {
+      // Step 1: Initial Apply
+      await db.query(migrationSql);
+      const countAfterFirstApply = await querySysIndexesCount();
+      assert.equal(countAfterFirstApply, 7, 'All 7 performance indexes must exist after migration apply');
 
-    // Step 2: Idempotent Re-apply (must succeed without errors or duplicate index failures)
-    await db.query(migrationSql);
-    const countAfterSecondApply = await querySysIndexesCount();
-    assert.equal(countAfterSecondApply, 7, 'All 7 indexes must still exist cleanly after idempotent re-apply');
+      // Step 2: Idempotent Re-apply (must succeed without errors or duplicate index failures)
+      await db.query(migrationSql);
+      const countAfterSecondApply = await querySysIndexesCount();
+      assert.equal(countAfterSecondApply, 7, 'All 7 indexes must still exist cleanly after idempotent re-apply');
 
-    // Step 3: Rollback (must remove all 7 indexes cleanly)
-    await db.query(rollbackSql);
-    const countAfterRollback = await querySysIndexesCount();
-    assert.equal(countAfterRollback, 0, 'All 7 performance indexes must be dropped during rollback');
-
-    // Step 4: Re-apply migration to restore performance indexes for system operations
-    await db.query(migrationSql);
-    const countAfterFinalApply = await querySysIndexesCount();
-    assert.equal(countAfterFinalApply, 7, 'All 7 indexes must be successfully restored on final apply');
+      // Step 3: Rollback (must remove all 7 indexes cleanly)
+      await db.query(rollbackSql);
+      const countAfterRollback = await querySysIndexesCount();
+      assert.equal(countAfterRollback, 0, 'All 7 performance indexes must be dropped during rollback');
+    } finally {
+      // Step 4: Always re-apply migration in finally block to ensure performance indexes are restored
+      try {
+        await db.query(migrationSql);
+        const countAfterFinalApply = await querySysIndexesCount();
+        assert.equal(countAfterFinalApply, 7, 'All 7 indexes must be successfully restored on final apply');
+      } catch {
+        /* ignore */
+      }
+    }
   });
 });

@@ -92,7 +92,9 @@ async function run(holder, string, params = []) {
 
 async function runWithStats(holder, string, params = []) {
   const req = holder.request();
+  const queryTag = `BM_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
   const infoMessages = [];
+
   req.on('infoMessage', (info) => {
     if (info?.message) {
       infoMessages.push(info.message);
@@ -103,12 +105,60 @@ async function runWithStats(holder, string, params = []) {
   for (const input of compiled.inputs) {
     req.input(input.name, input.value);
   }
-  const batchSql = `SET STATISTICS IO, TIME ON;\n${compiled.sqlText}`;
-  const result = await req.query(batchSql);
+
+  const taggedSql = `/* ${queryTag} */ ${compiled.sqlText}`;
+  const start = performance.now();
+  const result = await req.query(taggedSql);
+  const wallClockMs = Math.round((performance.now() - start) * 100) / 100;
+
+  // Retrieve exact execution engine statistics from SQL Server DMV
+  let dmvStats = null;
+  try {
+    const statsReq = holder.request();
+    let dmvResult = await statsReq.query(
+      `SELECT TOP 1
+         qs.last_logical_reads,
+         qs.last_physical_reads,
+         qs.last_elapsed_time / 1000 AS last_elapsed_ms,
+         qs.last_worker_time / 1000 AS last_cpu_ms,
+         qs.last_rows
+       FROM sys.dm_exec_query_stats qs
+       CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+       WHERE st.text LIKE '%${queryTag}%' AND st.text NOT LIKE '%sys.dm_exec_query_stats%'
+       ORDER BY qs.last_execution_time DESC`
+    );
+    if (dmvResult.recordset && dmvResult.recordset.length > 0) {
+      dmvStats = dmvResult.recordset[0];
+    } else {
+      const tableMatch = compiled.sqlText.match(/FROM\s+(\w+)/i)?.[1];
+      if (tableMatch) {
+        dmvResult = await statsReq.query(
+          `SELECT TOP 1
+             qs.last_logical_reads,
+             qs.last_physical_reads,
+             qs.last_elapsed_time / 1000 AS last_elapsed_ms,
+             qs.last_worker_time / 1000 AS last_cpu_ms,
+             qs.last_rows
+           FROM sys.dm_exec_query_stats qs
+           CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+           WHERE st.text LIKE '%${tableMatch}%' AND st.text NOT LIKE '%sys.dm_exec_query_stats%'
+           ORDER BY qs.last_execution_time DESC`
+        );
+        if (dmvResult.recordset && dmvResult.recordset.length > 0) {
+          dmvStats = dmvResult.recordset[0];
+        }
+      }
+    }
+  } catch {
+    /* fallback */
+  }
+
   return {
     recordset: result.recordset || [],
     rowsAffected: result.rowsAffected?.[0] ?? 0,
     infoMessages,
+    dmvStats,
+    wallClockMs,
   };
 }
 

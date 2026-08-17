@@ -33,24 +33,37 @@ export function parseStatisticsIo(statString = '') {
 }
 
 export async function benchmarkQuery({ name, sqlText, params = [], qWithStats = db.queryWithStats } = {}) {
-  const start = performance.now();
-
   // Fail-fast on execution error
   const res = await qWithStats(sqlText, params);
   const rows = res.recordset || [];
   const rowCount = Array.isArray(rows) ? rows.length : res.rowsAffected || 0;
   const rawMessages = (res.infoMessages || []).join('\n');
+  const dmvStats = res.dmvStats || null;
 
   const parsedStats = parseStatisticsIo(rawMessages);
-  const measuredWallClockMs = Math.round((performance.now() - start) * 100) / 100;
+  const logicalReads = parsedStats.totalLogicalReads > 0
+    ? parsedStats.totalLogicalReads
+    : (dmvStats?.last_logical_reads ?? null);
+
+  const cpuTimeMs = parsedStats.cpuTimeMs > 0
+    ? parsedStats.cpuTimeMs
+    : (dmvStats?.last_cpu_ms ?? null);
+
+  const elapsedMs = parsedStats.elapsedTimeMs > 0
+    ? parsedStats.elapsedTimeMs
+    : (dmvStats?.last_elapsed_ms ?? res.wallClockMs);
+
+  const ioStatsAvailable = logicalReads !== null;
 
   return {
     name,
     rowCount,
-    elapsedMs: parsedStats.elapsedTimeMs > 0 ? parsedStats.elapsedTimeMs : measuredWallClockMs,
-    wallClockMs: measuredWallClockMs,
-    cpuTimeMs: parsedStats.cpuTimeMs,
-    totalLogicalReads: parsedStats.totalLogicalReads,
+    elapsedMs,
+    wallClockMs: res.wallClockMs,
+    cpuTimeMs: cpuTimeMs ?? 0,
+    totalLogicalReads: logicalReads ?? 0,
+    io_stats_available: ioStatsAvailable,
+    engine_stats: dmvStats,
     tables: parsedStats.tables,
     rawMessages: res.infoMessages || [],
     timestamp: new Date().toISOString(),
@@ -64,7 +77,7 @@ export async function runAllBenchmarks({
   qWithStats = db.queryWithStats,
   dbName = process.env.DB_NAME,
 } = {}) {
-  validatePerfGuard({ confirmFlag });
+  validatePerfGuard({ confirmFlag, dbName });
 
   const queryDir = path.resolve(__dirname, 'queries');
   if (!fs.existsSync(queryDir)) {
@@ -98,12 +111,28 @@ export async function runAllBenchmarks({
   // Turn off statistics
   await q('SET STATISTICS IO, TIME OFF;');
 
+  // Query actual dataset row counts from database for complete provenance
+  let datasetCounts = {};
+  try {
+    const [counts] = await q(`
+      SELECT
+        (SELECT COUNT(*) FROM orders) AS orders_count,
+        (SELECT COUNT(*) FROM order_items) AS items_count,
+        (SELECT COUNT(*) FROM order_status_history) AS status_history_count,
+        (SELECT COUNT(*) FROM voucher_usage_history) AS voucher_usage_count
+    `);
+    datasetCounts = counts[0] || {};
+  } catch {
+    /* fallback */
+  }
+
   const outputPayload = {
     metadata: {
       runner: 'backend/perf/run-query-benchmarks.js',
       database: dbName,
       executed_at: new Date().toISOString(),
       query_count: results.length,
+      dataset_counts: datasetCounts,
     },
     results,
   };

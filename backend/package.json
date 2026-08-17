@@ -8,6 +8,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "node --test",
+    "test:integration": "node --test test/performance-harness.test.js test/performance-index-migration.test.js",
     "perf:seed": "node perf/seed-performance-data.js",
     "perf:bench": "node perf/run-query-benchmarks.js",
     "db:init": "node init-db.js"
