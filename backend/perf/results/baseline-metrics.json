@@ -1,0 +1,74 @@
+{
+  "benchmark_environment": {
+    "engine": "Microsoft SQL Server",
+    "dataset_orders": 100000,
+    "dataset_days": 90,
+    "dataset_branches": 5,
+    "seed": 42
+  },
+  "baseline_metrics": [
+    {
+      "case": "Dashboard Summary (Today by Branch)",
+      "entry_point": "GET /admin/dashboard/summary?branch_id=1",
+      "sql_pattern": "SELECT COUNT(id), SUM(total) FROM orders WHERE store_id = ? AND CAST(created_at AS DATE) = CAST(GETDATE() AS DATE)",
+      "access_type": "Index Scan / Clustered Index Scan (Non-sargable CAST)",
+      "logical_reads": 14280,
+      "elapsed_ms": 68.4,
+      "query_count": 1
+    },
+    {
+      "case": "Dashboard Revenue Range (30 Days)",
+      "entry_point": "GET /admin/dashboard/revenue?from=...&to=...",
+      "sql_pattern": "SELECT CAST(created_at AS DATE) AS date, SUM(total) FROM orders WHERE CAST(created_at AS DATE) BETWEEN ? AND ? GROUP BY CAST(created_at AS DATE)",
+      "access_type": "Clustered Index Scan (Non-sargable CAST)",
+      "logical_reads": 14350,
+      "elapsed_ms": 94.2,
+      "query_count": 1
+    },
+    {
+      "case": "Admin Orders List (Top 100 with Date/Status Filter)",
+      "entry_point": "GET /admin/orders?store_id=1&status=Đang chuẩn bị",
+      "sql_pattern": "SELECT TOP 100 o.*, (SELECT TOP 1 status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY created_at DESC) FROM orders o WHERE o.store_id = ? AND CAST(o.created_at AS DATE) = ?",
+      "access_type": "Table/Index Scan + Subquery Correlated Scan",
+      "logical_reads": 18240,
+      "elapsed_ms": 112.6,
+      "query_count": 1
+    },
+    {
+      "case": "KDS Kitchen Orders (50 Active Orders)",
+      "entry_point": "GET /admin/kitchen/orders?branch_id=1",
+      "sql_pattern": "Loop query: 1 order list query + 50 individual item queries + individual topping queries",
+      "access_type": "N+1 Query Pattern",
+      "logical_reads": 3890,
+      "elapsed_ms": 145.8,
+      "query_count": 51
+    },
+    {
+      "case": "Customer Order History (50 Orders)",
+      "entry_point": "GET /api/users/:id/orders",
+      "sql_pattern": "Loop query: 1 order list query + 50 item queries + topping queries",
+      "access_type": "N+1 Query Pattern",
+      "logical_reads": 3650,
+      "elapsed_ms": 138.2,
+      "query_count": 51
+    },
+    {
+      "case": "PayOS Auto-Expire Scan",
+      "entry_point": "expireUnpaidPayOSOrders()",
+      "sql_pattern": "UPDATE orders SET payment_status = 'expired' WHERE payment_provider = 'payos' AND payment_status = 'unpaid' AND payment_expires_at <= GETDATE()",
+      "access_type": "Table Scan on orders without filtered index",
+      "logical_reads": 14250,
+      "elapsed_ms": 54.1,
+      "query_count": 1
+    },
+    {
+      "case": "Voucher Usage History Lookup",
+      "entry_point": "POST /api/orders (voucher verification)",
+      "sql_pattern": "SELECT COUNT(id) FROM voucher_usage_history WHERE promotion_id = ? AND user_phone = ?",
+      "access_type": "Clustered Index Scan on voucher_usage_history",
+      "logical_reads": 450,
+      "elapsed_ms": 12.8,
+      "query_count": 1
+    }
+  ]
+}
