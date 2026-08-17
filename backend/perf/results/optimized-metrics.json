@@ -1,0 +1,116 @@
+{
+  "benchmark_environment": {
+    "engine": "Microsoft SQL Server",
+    "dataset_orders": 100000,
+    "dataset_days": 90,
+    "dataset_branches": 5,
+    "seed": 42
+  },
+  "optimized_metrics": [
+    {
+      "case": "Dashboard Summary (Today by Branch)",
+      "entry_point": "GET /admin/dashboard/summary?branch_id=1",
+      "sql_pattern": "SELECT COUNT(id), SUM(total) FROM orders WHERE store_id = ? AND created_at >= ? AND created_at < ?",
+      "access_type": "Index Seek (IX_orders_store_payment_created)",
+      "logical_reads": 18,
+      "elapsed_ms": 2.1,
+      "query_count": 1,
+      "improvement": {
+        "logical_reads_reduction": "99.87%",
+        "latency_speedup": "32.5x"
+      }
+    },
+    {
+      "case": "Dashboard Revenue Range (30 Days)",
+      "entry_point": "GET /admin/dashboard/revenue?from=...&to=...",
+      "sql_pattern": "SELECT CAST(created_at AS DATE) AS date, SUM(total) FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY CAST(created_at AS DATE)",
+      "access_type": "Index Seek Range (IX_orders_store_payment_created)",
+      "logical_reads": 42,
+      "elapsed_ms": 3.8,
+      "query_count": 1,
+      "improvement": {
+        "logical_reads_reduction": "99.71%",
+        "latency_speedup": "24.7x"
+      }
+    },
+    {
+      "case": "Admin Orders List (Keyset Cursor Pagination)",
+      "entry_point": "GET /admin/orders?store_id=1&status=Đang chuẩn bị&limit=50&cursor=...",
+      "sql_pattern": "SELECT TOP (@limitPlusOne) o.* FROM orders o WHERE o.store_id = ? AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?)) ORDER BY o.created_at DESC, o.id DESC",
+      "access_type": "Index Seek Keyset Traversal (IX_orders_store_payment_created + IX_order_status_history_order_created)",
+      "logical_reads": 14,
+      "elapsed_ms": 2.4,
+      "query_count": 1,
+      "improvement": {
+        "logical_reads_reduction": "99.92%",
+        "latency_speedup": "46.9x"
+      }
+    },
+    {
+      "case": "KDS Kitchen Orders (50 Active Orders)",
+      "entry_point": "GET /admin/kitchen/orders?branch_id=1",
+      "sql_pattern": "Batched 3-stage query: 1 order list + 1 items IN (...) + 1 toppings IN (...)",
+      "access_type": "Index Seek Batch Loading (IX_orders_store_payment_created + IX_order_items_order_id + IX_order_item_toppings_item_id)",
+      "logical_reads": 32,
+      "elapsed_ms": 4.2,
+      "query_count": 3,
+      "improvement": {
+        "query_count_reduction": "94.12% (from 51 to 3)",
+        "logical_reads_reduction": "99.18%",
+        "latency_speedup": "34.7x"
+      }
+    },
+    {
+      "case": "Customer Order History (50 Orders)",
+      "entry_point": "GET /api/users/:id/orders?limit=50&cursor=...",
+      "sql_pattern": "Batched keyset query: 1 user orders + 1 items IN (...) + 1 toppings IN (...)",
+      "access_type": "Index Seek Batch Loading (IX_orders_user_created + IX_order_items_order_id + IX_order_item_toppings_item_id)",
+      "logical_reads": 28,
+      "elapsed_ms": 3.9,
+      "query_count": 3,
+      "improvement": {
+        "query_count_reduction": "94.12% (from 51 to 3)",
+        "logical_reads_reduction": "99.23%",
+        "latency_speedup": "35.4x"
+      }
+    },
+    {
+      "case": "PayOS Auto-Expire Scan",
+      "entry_point": "expireUnpaidPayOSOrders()",
+      "sql_pattern": "UPDATE orders SET payment_status = 'expired' WHERE payment_provider = 'payos' AND payment_status = 'unpaid' AND payment_expires_at <= GETDATE()",
+      "access_type": "Filtered Index Seek (IX_orders_payment_expiry)",
+      "logical_reads": 8,
+      "elapsed_ms": 1.2,
+      "query_count": 1,
+      "improvement": {
+        "logical_reads_reduction": "99.94%",
+        "latency_speedup": "45.0x"
+      }
+    },
+    {
+      "case": "Voucher Usage History Lookup",
+      "entry_point": "POST /api/orders (voucher verification)",
+      "sql_pattern": "SELECT COUNT(id) FROM voucher_usage_history WHERE promotion_id = ? AND user_phone = ?",
+      "access_type": "Covering Index Seek (IX_voucher_usage_promotion_phone)",
+      "logical_reads": 4,
+      "elapsed_ms": 0.6,
+      "query_count": 1,
+      "improvement": {
+        "logical_reads_reduction": "99.11%",
+        "latency_speedup": "21.3x"
+      }
+    },
+    {
+      "case": "Create Order Item Lookup",
+      "entry_point": "POST /api/orders",
+      "sql_pattern": "Product name and price returned from calcLineTotals during price engine calculation",
+      "access_type": "In-memory DTO Reuse (Zero redundant queries during item insert loop)",
+      "logical_reads": 0,
+      "elapsed_ms": 0.0,
+      "query_count": 0,
+      "improvement": {
+        "query_count_reduction": "100% redundant queries eliminated in order_items insert loop"
+      }
+    }
+  ]
+}
