@@ -9,6 +9,8 @@ import { calcLineTotals, validateVoucher, consumeVoucher, generateOrderCode } fr
 import { createPaymentLinkForOrder, isPayOSConfigured } from '../services/payos.js';
 import { validateOrderCreationInput, buildPublicLookupDto } from '../services/public-dto.js';
 import { evaluateOrderTransition } from '../services/order-transition-policy.js';
+import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
+import { batchLoadOrderDetails } from '../services/order-batch-loader.js';
 
 const router = Router();
 
@@ -404,25 +406,46 @@ router.get('/users/:id', authenticate, requireCustomerSelf, async (req, res) => 
 router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, res) => {
   try {
     const requestedId = Number(req.params.id);
-    const [orders] = await db.query(`
-      SELECT o.*, s.name AS store_name,
-        (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC) AS current_status
-      FROM orders o JOIN stores s ON o.store_id = s.id WHERE o.user_id = ? ORDER BY o.created_at DESC
-    `, [requestedId]);
-    for (const order of orders) {
-      const [items] = await db.query(`
-        SELECT oi.*,
-          (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id = oi.id FOR JSON PATH) AS toppings
-        FROM order_items oi WHERE oi.order_id = ?
-      `, [order.id]);
-      order.items = items.map(i => {
-        let tops = [];
-        try { tops = JSON.parse(i.toppings || '[]'); } catch {}
-        return { ...i, toppings: tops };
-      });
+    const limit = validatePaginationLimit(req.query.limit, 50, 100);
+    const cursor = decodeCursor(req.query.cursor);
+
+    let sql = `
+      SELECT TOP (@p0)
+        o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
+        o.order_type, o.payment_method, o.payment_status, o.payment_provider,
+        o.customer_name, o.customer_phone, o.delivery_addr, o.voucher_code,
+        o.discount_amount, o.subtotal, o.total, o.note, o.created_at, o.updated_at,
+        s.name AS store_name,
+        (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC) AS current_status
+      FROM orders o
+      JOIN stores s ON o.store_id = s.id
+      WHERE o.user_id = @p1
+    `;
+    const params = [limit + 1, requestedId];
+
+    if (cursor) {
+      sql += ' AND (o.created_at < @p2 OR (o.created_at = @p2 AND o.id < @p3))';
+      params.push(cursor.createdAtIso, cursor.id);
     }
-    res.json(orders);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+
+    sql += ' ORDER BY o.created_at DESC, o.id DESC';
+
+    const [rows] = await db.query(sql, params);
+
+    const { rows: pagedOrders, page_info } = buildPageInfo({ rows, limit });
+
+    // Batch load all items and toppings in 2 single queries instead of N loop queries
+    await batchLoadOrderDetails(pagedOrders, db.query);
+
+    if (req.query.cursor !== undefined || req.query.limit !== undefined) {
+      return res.json({ orders: pagedOrders, page_info });
+    }
+
+    res.json(pagedOrders);
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
 });
 
 router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, async (req, res) => {

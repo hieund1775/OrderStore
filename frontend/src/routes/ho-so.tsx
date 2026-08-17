@@ -73,9 +73,10 @@ function Profile() {
       created_at: string;
       store_name: string;
       items: { product_name: string; qty: number; size_label: string }[];
-    }[]>(`/api/users/${user.id}/orders`)
-      .then((rows) => {
-        if (!cancelled) setUserOrders(Array.isArray(rows) ? rows : []);
+    }[] | { orders: any[]; page_info: any }>(`/api/users/${user.id}/orders`)
+      .then((resData) => {
+        const rows = Array.isArray(resData) ? resData : (resData?.orders || []);
+        if (!cancelled) setUserOrders(rows);
       })
       .catch(() => {
         if (!cancelled) setUserOrders([]);
