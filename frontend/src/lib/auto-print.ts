@@ -170,12 +170,15 @@ export function silentPrintTicket(order: any): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const orderCode = order.order_code || String(order.id);
-    markOrderPrinted(orderCode);
-
     const config = getActivePrinterConfig();
+
     if (config?.mode === 'ble') {
       // In qua Bluetooth thật (ESC/POS) — thực hiện bất đồng bộ
-      void printTicketViaBLE(order);
+      printTicketViaBLE(order).then((ok) => {
+        if (ok) markOrderPrinted(orderCode);
+      }).catch((err) => {
+        console.error('BLE Print error:', err);
+      });
       return true;
     }
 
@@ -194,6 +197,8 @@ export function silentPrintTicket(order: any): boolean {
     doc.open();
     doc.write(generateReceiptHtml(order));
     doc.close();
+
+    markOrderPrinted(orderCode);
 
     setTimeout(() => {
       iframe.contentWindow?.focus();
