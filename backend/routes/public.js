@@ -824,8 +824,7 @@ router.post('/orders', async (req, res) => {
 
       // 4) Món + Topping
       for (const line of lines) {
-        const [prodRows] = await tx.query('SELECT name FROM products WHERE id = ?', [line.product_id]);
-        const product_name = prodRows[0]?.name || `Món #${line.product_id}`;
+        const product_name = line.product_name || `Món #${line.product_id}`;
         const [itemRows] = await tx.query(
           `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label,
              base_tea, sugar_level, ice_level, note, unit_price, line_total)

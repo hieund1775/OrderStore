@@ -15,7 +15,7 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
   }
 
   const [products] = await q(
-    'SELECT id, price FROM products WHERE id = ? AND is_available = 1',
+    'SELECT id, name, price FROM products WHERE id = ? AND is_available = 1',
     [product_id],
   );
   const product = products[0];
@@ -53,7 +53,7 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
   const unit_price = Number(product.price) + Number(sizeExtra);
   const line_total = (unit_price + toppingsTotal) * qty;
 
-  return { product_id: Number(product_id), unit_price, toppingsTotal, line_total, toppings };
+  return { product_id: Number(product_id), product_name: product.name, unit_price, toppingsTotal, line_total, toppings };
 }
 
 /**
