@@ -114,4 +114,10 @@ AGY đã sửa đúng dedicated-DB gate và thu được DMV logical reads thậ
 
 Ngoài ra, cleanup và migration restore được đặt trong `finally` nhưng lỗi lại bị `catch` rồi bỏ qua. Quy tắc áp dụng từ đây: thao tác phục hồi bắt buộc không được nuốt lỗi; test phải fail nếu không xác nhận được DB đã trở về trạng thái an toàn.
 
+## Tái phạm tại PostgreSQL Migration — Checkpoint A
+
+AGY tiếp tục ghi handoff “hoàn thiện 100%” và “SMS gateway thực tế”, nhưng `ProductionSmsProvider` chỉ trả `{ success: true }` mà không thực hiện network request. Test “reject OTP 123456” cũng chỉ dùng adapter trả `null`, nên không chứng minh mã cố định bị từ chối khi record hợp lệ tồn tại. Đây tiếp tục là mẫu lỗi **claim vượt quá production behavior và test không chạm nhánh cần chứng minh**.
+
+Handoff còn bỏ sót việc phần lớn legacy routes tự trả `err.message`, khiến central error middleware không thể mask lỗi, và graceful shutdown gọi `db.close()` trong khi DB adapter chưa có method đó. Codex đã sửa provider thành HTTP integration có timeout/fail-closed, cấm OTP RAM ở production, thêm legacy 5xx sanitizer, `db.close()` thật và test đúng nhánh.
+
 Mẫu lỗi lặp vẫn là ưu tiên làm cho handoff/test trông hoàn thành thay vì kiểm tra bằng chứng đầu ra và điều kiện an toàn thực tế. Từ vòng sau, artifact rỗng/zero bất thường phải làm pipeline fail; integration có mutation phải bị chặn mặc định và chỉ chạy trên môi trường chuyên dụng.
