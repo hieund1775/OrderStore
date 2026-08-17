@@ -80,6 +80,39 @@ export function compileQuery(string, params = [], trusted = isTrusted) {
   }
 }
 
+export function parseExecutionPlanOperators(xmlPlan) {
+  if (!xmlPlan || typeof xmlPlan !== 'string') return [];
+  const operators = [];
+
+  const relOpRegex = /<RelOp[^>]*PhysicalOp="([^"]+)"[^>]*>([\s\S]*?)<\/RelOp>/g;
+  let match;
+  while ((match = relOpRegex.exec(xmlPlan)) !== null) {
+    const physicalOp = match[1];
+    const innerXml = match[2];
+
+    const objMatch = innerXml.match(/<Object[^>]*Table="\[?([^"\]]+)\]?"(?:\s+Index="\[?([^"\]]+)\]?")?[^>]*>/);
+    const table = objMatch ? objMatch[1].replace(/^\[|\]$/g, '') : null;
+    const index = objMatch && objMatch[2] ? objMatch[2].replace(/^\[|\]$/g, '') : null;
+
+    if (physicalOp && (physicalOp.includes('Seek') || physicalOp.includes('Scan') || physicalOp.includes('Index'))) {
+      operators.push({
+        operator: physicalOp,
+        table,
+        index,
+      });
+    }
+  }
+
+  // Deduplicate operators
+  const seen = new Set();
+  return operators.filter((op) => {
+    const key = `${op.operator}|${op.table}|${op.index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function run(holder, string, params = []) {
   const req = holder.request();
   const compiled = compileQuery(string, params, isTrusted);
@@ -111,8 +144,9 @@ async function runWithStats(holder, string, params = []) {
   const result = await req.query(taggedSql);
   const wallClockMs = Math.round((performance.now() - start) * 100) / 100;
 
-  // Retrieve exact execution engine statistics from SQL Server DMV
+  // Retrieve exact execution engine statistics and ShowPlan XML from SQL Server DMV
   let dmvStats = null;
+  let executionPlanSummary = [];
   try {
     const statsReq = holder.request();
     let dmvResult = await statsReq.query(
@@ -121,9 +155,11 @@ async function runWithStats(holder, string, params = []) {
          qs.last_physical_reads,
          qs.last_elapsed_time / 1000 AS last_elapsed_ms,
          qs.last_worker_time / 1000 AS last_cpu_ms,
-         qs.last_rows
+         qs.last_rows,
+         CAST(qp.query_plan AS NVARCHAR(MAX)) AS query_plan_xml
        FROM sys.dm_exec_query_stats qs
        CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+       OUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) qp
        WHERE st.text LIKE '%${queryTag}%' AND st.text NOT LIKE '%sys.dm_exec_query_stats%'
        ORDER BY qs.last_execution_time DESC`
     );
@@ -138,9 +174,11 @@ async function runWithStats(holder, string, params = []) {
              qs.last_physical_reads,
              qs.last_elapsed_time / 1000 AS last_elapsed_ms,
              qs.last_worker_time / 1000 AS last_cpu_ms,
-             qs.last_rows
+             qs.last_rows,
+             CAST(qp.query_plan AS NVARCHAR(MAX)) AS query_plan_xml
            FROM sys.dm_exec_query_stats qs
            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+           OUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) qp
            WHERE st.text LIKE '%${tableMatch}%' AND st.text NOT LIKE '%sys.dm_exec_query_stats%'
            ORDER BY qs.last_execution_time DESC`
         );
@@ -148,6 +186,12 @@ async function runWithStats(holder, string, params = []) {
           dmvStats = dmvResult.recordset[0];
         }
       }
+    }
+
+    if (dmvStats?.query_plan_xml) {
+      executionPlanSummary = parseExecutionPlanOperators(dmvStats.query_plan_xml);
+      // Remove large XML string from returned payload to keep payload compact
+      delete dmvStats.query_plan_xml;
     }
   } catch {
     /* fallback */
@@ -158,6 +202,7 @@ async function runWithStats(holder, string, params = []) {
     rowsAffected: result.rowsAffected?.[0] ?? 0,
     infoMessages,
     dmvStats,
+    executionPlanSummary,
     wallClockMs,
   };
 }

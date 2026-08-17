@@ -96,14 +96,10 @@ describe('Performance Index Migration & Rollback Suite', () => {
       const countAfterRollback = await querySysIndexesCount();
       assert.equal(countAfterRollback, 0, 'All 7 performance indexes must be dropped during rollback');
     } finally {
-      // Step 4: Always re-apply migration in finally block to ensure performance indexes are restored
-      try {
-        await db.query(migrationSql);
-        const countAfterFinalApply = await querySysIndexesCount();
-        assert.equal(countAfterFinalApply, 7, 'All 7 indexes must be successfully restored on final apply');
-      } catch {
-        /* ignore */
-      }
+      // Step 4: Always re-apply migration in finally block and assert restoration without swallowing error
+      await db.query(migrationSql);
+      const countAfterFinalApply = await querySysIndexesCount();
+      assert.equal(countAfterFinalApply, 7, 'All 7 indexes must be successfully restored on final apply in finally block');
     }
   });
 });

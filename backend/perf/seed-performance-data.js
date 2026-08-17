@@ -244,10 +244,15 @@ export async function seedOrdersIntoDatabase(orders, txRunner = db.transaction) 
   if (!Array.isArray(orders) || orders.length === 0) return { insertedOrders: 0 };
 
   let insertedOrders = 0;
-  const chunkSize = 50;
+  const chunkSize = 100;
 
   for (let i = 0; i < orders.length; i += chunkSize) {
     const chunk = orders.slice(i, i + chunkSize);
+
+    if (i > 0 && i % 10000 === 0) {
+      const pct = Math.round((i / orders.length) * 100);
+      console.log(`⏳ Progress: ${i}/${orders.length} orders inserted (${pct}%)...`);
+    }
 
     await txRunner(async (tx) => {
       for (const order of chunk) {
@@ -334,18 +339,20 @@ export async function seedOrdersIntoDatabase(orders, txRunner = db.transaction) 
   return { insertedOrders };
 }
 
-export async function runSeeder({ count = 1000, seed = 42, insertToDb = false, prefix = 'TP', resetPrefix = false } = {}) {
+export async function runSeeder({ count = 100000, days = 90, seed = 42, insertToDb = false, prefix = 'TP', resetPrefix = false } = {}) {
   const args = process.argv.slice(2);
   const confirmArg = args.includes('--confirm') ? '1' : process.env.PERF_SEED_CONFIRM;
   const countArg = args.find((a) => a.startsWith('--orders='))?.split('=')[1];
   const finalCount = countArg ? parseInt(countArg, 10) : count;
+  const daysArg = args.find((a) => a.startsWith('--days='))?.split('=')[1];
+  const finalDays = daysArg ? parseInt(daysArg, 10) : days;
   const prefixArg = args.find((a) => a.startsWith('--prefix='))?.split('=')[1] || prefix;
   const shouldResetPrefix = args.includes('--reset-prefix') || resetPrefix;
 
   validatePerfGuard({ confirmFlag: confirmArg });
 
-  console.log(`🚀 Starting performance seeder: Generating ${finalCount} orders with seed ${seed} (prefix: ${prefixArg})...`);
-  const orders = generateDeterministicOrders({ seed, count: finalCount, prefix: prefixArg });
+  console.log(`🚀 Starting performance seeder: Generating ${finalCount} orders over ${finalDays} days with seed ${seed} (prefix: ${prefixArg})...`);
+  const orders = generateDeterministicOrders({ seed, count: finalCount, days: finalDays, prefix: prefixArg });
   console.log(`✅ Generated ${orders.length} in-memory records deterministically.`);
 
   if (insertToDb || args.includes('--insert')) {

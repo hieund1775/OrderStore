@@ -171,12 +171,10 @@ SQL Server Execution Times:
       );
       assert.ok(itemRows.length >= 20, 'Seeded items must exist for all orders');
     } finally {
-      // Step 5: Always clean up smoke test dataset in finally block
-      try {
-        await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
-      } catch {
-        /* ignore cleanup errors */
-      }
+      // Step 5: Always clean up smoke test dataset in finally block without swallowing errors
+      await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+      const [remaining] = await db.query('SELECT COUNT(id) AS cnt FROM orders WHERE order_code LIKE ?', [`${smokePrefix}%`]);
+      assert.equal(remaining[0]?.cnt, 0, 'Cleanup in finally must leave 0 smoke orders');
     }
   });
 });
