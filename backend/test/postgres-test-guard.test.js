@@ -49,13 +49,15 @@ describe('PostgreSQL Test Guard & Redaction Suite', () => {
     );
   });
 
-  it('passes validation for localhost database or remote test database ending in _test', () => {
-    // Localhost test
-    const localResult = validatePostgresTestGuard('postgresql://postgres:pass@localhost:5432/any_db', {
+  it('requires a dedicated name even on localhost, unless a host is explicitly allowlisted', () => {
+    assert.throws(() => validatePostgresTestGuard('postgresql://postgres:pass@localhost:5432/any_db', {
       env: 'development',
       confirmFlag: '1',
+    }), /not recognized as a dedicated test database/);
+
+    const localResult = validatePostgresTestGuard('postgresql://postgres:pass@localhost:5432/teaplus_test', {
+      env: 'development', confirmFlag: '1',
     });
-    assert.equal(localResult.valid, true);
     assert.equal(localResult.host, 'localhost');
 
     // Remote test database ending in _test
@@ -66,5 +68,10 @@ describe('PostgreSQL Test Guard & Redaction Suite', () => {
     assert.equal(remoteResult.valid, true);
     assert.equal(remoteResult.dbName, 'teaplus_test');
     assert.equal(remoteResult.redactedUrl.includes('pass'), false);
+
+    const allowlisted = validatePostgresTestGuard('postgresql://user:pass@db.example.test:5432/postgres', {
+      env: 'development', confirmFlag: '1', allowedHosts: 'db.example.test',
+    });
+    assert.equal(allowlisted.valid, true);
   });
 });

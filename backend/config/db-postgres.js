@@ -9,7 +9,9 @@ let mockAdapter = null;
  * Builds pg.Pool configuration from environment
  */
 export function getPostgresPoolConfig(customUrl = null) {
-  const connectionString = customUrl || process.env.DATABASE_URL || process.env.TEST_DATABASE_URL;
+  // Tests must never silently prefer an application DATABASE_URL over their
+  // explicit dedicated target.
+  const connectionString = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 
   const config = {
     max: parseInt(process.env.PG_POOL_MAX || '10', 10),
@@ -68,6 +70,10 @@ export const postgresDb = {
     mockAdapter = mock;
   },
 
+  resetMockAdapter() {
+    mockAdapter = null;
+  },
+
   async query(sqlText, params = []) {
     if (mockAdapter) {
       return mockAdapter.query(sqlText, params);
@@ -103,7 +109,7 @@ export const postgresDb = {
       try {
         await client.query('ROLLBACK');
       } catch (rollbackErr) {
-        console.error('❌ [PostgreSQL Rollback Error]:', rollbackErr.message);
+        throw new AggregateError([err, rollbackErr], 'PostgreSQL transaction failed and rollback could not be confirmed.');
       }
       throw err;
     } finally {

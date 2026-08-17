@@ -22,13 +22,19 @@ export function calculateChecksum(content) {
  */
 export async function runMigrations({ customUrl = null, pool = null } = {}) {
   const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
-  const targetUrl = customUrl || process.env.DATABASE_URL || process.env.TEST_DATABASE_URL;
+  const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 
   console.log(`🚀 [PostgreSQL Migrator] Target DB: ${redactDatabaseUrl(targetUrl)}`);
 
   const client = await activePool.connect();
+  let lockHeld = false;
 
   try {
+    // One migrator per database: prevents two deploys from applying/checking the
+    // same version concurrently. This is released in finally even on failure.
+    await client.query("SELECT pg_advisory_lock(hashtext('teaplus_postgres_migrations'))");
+    lockHeld = true;
+
     // 1. Ensure schema_migrations tracker exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -42,6 +48,10 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
     // 2. Discover and sort migration files
     const allFiles = await fs.readdir(MIGRATIONS_DIR);
     const sqlFiles = allFiles.filter((f) => f.endsWith('.sql')).sort();
+    const versions = sqlFiles.map((file) => file.split('_')[0]);
+    if (new Set(versions).size !== versions.length || versions.some((version) => !/^\d+$/.test(version))) {
+      throw new Error('MIGRATION INTEGRITY ERROR: migration filenames must have unique numeric version prefixes.');
+    }
 
     const appliedRes = await client.query('SELECT version, checksum FROM schema_migrations ORDER BY version ASC');
     const appliedMap = new Map(appliedRes.rows.map((r) => [r.version, r.checksum]));
@@ -87,6 +97,9 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
     console.log(`🎉 All ${results.length} PostgreSQL migrations verified/applied successfully.`);
     return results;
   } finally {
+    if (lockHeld) {
+      await client.query("SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))");
+    }
     client.release();
     if (!pool) {
       await activePool.end();

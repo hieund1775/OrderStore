@@ -42,6 +42,30 @@ export const EXPECTED_POSTGRES_TABLES = [
   'schema_migrations',
 ];
 
+// These fields are used directly by the current routes. Keeping this compact
+// but explicit catches accidental schema drift before the SQL dialect port.
+export const REQUIRED_POSTGRES_COLUMNS = {
+  users: ['id', 'fullname', 'phone', 'password_hash', 'is_admin', 'admin_role', 'admin_branch_id', 'token_version'],
+  stores: ['id', 'name', 'city', 'district', 'address', 'hours', 'phone', 'amenities'],
+  categories: ['id', 'name', 'slug', 'sort_order', 'is_visible'],
+  products: ['id', 'category_id', 'slug', 'base_tea', 'price', 'image_url', 'is_available'],
+  tables: ['id', 'store_id', 'name', 'qr_code_token', 'is_active'],
+  orders: ['id', 'order_code', 'store_id', 'table_id', 'order_type', 'payment_status', 'payment_provider', 'payment_expires_at', 'delivery_addr', 'cancel_token_hash'],
+  order_items: ['id', 'order_id', 'product_id', 'size_label', 'base_tea', 'sugar_level', 'ice_level', 'unit_price', 'line_total'],
+  order_status_history: ['id', 'order_id', 'status', 'changed_by'],
+  voucher_usage_history: ['id', 'promotion_id', 'user_phone', 'order_id'],
+};
+
+export const REQUIRED_POSTGRES_INDEXES = [
+  'ix_orders_store_payment_created',
+  'ix_orders_payment_expiry',
+  'ix_orders_user_created',
+  'ix_order_status_history_order_created',
+  'ix_order_items_order_id',
+  'ix_order_item_toppings_item_id',
+  'ix_voucher_usage_promotion_phone',
+];
+
 /**
  * Introspects and verifies the PostgreSQL database schema
  */
@@ -61,6 +85,24 @@ export async function verifyPostgresSchema({ customUrl = null, pool = null } = {
     // 2. Check for missing tables
     const missingTables = EXPECTED_POSTGRES_TABLES.filter((t) => !tableNames.includes(t));
 
+    const columnsRes = await activePool.query(`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      ORDER BY table_name, ordinal_position;
+    `);
+    const columnsByTable = new Map();
+    for (const row of columnsRes.rows) {
+      const columns = columnsByTable.get(row.table_name) || [];
+      columns.push(row.column_name);
+      columnsByTable.set(row.table_name, columns);
+    }
+    const missingColumns = Object.entries(REQUIRED_POSTGRES_COLUMNS).flatMap(([table, columns]) =>
+      columns
+        .filter((column) => !(columnsByTable.get(table) || []).includes(column))
+        .map((column) => `${table}.${column}`)
+    );
+
     // 3. Fetch indexes
     const indexesRes = await activePool.query(`
       SELECT indexname, tablename, indexdef
@@ -76,15 +118,19 @@ export async function verifyPostgresSchema({ customUrl = null, pool = null } = {
       WHERE tc.table_schema = 'public'
       ORDER BY tc.table_name, tc.constraint_name;
     `);
+    const indexNames = indexesRes.rows.map((row) => row.indexname);
+    const missingIndexes = REQUIRED_POSTGRES_INDEXES.filter((index) => !indexNames.includes(index));
 
     const summary = {
       total_tables: tableNames.length,
       tables: tableNames,
       missing_tables: missingTables,
+      missing_columns: missingColumns,
       total_indexes: indexesRes.rows.length,
       indexes: indexesRes.rows,
+      missing_indexes: missingIndexes,
       total_constraints: constraintsRes.rows.length,
-      is_valid: missingTables.length === 0,
+      is_valid: missingTables.length === 0 && missingColumns.length === 0 && missingIndexes.length === 0,
     };
 
     return summary;

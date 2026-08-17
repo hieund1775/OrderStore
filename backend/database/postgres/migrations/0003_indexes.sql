@@ -11,7 +11,7 @@ CREATE INDEX IF NOT EXISTS ix_orders_user_created
     ON orders (user_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS ix_orders_payment_expiry
-    ON orders (payment_method, payment_status, created_at)
+    ON orders (payment_provider, payment_status, payment_expires_at)
     WHERE payment_status = 'unpaid';
 
 CREATE INDEX IF NOT EXISTS ix_order_items_order_id
@@ -25,14 +25,14 @@ CREATE INDEX IF NOT EXISTS ix_order_status_history_order_created
 
 -- 2. Promotions & Voucher Indexes
 CREATE INDEX IF NOT EXISTS ix_voucher_usage_promotion_phone
-    ON voucher_usage_history (promotion_id, phone, used_at DESC);
+    ON voucher_usage_history (promotion_id, user_phone, used_at DESC);
 
 CREATE INDEX IF NOT EXISTS ix_promotion_stores_lookup
     ON promotion_stores (store_id, promotion_id);
 
 -- 3. Catalog & Products Indexes
 CREATE INDEX IF NOT EXISTS ix_products_category_active
-    ON products (category_id, is_active, display_order);
+    ON products (category_id, is_available, id);
 
 CREATE INDEX IF NOT EXISTS ix_tables_store_active
     ON tables (store_id, is_active);

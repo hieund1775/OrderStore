@@ -35,13 +35,13 @@ describe('PostgreSQL Demo Seed & Integrity Integration Suite', () => {
       const storeCountRes = await pool.query('SELECT COUNT(*)::int as cnt FROM stores WHERE is_active = true');
       assert.ok(storeCountRes.rows[0].cnt >= 2);
 
-      const productCountRes = await pool.query('SELECT COUNT(*)::int as cnt FROM products WHERE is_active = true');
+      const productCountRes = await pool.query('SELECT COUNT(*)::int as cnt FROM products WHERE is_available = true');
       assert.ok(productCountRes.rows[0].cnt >= 4);
 
-      const userRoleRes = await pool.query('SELECT role, COUNT(*)::int as cnt FROM users GROUP BY role');
-      const roles = userRoleRes.rows.map((r) => r.role);
+      const userRoleRes = await pool.query('SELECT admin_role, COUNT(*)::int as cnt FROM users WHERE admin_role IS NOT NULL GROUP BY admin_role');
+      const roles = userRoleRes.rows.map((r) => r.admin_role);
       assert.ok(roles.includes('super'));
-      assert.ok(roles.includes('customer'));
+      assert.ok(roles.includes('manager'));
     } finally {
       await pool.end();
     }

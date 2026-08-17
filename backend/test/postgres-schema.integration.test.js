@@ -39,9 +39,10 @@ describe('PostgreSQL Schema & Migration Integration Suite', () => {
 
       // 5. Test Check Constraints
       // Negative price rejected
+      await pool.query(`INSERT INTO categories (name, slug) VALUES ('Test category', 'test-category') ON CONFLICT (slug) DO NOTHING`);
       await assert.rejects(
         async () => {
-          await pool.query('INSERT INTO products (name, price) VALUES ($1, $2)', ['Invalid Product', -5000]);
+          await pool.query(`INSERT INTO products (category_id, name, slug, base_tea, price) VALUES (1, $1, $2, $3, $4)`, ['Invalid Product', 'invalid-product', 'Trà đen', -5000]);
         },
         /chk_products_price|check constraint/i
       );
@@ -49,7 +50,7 @@ describe('PostgreSQL Schema & Migration Integration Suite', () => {
       // Invalid user role rejected
       await assert.rejects(
         async () => {
-          await pool.query('INSERT INTO users (fullname, role) VALUES ($1, $2)', ['Invalid Role User', 'hacker']);
+          await pool.query(`INSERT INTO users (fullname, phone, is_admin, admin_role) VALUES ($1, $2, true, $3)`, ['Invalid Role User', '0999999999', 'hacker']);
         },
         /check constraint|users_role_check/i
       );
@@ -58,9 +59,9 @@ describe('PostgreSQL Schema & Migration Integration Suite', () => {
       await assert.rejects(
         async () => {
           await pool.query(`
-            INSERT INTO promotions (code, title, discount_type, discount_value, start_date, end_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
-          `, ['BAD_DATE', 'Bad Date Promo', 'percent', 10, '2026-12-31', '2026-01-01']);
+            INSERT INTO promotions (code, title, type, discount_type, discount_value, start_date, end_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `, ['BAD_DATE', 'Bad Date Promo', 'voucher', 'percent', 10, '2026-12-31', '2026-01-01']);
         },
         /chk_promo_dates|check constraint/i
       );

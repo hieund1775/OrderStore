@@ -4,140 +4,89 @@ import { validatePostgresTestGuard, redactDatabaseUrl } from '../../config/postg
 
 const { Pool } = pg;
 
-/**
- * Seeds deterministic demo dataset into PostgreSQL for development and testing
- */
-export async function seedDemoData({ customUrl = null, pool = null } = {}) {
-  const targetUrl = customUrl || process.env.DATABASE_URL || process.env.TEST_DATABASE_URL;
-
-  // Enforce guard
-  validatePostgresTestGuard(targetUrl);
-  console.log(`🌱 [PostgreSQL Seeder] Seeding demo data into: ${redactDatabaseUrl(targetUrl)}`);
-
-  const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
-  const client = await activePool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    // 1. Demo Stores
-    await client.query(`
-      INSERT INTO stores (id, name, address, phone, manager_name, is_active)
-      VALUES 
-        (1, 'TeaPlus Quận 1 - Nguyễn Huệ', '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP.HCM', '02838221101', 'Nguyễn Quản Lý', true),
-        (2, 'TeaPlus Bình Thạnh - D2', '45 Nguyễn Gia Trí, Phường 25, Bình Thạnh, TP.HCM', '02838221102', 'Trần Quản Lý', true)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, address = EXCLUDED.address;
-    `);
-
-    // 2. Demo Users (Admin, Kitchen, Cashier, Customer)
-    await client.query(`
-      INSERT INTO users (id, phone, email, fullname, role, is_admin, branch_id, tier, points)
-      VALUES
-        (1, '0909000001', 'superadmin@teaplus.vn', 'Super Administrator', 'super', true, NULL, 'Kim Cương', 1000),
-        (2, '0909000002', 'manager1@teaplus.vn', 'Quản Lý Chi Nhánh 1', 'manager', true, 1, 'Vàng', 500),
-        (3, '0909000003', 'cashier1@teaplus.vn', 'Thu Ngân Chi Nhánh 1', 'cashier', true, 1, 'Bạc', 200),
-        (4, '0909000004', 'kitchen1@teaplus.vn', 'Đầu Bếp Chi Nhánh 1', 'kitchen', true, 1, 'Đồng', 0),
-        (5, '0901234567', 'customer@example.com', 'Nguyễn Khách Hàng', 'customer', false, NULL, 'Vàng', 350)
-      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, role = EXCLUDED.role;
-    `);
-
-    // 3. Demo Categories
-    await client.query(`
-      INSERT INTO categories (id, name, icon, display_order, is_active)
-      VALUES
-        (1, 'Trà Trái Cây Tươi', 'citrus', 1, true),
-        (2, 'Trà Sữa Đậm Vị', 'coffee', 2, true),
-        (3, 'Trà Nguyên Bản', 'cup-soda', 3, true),
-        (4, 'Đá Xay & Sinh Tố', 'sparkles', 4, true)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-    `);
-
-    // 4. Demo Products
-    await client.query(`
-      INSERT INTO products (id, category_id, name, description, price, is_best_seller, is_new, is_active, display_order)
-      VALUES
-        (1, 1, 'Trà Đào Cam Sả', 'Trà đen hòa quyện đào tươi giòn, cam vàng mọng nước và sả thanh mát', 45000, true, false, true, 1),
-        (2, 1, 'Trà Dâu Tằm Pha Lê Tuyết', 'Trà lài kết hợp dâu tằm Đà Lạt và thạch pha lê giòn dai', 52000, true, true, true, 2),
-        (3, 2, 'Trà Sữa Ô Long Nướng', 'Trà ô long sấy đậm vị hòa quyện sữa tươi béo ngậy', 48000, true, false, true, 3),
-        (4, 3, 'Trà Lài Hoàng Kim', 'Trà xanh ướp hoa lài organic thơm ngát thanh tao', 35000, false, false, true, 4)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price;
-    `);
-
-    // 5. Demo Options
-    await client.query(`
-      INSERT INTO size_options (id, name, extra_price, is_active, display_order)
-      VALUES (1, 'Size M (Tiêu chuẩn)', 0, true, 1), (2, 'Size L (Lớn)', 8000, true, 2)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-
-      INSERT INTO sugar_options (id, name, is_active, display_order)
-      VALUES (1, '100% Đường (Chuẩn)', true, 1), (2, '70% Đường', true, 2), (3, '50% Đường', true, 3), (4, '30% Đường', true, 4), (5, '0% Không đường', true, 5)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-
-      INSERT INTO ice_options (id, name, is_active, display_order)
-      VALUES (1, '100% Đá (Chuẩn)', true, 1), (2, '70% Đá', true, 2), (3, '50% Đá', true, 3), (4, '30% Đá', true, 4), (5, '0% Không đá', true, 5)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-
-      INSERT INTO toppings (id, name, price, is_active, display_order)
-      VALUES
-        (1, 'Trân châu đen dẻo', 5000, true, 1),
-        (2, 'Trân châu hoàng kim', 7000, true, 2),
-        (3, 'Thạch nha đam tươi', 6000, true, 3),
-        (4, 'Kem Macchiato Phô Mai', 12000, true, 4)
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price;
-    `);
-
-    // 6. Demo Promotions
-    await client.query(`
-      INSERT INTO promotions (id, code, title, description, discount_type, discount_value, min_order_value, start_date, end_date, is_active)
-      VALUES
-        (1, 'CHAOBANMOI', 'Giảm 20% đơn đầu tiên', 'Ưu đãi dành riêng cho khách hàng mới', 'percent', 20, 50000, '2026-01-01', '2026-12-31', true),
-        (2, 'TEAPLUS15K', 'Giảm trực tiếp 15.000đ', 'Áp dụng cho mọi đơn từ 60.000đ', 'fixed', 15000, 60000, '2026-01-01', '2026-12-31', true)
-      ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title;
-
-      INSERT INTO promotion_stores (promotion_id, store_id)
-      VALUES (1, 1), (1, 2), (2, 1), (2, 2)
-      ON CONFLICT DO NOTHING;
-    `);
-
-    // Reset Postgres Identity sequences
-    await client.query(`
-      SELECT setval(pg_get_serial_sequence('stores', 'id'), COALESCE(MAX(id), 1)) FROM stores;
-      SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1)) FROM users;
-      SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE(MAX(id), 1)) FROM categories;
-      SELECT setval(pg_get_serial_sequence('products', 'id'), COALESCE(MAX(id), 1)) FROM products;
-      SELECT setval(pg_get_serial_sequence('toppings', 'id'), COALESCE(MAX(id), 1)) FROM toppings;
-      SELECT setval(pg_get_serial_sequence('promotions', 'id'), COALESCE(MAX(id), 1)) FROM promotions;
-    `);
-
-    await client.query('COMMIT');
-    console.log('✅ Demo seed completed successfully.');
-
-    return {
-      stores: 2,
-      users: 5,
-      categories: 4,
-      products: 4,
-      toppings: 4,
-      promotions: 2,
-    };
-  } catch (seedErr) {
-    await client.query('ROLLBACK');
-    console.error('❌ Demo seed failed:', seedErr.message);
-    throw seedErr;
-  } finally {
-    client.release();
-    if (!pool) {
-      await activePool.end();
-    }
+async function resetIdentitySequences(client) {
+  for (const table of ['stores', 'users', 'categories', 'products', 'size_options', 'sugar_options', 'ice_options', 'toppings', 'promotions']) {
+    await client.query(`SELECT setval(pg_get_serial_sequence($1, 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 1), true)`, [table]);
   }
 }
 
-// CLI execution
+/** Seeds a deterministic, route-compatible demo dataset into a guarded non-production database. */
+export async function seedDemoData({ customUrl = null, pool = null } = {}) {
+  const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  validatePostgresTestGuard(targetUrl);
+  console.log(`🌱 [PostgreSQL Seeder] Target DB: ${redactDatabaseUrl(targetUrl)}`);
+
+  const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
+  const client = await activePool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`
+      INSERT INTO stores (id, name, city, district, address, hours, phone, amenities, is_active)
+      VALUES
+        (1, 'TeaPlus Quận 1 - Nguyễn Huệ', 'Hồ Chí Minh', 'Quận 1', '123 Nguyễn Huệ', '08:00-22:00', '02838221101', '["wifi"]', true),
+        (2, 'TeaPlus Bình Thạnh - D2', 'Hồ Chí Minh', 'Bình Thạnh', '45 Nguyễn Gia Trí', '08:00-22:00', '02838221102', '["wifi"]', true)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, address = EXCLUDED.address, is_active = EXCLUDED.is_active;
+    `);
+    await client.query(`
+      INSERT INTO users (id, fullname, phone, email, tier, points, is_admin, admin_role, admin_branch_id)
+      VALUES
+        (1, 'Super Administrator', '0909000001', 'superadmin@teaplus.vn', 'Kim Cương', 1000, true, 'super', NULL),
+        (2, 'Quản lý Chi nhánh 1', '0909000002', 'manager1@teaplus.vn', 'Vàng', 500, true, 'manager', 1),
+        (3, 'Thu ngân Chi nhánh 1', '0909000003', 'cashier1@teaplus.vn', 'Bạc', 200, true, 'cashier', 1),
+        (4, 'Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', 'Đồng', 0, true, 'kitchen', 1),
+        (5, 'Nguyễn Khách Hàng', '0901234567', 'customer@example.com', 'Vàng', 350, false, NULL, NULL)
+      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
+    `);
+    await client.query(`
+      INSERT INTO categories (id, name, slug, sort_order, is_visible) VALUES
+        (1, 'Trà Trái Cây Tươi', 'tra-trai-cay-tuoi', 1, true),
+        (2, 'Trà Sữa Đậm Vị', 'tra-sua-dam-vi', 2, true),
+        (3, 'Trà Nguyên Bản', 'tra-nguyen-ban', 3, true),
+        (4, 'Đá Xay & Sinh Tố', 'da-xay-sinh-to', 4, true)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+    `);
+    await client.query(`
+      INSERT INTO products (id, category_id, name, slug, base_tea, description, price, is_available) VALUES
+        (1, 1, 'Trà Đào Cam Sả', 'tra-dao-cam-sa', 'Trà đen', 'Trà đen với đào, cam và sả', 45000, true),
+        (2, 1, 'Trà Dâu Tằm Pha Lê Tuyết', 'tra-dau-tam', 'Trà lài', 'Trà lài và dâu tằm', 52000, true),
+        (3, 2, 'Trà Sữa Ô Long Nướng', 'tra-sua-o-long-nuong', 'Ô long', 'Ô long và sữa tươi', 48000, true),
+        (4, 3, 'Trà Lài Hoàng Kim', 'tra-lai-hoang-kim', 'Trà lài', 'Trà xanh hoa lài', 35000, true)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug, price = EXCLUDED.price, is_available = EXCLUDED.is_available;
+    `);
+    await client.query(`
+      INSERT INTO size_options (id, label, name, price_extra, sort_order) VALUES
+        (1, 'M', 'Size M (Tiêu chuẩn)', 0, 1), (2, 'L', 'Size L (Lớn)', 8000, 2)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+      INSERT INTO sugar_options (id, label, sort_order) VALUES
+        (1, '100% Đường', 1), (2, '70% Đường', 2), (3, '50% Đường', 3), (4, '30% Đường', 4), (5, '0% Đường', 5)
+      ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label;
+      INSERT INTO ice_options (id, label, sort_order) VALUES
+        (1, '100% Đá', 1), (2, '70% Đá', 2), (3, '50% Đá', 3), (4, '30% Đá', 4), (5, '0% Đá', 5)
+      ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label;
+      INSERT INTO toppings (id, name, price, is_available, sort_order) VALUES
+        (1, 'Trân châu đen dẻo', 5000, true, 1), (2, 'Trân châu hoàng kim', 7000, true, 2),
+        (3, 'Thạch nha đam tươi', 6000, true, 3), (4, 'Kem Macchiato Phô Mai', 12000, true, 4)
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price;
+    `);
+    await client.query(`
+      INSERT INTO promotions (id, title, type, code, description, discount_type, discount_value, min_order, start_date, end_date, is_active) VALUES
+        (1, 'Giảm 20% đơn đầu tiên', 'voucher', 'CHAOBANMOI', 'Ưu đãi cho khách mới', 'percent', 20, 50000, '2026-01-01', '2026-12-31', true),
+        (2, 'Giảm trực tiếp 15.000đ', 'voucher', 'TEAPLUS15K', 'Áp dụng đơn từ 60.000đ', 'fixed', 15000, 60000, '2026-01-01', '2026-12-31', true)
+      ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title;
+      INSERT INTO promotion_stores (promotion_id, store_id) VALUES (1, 1), (1, 2), (2, 1), (2, 2) ON CONFLICT DO NOTHING;
+    `);
+    await resetIdentitySequences(client);
+    await client.query('COMMIT');
+    return { stores: 2, users: 5, categories: 4, products: 4, toppings: 4, promotions: 2 };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+    if (!pool) await activePool.end();
+  }
+}
+
 if (process.argv[1] && process.argv[1].endsWith('seed-demo.js')) {
-  seedDemoData()
-    .then(() => process.exit(0))
-    .catch((e) => {
-      console.error(e);
-      process.exit(1);
-    });
+  seedDemoData().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); });
 }

@@ -17,7 +17,14 @@ export function redactDatabaseUrl(rawUrl) {
 /**
  * Validates that a PostgreSQL URL is dedicated for test/perf execution and strictly avoids production
  */
-export function validatePostgresTestGuard(databaseUrl, { env = process.env.NODE_ENV, confirmFlag = process.env.POSTGRES_INTEGRATION } = {}) {
+export function validatePostgresTestGuard(
+  databaseUrl,
+  {
+    env = process.env.NODE_ENV,
+    confirmFlag = process.env.POSTGRES_INTEGRATION,
+    allowedHosts = process.env.POSTGRES_TEST_ALLOWED_HOSTS,
+  } = {}
+) {
   if (env === 'production') {
     throw new Error('GUARDS VIOLATION: PostgreSQL integration tests cannot run when NODE_ENV is production.');
   }
@@ -42,11 +49,15 @@ export function validatePostgresTestGuard(databaseUrl, { env = process.env.NODE_
   }
 
   const isDedicatedTestName = /(_test|_perf|_dev)$/i.test(dbName);
-  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  const explicitlyAllowedHosts = String(allowedHosts || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  const isExplicitlyAllowedHost = explicitlyAllowedHosts.includes(host.toLowerCase());
 
-  if (!isDedicatedTestName && !isLocalHost) {
+  if (!isDedicatedTestName && !isExplicitlyAllowedHost) {
     throw new Error(
-      `GUARDS VIOLATION: Target database "${dbName}" on host "${host}" is not recognized as a dedicated test database (must end in _test, _perf, or _dev, or run on localhost).`
+      `GUARDS VIOLATION: Target database "${dbName}" on host "${host}" is not recognized as a dedicated test database (must end in _test, _perf, or _dev, or use an explicitly allowlisted host).`
     );
   }
 
