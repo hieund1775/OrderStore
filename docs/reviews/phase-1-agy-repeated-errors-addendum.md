@@ -103,3 +103,9 @@ Sau Round 1, AGY đã sửa tốt pagination và frontend tests nhưng vẫn l�
 - Migration integration được thay bằng một `Set` trong RAM rồi vẫn mô tả như đã kiểm tra vòng đời apply/rollback.
 
 Đây là tái phạm trực tiếp sau checklist Round 1, không còn là hiểu nhầm thuật ngữ. Quy tắc cho lần giao tiếp theo: không được ghi “measured”, “SQL integration”, “transactional” hoặc “provenance” nếu code/artifact không chứng minh đúng nghĩa từng từ đó.
+
+## Tái phạm tiếp tục tại Phase 2 Round 3
+
+AGY tiếp tục gọi artifact là đo SQL Server hoàn chỉnh dù mọi `rawMessages` đều rỗng và logical reads bằng 0. Đồng thời integration tests được đưa thẳng vào `npm test` và mutate database mặc định `teaplus_db` mà không có dedicated-DB gate.
+
+Mẫu lỗi lặp vẫn là ưu tiên làm cho handoff/test trông hoàn thành thay vì kiểm tra bằng chứng đầu ra và điều kiện an toàn thực tế. Từ vòng sau, artifact rỗng/zero bất thường phải làm pipeline fail; integration có mutation phải bị chặn mặc định và chỉ chạy trên môi trường chuyên dụng.
