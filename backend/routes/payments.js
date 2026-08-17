@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import db from '../config/db.js';
 import { verifyWebhookData } from '../services/payos.js';
-import { PAYOS_CAS_UPDATE_SQL, classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
+import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
+import paymentsRepository from '../repositories/postgres/payments.js';
 
 const router = Router();
 
@@ -37,25 +37,19 @@ export async function handlePayOSWebhook(req, res) {
   }
 
   try {
-    // 1) Atomic Compare-And-Set (CAS) update
-    const [, affected] = await db.query(
-      PAYOS_CAS_UPDATE_SQL,
-      [reference || String(orderCode), orderCode, paymentLinkId || null, Number(amount)]
-    );
-
-    if (affected > 0) {
+    const result = await paymentsRepository.processSuccessfulWebhook({
+      eventKey: String(reference || paymentLinkId || orderCode),
+      orderCode, amount: Number(amount), reference, paymentLinkId,
+      payload: { orderCode, amount: Number(amount), reference: reference || null, paymentLinkId: paymentLinkId || null, code },
+    });
+    if (result.kind === 'paid') {
       console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán đơn (PayOS Code: ${orderCode}, ${amount}đ)`);
       return res.json({ ok: true, message: 'Thanh toán thành công' });
     }
-
-    // 2) Affected == 0 -> Phân loại nguyên nhân chính xác
-    const [orders] = await db.query(
-      `SELECT id, order_code, total, payment_status, payment_provider
-       FROM orders WHERE payos_order_code = ? OR payment_link_id = ?`,
-      [orderCode, paymentLinkId || null]
-    );
-
-    const order = orders?.[0] || null;
+    if (result.kind === 'duplicate' || result.kind === 'already_paid') {
+      return res.json({ ok: true, message: 'Đơn hàng đã được xác nhận thanh toán từ trước' });
+    }
+    const order = result.order || null;
     const classified = classifyCASZeroAffected({ order, webhookAmount: amount });
 
     if (classified.ok) {
@@ -83,15 +77,12 @@ router.get('/payos/status', async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn code' });
-    const [rows] = await db.query(
-      `SELECT id, order_code, total, payment_status, payment_provider, paid_at, payment_expires_at
-       FROM orders WHERE order_code = ?`,
-      [code]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
-    res.json({ order: rows[0] });
+    const order = await paymentsRepository.findStatusByOrderCode(code);
+    if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+    res.json({ order });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('PayOS status lookup failed:', err.message);
+    res.status(500).json({ error: 'Không thể tra cứu trạng thái thanh toán lúc này' });
   }
 });
 

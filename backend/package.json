@@ -14,6 +14,7 @@
     "db:pg:migrate:test": "node database/postgres/migrate.js",
     "db:pg:seed": "node database/postgres/seed-demo.js",
     "db:pg:otp:cleanup": "node database/postgres/cleanup-otp.js",
+    "payos:expire": "node commands/expire-payos-orders.js",
     "perf:seed": "node perf/seed-performance-data.js",
     "perf:bench": "node perf/run-query-benchmarks.js",
     "db:init": "node init-db.js"

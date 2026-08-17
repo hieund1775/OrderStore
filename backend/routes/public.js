@@ -13,6 +13,7 @@ import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../service
 import { batchLoadOrderDetails } from '../services/order-batch-loader.js';
 import catalogRepository from '../repositories/postgres/catalog.js';
 import storesRepository from '../repositories/postgres/stores.js';
+import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
 
 const router = Router();
 
@@ -710,6 +711,19 @@ router.post('/orders', async (req, res) => {
     const inputValidation = validateOrderCreationInput(req.body);
     if (!inputValidation.valid) {
       return res.status(400).json({ error: inputValidation.error });
+    }
+
+    if (source === 'online' && payment_method === 'VietQR') {
+      if (!isPayOSConfigured()) {
+        return res.status(400).json({ error: 'Cổng thanh toán trực tuyến PayOS chưa được kích hoạt trên hệ thống' });
+      }
+      const idempotencyKey = String(req.headers['idempotency-key'] || '');
+      const payosOrder = await createOnlinePayOSOrder({
+        input: req.body,
+        userId: null,
+        idempotencyKey,
+      });
+      return res.status(payosOrder.replay ? 200 : 201).json({ ...payosOrder, status: 'Đang chuẩn bị' });
     }
 
     const normalizedSource = source || 'online';
