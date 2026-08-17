@@ -275,4 +275,27 @@ CREATE TABLE tier_rules (
 );
 GO
 
+-- ═══════════ PHASE 2 PERFORMANCE INDEXES ═══════════
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_orders_store_payment_created' AND object_id = OBJECT_ID('orders'))
+    CREATE NONCLUSTERED INDEX IX_orders_store_payment_created ON orders (store_id, payment_status, created_at DESC, id DESC) INCLUDE (order_code, total, order_type, table_id, payment_provider);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_orders_payment_expiry' AND object_id = OBJECT_ID('orders'))
+    CREATE NONCLUSTERED INDEX IX_orders_payment_expiry ON orders (payment_provider, payment_status, payment_expires_at) INCLUDE (order_code);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_orders_user_created' AND object_id = OBJECT_ID('orders'))
+    CREATE NONCLUSTERED INDEX IX_orders_user_created ON orders (user_id, created_at DESC, id DESC) INCLUDE (order_code, store_id, total, payment_status, payment_provider, order_type);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_order_status_history_order_created' AND object_id = OBJECT_ID('order_status_history'))
+    CREATE NONCLUSTERED INDEX IX_order_status_history_order_created ON order_status_history (order_id, created_at DESC, id DESC) INCLUDE (status, note, changed_by);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_order_items_order_id' AND object_id = OBJECT_ID('order_items'))
+    CREATE NONCLUSTERED INDEX IX_order_items_order_id ON order_items (order_id);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_order_item_toppings_item_id' AND object_id = OBJECT_ID('order_item_toppings'))
+    CREATE NONCLUSTERED INDEX IX_order_item_toppings_item_id ON order_item_toppings (order_item_id);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_voucher_usage_promotion_phone' AND object_id = OBJECT_ID('voucher_usage_history'))
+    CREATE NONCLUSTERED INDEX IX_voucher_usage_promotion_phone ON voucher_usage_history (promotion_id, user_phone);
+GO
+
 PRINT N'✅ Schema created successfully';
