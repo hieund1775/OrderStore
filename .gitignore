@@ -21,6 +21,7 @@ docs/
 teaplusdb.sql
 *.sql
 !backend/database/*.sql
+!backend/database/**/*.sql
 
 # ------------------------------------------
 # 2. AI Agents & Editor Settings
