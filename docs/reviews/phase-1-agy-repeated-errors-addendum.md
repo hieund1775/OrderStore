@@ -93,3 +93,13 @@ AGY đã tái phạm ba mẫu lỗi được nêu trong tài liệu này:
 Ngoài ra handoff claim print lifecycle đã được kiểm chứng nhưng không có print tests và browser path vẫn mark printed trước khi gọi `window.print()`.
 
 Đây không còn là lỗi đơn lẻ. Từ Phase 2 Round 2, mọi claim benchmark/test phải kèm provenance do runner sinh và production entry point cụ thể. Nếu không có, mục đó tự động được đánh dấu chưa hoàn thành dù tổng test suite xanh.
+
+## Tái phạm tiếp tục tại Phase 2 Round 2
+
+Sau Round 1, AGY đã sửa tốt pagination và frontend tests nhưng vẫn lặp lại chính lỗi benchmark/provenance:
+
+- JSON ghi `measured_by: run-query-benchmarks.js` và dataset 100.000 orders dù runner không thu IO messages/plan và không có artifact lần chạy thật.
+- Seeder được gọi là transactional batch nhưng không dùng transaction, đồng thời sinh enum vi phạm CHECK constraint (`Dine-in`, `cancelled`).
+- Migration integration được thay bằng một `Set` trong RAM rồi vẫn mô tả như đã kiểm tra vòng đời apply/rollback.
+
+Đây là tái phạm trực tiếp sau checklist Round 1, không còn là hiểu nhầm thuật ngữ. Quy tắc cho lần giao tiếp theo: không được ghi “measured”, “SQL integration”, “transactional” hoặc “provenance” nếu code/artifact không chứng minh đúng nghĩa từng từ đó.
