@@ -7,6 +7,7 @@ import {
   requestOtpCode,
   verifyOtpCode,
 } from '../services/otp-service.js';
+import { ProductionSmsProvider } from '../services/otp-provider.js';
 
 describe('OTP Security & Provider Service Suite', () => {
   it('normalizes Vietnamese phone numbers into canonical 10-digit format', () => {
@@ -24,6 +25,69 @@ describe('OTP Security & Provider Service Suite', () => {
       assert.equal(typeof code, 'string');
       assert.equal(code.length, 6);
       assert.ok(/^\d{6}$/.test(code), `Code must be 6 digits, got: ${code}`);
+      assert.notEqual(code, '123456');
+    }
+  });
+
+  it('calls a configured production SMS endpoint and fails on provider rejection', async () => {
+    let request = null;
+    const provider = new ProductionSmsProvider({
+      apiUrl: 'https://sms.invalid/send',
+      apiKey: 'test-key',
+      senderId: 'TeaPlus',
+      fetchImpl: async (url, options) => {
+        request = { url, options };
+        return { ok: true, async json() { return { messageId: 'msg-1' }; } };
+      },
+    });
+
+    const sent = await provider.sendSmsOtp({ phone: '0901234567', code: '654321' });
+    assert.equal(sent.messageId, 'msg-1');
+    assert.equal(request.url, 'https://sms.invalid/send');
+    assert.match(request.options.headers.Authorization, /^Bearer /);
+    assert.equal(JSON.parse(request.options.body).to, '0901234567');
+
+    const rejectingProvider = new ProductionSmsProvider({
+      apiUrl: 'https://sms.invalid/send',
+      apiKey: 'test-key',
+      fetchImpl: async () => ({ ok: false, status: 503, async json() { return {}; } }),
+    });
+    await assert.rejects(
+      rejectingProvider.sendSmsOtp({ phone: '0901234567', code: '654321' }),
+      /status 503/
+    );
+  });
+
+  it('does not persist or cooldown an OTP when SMS delivery fails', async () => {
+    const mockStore = new Map();
+    const testAdapter = {
+      async getStoredOtp(phone) { return mockStore.get(phone); },
+      async saveOtp(phone, record) { mockStore.set(phone, record); },
+    };
+    const provider = {
+      async sendSmsOtp() { throw new Error('provider unavailable'); },
+    };
+
+    await assert.rejects(
+      requestOtpCode({ phone: '0908888888', provider, testAdapter }),
+      /provider unavailable/
+    );
+    assert.equal(mockStore.has('0908888888'), false);
+  });
+
+  it('fails closed instead of using in-memory OTP storage in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      await assert.rejects(
+        requestOtpCode({
+          phone: '0909999999',
+          provider: { async sendSmsOtp() { return { success: true }; } },
+        }),
+        /Persistent OTP storage is not configured/
+      );
+    } finally {
+      process.env.NODE_ENV = originalEnv;
     }
   });
 

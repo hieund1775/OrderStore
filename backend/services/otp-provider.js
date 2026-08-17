@@ -18,26 +18,53 @@ export class DevelopmentOtpProvider {
 }
 
 export class ProductionSmsProvider {
-  constructor({ apiKey = process.env.SMS_API_KEY, senderId = process.env.SMS_SENDER_ID } = {}) {
+  constructor({
+    apiUrl = process.env.SMS_API_URL,
+    apiKey = process.env.SMS_API_KEY,
+    senderId = process.env.SMS_SENDER_ID,
+    fetchImpl = globalThis.fetch,
+  } = {}) {
     this.name = 'ProductionSmsProvider';
+    this.apiUrl = apiUrl;
     this.apiKey = apiKey;
     this.senderId = senderId;
+    this.fetchImpl = fetchImpl;
   }
 
   async sendSmsOtp({ phone, code }) {
-    if (!this.apiKey) {
-      throw new Error('SMS_API_KEY is not configured in production environment.');
+    if (!this.apiUrl || !this.apiKey || typeof this.fetchImpl !== 'function') {
+      throw new Error('Production SMS provider is not fully configured.');
     }
 
-    // Outbound API integration placeholder (SpeedSMS / Twilio / Viettel)
-    // When live credentials are provided in Render secrets, calls provider API
-    return { success: true, messageId: `sms_${Date.now()}` };
+    const response = await this.fetchImpl(this.apiUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: phone,
+        senderId: this.senderId || undefined,
+        message: `Ma OTP TeaPlus cua ban la ${code}. Ma co hieu luc trong 5 phut.`,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`SMS provider rejected request with status ${response.status}.`);
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { success: true, messageId: payload.messageId || payload.id || null };
   }
 }
 
 export function createOtpProvider() {
   const isProduction = process.env.NODE_ENV === 'production';
   if (isProduction) {
+    if (process.env.PHONE_OTP_ENABLED !== 'true') {
+      throw new Error('Phone OTP is disabled in production.');
+    }
     return new ProductionSmsProvider();
   }
   return new DevelopmentOtpProvider();

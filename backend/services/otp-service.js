@@ -21,7 +21,11 @@ export function normalizePhone(rawPhone) {
  * Cryptographically secure 6-digit numeric OTP generator
  */
 export function generateSecureOtp() {
-  return crypto.randomInt(100000, 1000000).toString();
+  let code;
+  do {
+    code = crypto.randomInt(100000, 1000000).toString();
+  } while (code === '123456');
+  return code;
 }
 
 /**
@@ -38,6 +42,10 @@ export async function requestOtpCode({ phone, provider = createOtpProvider(), te
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone || normalizedPhone.length < 10 || normalizedPhone.length > 11) {
     throw new Error('Số điện thoại không hợp lệ (yêu cầu 10 chữ số)');
+  }
+
+  if (process.env.NODE_ENV === 'production' && !testAdapter) {
+    throw new Error('Persistent OTP storage is not configured. Phone OTP is unavailable.');
   }
 
   const now = Date.now();
@@ -63,14 +71,16 @@ export async function requestOtpCode({ phone, provider = createOtpProvider(), te
     lastSentAt: now,
   };
 
+  // Send SMS via provider
+  await provider.sendSmsOtp({ phone: normalizedPhone, code });
+
+  // Store only after the provider accepts delivery. A failed send must not
+  // create a valid code or block the user behind the resend cooldown.
   if (testAdapter) {
     await testAdapter.saveOtp(normalizedPhone, record);
   } else {
     IN_MEMORY_OTP_STORE.set(normalizedPhone, record);
   }
-
-  // Send SMS via provider
-  await provider.sendSmsOtp({ phone: normalizedPhone, code });
 
   const isProduction = process.env.NODE_ENV === 'production';
   return {
@@ -92,9 +102,12 @@ export async function verifyOtpCode({ phone, code, testAdapter = null } = {}) {
     return { valid: false, error: 'Vui lòng cung cấp đầy đủ số điện thoại và mã OTP' };
   }
 
-  // Strictly reject fixed demo code in production
   if (isProduction && inputCode === '123456') {
-    // Demo OTP bypass is strictly forbidden in production
+    return { valid: false, error: 'Mã OTP không chính xác' };
+  }
+
+  if (isProduction && !testAdapter) {
+    return { valid: false, error: 'Dịch vụ OTP chưa sẵn sàng' };
   }
 
   const record = testAdapter ? await testAdapter.getStoredOtp(normalizedPhone) : IN_MEMORY_OTP_STORE.get(normalizedPhone);
@@ -127,12 +140,15 @@ export async function verifyOtpCode({ phone, code, testAdapter = null } = {}) {
 
   if (!matches) {
     record.attempts += 1;
+    if (testAdapter) await testAdapter.saveOtp(normalizedPhone, record);
     return { valid: false, error: 'Mã OTP không chính xác' };
   }
 
   // Mark consumed atomically
   record.consumedAt = Date.now();
-  if (!testAdapter) {
+  if (testAdapter) {
+    await testAdapter.saveOtp(normalizedPhone, record);
+  } else {
     IN_MEMORY_OTP_STORE.delete(normalizedPhone);
   }
 

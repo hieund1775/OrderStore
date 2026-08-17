@@ -230,6 +230,13 @@ const db = {
   async getPool() {
     return getPool();
   },
+  async close() {
+    if (mockAdapter?.close) return mockAdapter.close();
+    if (!pool) return;
+    const currentPool = pool;
+    pool = null;
+    await currentPool.close();
+  },
   async query(string, params = []) {
     if (mockAdapter?.query) return mockAdapter.query(string, params);
     return run(await getPool(), string, params);

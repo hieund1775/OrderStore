@@ -55,6 +55,25 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
     );
   });
 
+  it('fails fast when production phone OTP is enabled without a real SMS endpoint', () => {
+    const base = {
+      JWT_SECRET: 'super-secure-production-key-32-chars-long',
+      FRONTEND_URL: 'https://order.teaplus.vn',
+      DB_SERVER: 'sql-prod.internal',
+      DB_NAME: 'teaplus_prod',
+      PHONE_OTP_ENABLED: 'true',
+    };
+
+    assert.throws(
+      () => validateEnv({ ...base, SMS_PROVIDER: 'placeholder' }, true),
+      /SMS_PROVIDER=generic_http/
+    );
+    assert.throws(
+      () => validateEnv({ ...base, SMS_PROVIDER: 'generic_http', SMS_API_KEY: 'key' }, true),
+      /SMS_API_URL and SMS_API_KEY/
+    );
+  });
+
   it('passes in production with full secure configuration', () => {
     const valid = validateEnv(
       {

@@ -46,6 +46,15 @@ export function validateEnv(envVars = {}, isProd = false) {
     throw new Error('[FATAL] Cấu hình PayOS không đầy đủ: Phải cung cấp đủ cả 3 biến PAYOS_CLIENT_ID, PAYOS_API_KEY và PAYOS_CHECKSUM_KEY.');
   }
 
+  if (isProd && envVars.PHONE_OTP_ENABLED === 'true') {
+    if (envVars.SMS_PROVIDER !== 'generic_http') {
+      throw new Error('[FATAL] PHONE_OTP_ENABLED requires SMS_PROVIDER=generic_http in production.');
+    }
+    if (!envVars.SMS_API_URL?.trim() || !envVars.SMS_API_KEY?.trim()) {
+      throw new Error('[FATAL] Production phone OTP requires SMS_API_URL and SMS_API_KEY.');
+    }
+  }
+
   return true;
 }
 

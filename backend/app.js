@@ -6,7 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import { allowedOrigins } from './config/env.js';
 import swaggerSpec from './config/swagger.js';
 import { requestContext } from './middleware/request-context.js';
-import { errorHandler } from './middleware/error-handler.js';
+import { errorHandler, sanitizeLegacyErrorResponses } from './middleware/error-handler.js';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
@@ -18,7 +18,10 @@ export function createApp() {
   const app = express();
 
   // ─── Reverse Proxy Trust (Render standard: 1 hop) ───
-  const trustProxySetting = process.env.TRUST_PROXY || 1;
+  const rawTrustProxy = process.env.TRUST_PROXY;
+  const trustProxySetting = rawTrustProxy === undefined || rawTrustProxy === ''
+    ? 1
+    : (/^\d+$/.test(rawTrustProxy) ? Number(rawTrustProxy) : rawTrustProxy);
   app.set('trust proxy', trustProxySetting);
 
   // ─── Security Middleware (OWASP) ───
@@ -29,6 +32,7 @@ export function createApp() {
 
   // ─── Request Context & Tracing ───
   app.use(requestContext);
+  app.use(sanitizeLegacyErrorResponses);
 
   // ─── Kubernetes / Render Health Probes ───
   // /live: Liveness probe (checks process & event loop, zero DB access)
@@ -38,16 +42,19 @@ export function createApp() {
 
   // /ready: Readiness probe (checks DB connectivity with 3s timeout)
   app.get('/ready', async (req, res) => {
+    let timeoutId;
     try {
       const probePromise = db.query('SELECT 1');
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('DB readiness probe timed out after 3000ms')), 3000)
-      );
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('DB readiness probe timed out after 3000ms')), 3000);
+      });
       await Promise.race([probePromise, timeoutPromise]);
       res.status(200).json({ status: 'ready', database: 'connected' });
     } catch (err) {
       console.warn('⚠️ [Readiness Probe Failed]:', err.message);
       res.status(503).json({ status: 'unavailable', error: 'Database connection probe failed' });
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   });
 

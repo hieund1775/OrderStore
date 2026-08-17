@@ -4,7 +4,7 @@ import db from './config/db.js';
 
 // Validate environment policy at startup
 try {
-  validateEnv();
+  validateEnv(process.env, process.env.NODE_ENV === 'production');
 } catch (err) {
   console.error('❌ [FATAL] Environment Configuration Error:', err.message);
   process.exit(1);

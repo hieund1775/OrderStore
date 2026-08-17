@@ -59,6 +59,28 @@ function makeRequest(app, { method, path, headers = {}, body = null }) {
 }
 
 describe('Deploy & Security Contract Suite', () => {
+  it('sanitizes legacy routes that directly send raw 5xx JSON in production', async () => {
+    const { requestContext } = await import('../middleware/request-context.js');
+    const { sanitizeLegacyErrorResponses } = await import('../middleware/error-handler.js');
+    const app = express();
+    app.use(requestContext, sanitizeLegacyErrorResponses);
+    app.get('/legacy-error', (req, res) => {
+      res.status(500).json({ error: 'SELECT secret FROM users WHERE password_hash = @p0' });
+    });
+
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const res = await makeRequest(app, { method: 'GET', path: '/legacy-error' });
+      assert.equal(res.statusCode, 500);
+      assert.equal(res.body.code, 'INTERNAL_SERVER_ERROR');
+      assert.equal(res.rawText.includes('password_hash'), false);
+      assert.equal(res.rawText.includes('@p0'), false);
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
+  });
+
   it('verifies central error boundary returns safe 500 without leaking raw SQL or stack in production', async () => {
     const { errorHandler } = await import('../middleware/error-handler.js').catch(() => ({ errorHandler: null }));
 
@@ -182,8 +204,15 @@ describe('Deploy & Security Contract Suite', () => {
         code: '123456',
         testAdapter: {
           async getStoredOtp() {
-            return null; // No OTP stored
+            const { hashOtpCode } = await import('../services/otp-service.js');
+            return {
+              hash: hashOtpCode('123456'),
+              expiresAt: Date.now() + 60000,
+              attempts: 0,
+              consumedAt: null,
+            };
           },
+          async saveOtp() {},
         },
       });
 

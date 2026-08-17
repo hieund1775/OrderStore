@@ -50,3 +50,25 @@ export function errorHandler(err, req, res, next) {
     stack: err.stack,
   });
 }
+
+/**
+ * Legacy routes still build some 5xx JSON responses themselves instead of
+ * forwarding errors. Keep production responses safe until those routes are
+ * migrated to the central async boundary.
+ */
+export function sanitizeLegacyErrorResponses(req, res, next) {
+  const originalJson = res.json.bind(res);
+
+  res.json = (body) => {
+    if (process.env.NODE_ENV === 'production' && res.statusCode >= 500) {
+      return originalJson({
+        error: 'Hệ thống đang bận. Vui lòng thử lại sau.',
+        code: 'INTERNAL_SERVER_ERROR',
+        requestId: req.id || 'req_unknown',
+      });
+    }
+    return originalJson(body);
+  };
+
+  next();
+}
