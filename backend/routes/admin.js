@@ -274,6 +274,7 @@ import { resolveStoreScope, ScopeError } from '../middleware/branch-scope.js';
 import { logAudit } from '../services/audit.js';
 import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries, getTodayBoundaries } from '../services/date-range.js';
+import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
 
 const router = Router();
 
@@ -435,12 +436,29 @@ router.get('/dashboard/top-products', requireRole('super', 'manager'), async (re
 
 router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
   try {
-    const { status, store_id, date_from, date_to, search } = req.query;
+    const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
     const scopedStoreId = resolveStoreScope(req.user, store_id);
-    let sql = `SELECT TOP 100 o.*, s.name AS store_name, (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC) AS current_status FROM orders o JOIN stores s ON o.store_id=s.id WHERE 1=1`;
-    const params = [];
+    const limit = validatePaginationLimit(rawLimit, 50, 100);
+    const cursor = decodeCursor(rawCursor);
+
+    let sql = `
+      SELECT TOP (@p0)
+        o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
+        o.order_type, o.payment_method, o.payment_status, o.payment_provider,
+        o.customer_name, o.customer_phone, o.delivery_addr, o.voucher_code,
+        o.discount_amount, o.subtotal, o.total, o.shipping_driver_name,
+        o.shipping_driver_phone, o.shipping_tracking_url, o.is_printed,
+        o.note, o.cancel_reason, o.created_at, o.updated_at,
+        s.name AS store_name,
+        (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id=o.id ORDER BY osh.created_at DESC, osh.id DESC) AS current_status
+      FROM orders o
+      JOIN stores s ON o.store_id=s.id
+      WHERE 1=1
+    `;
+    const params = [limit + 1];
+
     if (status) {
-      sql += ' AND (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC)=?';
+      sql += ' AND (SELECT TOP 1 osh2.status FROM order_status_history osh2 WHERE osh2.order_id=o.id ORDER BY osh2.created_at DESC, osh2.id DESC)=?';
       params.push(status);
     }
     if (scopedStoreId) {
@@ -464,9 +482,22 @@ router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), asy
       sql += ' AND (o.order_code LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ?)';
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
-    sql += ' ORDER BY o.created_at DESC';
+
+    if (cursor) {
+      sql += ' AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))';
+      params.push(cursor.createdAtIso, cursor.createdAtIso, cursor.id);
+    }
+
+    sql += ' ORDER BY o.created_at DESC, o.id DESC';
+
     const [rows] = await db.query(sql, params);
-    res.json(rows);
+    const { rows: pagedOrders, page_info } = buildPageInfo({ rows, limit });
+
+    if (rawCursor !== undefined || rawLimit !== undefined) {
+      return res.json({ orders: pagedOrders, page_info });
+    }
+
+    res.json(pagedOrders);
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });

@@ -50,7 +50,7 @@ export function decodeCursor(cursorStr) {
 
     return {
       createdAt: date,
-      createdAtIso: date.toISOString().replace('T', ' ').replace('Z', ''),
+      createdAtIso: date.toISOString(),
       id,
     };
   } catch (err) {
