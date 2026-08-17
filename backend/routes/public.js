@@ -410,7 +410,7 @@ router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, r
     const cursor = decodeCursor(req.query.cursor);
 
     let sql = `
-      SELECT TOP (@p0)
+      SELECT TOP (?)
         o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
         o.order_type, o.payment_method, o.payment_status, o.payment_provider,
         o.customer_name, o.customer_phone, o.delivery_addr, o.voucher_code,
@@ -419,13 +419,13 @@ router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, r
         (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC) AS current_status
       FROM orders o
       JOIN stores s ON o.store_id = s.id
-      WHERE o.user_id = @p1
+      WHERE o.user_id = ?
     `;
     const params = [limit + 1, requestedId];
 
     if (cursor) {
-      sql += ' AND (o.created_at < @p2 OR (o.created_at = @p2 AND o.id < @p3))';
-      params.push(cursor.createdAtIso, cursor.id);
+      sql += ' AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))';
+      params.push(cursor.createdAtIso, cursor.createdAtIso, cursor.id);
     }
 
     sql += ' ORDER BY o.created_at DESC, o.id DESC';

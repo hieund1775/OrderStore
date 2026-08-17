@@ -57,4 +57,47 @@ describe('Performance Index Migration & Rollback Suite', () => {
     assert.equal(/DROP\s+DATABASE/i.test(content), false);
     assert.equal(/DROP\s+TABLE/i.test(content), false);
   });
+
+  it('simulates idempotent lifecycle execution: apply -> apply -> rollback -> apply', () => {
+    const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
+    const rollbackSql = fs.readFileSync(rollbackPath, 'utf-8');
+
+    // In-memory catalog simulating SQL Server sys.indexes
+    const sysIndexes = new Set();
+
+    const executeTsqlBlock = (sql) => {
+      // Parse individual IF NOT EXISTS / CREATE INDEX blocks
+      for (const indexName of EXPECTED_INDEXES) {
+        if (sql.includes(`CREATE NONCLUSTERED INDEX ${indexName}`)) {
+          if (!sysIndexes.has(indexName)) {
+            sysIndexes.add(indexName);
+          }
+        }
+        if (sql.includes(`DROP INDEX ${indexName}`)) {
+          if (sysIndexes.has(indexName)) {
+            sysIndexes.delete(indexName);
+          }
+        }
+      }
+    };
+
+    // Step 1: First Apply
+    executeTsqlBlock(migrationSql);
+    assert.equal(sysIndexes.size, 7);
+    for (const idx of EXPECTED_INDEXES) {
+      assert.equal(sysIndexes.has(idx), true);
+    }
+
+    // Step 2: Second Apply (Idempotent: No errors, catalog unchanged)
+    executeTsqlBlock(migrationSql);
+    assert.equal(sysIndexes.size, 7);
+
+    // Step 3: Rollback (Safely drops only Phase 2 indexes)
+    executeTsqlBlock(rollbackSql);
+    assert.equal(sysIndexes.size, 0);
+
+    // Step 4: Re-apply (Re-creates indexes cleanly)
+    executeTsqlBlock(migrationSql);
+    assert.equal(sysIndexes.size, 7);
+  });
 });

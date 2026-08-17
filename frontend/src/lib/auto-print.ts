@@ -166,53 +166,89 @@ export function generateReceiptHtml(order: any): string {
   `;
 }
 
-export function silentPrintTicket(order: any): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const orderCode = order.order_code || String(order.id);
-    const config = getActivePrinterConfig();
+const activePrintLocks = new Map<string, Promise<boolean>>();
 
-    if (config?.mode === 'ble') {
-      // In qua Bluetooth thật (ESC/POS) — thực hiện bất đồng bộ
-      printTicketViaBLE(order).then((ok) => {
-        if (ok) markOrderPrinted(orderCode);
-      }).catch((err) => {
-        console.error('BLE Print error:', err);
-      });
-      return true;
-    }
+export function silentPrintTicket(order: any): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+  const orderCode = order?.order_code || (order?.id != null ? String(order.id) : null);
+  if (!orderCode) return Promise.resolve(false);
 
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return false;
-
-    doc.open();
-    doc.write(generateReceiptHtml(order));
-    doc.close();
-
-    markOrderPrinted(orderCode);
-
-    setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 250);
-
-    return true;
-  } catch (err) {
-    console.error('Lỗi khi tự động in ticket bếp:', err);
-    return false;
+  // Deduplicate concurrent print requests for the same order code
+  const existingJob = activePrintLocks.get(orderCode);
+  if (existingJob) {
+    return existingJob;
   }
+
+  const printPromise = (async (): Promise<boolean> => {
+    try {
+      const config = getActivePrinterConfig();
+
+      if (config?.mode === 'ble') {
+        const ok = await printTicketViaBLE(order);
+        if (ok) {
+          markOrderPrinted(orderCode);
+        }
+        return ok;
+      }
+
+      // Kiosk / Browser iframe mode
+      return await new Promise<boolean>((resolve) => {
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          document.body.appendChild(iframe);
+
+          const doc = iframe.contentWindow?.document;
+          if (!doc) {
+            try { document.body.removeChild(iframe); } catch {}
+            resolve(false);
+            return;
+          }
+
+          doc.open();
+          doc.write(generateReceiptHtml(order));
+          doc.close();
+
+          setTimeout(() => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+              markOrderPrinted(orderCode);
+              resolve(true);
+            } catch (err) {
+              console.error('Lỗi khi kích hoạt lệnh in iframe:', err);
+              resolve(false);
+            } finally {
+              setTimeout(() => {
+                try {
+                  if (document.body.contains(iframe)) {
+                    document.body.removeChild(iframe);
+                  }
+                } catch {}
+              }, 1000);
+            }
+          }, 250);
+        } catch (err) {
+          console.error('Lỗi thiết lập iframe in:', err);
+          resolve(false);
+        }
+      });
+    } catch (err) {
+      console.error('Lỗi khi tự động in ticket bếp:', err);
+      return false;
+    } finally {
+      activePrintLocks.delete(orderCode);
+    }
+  })();
+
+  activePrintLocks.set(orderCode, printPromise);
+  return printPromise;
 }
 
 export async function printTicketViaBLE(order: any): Promise<boolean> {

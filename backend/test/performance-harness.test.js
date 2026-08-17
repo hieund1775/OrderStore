@@ -1,33 +1,44 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePerfGuard, generateDeterministicOrders } from '../perf/seed-performance-data.js';
-import { parseStatisticsIo } from '../perf/run-query-benchmarks.js';
+import { parseStatisticsIo, benchmarkQuery } from '../perf/run-query-benchmarks.js';
 
 describe('Performance Benchmark Harness & Guards Suite', () => {
   it('rejects execution when NODE_ENV is production', () => {
     assert.throws(
-      () => validatePerfGuard({ nodeEnv: 'production', dbName: 'teaplus_db', confirmFlag: '1' }),
+      () => validatePerfGuard({ nodeEnv: 'production', dbName: 'teaplus_perf', confirmFlag: '1' }),
       /forbidden in production mode/i
     );
   });
 
-  it('rejects execution when database is not in allowlist', () => {
+  it('rejects execution on default teaplus_db without explicit override', () => {
     assert.throws(
-      () => validatePerfGuard({ nodeEnv: 'development', dbName: 'prod_customer_data_live', confirmFlag: '1' }),
-      /not on the test\/performance allowlist/i
+      () => validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_db', confirmFlag: '1' }),
+      /Database "teaplus_db" is not on the test\/performance allowlist/i
     );
   });
 
   it('rejects execution when confirmation flag is missing', () => {
     assert.throws(
-      () => validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_db', confirmFlag: '' }),
+      () => validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_perf', confirmFlag: '' }),
       /Missing PERF_SEED_CONFIRM=1 confirmation flag/i
     );
   });
 
-  it('passes guard validation with development environment and allowed database', () => {
-    const valid = validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_db', confirmFlag: '1' });
-    assert.equal(valid, true);
+  it('passes guard validation with dedicated perf database or explicit allowDbEnv', () => {
+    const validPerf = validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_perf', confirmFlag: '1' });
+    assert.equal(validPerf, true);
+
+    const validTest = validatePerfGuard({ nodeEnv: 'development', dbName: 'teaplus_test', confirmFlag: '1' });
+    assert.equal(validTest, true);
+
+    const validExplicit = validatePerfGuard({
+      nodeEnv: 'development',
+      dbName: 'custom_db',
+      confirmFlag: '1',
+      allowDbEnv: 'custom_db',
+    });
+    assert.equal(validExplicit, true);
   });
 
   it('generates reproducible and deterministic datasets given the same seed', () => {
@@ -61,5 +72,18 @@ SQL Server Execution Times:
     assert.equal(parsed.totalLogicalReads, 12790);
     assert.equal(parsed.cpuTimeMs, 45);
     assert.equal(parsed.elapsedTimeMs, 52);
+  });
+
+  it('fails fast on query error during benchmarkQuery without swallowing error', async () => {
+    const brokenQuery = async () => {
+      throw new Error('SQL Server syntax error or connection terminated');
+    };
+
+    await assert.rejects(
+      async () => {
+        await benchmarkQuery({ name: 'test_broken', sqlText: 'SELECT 1', params: [], q: brokenQuery });
+      },
+      /SQL Server syntax error/
+    );
   });
 });

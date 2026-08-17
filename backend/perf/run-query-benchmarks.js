@@ -32,18 +32,13 @@ export function parseStatisticsIo(statString = '') {
   return result;
 }
 
-export async function benchmarkQuery({ name, sqlText, params = [] }) {
+export async function benchmarkQuery({ name, sqlText, params = [], q = db.query }) {
   const start = performance.now();
-  let rows = [];
-  let rowCount = 0;
 
-  try {
-    const result = await db.query(sqlText, params);
-    rows = result[0] || [];
-    rowCount = rows.length || result[1] || 0;
-  } catch (err) {
-    console.error(`Error benchmarking ${name}:`, err.message);
-  }
+  // Fail-fast: Do NOT silently swallow errors. Errors must propagate.
+  const result = await q(sqlText, params);
+  const rows = result[0] || [];
+  const rowCount = Array.isArray(rows) ? rows.length : result[1] || 0;
 
   const elapsedMs = performance.now() - start;
 
@@ -52,26 +47,49 @@ export async function benchmarkQuery({ name, sqlText, params = [] }) {
     rowCount,
     elapsedMs: Math.round(elapsedMs * 100) / 100,
     timestamp: new Date().toISOString(),
+    status: 'success',
   };
 }
 
-export async function runAllBenchmarks() {
-  validatePerfGuard({ confirmFlag: '1' });
+export async function runAllBenchmarks({ confirmFlag = '1', q = db.query } = {}) {
+  validatePerfGuard({ confirmFlag });
 
   const queryDir = path.resolve(__dirname, 'queries');
+  if (!fs.existsSync(queryDir)) {
+    throw new Error(`Query directory not found at ${queryDir}`);
+  }
+
   const files = fs.readdirSync(queryDir).filter((f) => f.endsWith('.sql'));
   const results = [];
+
+  // Enable statistics if connected to real pool
+  try {
+    await q('SET STATISTICS IO, TIME ON;');
+  } catch {
+    /* mock or offline mode */
+  }
 
   for (const file of files) {
     const sqlText = fs.readFileSync(path.join(queryDir, file), 'utf-8');
     const name = path.basename(file, '.sql');
-    const bench = await benchmarkQuery({ name, sqlText, params: [1, '2026-08-01', '2026-08-18', '2026-08-18', 999999] });
+
+    // Standard benchmark parameter set matching query placeholders
+    const params = [1, '2026-08-01', '2026-08-18', '2026-08-18', 999999];
+    const placeholderCount = (sqlText.match(/\?/g) || []).length;
+    const activeParams = params.slice(0, placeholderCount);
+
+    const bench = await benchmarkQuery({ name, sqlText, params: activeParams, q });
     results.push(bench);
   }
 
-  const resultsPath = path.resolve(__dirname, 'results/latest-benchmark.json');
+  const resultsDir = path.resolve(__dirname, 'results');
+  if (!fs.existsSync(resultsDir)) {
+    fs.mkdirSync(resultsDir, { recursive: true });
+  }
+
+  const resultsPath = path.resolve(resultsDir, 'latest-benchmark.json');
   fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-  console.log(`✅ Benchmark completed. Results saved to ${resultsPath}`);
+  console.log(`✅ Benchmark completed. ${results.length} queries executed. Results saved to ${resultsPath}`);
   return results;
 }
 
@@ -79,7 +97,7 @@ if (process.argv[1] && process.argv[1].endsWith('run-query-benchmarks.js')) {
   runAllBenchmarks()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error(err);
+      console.error('❌ Benchmark failed:', err.message);
       process.exit(1);
     });
 }

@@ -1,5 +1,11 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/env.js';
+import publicRoutes from '../routes/public.js';
+import db, { compileQuery } from '../config/db.js';
 import {
   encodeCursor,
   decodeCursor,
@@ -118,5 +124,217 @@ describe('Customer History & Cursor Pagination Service Suite', () => {
     const emptyResult = await batchLoadOrderDetails([], mockQuery);
     assert.deepEqual(emptyResult, []);
     assert.equal(queryCount, 0);
+  });
+});
+
+describe('Customer History HTTP Integration Suite (Real Express Network Requests)', () => {
+  let app;
+  let server;
+  let baseUrl;
+
+  const customer1Token = jwt.sign({ sub: 10, username: 'customer1' }, JWT_SECRET);
+  const customer2Token = jwt.sign({ sub: 20, username: 'customer2' }, JWT_SECRET);
+
+  let testOrders = [];
+  let queryHistory = [];
+
+  function resetOrders() {
+    testOrders = [
+      { id: 205, user_id: 10, store_id: 1, order_code: 'TP205', total: 50000, created_at: new Date('2026-08-17T12:00:00.000Z') },
+      { id: 204, user_id: 10, store_id: 1, order_code: 'TP204', total: 40000, created_at: new Date('2026-08-17T11:00:00.000Z') },
+      // Equal timestamp for tie-breaking test
+      { id: 203, user_id: 10, store_id: 1, order_code: 'TP203', total: 30000, created_at: new Date('2026-08-17T10:00:00.000Z') },
+      { id: 202, user_id: 10, store_id: 1, order_code: 'TP202', total: 20000, created_at: new Date('2026-08-17T10:00:00.000Z') },
+      { id: 201, user_id: 10, store_id: 1, order_code: 'TP201', total: 10000, created_at: new Date('2026-08-17T09:00:00.000Z') },
+    ];
+  }
+
+  const mockDbAdapter = {
+    async query(sqlText, params = []) {
+      // Validate query compilation across both SQL Auth and Trusted modes
+      compileQuery(sqlText, params, false);
+      compileQuery(sqlText, params, true);
+
+      queryHistory.push({ sql: sqlText, params });
+
+      // 1) Orders list query
+      if (sqlText.includes('FROM orders o') && sqlText.includes('WHERE o.user_id = ?')) {
+        const limit = Number(params[0]);
+        const targetUserId = Number(params[1]);
+
+        let filtered = testOrders.filter((o) => o.user_id === targetUserId);
+
+        // Cursor filter: (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
+        if (sqlText.includes('o.created_at < ?')) {
+          const cursorCreatedAt = new Date(params[2]);
+          const cursorId = Number(params[4]);
+
+          filtered = filtered.filter((o) => {
+            const oTime = o.created_at.getTime();
+            const cTime = cursorCreatedAt.getTime();
+            return oTime < cTime || (oTime === cTime && o.id < cursorId);
+          });
+        }
+
+        filtered.sort((a, b) => b.created_at.getTime() - a.created_at.getTime() || b.id - a.id);
+        const page = filtered.slice(0, limit);
+
+        const rows = page.map((o) => ({
+          ...o,
+          store_name: `Chi nhánh ${o.store_id}`,
+          current_status: 'Đang chuẩn bị',
+        }));
+
+        return [rows, rows.length];
+      }
+
+      // 2) Batch items query
+      if (sqlText.includes('FROM order_items') && sqlText.includes('WHERE order_id IN')) {
+        const items = [];
+        for (const orderId of params) {
+          items.push({
+            id: orderId * 10 + 1,
+            order_id: orderId,
+            product_id: 1,
+            product_name: 'Trà Sữa Khoai Môn',
+            qty: 1,
+            size_label: 'M',
+            unit_price: 35000,
+            line_total: 35000,
+          });
+        }
+        return [items, items.length];
+      }
+
+      // 3) Batch toppings query
+      if (sqlText.includes('FROM order_item_toppings') && sqlText.includes('WHERE order_item_id IN')) {
+        const toppings = [];
+        for (const itemId of params) {
+          toppings.push({
+            id: itemId * 100 + 1,
+            order_item_id: itemId,
+            topping_name: 'Trân Châu Hoàng Gia',
+            topping_price: 5000,
+          });
+        }
+        return [toppings, toppings.length];
+      }
+
+      return [[], 0];
+    },
+  };
+
+  before(async () => {
+    db.setMockAdapter(mockDbAdapter);
+
+    app = express();
+    app.use(express.json());
+    app.use('/api', publicRoutes);
+
+    server = http.createServer(app);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    baseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  after(async () => {
+    db.resetMockAdapter();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  it('paginates customer history with limit and cursor, asserting constant 3 queries total', async () => {
+    resetOrders();
+    queryHistory = [];
+
+    // Page 1: limit 2
+    const res1 = await fetch(`${baseUrl}/api/users/10/orders?limit=2`, {
+      headers: { Authorization: `Bearer ${customer1Token}` },
+    });
+    assert.equal(res1.status, 200);
+    const data1 = await res1.json();
+
+    assert.equal(data1.orders.length, 2);
+    assert.equal(data1.orders[0].id, 205);
+    assert.equal(data1.orders[1].id, 204);
+    assert.equal(data1.orders[0].items.length, 1);
+    assert.equal(data1.orders[0].items[0].toppings.length, 1);
+    assert.equal(data1.page_info.has_more, true);
+    assert.ok(data1.page_info.next_cursor);
+
+    // Assert exactly 3 batched queries for Page 1
+    assert.equal(queryHistory.length, 3, 'Must execute exactly 3 queries (1 orders + 1 items + 1 toppings)');
+
+    // Page 2: with cursor from page 1
+    queryHistory = [];
+    const res2 = await fetch(
+      `${baseUrl}/api/users/10/orders?limit=2&cursor=${encodeURIComponent(data1.page_info.next_cursor)}`,
+      {
+        headers: { Authorization: `Bearer ${customer1Token}` },
+      }
+    );
+    assert.equal(res2.status, 200);
+    const data2 = await res2.json();
+
+    assert.equal(data2.orders.length, 2);
+    // Verifies tie-breaking on equal timestamps (203 and 202)
+    assert.equal(data2.orders[0].id, 203);
+    assert.equal(data2.orders[1].id, 202);
+    assert.equal(queryHistory.length, 3);
+  });
+
+  it('guarantees deterministic customer traversal when a new order is inserted between pages', async () => {
+    resetOrders();
+
+    // Step 1: Fetch Page 1
+    const res1 = await fetch(`${baseUrl}/api/users/10/orders?limit=2`, {
+      headers: { Authorization: `Bearer ${customer1Token}` },
+    });
+    const data1 = await res1.json();
+    assert.equal(data1.orders[0].id, 205);
+    assert.equal(data1.orders[1].id, 204);
+
+    // Step 2: Insert a NEW order for customer 10 with latest timestamp
+    testOrders.unshift({
+      id: 999,
+      user_id: 10,
+      store_id: 1,
+      order_code: 'TP999_NEW',
+      total: 88000,
+      created_at: new Date('2026-08-17T13:00:00.000Z'),
+    });
+
+    // Step 3: Fetch Page 2 using cursor from Page 1
+    const res2 = await fetch(
+      `${baseUrl}/api/users/10/orders?limit=2&cursor=${encodeURIComponent(data1.page_info.next_cursor)}`,
+      {
+        headers: { Authorization: `Bearer ${customer1Token}` },
+      }
+    );
+    const data2 = await res2.json();
+
+    // Verifies Page 2 continues cleanly with 203 and 202 WITHOUT duplicate 204 or skipping 203!
+    assert.equal(data2.orders[0].id, 203);
+    assert.equal(data2.orders[1].id, 202);
+  });
+
+  it('enforces customer ownership isolation (HTTP 403 Forbidden for other customers)', async () => {
+    // Customer 20 tries to access Customer 10's orders
+    const res = await fetch(`${baseUrl}/api/users/10/orders`, {
+      headers: { Authorization: `Bearer ${customer2Token}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('returns array format when neither limit nor cursor is requested (backwards compatibility)', async () => {
+    resetOrders();
+
+    const res = await fetch(`${baseUrl}/api/users/10/orders`, {
+      headers: { Authorization: `Bearer ${customer1Token}` },
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+
+    assert.equal(Array.isArray(data), true, 'Must return array for legacy callers');
+    assert.equal(data.length, 5);
   });
 });

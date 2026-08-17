@@ -443,7 +443,7 @@ router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), asy
     const cursor = decodeCursor(rawCursor);
 
     let sql = `
-      SELECT TOP (@p0)
+      SELECT TOP (?)
         o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
         o.order_type, o.payment_method, o.payment_status, o.payment_provider,
         o.customer_name, o.customer_phone, o.delivery_addr, o.voucher_code,

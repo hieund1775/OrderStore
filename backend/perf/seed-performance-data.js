@@ -6,16 +6,30 @@ import db from '../config/db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const ALLOWED_DB_PATTERNS = [/test/i, /perf/i, /dev/i, /teaplus_db/i, /teaplus_test/i];
+// Strict allowlist: Only dedicated test or performance databases. Default 'teaplus_db' is forbidden by default.
+const DEFAULT_ALLOWED_PATTERNS = [/_test$/i, /_perf$/i, /teaplus_test/i, /teaplus_perf/i];
 
-export function validatePerfGuard({ nodeEnv = process.env.NODE_ENV, dbName = process.env.DB_NAME, confirmFlag = process.env.PERF_SEED_CONFIRM } = {}) {
+export function validatePerfGuard({
+  nodeEnv = process.env.NODE_ENV,
+  dbName = process.env.DB_NAME,
+  confirmFlag = process.env.PERF_SEED_CONFIRM,
+  allowDbEnv = process.env.PERF_ALLOW_DB,
+} = {}) {
   if (nodeEnv === 'production') {
     throw new Error('GUARDS VIOLATION: Seeding performance data is strictly forbidden in production mode (NODE_ENV=production).');
   }
 
-  const isAllowedDb = ALLOWED_DB_PATTERNS.some((pattern) => pattern.test(String(dbName || '')));
+  const allowedPatterns = allowDbEnv
+    ? [new RegExp(allowDbEnv, 'i')]
+    : DEFAULT_ALLOWED_PATTERNS;
+
+  const isAllowedDb = allowedPatterns.some((pattern) => pattern.test(String(dbName || '')));
   if (!isAllowedDb) {
-    throw new Error(`GUARDS VIOLATION: Database "${dbName}" is not on the test/performance allowlist.`);
+    throw new Error(
+      `GUARDS VIOLATION: Database "${dbName}" is not on the test/performance allowlist. ` +
+      `Seeding is forbidden on default database. Use a dedicated test DB (e.g. "teaplus_perf" or "teaplus_test") ` +
+      `or explicitly set PERF_ALLOW_DB="${dbName}" in your test environment.`
+    );
   }
 
   if (confirmFlag !== '1' && confirmFlag !== 'true') {
@@ -106,7 +120,69 @@ export function generateDeterministicOrders({ seed = 42, count = 100, days = 90 
   return orders;
 }
 
-export async function runSeeder({ count = 1000, seed = 42 } = {}) {
+/**
+ * Real database batch seeder pipeline.
+ * Inserts generated orders into SQL Server tables in transactional batches.
+ */
+export async function seedOrdersIntoDatabase(orders, q = db.query) {
+  if (!Array.isArray(orders) || orders.length === 0) return { insertedOrders: 0 };
+
+  let insertedOrders = 0;
+  const chunkSize = 50;
+
+  for (let i = 0; i < orders.length; i += chunkSize) {
+    const chunk = orders.slice(i, i + chunkSize);
+
+    for (const order of chunk) {
+      const [orderRows] = await q(
+        `INSERT INTO orders (order_code, user_id, store_id, order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, subtotal, total, created_at, updated_at)
+         OUTPUT INSERTED.id
+         VALUES (?, ?, ?, ?, 'VietQR', ?, ?, 'Perf Test Customer', '0901234567', ?, ?, ?, ?)`,
+        [
+          order.order_code,
+          order.user_id,
+          order.store_id,
+          order.order_type,
+          order.payment_status,
+          order.payment_provider,
+          order.total,
+          order.total,
+          order.created_at,
+          order.created_at,
+        ]
+      );
+      const orderId = orderRows[0]?.id;
+
+      if (orderId && order.items) {
+        for (const item of order.items) {
+          const [itemRows] = await q(
+            `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label, base_tea, sugar_level, ice_level, unit_price, line_total)
+             OUTPUT INSERTED.id
+             VALUES (?, ?, ?, ?, 'M', 'Trà đen', '100%', '100%', ?, ?)`,
+            [orderId, item.product_id, item.product_name, item.quantity, item.price, item.price * item.quantity]
+          );
+          const itemId = itemRows[0]?.id;
+
+          if (itemId && item.toppings) {
+            for (const top of item.toppings) {
+              await q(
+                `INSERT INTO order_item_toppings (order_item_id, topping_name, topping_price)
+                 VALUES (?, ?, ?)`,
+                [itemId, top.topping_name, top.price]
+              );
+            }
+          }
+        }
+      }
+
+      insertedOrders++;
+    }
+  }
+
+  return { insertedOrders };
+}
+
+export async function runSeeder({ count = 1000, seed = 42, insertToDb = false } = {}) {
   const args = process.argv.slice(2);
   const confirmArg = args.includes('--confirm') ? '1' : process.env.PERF_SEED_CONFIRM;
   const countArg = args.find((a) => a.startsWith('--orders='))?.split('=')[1];
@@ -117,6 +193,12 @@ export async function runSeeder({ count = 1000, seed = 42 } = {}) {
   console.log(`🚀 Starting performance seeder: Generating ${finalCount} orders with seed ${seed}...`);
   const orders = generateDeterministicOrders({ seed, count: finalCount });
   console.log(`✅ Generated ${orders.length} in-memory records deterministically.`);
+
+  if (insertToDb || args.includes('--insert')) {
+    console.log(`💾 Inserting ${orders.length} orders into SQL Server database...`);
+    const { insertedOrders } = await seedOrdersIntoDatabase(orders, db.query);
+    console.log(`✅ Successfully inserted ${insertedOrders} orders with items and toppings.`);
+  }
 
   return orders;
 }

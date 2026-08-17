@@ -45,26 +45,48 @@ async function getPool() {
 
 // Escape giá trị inline cho msnodesqlv8 (driver ODBC có bug prepared statement nhiều tham số
 // "The variable name '@p1' has already been declared"). Chỉ dùng khi DB_TRUSTED=true.
-function esc(v) {
+export function esc(v) {
   if (v === null || v === undefined) return 'NULL';
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
   if (v instanceof Date) return `'${v.toISOString()}'`;
   return `N'${String(v).replace(/'/g, "''")}'`;
 }
 
-async function run(holder, string, params = []) {
-  const req = holder.request();
+/**
+ * Compiles a query with '?' placeholders into driver-specific SQL.
+ * - In Trusted mode (ODBC): inlines escaped values safely.
+ * - In SQL Auth mode (tedious): transforms '?' to '@p0, @p1...' and prepares inputs.
+ */
+export function compileQuery(string, params = [], trusted = isTrusted) {
+  const paramCount = (string.match(/\?/g) || []).length;
+  if (paramCount !== params.length) {
+    throw new Error(
+      `Parameter count mismatch: Query expects ${paramCount} parameters (?) but received ${params.length}`
+    );
+  }
+
   let sqlText = string;
   let idx = 0;
-  if (isTrusted) {
-    // msnodesqlv8: inline an toàn (escape '' và số) — tránh prepared statement buggy
+  if (trusted) {
     sqlText = sqlText.replace(/\?/g, () => esc(params[idx++]));
+    return { sqlText, inputs: [] };
   } else {
-    // tedious: parameterized query chuẩn OWASP
-    for (let i = 0; i < params.length; i++) req.input(`p${i}`, params[i]);
+    const inputs = [];
+    for (let i = 0; i < params.length; i++) {
+      inputs.push({ name: `p${i}`, value: params[i] });
+    }
     sqlText = sqlText.replace(/\?/g, () => `@p${idx++}`);
+    return { sqlText, inputs };
   }
-  const result = await req.query(sqlText);
+}
+
+async function run(holder, string, params = []) {
+  const req = holder.request();
+  const compiled = compileQuery(string, params, isTrusted);
+  for (const input of compiled.inputs) {
+    req.input(input.name, input.value);
+  }
+  const result = await req.query(compiled.sqlText);
   return [result.recordset || [], result.rowsAffected?.[0] ?? 0];
 }
 

@@ -5,7 +5,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
 import adminRoutes from '../routes/admin.js';
-import db from '../config/db.js';
+import db, { compileQuery } from '../config/db.js';
 import { encodeCursor } from '../services/cursor-pagination.js';
 
 describe('Admin Orders Cursor Pagination & Scope Suite (Real Express Network Requests)', () => {
@@ -32,6 +32,10 @@ describe('Admin Orders Cursor Pagination & Scope Suite (Real Express Network Req
 
   const mockDbAdapter = {
     async query(sqlText, params = []) {
+      // Validate that the query compiles cleanly in both SQL Auth and Trusted modes
+      compileQuery(sqlText, params, false);
+      compileQuery(sqlText, params, true);
+
       if (sqlText.includes('FROM orders') && sqlText.includes('SELECT')) {
         let filtered = [...testOrders];
 
