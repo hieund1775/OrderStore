@@ -255,84 +255,140 @@ export async function seedOrdersIntoDatabase(orders, txRunner = db.transaction) 
     }
 
     await txRunner(async (tx) => {
+      // 1. Multi-row insert for orders
+      const orderPlaceholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const orderParams = [];
       for (const order of chunk) {
-        const [orderRows] = await tx.query(
-          `INSERT INTO orders (order_code, user_id, store_id, order_type, payment_method, payment_status, payment_provider, payment_expires_at, paid_at, customer_name, customer_phone, subtotal, discount_amount, total, voucher_code, created_at, updated_at)
-           OUTPUT INSERTED.id
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            order.order_code,
-            order.user_id,
-            order.store_id,
-            order.order_type,
-            order.payment_method,
-            order.payment_status,
-            order.payment_provider,
-            order.payment_expires_at,
-            order.paid_at,
-            order.customer_name,
-            order.customer_phone,
-            order.subtotal,
-            order.discount_amount,
-            order.total,
-            order.voucher_code,
-            order.created_at,
-            order.created_at,
-          ]
+        orderParams.push(
+          order.order_code,
+          order.user_id,
+          order.store_id,
+          order.order_type,
+          order.payment_method,
+          order.payment_status,
+          order.payment_provider,
+          order.payment_expires_at,
+          order.paid_at,
+          order.customer_name,
+          order.customer_phone,
+          order.subtotal,
+          order.discount_amount,
+          order.total,
+          order.voucher_code,
+          order.created_at,
+          order.created_at
         );
-        const orderId = orderRows[0]?.id;
+      }
 
+      const [insertedOrderRows] = await tx.query(
+        `INSERT INTO orders (order_code, user_id, store_id, order_type, payment_method, payment_status, payment_provider, payment_expires_at, paid_at, customer_name, customer_phone, subtotal, discount_amount, total, voucher_code, created_at, updated_at)
+         OUTPUT INSERTED.id, INSERTED.order_code
+         VALUES ${orderPlaceholders}`,
+        orderParams
+      );
+
+      const orderIdByCode = new Map();
+      for (const row of insertedOrderRows) {
+        orderIdByCode.set(row.order_code, row.id);
+      }
+
+      // 2. Multi-row insert for order_status_history
+      const statusPlaceholders = [];
+      const statusParams = [];
+      for (const order of chunk) {
+        const orderId = orderIdByCode.get(order.order_code);
         if (orderId) {
-          // Status History
-          await tx.query(
-            'INSERT INTO order_status_history (order_id, status, created_at) VALUES (?, ?, ?)',
-            [orderId, order.initial_status, order.created_at]
-          );
+          statusPlaceholders.push('(?, ?, ?)');
+          statusParams.push(orderId, order.initial_status, order.created_at);
+        }
+      }
+      if (statusPlaceholders.length > 0) {
+        await tx.query(
+          `INSERT INTO order_status_history (order_id, status, created_at) VALUES ${statusPlaceholders.join(', ')}`,
+          statusParams
+        );
+      }
 
-          // Voucher Usage History
-          if (order.voucher_code) {
-            await tx.query(
-              'INSERT INTO voucher_usage_history (promotion_id, user_phone, order_id, used_at) VALUES (1, ?, ?, ?)',
-              [order.customer_phone, orderId, order.created_at]
+      // 3. Multi-row insert for voucher_usage_history
+      const voucherPlaceholders = [];
+      const voucherParams = [];
+      for (const order of chunk) {
+        const orderId = orderIdByCode.get(order.order_code);
+        if (orderId && order.voucher_code) {
+          voucherPlaceholders.push('(1, ?, ?, ?)');
+          voucherParams.push(order.customer_phone, orderId, order.created_at);
+        }
+      }
+      if (voucherPlaceholders.length > 0) {
+        await tx.query(
+          `INSERT INTO voucher_usage_history (promotion_id, user_phone, order_id, used_at) VALUES ${voucherPlaceholders.join(', ')}`,
+          voucherParams
+        );
+      }
+
+      // 4. Multi-row insert for order_items
+      const itemPlaceholders = [];
+      const itemParams = [];
+
+      for (const order of chunk) {
+        const orderId = orderIdByCode.get(order.order_code);
+        if (orderId && order.items) {
+          for (const item of order.items) {
+            itemPlaceholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            itemParams.push(
+              orderId,
+              item.product_id,
+              item.product_name,
+              item.quantity,
+              item.size_label,
+              item.base_tea,
+              item.sugar_level,
+              item.ice_level,
+              item.price,
+              item.price * item.quantity
             );
           }
+        }
+      }
 
-          // Items and Toppings
-          if (order.items) {
+      if (itemPlaceholders.length > 0) {
+        const [insertedItemRows] = await tx.query(
+          `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label, base_tea, sugar_level, ice_level, unit_price, line_total)
+           OUTPUT INSERTED.id, INSERTED.order_id, INSERTED.product_id
+           VALUES ${itemPlaceholders.join(', ')}`,
+          itemParams
+        );
+
+        // 5. Multi-row insert for toppings
+        let itemRowIdx = 0;
+        const toppingPlaceholders = [];
+        const toppingParams = [];
+
+        for (const order of chunk) {
+          const orderId = orderIdByCode.get(order.order_code);
+          if (orderId && order.items) {
             for (const item of order.items) {
-              const [itemRows] = await tx.query(
-                `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label, base_tea, sugar_level, ice_level, unit_price, line_total)
-                 OUTPUT INSERTED.id
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                  orderId,
-                  item.product_id,
-                  item.product_name,
-                  item.quantity,
-                  item.size_label,
-                  item.base_tea,
-                  item.sugar_level,
-                  item.ice_level,
-                  item.price,
-                  item.price * item.quantity,
-                ]
-              );
-              const itemId = itemRows[0]?.id;
-
+              const itemRow = insertedItemRows[itemRowIdx++];
+              const itemId = itemRow?.id;
               if (itemId && item.toppings) {
                 for (const top of item.toppings) {
-                  await tx.query(
-                    'INSERT INTO order_item_toppings (order_item_id, topping_name, topping_price) VALUES (?, ?, ?)',
-                    [itemId, top.topping_name, top.price]
-                  );
+                  toppingPlaceholders.push('(?, ?, ?)');
+                  toppingParams.push(itemId, top.topping_name, top.price);
                 }
               }
             }
           }
         }
 
-        insertedOrders++;
+        if (toppingPlaceholders.length > 0) {
+          await tx.query(
+            `INSERT INTO order_item_toppings (order_item_id, topping_name, topping_price) VALUES ${toppingPlaceholders.join(', ')}`,
+            toppingParams
+          );
+        }
       }
+
+      insertedOrders += chunk.length;
     });
   }
 

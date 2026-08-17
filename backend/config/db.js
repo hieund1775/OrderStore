@@ -84,22 +84,35 @@ export function parseExecutionPlanOperators(xmlPlan) {
   if (!xmlPlan || typeof xmlPlan !== 'string') return [];
   const operators = [];
 
-  const relOpRegex = /<RelOp[^>]*PhysicalOp="([^"]+)"[^>]*>([\s\S]*?)<\/RelOp>/g;
-  let match;
-  while ((match = relOpRegex.exec(xmlPlan)) !== null) {
-    const physicalOp = match[1];
-    const innerXml = match[2];
+  const objRegex = /<Object\s+[^>]*Table="\[?([^"\]]+)\]?"(?:\s+Index="\[?([^"\]]+)\]?")?[^>]*>/g;
+  let objMatch;
+  while ((objMatch = objRegex.exec(xmlPlan)) !== null) {
+    const table = objMatch[1];
+    const index = objMatch[2] || null;
 
-    const objMatch = innerXml.match(/<Object[^>]*Table="\[?([^"\]]+)\]?"(?:\s+Index="\[?([^"\]]+)\]?")?[^>]*>/);
-    const table = objMatch ? objMatch[1].replace(/^\[|\]$/g, '') : null;
-    const index = objMatch && objMatch[2] ? objMatch[2].replace(/^\[|\]$/g, '') : null;
+    // Look back up to 1000 characters before this Object to find its RelOp
+    const preText = xmlPlan.slice(Math.max(0, objMatch.index - 1000), objMatch.index);
+    const relOpMatches = [...preText.matchAll(/PhysicalOp="([^"]+)"/g)];
+    const physicalOp = relOpMatches.length > 0 ? relOpMatches[relOpMatches.length - 1][1] : (index ? 'Index Seek' : 'Table Scan');
 
-    if (physicalOp && (physicalOp.includes('Seek') || physicalOp.includes('Scan') || physicalOp.includes('Index'))) {
-      operators.push({
-        operator: physicalOp,
-        table,
-        index,
-      });
+    operators.push({
+      operator: physicalOp,
+      table,
+      index,
+    });
+  }
+
+  // Fallback: If no Object elements found, extract any scan/seek RelOps
+  if (operators.length === 0) {
+    const relOpMatches = xmlPlan.matchAll(/PhysicalOp="([^"]+)"/g);
+    for (const m of relOpMatches) {
+      if (m[1].includes('Seek') || m[1].includes('Scan')) {
+        operators.push({
+          operator: m[1],
+          table: null,
+          index: null,
+        });
+      }
     }
   }
 
