@@ -32,26 +32,38 @@ export function parseStatisticsIo(statString = '') {
   return result;
 }
 
-export async function benchmarkQuery({ name, sqlText, params = [], q = db.query }) {
+export async function benchmarkQuery({ name, sqlText, params = [], qWithStats = db.queryWithStats } = {}) {
   const start = performance.now();
 
-  // Fail-fast: Do NOT silently swallow errors. Errors must propagate.
-  const result = await q(sqlText, params);
-  const rows = result[0] || [];
-  const rowCount = Array.isArray(rows) ? rows.length : result[1] || 0;
+  // Fail-fast on execution error
+  const res = await qWithStats(sqlText, params);
+  const rows = res.recordset || [];
+  const rowCount = Array.isArray(rows) ? rows.length : res.rowsAffected || 0;
+  const rawMessages = (res.infoMessages || []).join('\n');
 
-  const elapsedMs = performance.now() - start;
+  const parsedStats = parseStatisticsIo(rawMessages);
+  const measuredWallClockMs = Math.round((performance.now() - start) * 100) / 100;
 
   return {
     name,
     rowCount,
-    elapsedMs: Math.round(elapsedMs * 100) / 100,
+    elapsedMs: parsedStats.elapsedTimeMs > 0 ? parsedStats.elapsedTimeMs : measuredWallClockMs,
+    wallClockMs: measuredWallClockMs,
+    cpuTimeMs: parsedStats.cpuTimeMs,
+    totalLogicalReads: parsedStats.totalLogicalReads,
+    tables: parsedStats.tables,
+    rawMessages: res.infoMessages || [],
     timestamp: new Date().toISOString(),
     status: 'success',
   };
 }
 
-export async function runAllBenchmarks({ confirmFlag = '1', q = db.query } = {}) {
+export async function runAllBenchmarks({
+  confirmFlag = '1',
+  q = db.query,
+  qWithStats = db.queryWithStats,
+  dbName = process.env.DB_NAME,
+} = {}) {
   validatePerfGuard({ confirmFlag });
 
   const queryDir = path.resolve(__dirname, 'queries');
@@ -62,25 +74,39 @@ export async function runAllBenchmarks({ confirmFlag = '1', q = db.query } = {})
   const files = fs.readdirSync(queryDir).filter((f) => f.endsWith('.sql'));
   const results = [];
 
-  // Enable statistics if connected to real pool
-  try {
-    await q('SET STATISTICS IO, TIME ON;');
-  } catch {
-    /* mock or offline mode */
-  }
+  // Enable statistics on session
+  await q('SET STATISTICS IO, TIME ON;');
+
+  const QUERY_PARAM_MAP = {
+    'admin-orders': [50, 1, '2026-08-01 00:00:00', '2026-08-18 00:00:00', '2026-08-17 12:00:00', '2026-08-17 12:00:00', 999999],
+    'customer-history': [50, 1, '2026-08-17 12:00:00', '2026-08-17 12:00:00', 999999],
+    'dashboard': [1, '2026-08-01 00:00:00', '2026-08-18 00:00:00'],
+    'kds-orders': [1],
+    'payos-expiry': [],
+    'voucher-usage': [1, '0901234567'],
+  };
 
   for (const file of files) {
     const sqlText = fs.readFileSync(path.join(queryDir, file), 'utf-8');
     const name = path.basename(file, '.sql');
+    const params = QUERY_PARAM_MAP[name] || [];
 
-    // Standard benchmark parameter set matching query placeholders
-    const params = [1, '2026-08-01', '2026-08-18', '2026-08-18', 999999];
-    const placeholderCount = (sqlText.match(/\?/g) || []).length;
-    const activeParams = params.slice(0, placeholderCount);
-
-    const bench = await benchmarkQuery({ name, sqlText, params: activeParams, q });
+    const bench = await benchmarkQuery({ name, sqlText, params, qWithStats });
     results.push(bench);
   }
+
+  // Turn off statistics
+  await q('SET STATISTICS IO, TIME OFF;');
+
+  const outputPayload = {
+    metadata: {
+      runner: 'backend/perf/run-query-benchmarks.js',
+      database: dbName,
+      executed_at: new Date().toISOString(),
+      query_count: results.length,
+    },
+    results,
+  };
 
   const resultsDir = path.resolve(__dirname, 'results');
   if (!fs.existsSync(resultsDir)) {
@@ -88,9 +114,9 @@ export async function runAllBenchmarks({ confirmFlag = '1', q = db.query } = {})
   }
 
   const resultsPath = path.resolve(resultsDir, 'latest-benchmark.json');
-  fs.writeFileSync(resultsPath, JSON.stringify(results, null, 2));
-  console.log(`✅ Benchmark completed. ${results.length} queries executed. Results saved to ${resultsPath}`);
-  return results;
+  fs.writeFileSync(resultsPath, JSON.stringify(outputPayload, null, 2));
+  console.log(`✅ Benchmark completed. ${results.length} queries executed on ${dbName}. Results saved to ${resultsPath}`);
+  return outputPayload;
 }
 
 if (process.argv[1] && process.argv[1].endsWith('run-query-benchmarks.js')) {

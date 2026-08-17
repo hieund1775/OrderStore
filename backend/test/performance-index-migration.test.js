@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import db from '../config/db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,46 +59,37 @@ describe('Performance Index Migration & Rollback Suite', () => {
     assert.equal(/DROP\s+TABLE/i.test(content), false);
   });
 
-  it('simulates idempotent lifecycle execution: apply -> apply -> rollback -> apply', () => {
+  it('executes real SQL Server migration lifecycle: apply -> idempotent apply -> rollback -> re-apply against sys.indexes', async () => {
     const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
     const rollbackSql = fs.readFileSync(rollbackPath, 'utf-8');
 
-    // In-memory catalog simulating SQL Server sys.indexes
-    const sysIndexes = new Set();
-
-    const executeTsqlBlock = (sql) => {
-      // Parse individual IF NOT EXISTS / CREATE INDEX blocks
-      for (const indexName of EXPECTED_INDEXES) {
-        if (sql.includes(`CREATE NONCLUSTERED INDEX ${indexName}`)) {
-          if (!sysIndexes.has(indexName)) {
-            sysIndexes.add(indexName);
-          }
-        }
-        if (sql.includes(`DROP INDEX ${indexName}`)) {
-          if (sysIndexes.has(indexName)) {
-            sysIndexes.delete(indexName);
-          }
-        }
-      }
+    const querySysIndexesCount = async () => {
+      const placeholders = EXPECTED_INDEXES.map(() => '?').join(', ');
+      const [rows] = await db.query(
+        `SELECT name FROM sys.indexes WHERE name IN (${placeholders})`,
+        EXPECTED_INDEXES
+      );
+      return rows ? rows.length : 0;
     };
 
-    // Step 1: First Apply
-    executeTsqlBlock(migrationSql);
-    assert.equal(sysIndexes.size, 7);
-    for (const idx of EXPECTED_INDEXES) {
-      assert.equal(sysIndexes.has(idx), true);
-    }
+    // Step 1: Initial Apply
+    await db.query(migrationSql);
+    const countAfterFirstApply = await querySysIndexesCount();
+    assert.equal(countAfterFirstApply, 7, 'All 7 performance indexes must exist after migration apply');
 
-    // Step 2: Second Apply (Idempotent: No errors, catalog unchanged)
-    executeTsqlBlock(migrationSql);
-    assert.equal(sysIndexes.size, 7);
+    // Step 2: Idempotent Re-apply (must succeed without errors or duplicate index failures)
+    await db.query(migrationSql);
+    const countAfterSecondApply = await querySysIndexesCount();
+    assert.equal(countAfterSecondApply, 7, 'All 7 indexes must still exist cleanly after idempotent re-apply');
 
-    // Step 3: Rollback (Safely drops only Phase 2 indexes)
-    executeTsqlBlock(rollbackSql);
-    assert.equal(sysIndexes.size, 0);
+    // Step 3: Rollback (must remove all 7 indexes cleanly)
+    await db.query(rollbackSql);
+    const countAfterRollback = await querySysIndexesCount();
+    assert.equal(countAfterRollback, 0, 'All 7 performance indexes must be dropped during rollback');
 
-    // Step 4: Re-apply (Re-creates indexes cleanly)
-    executeTsqlBlock(migrationSql);
-    assert.equal(sysIndexes.size, 7);
+    // Step 4: Re-apply migration to restore performance indexes for system operations
+    await db.query(migrationSql);
+    const countAfterFinalApply = await querySysIndexesCount();
+    assert.equal(countAfterFinalApply, 7, 'All 7 indexes must be successfully restored on final apply');
   });
 });

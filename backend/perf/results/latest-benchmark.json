@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "runner": "backend/perf/run-query-benchmarks.js",
+    "database": "teaplus_db",
+    "executed_at": "2026-08-17T08:20:54.753Z",
+    "query_count": 6
+  },
+  "results": [
+    {
+      "name": "admin-orders",
+      "rowCount": 50,
+      "elapsedMs": 24.55,
+      "wallClockMs": 24.55,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.725Z",
+      "status": "success"
+    },
+    {
+      "name": "customer-history",
+      "rowCount": 6,
+      "elapsedMs": 6.25,
+      "wallClockMs": 6.25,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.732Z",
+      "status": "success"
+    },
+    {
+      "name": "dashboard",
+      "rowCount": 1,
+      "elapsedMs": 3.87,
+      "wallClockMs": 3.87,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.736Z",
+      "status": "success"
+    },
+    {
+      "name": "kds-orders",
+      "rowCount": 66,
+      "elapsedMs": 4.97,
+      "wallClockMs": 4.97,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.741Z",
+      "status": "success"
+    },
+    {
+      "name": "payos-expiry",
+      "rowCount": 0,
+      "elapsedMs": 6.87,
+      "wallClockMs": 6.87,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.748Z",
+      "status": "success"
+    },
+    {
+      "name": "voucher-usage",
+      "rowCount": 1,
+      "elapsedMs": 3.53,
+      "wallClockMs": 3.53,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 0,
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T08:20:54.752Z",
+      "status": "success"
+    }
+  ]
+}

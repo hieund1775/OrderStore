@@ -1,19 +1,18 @@
 {
-  "provenance": {
-    "engine": "Microsoft SQL Server",
-    "measured_by": "backend/perf/run-query-benchmarks.js",
-    "seed_generator": "backend/perf/seed-performance-data.js (Mulberry32 PRNG)",
-    "dataset_orders": 100000,
-    "seed": 42
+  "specification_metadata": {
+    "type": "Structural Baseline Specification",
+    "target_database": "Microsoft SQL Server 2019",
+    "queries_directory": "backend/perf/queries/",
+    "measured_runs_artifact": "backend/perf/results/latest-benchmark.json"
   },
-  "baseline_metrics": [
+  "baseline_query_patterns": [
     {
       "case": "Dashboard Summary",
       "query_file": "backend/perf/queries/dashboard.sql",
       "entry_point": "GET /admin/dashboard/summary?branch_id=1",
       "pattern_before": "CAST(created_at AS DATE) = CAST(GETDATE() AS DATE)",
       "query_count": 1,
-      "scan_characteristic": "Non-sargable predicate forces Clustered Index Scan across orders"
+      "scan_characteristic": "Non-sargable CAST predicate forces Clustered Index Scan across orders"
     },
     {
       "case": "Dashboard Revenue Range",
@@ -21,7 +20,7 @@
       "entry_point": "GET /admin/dashboard/revenue?from=...&to=...",
       "pattern_before": "CAST(created_at AS DATE) BETWEEN ? AND ?",
       "query_count": 1,
-      "scan_characteristic": "Non-sargable predicate forces full table scan on date range"
+      "scan_characteristic": "Non-sargable CAST predicate forces full table scan on date range"
     },
     {
       "case": "Admin Orders List",
@@ -36,7 +35,7 @@
       "query_file": "backend/perf/queries/kds-orders.sql",
       "entry_point": "GET /admin/kitchen/orders",
       "pattern_before": "N+1 loop: 1 order query + N item queries + M topping queries",
-      "query_count": "51 queries for 50 orders",
+      "query_count": "51 queries for 50 orders (1 order + 50 items)",
       "scan_characteristic": "Multiple round-trips over network"
     },
     {
@@ -44,7 +43,7 @@
       "query_file": "backend/perf/queries/customer-history.sql",
       "entry_point": "GET /api/users/:id/orders",
       "pattern_before": "N+1 loop: 1 order query + N item queries + M topping queries",
-      "query_count": "51 queries for 50 orders",
+      "query_count": "51 queries for 50 orders (1 order + 50 items)",
       "scan_characteristic": "Multiple round-trips over network"
     },
     {

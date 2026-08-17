@@ -1,6 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePerfGuard, generateDeterministicOrders } from '../perf/seed-performance-data.js';
+import db from '../config/db.js';
+import {
+  validatePerfGuard,
+  generateDeterministicOrders,
+  bootstrapPrerequisiteData,
+  seedOrdersIntoDatabase,
+  cleanupPerformanceDataset,
+  VALID_SCHEMA_ORDER_TYPES,
+  VALID_SCHEMA_PAYMENT_STATUSES,
+  VALID_SCHEMA_PAYMENT_METHODS,
+  VALID_SCHEMA_ORDER_STATUSES,
+} from '../perf/seed-performance-data.js';
 import { parseStatisticsIo, benchmarkQuery } from '../perf/run-query-benchmarks.js';
 
 describe('Performance Benchmark Harness & Guards Suite', () => {
@@ -39,6 +50,32 @@ describe('Performance Benchmark Harness & Guards Suite', () => {
       allowDbEnv: 'custom_db',
     });
     assert.equal(validExplicit, true);
+  });
+
+  it('verifies generateDeterministicOrders aligns 100% with production schema CHECK constraints', () => {
+    const orders = generateDeterministicOrders({ seed: 777, count: 100, days: 30, prefix: 'TP_TEST' });
+    assert.equal(orders.length, 100);
+
+    for (const order of orders) {
+      assert.ok(
+        VALID_SCHEMA_ORDER_TYPES.includes(order.order_type),
+        `Invalid order_type: ${order.order_type}`
+      );
+      assert.ok(
+        VALID_SCHEMA_PAYMENT_STATUSES.includes(order.payment_status),
+        `Invalid payment_status: ${order.payment_status}`
+      );
+      assert.ok(
+        VALID_SCHEMA_PAYMENT_METHODS.includes(order.payment_method),
+        `Invalid payment_method: ${order.payment_method}`
+      );
+      assert.ok(
+        VALID_SCHEMA_ORDER_STATUSES.includes(order.initial_status),
+        `Invalid initial_status: ${order.initial_status}`
+      );
+      assert.ok(order.total >= 0, 'Total must be non-negative');
+      assert.ok(order.items.length >= 1, 'Each order must have at least 1 item');
+    }
   });
 
   it('generates reproducible and deterministic datasets given the same seed', () => {
@@ -81,9 +118,58 @@ SQL Server Execution Times:
 
     await assert.rejects(
       async () => {
-        await benchmarkQuery({ name: 'test_broken', sqlText: 'SELECT 1', params: [], q: brokenQuery });
+        await benchmarkQuery({ name: 'test_broken', sqlText: 'SELECT 1', params: [], qWithStats: brokenQuery });
       },
       /SQL Server syntax error/
     );
+  });
+
+  it('executes real database smoke seed (20 orders) and asserts relational integrity', async () => {
+    const smokePrefix = 'SMK';
+
+    // Cleanup previous smoke test records
+    await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+
+    // Step 1: Bootstrap prerequisite data (FK stores, products, users, promotions)
+    await bootstrapPrerequisiteData(db.query);
+
+    // Step 2: Generate 20 deterministic orders
+    const orders = generateDeterministicOrders({ seed: 12345, count: 20, days: 5, prefix: smokePrefix });
+    assert.equal(orders.length, 20);
+
+    // Step 3: Insert into SQL Server in transactional batches
+    const { insertedOrders } = await seedOrdersIntoDatabase(orders, db.transaction);
+    assert.equal(insertedOrders, 20);
+
+    // Step 4: Query back from SQL Server and assert relational counts
+    const [orderRows] = await db.query(
+      'SELECT id, order_code, total FROM orders WHERE order_code LIKE ?',
+      [`${smokePrefix}%`]
+    );
+    assert.equal(orderRows.length, 20);
+
+    const [statusRows] = await db.query(
+      `SELECT osh.id FROM order_status_history osh
+       JOIN orders o ON osh.order_id = o.id
+       WHERE o.order_code LIKE ?`,
+      [`${smokePrefix}%`]
+    );
+    assert.equal(statusRows.length, 20, 'Each seeded order must have an order_status_history record');
+
+    const [itemRows] = await db.query(
+      `SELECT oi.id FROM order_items oi
+       JOIN orders o ON oi.order_id = o.id
+       WHERE o.order_code LIKE ?`,
+      [`${smokePrefix}%`]
+    );
+    assert.ok(itemRows.length >= 20, 'Seeded items must exist for all orders');
+
+    // Step 5: Clean up smoke test dataset
+    await cleanupPerformanceDataset({ prefix: smokePrefix, q: db.query });
+    const [postCleanupRows] = await db.query(
+      'SELECT id FROM orders WHERE order_code LIKE ?',
+      [`${smokePrefix}%`]
+    );
+    assert.equal(postCleanupRows.length, 0, 'Smoke test records must be cleaned up completely');
   });
 });

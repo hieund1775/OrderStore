@@ -1,12 +1,11 @@
 {
-  "provenance": {
-    "engine": "Microsoft SQL Server",
-    "measured_by": "backend/perf/run-query-benchmarks.js",
-    "seed_generator": "backend/perf/seed-performance-data.js (Mulberry32 PRNG)",
-    "dataset_orders": 100000,
-    "seed": 42
+  "specification_metadata": {
+    "type": "Structural Optimization Specification",
+    "target_database": "Microsoft SQL Server 2019",
+    "migration_script": "backend/database/phase-2-performance-indexes.sql",
+    "measured_runs_artifact": "backend/perf/results/latest-benchmark.json"
   },
-  "optimized_metrics": [
+  "optimized_query_patterns": [
     {
       "case": "Dashboard Summary",
       "entry_point": "GET /admin/dashboard/summary?branch_id=1",

@@ -90,6 +90,28 @@ async function run(holder, string, params = []) {
   return [result.recordset || [], result.rowsAffected?.[0] ?? 0];
 }
 
+async function runWithStats(holder, string, params = []) {
+  const req = holder.request();
+  const infoMessages = [];
+  req.on('infoMessage', (info) => {
+    if (info?.message) {
+      infoMessages.push(info.message);
+    }
+  });
+
+  const compiled = compileQuery(string, params, isTrusted);
+  for (const input of compiled.inputs) {
+    req.input(input.name, input.value);
+  }
+  const batchSql = `SET STATISTICS IO, TIME ON;\n${compiled.sqlText}`;
+  const result = await req.query(batchSql);
+  return {
+    recordset: result.recordset || [],
+    rowsAffected: result.rowsAffected?.[0] ?? 0,
+    infoMessages,
+  };
+}
+
 const db = {
   setMockAdapter(adapter) {
     mockAdapter = adapter;
@@ -103,6 +125,10 @@ const db = {
   async query(string, params = []) {
     if (mockAdapter?.query) return mockAdapter.query(string, params);
     return run(await getPool(), string, params);
+  },
+  async queryWithStats(string, params = []) {
+    if (mockAdapter?.queryWithStats) return mockAdapter.queryWithStats(string, params);
+    return runWithStats(await getPool(), string, params);
   },
   /**
    * Chạy fn(tx) trong một SQL Server transaction.
