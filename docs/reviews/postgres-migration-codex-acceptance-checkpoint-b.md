@@ -1,6 +1,6 @@
 # Checkpoint B — Codex acceptance and remediation
 
-Date: 2026-08-17  
+Date: 2026-08-17
 Reviewed AGY commit: `ec24b1c`
 
 ## Decision
@@ -42,4 +42,3 @@ The skipped tests are deliberately protected live tests: adapter/transaction, ze
 2. Set `TEST_DATABASE_URL`, `POSTGRES_INTEGRATION=1`, and, for a Supabase database named `postgres`, set `POSTGRES_TEST_ALLOWED_HOSTS` to that exact test-project host.
 3. Run `npm.cmd run test:postgres` and require all three live suites to pass.
 4. Keep production on SQL Server through Checkpoint C/D query conversion and data-migration verification; only then perform staged Render cutover with backups and rollback.
-

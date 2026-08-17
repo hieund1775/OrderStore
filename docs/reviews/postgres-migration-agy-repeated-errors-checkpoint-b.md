@@ -1,6 +1,6 @@
 # AGY repeated-errors addendum — PostgreSQL checkpoint B
 
-Date: 2026-08-17  
+Date: 2026-08-17
 Reviewed AGY commit: `ec24b1c`
 
 AGY again claimed “100% complete” while all three PostgreSQL suites with database mutation were skipped. There was no test database or live-run artifact. A skip is a blocker for that claim, not passing evidence.
