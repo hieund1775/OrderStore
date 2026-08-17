@@ -11,6 +11,8 @@ import { validateOrderCreationInput, buildPublicLookupDto } from '../services/pu
 import { evaluateOrderTransition } from '../services/order-transition-policy.js';
 import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
 import { batchLoadOrderDetails } from '../services/order-batch-loader.js';
+import catalogRepository from '../repositories/postgres/catalog.js';
+import storesRepository from '../repositories/postgres/stores.js';
 
 const router = Router();
 
@@ -53,18 +55,8 @@ router.get('/health', (req, res) => {
  */
 router.get('/products', async (req, res) => {
   try {
-    const { category, search, tag } = req.query;
-    let sql = `SELECT p.*, c.name AS category_name, c.slug AS category_slug
-      FROM products p JOIN categories c ON p.category_id = c.id
-      WHERE p.is_available = 1 AND c.is_visible = 1`;
-    const params = [];
-    if (category) { sql += ' AND c.slug = ?'; params.push(category); }
-    if (search)   { sql += ' AND (p.name LIKE ? OR p.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
-    if (tag)      { sql += ' AND p.tags LIKE ?'; params.push(`%"${tag}"%`); }
-    sql += ' ORDER BY c.sort_order, p.id';
-    const [rows] = await db.query(sql, params);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(await catalogRepository.listProducts(req.query));
+  } catch (err) { console.error('Public products read failed:', err.message); res.status(500).json({ error: 'Không thể tải sản phẩm lúc này' }); }
 });
 
 /**
@@ -86,13 +78,10 @@ router.get('/products', async (req, res) => {
  */
 router.get('/products/:slug', async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT p.*, c.name AS category_name FROM products p JOIN categories c ON p.category_id = c.id WHERE p.slug = ?',
-      [req.params.slug]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Không tìm thấy sản phẩm' });
-    res.json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const product = await catalogRepository.findProductBySlug(req.params.slug);
+    if (!product) return res.status(404).json({ error: 'Không tìm thấy sản phẩm' });
+    res.json(product);
+  } catch (err) { console.error('Public product detail failed:', err.message); res.status(500).json({ error: 'Không thể tải sản phẩm lúc này' }); }
 });
 
 /**
@@ -106,8 +95,8 @@ router.get('/products/:slug', async (req, res) => {
  *         description: Danh sách danh mục
  */
 router.get('/categories', async (req, res) => {
-  try { const [r] = await db.query('SELECT * FROM categories WHERE is_visible = 1 ORDER BY sort_order'); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await catalogRepository.listCategories()); }
+  catch (err) { console.error('Public categories read failed:', err.message); res.status(500).json({ error: 'Không thể tải danh mục lúc này' }); }
 });
 
 /**
@@ -138,11 +127,12 @@ router.get('/categories', async (req, res) => {
  *     summary: Danh sách topping
  *     responses: { 200: { description: OK } }
  */
-router.get('/options/sizes',    async (req, res) => { const [r] = await db.query('SELECT * FROM size_options ORDER BY sort_order'); res.json(r); });
-router.get('/options/bases',    async (req, res) => { const [r] = await db.query('SELECT * FROM base_options ORDER BY sort_order'); res.json(r); });
-router.get('/options/sugars',   async (req, res) => { const [r] = await db.query('SELECT * FROM sugar_options ORDER BY sort_order'); res.json(r); });
-router.get('/options/ices',     async (req, res) => { const [r] = await db.query('SELECT * FROM ice_options ORDER BY sort_order'); res.json(r); });
-router.get('/options/toppings', async (req, res) => { const [r] = await db.query('SELECT * FROM toppings WHERE is_available = 1 ORDER BY sort_order'); res.json(r); });
+for (const optionKind of ['sizes', 'bases', 'sugars', 'ices', 'toppings']) {
+  router.get(`/options/${optionKind}`, async (req, res) => {
+    try { res.json(await catalogRepository.listOptions(optionKind)); }
+    catch (err) { console.error(`Public ${optionKind} options read failed:`, err.message); res.status(500).json({ error: 'Không thể tải tùy chọn lúc này' }); }
+  });
+}
 
 /**
  * @swagger
@@ -166,19 +156,12 @@ router.get('/options/toppings', async (req, res) => { const [r] = await db.query
  */
 router.get('/stores', async (req, res) => {
   try {
-    const { city, district } = req.query;
-    let sql = 'SELECT * FROM stores WHERE is_active = 1';
-    const params = [];
-    if (city)     { sql += ' AND city = ?';    params.push(city); }
-    if (district) { sql += ' AND district = ?'; params.push(district); }
-    sql += ' ORDER BY id';
-    const [rows] = await db.query(sql, params);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(await storesRepository.listActiveStores(req.query));
+  } catch (err) { console.error('Public stores read failed:', err.message); res.status(500).json({ error: 'Không thể tải cửa hàng lúc này' }); }
 });
 router.get('/stores/districts', async (req, res) => {
-  try { const [r] = await db.query('SELECT DISTINCT city, district FROM stores WHERE is_active = 1 ORDER BY city, district'); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await storesRepository.listActiveDistricts()); }
+  catch (err) { console.error('Public store districts read failed:', err.message); res.status(500).json({ error: 'Không thể tải khu vực lúc này' }); }
 });
 
 /**
@@ -238,8 +221,8 @@ router.get('/promotions', async (req, res) => {
  *     responses: { 201: { description: OK } }
  */
 router.get('/jobs', async (req, res) => {
-  try { const [r] = await db.query('SELECT * FROM jobs WHERE is_active = 1 ORDER BY id'); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await catalogRepository.listJobs()); }
+  catch (err) { console.error('Public jobs read failed:', err.message); res.status(500).json({ error: 'Không thể tải tuyển dụng lúc này' }); }
 });
 router.post('/jobs/:id/apply', async (req, res) => {
   try {
@@ -266,12 +249,12 @@ router.post('/jobs/:id/apply', async (req, res) => {
  *     responses: { 200: { description: OK } }
  */
 router.get('/tiers', async (req, res) => {
-  try { const [r] = await db.query('SELECT * FROM tier_rules ORDER BY min_points'); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await catalogRepository.listTiers()); }
+  catch (err) { console.error('Public tiers read failed:', err.message); res.status(500).json({ error: 'Không thể tải hạng thành viên lúc này' }); }
 });
 router.get('/rewards', async (req, res) => {
-  try { const [r] = await db.query('SELECT * FROM rewards WHERE is_active = 1 ORDER BY points_cost'); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await catalogRepository.listRewards()); }
+  catch (err) { console.error('Public rewards read failed:', err.message); res.status(500).json({ error: 'Không thể tải quà đổi thưởng lúc này' }); }
 });
 
 /**
@@ -450,9 +433,8 @@ router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, r
 
 router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const [r] = await db.query('SELECT w.*, p.name AS product_name, p.slug, p.price, p.image_url, p.rating FROM wishlists w JOIN products p ON w.product_id = p.id WHERE w.user_id = ?', [req.params.id]);
-    res.json(r);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(await catalogRepository.listWishlist(req.params.id));
+  } catch (err) { console.error('Public wishlist read failed:', err.message); res.status(500).json({ error: 'Không thể tải danh sách yêu thích lúc này' }); }
 });
 
 router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf, async (req, res) => {
@@ -490,12 +472,8 @@ router.get('/users/:id/vouchers', authenticate, requireCustomerSelf, async (req,
 
 router.get('/products/:id/reviews', async (req, res) => {
   try {
-    const [r] = await db.query(
-      'SELECT r.*, u.fullname, u.avatar_url FROM reviews r JOIN users u ON r.user_id = u.id WHERE r.product_id = ? ORDER BY r.created_at DESC',
-      [req.params.id]
-    );
-    res.json(r);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(await catalogRepository.listProductReviews(req.params.id));
+  } catch (err) { console.error('Public reviews read failed:', err.message); res.status(500).json({ error: 'Không thể tải đánh giá lúc này' }); }
 });
 
 router.post('/products/:id/reviews', authenticate, async (req, res) => {
@@ -530,11 +508,8 @@ router.post('/products/:id/reviews', authenticate, async (req, res) => {
 
 router.get('/search/suggestions', async (req, res) => {
   try {
-    const { q } = req.query;
-    const [products] = await db.query("SELECT DISTINCT TOP 6 name FROM products WHERE is_available = 1 AND name LIKE ?", [`%${q || ''}%`]);
-    const [toppings] = await db.query("SELECT DISTINCT TOP 3 name FROM toppings WHERE is_available = 1 AND name LIKE ?", [`%${q || ''}%`]);
-    res.json({ products: products.map(p => p.name), toppings: toppings.map(t => t.name) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(await catalogRepository.listSearchSuggestions(req.query.q));
+  } catch (err) { console.error('Public search suggestions read failed:', err.message); res.status(500).json({ error: 'Không thể tải gợi ý tìm kiếm lúc này' }); }
 });
 
 // ═══════════ ORDER LOOKUP (mã đơn / QR bill) ═══════════
@@ -930,4 +905,4 @@ router.post('/orders', async (req, res) => {
 });
 
 
-export default router;
+export default router;

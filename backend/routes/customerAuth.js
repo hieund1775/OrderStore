@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import db from '../config/db.js';
 import { OAuth2Client } from 'google-auth-library';
 import { signCustomerToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode, normalizePhone } from '../services/otp-service.js';
+import usersRepository from '../repositories/postgres/users.js';
+import { IdentityError } from '../repositories/postgres/errors.js';
 
 const router = Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -57,27 +58,8 @@ router.post('/verify-otp', async (req, res, next) => {
       return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
     }
 
-    // Search user in database
-    const [existingUsers] = await db.query(
-      'SELECT TOP 1 * FROM users WHERE phone = ? AND is_admin = 0',
-      [cleanPhone]
-    );
-
-    let user = existingUsers && existingUsers[0];
-
-    if (!user) {
-      const displayName = (fullname && fullname.trim()) ? fullname.trim() : `Khách hàng ${cleanPhone.slice(-4)}`;
-      await db.query(
-        'INSERT INTO users (phone, fullname, is_admin) VALUES (?, ?, 0)',
-        [cleanPhone, displayName]
-      );
-
-      const [newUsers] = await db.query(
-        'SELECT TOP 1 * FROM users WHERE phone = ? AND is_admin = 0',
-        [cleanPhone]
-      );
-      user = newUsers && newUsers[0];
-    }
+    const displayName = (fullname && fullname.trim()) ? fullname.trim() : `Khách hàng ${cleanPhone.slice(-4)}`;
+    const user = await usersRepository.findOrCreateCustomerByPhone({ phone: cleanPhone, fullname: displayName });
 
     if (!user) {
       return res.status(500).json({ error: 'Không thể khởi tạo tài khoản khách hàng' });
@@ -96,6 +78,9 @@ router.post('/verify-otp', async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err instanceof IdentityError) {
+      return res.status(err.status).json({ error: err.message });
+    }
     next(err);
   }
 });
@@ -129,23 +114,11 @@ router.post('/google', async (req, res, next) => {
     const email = String(payload.email).toLowerCase();
     const fullname = payload.name || email.split('@')[0];
 
-    let [users] = await db.query(
-      'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
-      [email]
-    );
-    let user = users[0];
-
-    if (!user) {
-      await db.query(
-        'INSERT INTO users (phone, fullname, email, is_admin) VALUES (NULL, ?, ?, 0)',
-        [fullname, email]
-      );
-      [users] = await db.query(
-        'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
-        [email]
-      );
-      user = users[0];
-    }
+    const user = await usersRepository.findOrCreateGoogleCustomer({
+      subject: String(payload.sub),
+      email,
+      fullname,
+    });
 
     if (!user) {
       return res.status(500).json({ error: 'Không thể khởi tạo tài khoản Google' });
@@ -164,6 +137,9 @@ router.post('/google', async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err instanceof IdentityError) {
+      return res.status(err.status).json({ error: err.message });
+    }
     next(err);
   }
 });

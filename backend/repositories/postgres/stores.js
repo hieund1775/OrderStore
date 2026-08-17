@@ -1,0 +1,31 @@
+import postgresDb from '../../config/db-postgres.js';
+
+export function createStoresRepository(database = postgresDb) {
+  return {
+    async listActiveStores({ city, district } = {}) {
+      let sql = 'SELECT * FROM stores WHERE is_active = TRUE';
+      const params = [];
+      if (city) {
+        params.push(city);
+        sql += ` AND city = $${params.length}`;
+      }
+      if (district) {
+        params.push(district);
+        sql += ` AND district = $${params.length}`;
+      }
+      sql += ' ORDER BY id';
+      const [rows] = await database.query(sql, params);
+      return rows;
+    },
+
+    async listActiveDistricts() {
+      const [rows] = await database.query(
+        'SELECT DISTINCT city, district FROM stores WHERE is_active = TRUE ORDER BY city, district',
+      );
+      return rows;
+    },
+  };
+}
+
+export const storesRepository = createStoresRepository();
+export default storesRepository;

@@ -28,14 +28,14 @@ export async function seedDemoData({ customUrl = null, pool = null } = {}) {
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, address = EXCLUDED.address, is_active = EXCLUDED.is_active;
     `);
     await client.query(`
-      INSERT INTO users (id, fullname, phone, email, tier, points, is_admin, admin_role, admin_branch_id)
+      INSERT INTO users (id, fullname, phone, email, password_hash, tier, points, is_admin, admin_role, admin_branch_id)
       VALUES
-        (1, 'Super Administrator', '0909000001', 'superadmin@teaplus.vn', 'Kim Cương', 1000, true, 'super', NULL),
-        (2, 'Quản lý Chi nhánh 1', '0909000002', 'manager1@teaplus.vn', 'Vàng', 500, true, 'manager', 1),
-        (3, 'Thu ngân Chi nhánh 1', '0909000003', 'cashier1@teaplus.vn', 'Bạc', 200, true, 'cashier', 1),
-        (4, 'Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', 'Đồng', 0, true, 'kitchen', 1),
-        (5, 'Nguyễn Khách Hàng', '0901234567', 'customer@example.com', 'Vàng', 350, false, NULL, NULL)
-      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
+        (1, 'Super Administrator', '0909000001', 'superadmin@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Kim Cương', 1000, true, 'super', NULL),
+        (2, 'Quản lý Chi nhánh 1', '0909000002', 'manager1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Vàng', 500, true, 'manager', 1),
+        (3, 'Thu ngân Chi nhánh 1', '0909000003', 'cashier1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Bạc', 200, true, 'cashier', 1),
+        (4, 'Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'kitchen', 1),
+        (5, 'Nguyễn Khách Hàng', '0901234567', 'customer@example.com', NULL, 'Vàng', 350, false, NULL, NULL)
+      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, password_hash = EXCLUDED.password_hash, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
     `);
     await client.query(`
       INSERT INTO categories (id, name, slug, sort_order, is_visible) VALUES

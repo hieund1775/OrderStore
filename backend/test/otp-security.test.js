@@ -83,6 +83,7 @@ describe('OTP Security & Provider Service Suite', () => {
         requestOtpCode({
           phone: '0909999999',
           provider: { async sendSmsOtp() { return { success: true }; } },
+          repository: null,
         }),
         /Persistent OTP storage is not configured/
       );

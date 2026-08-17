@@ -21,7 +21,7 @@ Route public chỉ gọi hai repository này cho endpoint đã liệt kê. Các 
 
 - Mọi query dùng PostgreSQL `$n` parameters; không có helper dịch T-SQL hoặc nội suy input.
 - Boolean PostgreSQL được dùng trực tiếp; `ILIKE` thay `LIKE` cho search không phân biệt hoa thường; `LIMIT` thay `TOP`.
-- Search tag đọc JSONB nếu dữ liệu là JSON hợp lệ, nhưng migration/data rehearsal phải chuẩn hóa tags trước staging. Endpoint không thêm filter JSON mơ hồ khi tag rỗng.
+- `products.tags` giữ kiểu `TEXT` tương thích schema hiện tại; tag filter dùng pattern chuỗi JSON (`%"tag"%`) và không đổi format dữ liệu trong đợt này.
 - Danh sách và object giữ trường, status code và thứ tự sort hiện có. Chi tiết sản phẩm không thấy vẫn trả `404 { error: 'Không tìm thấy sản phẩm' }`.
 - Endpoint public không trả raw PostgreSQL error; lỗi hạ tầng được chuyển qua error boundary hoặc message 500 chung.
 

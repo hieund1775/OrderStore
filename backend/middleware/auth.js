@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
+import usersRepository from '../repositories/postgres/users.js';
 
 const SECRET = JWT_SECRET;
 
@@ -26,6 +27,7 @@ export function signToken(user) {
       phone: user.phone,
       role: user.admin_role || 'super',
       branch_id: user.admin_branch_id ?? null,
+      token_version: user.token_version ?? 0,
     },
     SECRET,
     { expiresIn: getExpirySeconds() },
@@ -39,18 +41,26 @@ export function signCustomerToken(user) {
       id: user.id,
       phone: user.phone,
       role: 'customer',
+      token_version: user.token_version ?? 0,
     },
     SECRET,
     { expiresIn: '30d' },
   );
 }
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Thiếu token xác thực' });
   try {
-    req.user = jwt.verify(token, SECRET);
+    const claims = jwt.verify(token, SECRET);
+    if (process.env.AUTH_IDENTITY_POSTGRES === '1') {
+      const currentUser = await usersRepository.findActiveUserById(claims.sub);
+      if (!currentUser || currentUser.token_version !== (claims.token_version ?? 0)) {
+        return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+      }
+    }
+    req.user = claims;
     return next();
   } catch {
     return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });

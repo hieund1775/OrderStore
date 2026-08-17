@@ -20,7 +20,7 @@ Production không chuyển traffic sang PostgreSQL trước khi staging riêng c
 
 `POST /admin/login` tìm admin active theo số điện thoại từ PostgreSQL, xác thực bcrypt, rồi phát JWT giữ payload hiện có và thêm `token_version`. `GET /admin/me` truy vấn lại user PostgreSQL.
 
-`authenticate` xác minh chữ ký và hạn JWT, sau đó ở protected session boundary tải user hiện tại từ PostgreSQL. Token bị từ chối nếu user không tồn tại, không active, hoặc `token_version` không khớp. Quy tắc role vẫn dùng claim đã xác thực sau bước kiểm tra này.
+`authenticate` xác minh chữ ký và hạn JWT. Trong PostgreSQL staging (`AUTH_IDENTITY_POSTGRES=1`), protected session boundary tải user hiện tại từ PostgreSQL; token bị từ chối nếu user không tồn tại, không active, hoặc `token_version` không khớp. Cờ này giữ các domain SQL Server chưa chuyển hoạt động trong thời gian staged migration; khi auth cutover, cờ là bắt buộc. Quy tắc role vẫn dùng claim đã xác thực sau bước kiểm tra này.
 
 ### OTP khách hàng
 
