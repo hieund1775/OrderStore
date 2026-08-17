@@ -32,8 +32,10 @@ if (!isTrusted) {
 }
 
 let pool;
+let mockAdapter = null;
 
 async function getPool() {
+  if (mockAdapter?.getPool) return mockAdapter.getPool();
   if (!pool) {
     pool = await sql.connect(config);
     console.log(`✅ SQL Server: ${server}/${config.database}`);
@@ -67,10 +69,17 @@ async function run(holder, string, params = []) {
 }
 
 const db = {
+  setMockAdapter(adapter) {
+    mockAdapter = adapter;
+  },
+  resetMockAdapter() {
+    mockAdapter = null;
+  },
   async getPool() {
     return getPool();
   },
   async query(string, params = []) {
+    if (mockAdapter?.query) return mockAdapter.query(string, params);
     return run(await getPool(), string, params);
   },
   /**
@@ -79,6 +88,7 @@ const db = {
    * Có lỗi -> ROLLBACK, thành công -> COMMIT.
    */
   async transaction(fn) {
+    if (mockAdapter?.transaction) return mockAdapter.transaction(fn);
     const p = await getPool();
     const tx = new sql.Transaction(p);
     await tx.begin();

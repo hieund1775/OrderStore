@@ -1,8 +1,14 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import db from '../config/db.js';
+import { JWT_SECRET } from '../config/env.js';
+import { authenticate } from '../middleware/auth.js';
+import { ScopeError } from '../middleware/branch-scope.js';
 import { calcLineTotals, validateVoucher, consumeVoucher, generateOrderCode } from '../services/price-engine.js';
 import { createPaymentLinkForOrder, isPayOSConfigured } from '../services/payos.js';
+import { validateOrderCreationInput, buildPublicLookupDto } from '../services/public-dto.js';
+import { evaluateOrderTransition } from '../services/order-transition-policy.js';
 
 const router = Router();
 
@@ -372,7 +378,19 @@ router.get('/rewards', async (req, res) => {
  *         schema: { type: string }
  *     responses: { 200: { description: OK } }
  */
-router.get('/users/:id', async (req, res) => {
+function requireCustomerSelf(req, res, next) {
+  const requestedId = Number(req.params.id);
+  const authUserId = Number(req.user?.id || req.user?.sub);
+  if (!authUserId) {
+    return res.status(401).json({ error: 'Chưa xác thực người dùng' });
+  }
+  if (requestedId !== authUserId && req.user?.role !== 'super') {
+    return res.status(403).json({ error: 'Không có quyền truy cập dữ liệu của người dùng khác' });
+  }
+  next();
+}
+
+router.get('/users/:id', authenticate, requireCustomerSelf, async (req, res) => {
   try {
     const [rows] = await db.query(
       'SELECT id, fullname, phone, email, avatar_url, address, tier, points, total_spent, created_at FROM users WHERE id = ? AND is_admin = 0 AND is_active = 1',
@@ -383,23 +401,9 @@ router.get('/users/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/users/:id/orders', async (req, res) => {
+router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Vui lòng đăng nhập để xem lịch sử đơn hàng' });
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'teaplus-dev-secret-change-me');
-    } catch {
-      return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
-    }
     const requestedId = Number(req.params.id);
-    const userId = Number(decoded.id || decoded.sub);
-    if (requestedId !== userId && decoded.role !== 'super') {
-      return res.status(403).json({ error: 'Bạn không có quyền xem đơn hàng của người dùng khác' });
-    }
-
     const [orders] = await db.query(`
       SELECT o.*, s.name AS store_name,
         (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC) AS current_status
@@ -421,12 +425,14 @@ router.get('/users/:id/orders', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/users/:id/wishlist', async (req, res) => {
-  try { const [r] = await db.query('SELECT w.*, p.name AS product_name, p.slug, p.price, p.image_url, p.rating FROM wishlists w JOIN products p ON w.product_id = p.id WHERE w.user_id = ?', [req.params.id]); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, async (req, res) => {
+  try {
+    const [r] = await db.query('SELECT w.*, p.name AS product_name, p.slug, p.price, p.image_url, p.rating FROM wishlists w JOIN products p ON w.product_id = p.id WHERE w.user_id = ?', [req.params.id]);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/users/:id/wishlist/:productId', async (req, res) => {
+router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf, async (req, res) => {
   try {
     const { id, productId } = req.params;
     const [existing] = await db.query('SELECT id FROM wishlists WHERE user_id = ? AND product_id = ?', [id, productId]);
@@ -440,19 +446,22 @@ router.post('/users/:id/wishlist/:productId', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/users/:id/notifications', async (req, res) => {
-  try { const [r] = await db.query('SELECT TOP 30 * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC', [req.params.id]); res.json(r); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+router.get('/users/:id/notifications', authenticate, requireCustomerSelf, async (req, res) => {
+  try {
+    const [r] = await db.query('SELECT TOP 30 * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC', [req.params.id]);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/users/:id/vouchers', async (req, res) => {
+router.get('/users/:id/vouchers', authenticate, requireCustomerSelf, async (req, res) => {
   try {
     const [r] = await db.query(`
       SELECT uv.*, p.title AS promotion_title, p.[rule], p.discount_value, p.discount_type, p.max_discount, p.min_order
       FROM user_vouchers uv LEFT JOIN promotions p ON uv.promotion_id = p.id
       WHERE uv.user_id = ? AND uv.used_at IS NULL AND (uv.expires_at IS NULL OR uv.expires_at >= CAST(GETDATE() AS DATE))
       ORDER BY uv.created_at DESC
-    `, [req.params.id]); res.json(r);
+    `, [req.params.id]);
+    res.json(r);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -461,17 +470,30 @@ router.get('/products/:id/reviews', async (req, res) => {
     const [r] = await db.query(
       'SELECT r.*, u.fullname, u.avatar_url FROM reviews r JOIN users u ON r.user_id = u.id WHERE r.product_id = ? ORDER BY r.created_at DESC',
       [req.params.id]
-    ); res.json(r);
+    );
+    res.json(r);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/products/:id/reviews', async (req, res) => {
+router.post('/products/:id/reviews', authenticate, async (req, res) => {
   try {
-    const { user_id, order_item_id, rating, comment, image_urls } = req.body;
-    if (!user_id || !rating) return res.status(400).json({ error: 'Thiếu user_id hoặc rating' });
+    const userId = Number(req.user?.id || req.user?.sub);
+    const { order_item_id, rating, comment, image_urls } = req.body;
+    if (!rating) return res.status(400).json({ error: 'Thiếu rating đánh giá' });
+
+    if (order_item_id) {
+      const [matched] = await db.query(
+        'SELECT 1 FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ? AND o.user_id = ?',
+        [order_item_id, userId]
+      );
+      if (!matched.length) {
+        return res.status(403).json({ error: 'Bạn chỉ có thể đánh giá món từ đơn hàng của chính mình' });
+      }
+    }
+
     await db.query(
       'INSERT INTO reviews (user_id, product_id, order_item_id, rating, comment, image_urls) VALUES (?,?,?,?,?,?)',
-      [user_id, req.params.id, order_item_id || null, rating, comment || null, image_urls ? JSON.stringify(image_urls) : null]
+      [userId, req.params.id, order_item_id || null, rating, comment || null, image_urls ? JSON.stringify(image_urls) : null]
     );
     const [stats] = await db.query('SELECT AVG(CAST(rating AS DECIMAL(2,1))) AS avg_rating, COUNT(*) AS cnt FROM reviews WHERE product_id = ?', [req.params.id]);
     await db.query('UPDATE products SET rating = ?, review_count = ? WHERE id = ?', [stats[0].avg_rating, stats[0].cnt, req.params.id]);
@@ -481,6 +503,7 @@ router.post('/products/:id/reviews', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 router.get('/search/suggestions', async (req, res) => {
   try {
@@ -497,58 +520,151 @@ router.get('/orders/lookup', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });
     const [rows] = await db.query(
-      `SELECT o.*, s.name AS store_name,
-        (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC) AS current_status
+      `SELECT o.id, o.order_code, o.user_id, o.store_id, o.location_name,
+              o.order_type, o.payment_method, o.payment_status,
+              o.customer_name, o.customer_phone, o.delivery_addr,
+              o.discount_amount, o.subtotal, o.total,
+              o.payment_expires_at, o.created_at,
+              s.name AS store_name,
+              (SELECT TOP 1 osh.status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC) AS current_status
        FROM orders o JOIN stores s ON o.store_id = s.id WHERE o.order_code = ?`,
       [code],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
     const order = rows[0];
+
+    let decodedToken = null;
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded?.role === 'customer') {
+          decodedToken = decoded;
+        }
+      } catch {}
+    }
+
     const [items] = await db.query(
-      `SELECT oi.*, (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id = oi.id FOR JSON PATH) AS toppings
+      `SELECT oi.product_name, oi.qty, oi.size_label,
+              oi.base_tea, oi.sugar_level, oi.ice_level, oi.note, oi.unit_price, oi.line_total,
+              (SELECT topping_name AS name, topping_price AS price FROM order_item_toppings WHERE order_item_id = oi.id FOR JSON PATH) AS toppings
        FROM order_items oi WHERE oi.order_id = ?`,
       [order.id],
     );
-    order.items = items.map((i) => {
+    const mappedItems = items.map((i) => {
       let t = [];
       try { t = JSON.parse(i.toppings || '[]'); } catch {}
-      return { ...i, toppings: t };
+      return {
+        product_name: i.product_name,
+        qty: i.qty,
+        size_label: i.size_label,
+        base_tea: i.base_tea,
+        sugar_level: i.sugar_level,
+        ice_level: i.ice_level,
+        note: i.note,
+        unit_price: i.unit_price,
+        line_total: i.line_total,
+        toppings: t,
+      };
     });
+
     const [history] = await db.query(
-      'SELECT id, status, note, created_at FROM order_status_history WHERE order_id = ? ORDER BY created_at',
+      'SELECT status, note, created_at FROM order_status_history WHERE order_id = ? ORDER BY created_at ASC, id ASC',
       [order.id],
     );
-    order.status_history = history;
-    res.json({ order });
+
+    const safeOrder = buildPublicLookupDto(order, decodedToken, mappedItems, history);
+
+    res.json({ order: safeOrder });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ═══════════ CANCEL ORDER (khách tự hủy — chỉ khi Chờ xác nhận) ═══════════
-router.post('/orders/:id/cancel', async (req, res) => {
+// ═══════════ CANCEL ORDER (khách tự hủy — timingSafeEqual & atomic) ═══════════
+export const handleCustomerCancelOrder = async (req, res) => {
   try {
-    const { reason } = req.body;
+    const { reason, cancel_token } = req.body || {};
+    const orderIdentifier = req.params.id || req.body?.order_id || req.body?.order_code;
+    const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim();
+
+    // 1) Verify customer JWT identity if logged in
+    let authUserId = null;
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded?.role === 'customer') {
+          authUserId = Number(decoded.id || decoded.sub);
+        }
+      } catch {}
+    }
+
     const result = await db.transaction(async (tx) => {
-      const [rows] = await tx.query('SELECT 1 AS x FROM orders WHERE id = ?', [req.params.id]);
-      if (rows.length === 0) throw new Error('Không tìm thấy đơn hàng');
-      const [cur] = await tx.query(
-        'SELECT TOP 1 status FROM order_status_history WHERE order_id = ? ORDER BY created_at DESC, id DESC',
-        [req.params.id],
-      );
-      if (cur[0]?.status !== 'Chờ xác nhận' && cur[0]?.status !== 'Đang chuẩn bị') {
-        throw new Error('Chỉ có thể hủy đơn đang ở trạng thái Đang chuẩn bị');
+      const isNumericId = !Number.isNaN(Number(orderIdentifier));
+      const sql = isNumericId
+        ? 'SELECT id, order_code, user_id, payment_status, cancel_token_hash FROM orders WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE id = ?'
+        : 'SELECT id, order_code, user_id, payment_status, cancel_token_hash FROM orders WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE order_code = ?';
+      const [rows] = await tx.query(sql, [orderIdentifier]);
+      if (rows.length === 0) throw new ScopeError('Không tìm thấy đơn hàng', 404);
+
+      const order = rows[0];
+
+      // Check ownership or guest cancel token
+      if (order.user_id) {
+        if (!authUserId || authUserId !== order.user_id) {
+          throw new ScopeError('Bạn không có quyền hủy đơn hàng này', 403);
+        }
+      } else {
+        // Guest order: must provide valid cancel token matching cancel_token_hash
+        if (!rawCancelToken) {
+          throw new ScopeError('Thiếu mã hủy đơn (cancellation token)', 403);
+        }
+        const providedHash = crypto.createHash('sha256').update(rawCancelToken).digest();
+        const storedHash = Buffer.from(String(order.cancel_token_hash || '').trim(), 'hex');
+        if (providedHash.length !== storedHash.length || !crypto.timingSafeEqual(providedHash, storedHash)) {
+          throw new ScopeError('Mã hủy đơn không chính xác hoặc không hợp lệ', 403);
+        }
       }
+
+      const [cur] = await tx.query(
+        'SELECT TOP 1 status FROM order_status_history WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE order_id = ? ORDER BY created_at DESC, id DESC',
+        [order.id],
+      );
+      const currentStatus = cur[0]?.status || 'Chờ xác nhận';
+
+      const transition = evaluateOrderTransition({
+        currentStatus,
+        targetStatus: 'Đã hủy',
+        role: 'customer',
+        isPaid: order.payment_status === 'paid',
+      });
+
+      if (!transition.allowed) {
+        throw new ScopeError(transition.error, transition.status || 400);
+      }
+
+      if (transition.idempotent) {
+        return { order_id: order.id, order_code: order.order_code, status: 'Đã hủy', already_cancelled: true };
+      }
+
       await tx.query(
         "INSERT INTO order_status_history (order_id, status, note, created_at) VALUES (?, N'Đã hủy', ?, GETDATE())",
-        [req.params.id, reason || 'Khách yêu cầu hủy'],
+        [order.id, reason || 'Khách yêu cầu hủy đơn'],
       );
-      await tx.query('UPDATE orders SET cancel_reason = ?, updated_at = GETDATE() WHERE id = ?', [reason || '', req.params.id]);
-      return { order_id: Number(req.params.id), status: 'Đã hủy' };
+      await tx.query('UPDATE orders SET cancel_reason = ?, updated_at = GETDATE() WHERE id = ?', [reason || 'Khách yêu cầu hủy đơn', order.id]);
+      return { order_id: order.id, order_code: order.order_code, status: 'Đã hủy' };
     });
-    res.json({ ...result, message: 'Đã hủy đơn hàng' });
+
+    res.json({ ...result, message: 'Đã hủy đơn hàng thành công' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.status || 400;
+    res.status(status).json({ error: err.message });
   }
-});
+};
+
+router.post('/orders/:id/cancel', handleCustomerCancelOrder);
+router.post('/orders/cancel', handleCustomerCancelOrder);
 
 // ═══════════ TABLE RESOLVE (QR) ═══════════
 router.get('/table/resolve', async (req, res) => {
@@ -586,50 +702,89 @@ router.post('/vouchers/apply', async (req, res) => {
 router.post('/orders', async (req, res) => {
   try {
     const {
-      store_id, table_id, order_type = 'Take-away', payment_method = 'COD',
+      store_id, table_id, order_type = 'Take-away', payment_method = 'VietQR',
       customer_name, customer_phone, delivery_addr = null,
       voucher_code = null, note = null, items = [], source = 'online',
       return_url, cancel_url,
     } = req.body;
 
-    if (!store_id || !customer_name || !customer_phone || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Thiếu thông tin đơn hàng (store_id, tên, SĐT, items)' });
+    // Validate allowed source, payment_method, order_type via production validator
+    const inputValidation = validateOrderCreationInput(req.body);
+    if (!inputValidation.valid) {
+      return res.status(400).json({ error: inputValidation.error });
     }
 
-    if (order_type === 'Delivery' && (!delivery_addr || !delivery_addr.trim())) {
+    const normalizedSource = source || 'online';
+    const normalizedOrderType = order_type || 'Take-away';
+    const normalizedPaymentMethod = payment_method || 'VietQR';
+
+    if (!store_id || !customer_name || !customer_phone || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Thiếu thông tin đơn hàng bắt buộc (store_id, tên, SĐT, danh sách món)' });
+    }
+
+    if (normalizedOrderType === 'Delivery' && (!delivery_addr || !delivery_addr.trim())) {
       return res.status(400).json({ error: 'Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng' });
     }
 
-    // Determine initial payment_status & payment_provider
-    let payment_status = 'unpaid';
+    // Determine initial payment_status & payment_provider based on source and method
+    const payment_status = 'unpaid';
     let payment_provider = 'cod';
 
-    if (payment_method === 'VietQR') {
-      if (isPayOSConfigured()) {
-        payment_provider = 'payos';
-      } else {
+    if (normalizedSource === 'pos') {
+      if (normalizedPaymentMethod === 'VietQR') {
         payment_provider = 'manual_vietqr';
+      } else if (normalizedPaymentMethod === 'COD') {
+        payment_provider = 'cod';
+      } else {
+        payment_provider = normalizedPaymentMethod.toLowerCase();
       }
-    } else if (payment_method === 'COD') {
-      payment_provider = 'cod';
     } else {
-      payment_provider = payment_method.toLowerCase();
+      // source === 'online'
+      if (normalizedPaymentMethod === 'VietQR') {
+        if (isPayOSConfigured()) {
+          payment_provider = 'payos';
+        } else {
+          return res.status(400).json({ error: 'Cổng thanh toán trực tuyến PayOS chưa được kích hoạt trên hệ thống' });
+        }
+      } else if (normalizedPaymentMethod === 'COD') {
+        payment_provider = 'cod';
+      } else {
+        payment_provider = normalizedPaymentMethod.toLowerCase();
+      }
     }
 
-    // Trích xuất customer user_id từ JWT Token nếu có (Zero-Trust)
+    // Trích xuất customer user_id từ JWT Token nếu có (BẮT BUỘC role === 'customer')
     let customerUserId = null;
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'teaplus-dev-secret-change-me');
-        if (decoded && (decoded.id || decoded.sub)) {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded && decoded.role === 'customer' && (decoded.id || decoded.sub)) {
           customerUserId = Number(decoded.id || decoded.sub);
         }
       } catch {}
     }
 
+    // Generate guest cancellation token if guest order
+    let rawCancelToken = null;
+    let cancelTokenHash = null;
+    if (!customerUserId && normalizedSource === 'online') {
+      rawCancelToken = crypto.randomBytes(32).toString('hex');
+      cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
+    }
+
     const result = await db.transaction(async (tx) => {
+      // 0) Validate table belongs to store and is active
+      let location_name = null;
+      if (table_id) {
+        const [tables] = await tx.query('SELECT id, name, store_id, is_active FROM tables WHERE id = ? AND store_id = ? AND is_active = 1', [table_id, store_id]);
+        if (!tables.length) {
+          throw new Error('Bàn không tồn tại, không thuộc chi nhánh đã chọn hoặc đã ngưng hoạt động');
+        }
+        location_name = tables[0].name;
+      }
+
       // 1) Tính giá 100% từ DB — bỏ qua mọi giá client gửi lên
       const lines = [];
       let subtotal = 0;
@@ -651,30 +806,23 @@ router.post('/orders', async (req, res) => {
 
       const total = Math.max(0, subtotal - discount_amount);
 
-      // 3) Lấy tên vị trí bàn nếu có table_id
-      let location_name = null;
-      if (table_id) {
-        const [tables] = await tx.query('SELECT name FROM tables WHERE id = ? AND is_active = 1', [table_id]);
-        if (tables[0]) location_name = tables[0].name;
-      }
-
-      // 4) Tạo đơn
+      // 3) Tạo đơn
       const order_code = await generateOrderCode(tx.query);
       const [orderRows] = await tx.query(
         `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name,
-           order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, delivery_addr,
+           order_type, payment_method, payment_status, payment_provider, cancel_token_hash, customer_name, customer_phone, delivery_addr,
            voucher_code, discount_amount, points_used, points_earned, subtotal, total,
            is_printed, kitchen_notified_at, note, created_at, updated_at)
          OUTPUT INSERTED.id
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, GETDATE(), GETDATE())`,
         [order_code, customerUserId, store_id, table_id || null, location_name,
-         order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, delivery_addr,
+         normalizedOrderType, normalizedPaymentMethod, payment_status, payment_provider, cancelTokenHash, customer_name, customer_phone, delivery_addr,
          voucher_code, discount_amount, Math.floor(total / 1000), subtotal, total,
          new Date(), note || null],
       );
       const orderId = orderRows[0].id;
 
-      // 5) Món + Topping
+      // 4) Món + Topping
       for (const line of lines) {
         const [prodRows] = await tx.query('SELECT name FROM products WHERE id = ?', [line.product_id]);
         const product_name = prodRows[0]?.name || `Món #${line.product_id}`;
@@ -696,14 +844,14 @@ router.post('/orders', async (req, res) => {
         }
       }
 
-      // 6) Lịch sử trạng thái ban đầu
+      // 5) Lịch sử trạng thái ban đầu
       await tx.query(
         `INSERT INTO order_status_history (order_id, status, note, changed_by, created_at)
          VALUES (?, N'Đang chuẩn bị', NULL, NULL, GETDATE())`,
         [orderId],
       );
 
-      // 7) Ghi lịch sử dùng mã 1 lần
+      // 6) Ghi lịch sử dùng mã 1 lần
       if (promotion_id && voucher_code) {
         await tx.query(
           'INSERT INTO voucher_usage_history (promotion_id, user_phone, order_id, used_at) VALUES (?, ?, ?, GETDATE())',
@@ -711,11 +859,13 @@ router.post('/orders', async (req, res) => {
         );
       }
 
-      return { order_id: orderId, order_code, subtotal, discount_amount, total, payment_status, payment_provider };
+      const resObj = { order_id: orderId, order_code, subtotal, discount_amount, total, payment_status, payment_provider };
+      if (rawCancelToken) resObj.cancel_token = rawCancelToken;
+      return resObj;
     });
 
-    // PayOS payment link creation after DB transaction commit
-    if (payment_provider === 'payos' && isPayOSConfigured()) {
+    // PayOS payment link creation after DB transaction commit (only for online payos)
+    if (normalizedSource === 'online' && payment_provider === 'payos' && isPayOSConfigured()) {
       try {
         const payosResult = await createPaymentLinkForOrder({
           orderId: result.order_id,
@@ -744,7 +894,7 @@ router.post('/orders', async (req, res) => {
           [result.order_id]
         );
         return res.status(400).json({
-          error: 'Không tạo được link thanh toán. Vui lòng thử đặt lại đơn hàng: ' + payosErr.message,
+          error: 'Không tạo được link thanh toán PayOS. Vui lòng thử lại: ' + payosErr.message,
           order_id: result.order_id,
           order_code: result.order_code,
         });
@@ -757,4 +907,5 @@ router.post('/orders', async (req, res) => {
   }
 });
 
-export default router;
+
+export default router;

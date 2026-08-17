@@ -2,37 +2,39 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
+import { PORT, allowedOrigins } from './config/env.js';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger.js';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import customerAuthRoutes from './routes/customerAuth.js';
-import paymentRoutes from './routes/payments.js';
+import paymentRoutes, { handlePayOSWebhook } from './routes/payments.js';
+import { expireUnpaidPayOSOrders } from './services/payment-state.js';
 import db from './config/db.js';
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // ─── Security Middleware (OWASP) ───
 app.use(helmet());
-
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8080')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 
-// Rate limiters
+app.use(express.json());
+
+// ─────────────────────────────────────────────
+// 1) PayOS Webhook ONLY → /api/payments/payos/webhook
+// Bypass general rate limiter for third-party PayOS payment callbacks
+// ─────────────────────────────────────────────
+app.post('/api/payments/payos/webhook', handlePayOSWebhook);
+
+// ─────────────────────────────────────────────
+// 2) Rate Limiters
+// ─────────────────────────────────────────────
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
   message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
 });
-app.use('/api', generalLimiter);
 
 const sensitiveLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -41,12 +43,19 @@ const sensitiveLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 15 phút' },
 });
+
 app.use('/api/orders', sensitiveLimiter);
 app.use('/api/vouchers/apply', sensitiveLimiter);
 app.use('/admin/login', sensitiveLimiter);
 app.use('/api/auth', sensitiveLimiter);
 
-app.use(express.json());
+// General limiter applies to all remaining /api routes (including /api/payments/payos/status)
+app.use('/api', generalLimiter);
+
+// ─────────────────────────────────────────────
+// 3) Payment Status & Lookup APIs (protected by general limiter)
+// ─────────────────────────────────────────────
+app.use('/api/payments', paymentRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -56,37 +65,21 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 // ─────────────────────────────────────────────
-// Payments API         → /api/payments/* (Bypass sensitiveLimiter)
 // Customer Auth API    → /api/auth/*
 // Public API           → /api/*
 // Admin API            → /admin/*  (auth: POST /admin/login public, còn lại cần JWT)
 // ─────────────────────────────────────────────
-app.use('/api/payments', paymentRoutes);
 app.use('/api/auth', customerAuthRoutes);
 app.use('/api',   publicRoutes);
 app.use('/admin', authRoutes);
 app.use('/admin', adminRoutes);
 
-// Auto-expire sweep unpaid PayOS orders every 60s
+// Auto-expire sweep unpaid PayOS orders every 60s with error handling
 setInterval(async () => {
   try {
-    const [expiredOrders] = await db.query(
-      `SELECT id, order_code FROM orders
-       WHERE payment_status = 'unpaid'
-         AND payment_provider = 'payos'
-         AND payment_expires_at IS NOT NULL
-         AND payment_expires_at < GETDATE()`
-    );
-
-    for (const order of expiredOrders) {
-      await db.query(
-        `UPDATE orders SET payment_status = 'expired', updated_at = GETDATE() WHERE id = ?`,
-        [order.id]
-      );
-      console.log(`⏰ [Auto-Expire]: Đơn hàng ${order.order_code} đã hết hạn thanh toán PayOS`);
-    }
+    await expireUnpaidPayOSOrders();
   } catch (err) {
-    console.error('Auto-expire sweep error:', err.message);
+    console.error('❌ [AutoExpire Scheduler Error]:', err.message || err);
   }
 }, 60000);
 
@@ -102,3 +95,5 @@ app.listen(PORT, () => {
   console.log(`   Public:  http://localhost:${PORT}/api/health`);
   console.log(`   Admin:   http://localhost:${PORT}/admin/dashboard/kpi`);
 });
+
+export default app;

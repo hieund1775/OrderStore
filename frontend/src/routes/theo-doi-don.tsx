@@ -175,7 +175,19 @@ function Tracking() {
     if (!order) return;
     setCancelling(true);
     try {
-      await apiPost(`/api/orders/${order.id}/cancel`, { reason: cancelReason.trim() || null });
+      const cancelToken =
+        sessionStorage.getItem(`cancel_token_${order.order_code}`) ||
+        localStorage.getItem(`cancel_token_${order.order_code}`) ||
+        "";
+      await apiPost(`/api/orders/cancel`, {
+        order_code: order.order_code,
+        reason: cancelReason.trim() || null,
+        cancel_token: cancelToken || undefined,
+      });
+      try {
+        sessionStorage.removeItem(`cancel_token_${order.order_code}`);
+        localStorage.removeItem(`cancel_token_${order.order_code}`);
+      } catch {}
       toast.success("Đã hủy đơn hàng");
       setCancelOpen(false);
       await load(order.order_code);
@@ -185,6 +197,7 @@ function Tracking() {
       setCancelling(false);
     }
   }
+
 
   if (loading && !order) {
     return (

@@ -264,10 +264,18 @@ function Checkout() {
         subtotal: number;
         discount_amount: number;
         total: number;
+        cancel_token?: string;
         checkout_url?: string;
         qr_code?: string;
         payment_expires_at?: string;
       }>("/api/orders", payload);
+
+      if (res.cancel_token) {
+        try {
+          sessionStorage.setItem(`cancel_token_${res.order_code}`, res.cancel_token);
+        } catch {}
+      }
+
 
       if (res.checkout_url || res.qr_code) {
         const pending = {

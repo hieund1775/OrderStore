@@ -140,6 +140,7 @@ CREATE TABLE orders (
     shipping_driver_name NVARCHAR(120) NULL,
     shipping_driver_phone NVARCHAR(20) NULL,
     shipping_tracking_url NVARCHAR(500) NULL,
+    cancel_token_hash CHAR(64) NULL,
     is_printed BIT NOT NULL DEFAULT 0, kitchen_notified_at DATETIME2 NULL,
     note NVARCHAR(500) NULL, cancel_reason NVARCHAR(300) NULL,
     created_at DATETIME2 NOT NULL DEFAULT GETDATE(), updated_at DATETIME2 NOT NULL DEFAULT GETDATE()

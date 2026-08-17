@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/env.js';
 
-const SECRET = process.env.JWT_SECRET || 'teaplus-dev-secret-change-me';
+const SECRET = JWT_SECRET;
 
 // ⏰ CHÍNH SÁCH HẾT HẠN TOKEN (đổi ở đây cho dễ chỉnh):
 // - Token hết hạn lúc 24:00 (nửa đêm) mỗi ngày theo giờ thật — khung làm việc 08:00–24:00.

@@ -45,8 +45,10 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   const token = path.startsWith('/admin') ? adminToken : customerToken || adminToken;
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const isStandalone = import.meta.env.VITE_STANDALONE === 'true';
+
   // Kích hoạt mode Standalone nếu được cấu hình VITE_STANDALONE=true
-  if (import.meta.env.VITE_STANDALONE === 'true' && typeof window !== 'undefined') {
+  if (isStandalone && typeof window !== 'undefined') {
     return handleLocalMock<T>(path, options);
   }
 
@@ -54,9 +56,12 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     const res = await fetch(`${API_URL}${path}`, { ...options, headers });
     const contentType = res.headers.get('content-type') || '';
     
-    // Nếu server trả HTML (Vercel 404 standalone page) thay vì JSON
-    if (contentType.includes('text/html') && typeof window !== 'undefined') {
-      return handleLocalMock<T>(path, options);
+    // Nếu server trả HTML thay vì JSON (sai URL / Vercel SPA routing)
+    if (contentType.includes('text/html')) {
+      if (isStandalone && typeof window !== 'undefined') {
+        return handleLocalMock<T>(path, options);
+      }
+      throw new ApiError(res.status, `Phản hồi máy chủ không hợp lệ (${res.status} HTML)`, null);
     }
 
     const data = await res.json().catch(() => null);
@@ -74,10 +79,10 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     return data as T;
   } catch (err) {
     if (err instanceof ApiError) throw err;
-    if (typeof window !== 'undefined') {
+    if (isStandalone && typeof window !== 'undefined') {
       return handleLocalMock<T>(path, options);
     }
-    throw err;
+    throw new Error(err instanceof Error ? err.message : 'Không thể kết nối đến máy chủ backend');
   }
 }
 
