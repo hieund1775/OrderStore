@@ -14,6 +14,7 @@ import { batchLoadOrderDetails } from '../services/order-batch-loader.js';
 import catalogRepository from '../repositories/postgres/catalog.js';
 import storesRepository from '../repositories/postgres/stores.js';
 import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
+import promotionsRepository from '../repositories/postgres/promotions.js';
 
 const router = Router();
 
@@ -684,12 +685,13 @@ router.get('/table/resolve', async (req, res) => {
 // ═══════════ VOUCHER APPLY ═══════════
 router.post('/vouchers/apply', async (req, res) => {
   try {
-    const { code, subtotal, customer_phone } = req.body;
+    const { code, subtotal, customer_phone, store_id } = req.body;
     if (!code) return res.status(400).json({ valid: false, message: 'Thiếu mã voucher' });
-    const { discount_amount } = await validateVoucher({
+    const { discount_amount } = await promotionsRepository.preview({
       code,
       subtotal: Number(subtotal) || 0,
-      customer_phone: customer_phone || '',
+      phone: customer_phone || '',
+      storeId: Number(store_id),
     });
     res.json({ valid: true, discount_amount, code, message: 'Áp dụng thành công' });
   } catch (err) {

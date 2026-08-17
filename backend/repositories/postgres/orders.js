@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
+import promotionsRepository from './promotions.js';
 
 export class OrderError extends Error {
   constructor(message, status = 400) {
@@ -12,11 +13,10 @@ function orderCode() {
   return `TP${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${crypto.randomInt(1000, 10000)}`;
 }
 
-export function createOrdersRepository(database = postgresDb) {
+export function createOrdersRepository(database = postgresDb, promotions = promotionsRepository) {
   return {
     async createOnlineOrder({ input, userId = null, idempotencyKey, requestHash }) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
-      if (input.voucher_code) throw new OrderError('Voucher sẽ được hỗ trợ ở bước khuyến mãi tiếp theo');
 
       return database.transaction(async (tx) => {
         const [knownKeys] = await tx.query(
@@ -37,7 +37,7 @@ export function createOrdersRepository(database = postgresDb) {
         );
 
         const [stores] = await tx.query('SELECT id FROM stores WHERE id = $1 AND is_active = TRUE', [input.store_id]);
-        if (!stores[0]) throw new OrderError('Chi nhánh không tồn tại hoặc đã ngưng hoạt động');
+        if (!stores[0]) throw new OrderError('Chi nhánh không tồn tại hoặc đã ngừng hoạt động');
 
         let locationName = null;
         if (input.table_id) {
@@ -45,7 +45,7 @@ export function createOrdersRepository(database = postgresDb) {
             'SELECT name FROM tables WHERE id = $1 AND store_id = $2 AND is_active = TRUE',
             [input.table_id, input.store_id],
           );
-          if (!tables[0]) throw new OrderError('Bàn không thuộc chi nhánh đã chọn hoặc đã ngưng hoạt động');
+          if (!tables[0]) throw new OrderError('Bàn không thuộc chi nhánh đã chọn hoặc đã ngừng hoạt động');
           locationName = tables[0].name;
         }
 
@@ -54,10 +54,8 @@ export function createOrdersRepository(database = postgresDb) {
         for (const item of input.items) {
           const qty = Number(item.qty || 1);
           if (!Number.isInteger(qty) || qty < 1 || qty > 50) throw new OrderError('Số lượng phải từ 1 đến 50');
-          const [products] = await tx.query(
-            'SELECT id, name, price FROM products WHERE id = $1 AND is_available = TRUE', [item.product_id],
-          );
-          if (!products[0]) throw new OrderError('Sản phẩm không tồn tại hoặc đã ngưng bán');
+          const [products] = await tx.query('SELECT id, name, price FROM products WHERE id = $1 AND is_available = TRUE', [item.product_id]);
+          if (!products[0]) throw new OrderError('Sản phẩm không tồn tại hoặc đã ngừng bán');
           let sizeExtra = 0;
           let sizeLabel = item.size_label || 'M';
           if (item.size_id != null) {
@@ -70,7 +68,7 @@ export function createOrdersRepository(database = postgresDb) {
           const [toppings] = toppingIds.length
             ? await tx.query('SELECT id, name, price FROM toppings WHERE id = ANY($1::bigint[]) AND is_available = TRUE', [toppingIds])
             : [[]];
-          if (toppings.length !== toppingIds.length) throw new OrderError('Topping không hợp lệ hoặc đã ngưng bán');
+          if (toppings.length !== toppingIds.length) throw new OrderError('Topping không hợp lệ hoặc đã ngừng bán');
           const toppingTotal = toppings.reduce((sum, topping) => sum + Number(topping.price), 0);
           const unitPrice = Number(products[0].price) + sizeExtra;
           const lineTotal = (unitPrice + toppingTotal) * qty;
@@ -78,17 +76,23 @@ export function createOrdersRepository(database = postgresDb) {
           lines.push({ item, product: products[0], qty, sizeLabel, unitPrice, lineTotal, toppings });
         }
 
-        const total = subtotal;
+        const voucher = await promotions.validateForOrder({
+          code: input.voucher_code, subtotal, phone: input.customer_phone, storeId: input.store_id, tx,
+        });
+        const discountAmount = voucher?.discount_amount || 0;
+        const total = subtotal - discountAmount;
         const [orders] = await tx.query(
           `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
              payment_method, payment_status, payment_provider, customer_name, customer_phone,
-             delivery_addr, subtotal, total, note)
-           VALUES ($1,$2,$3,$4,$5,$6,'VietQR','unpaid','payos',$7,$8,$9,$10,$10,$11)
-           RETURNING id, order_code, subtotal, total, payment_status, payment_provider`,
+             delivery_addr, voucher_code, discount_amount, subtotal, total, note)
+           VALUES ($1,$2,$3,$4,$5,$6,'VietQR','unpaid','payos',$7,$8,$9,$10,$11,$12,$13,$14)
+           RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
           [orderCode(), userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
-            input.customer_name, input.customer_phone, input.delivery_addr || null, subtotal, input.note || null],
+            input.customer_name, input.customer_phone, input.delivery_addr || null, input.voucher_code || null,
+            discountAmount, subtotal, total, input.note || null],
         );
         const order = orders[0];
+        await promotions.consumeForOrder({ voucher, orderId: order.id, tx });
         for (const line of lines) {
           const [items] = await tx.query(
             `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label, base_tea,

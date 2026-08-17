@@ -177,7 +177,12 @@ function Checkout() {
     try {
       const res = await apiPost<{ valid: boolean; discount_amount: number; message: string }>(
         "/api/vouchers/apply",
-        { code: voucherCode.trim(), subtotal, customer_phone: phone || "khach" },
+        {
+          code: voucherCode.trim(),
+          subtotal,
+          customer_phone: phone || "khach",
+          store_id: tableInfo ? tableInfo.table.store_id : Number(branch),
+        },
       );
       if (!res.valid) return toast.error(res.message);
       setVoucherDiscount(res.discount_amount);
