@@ -8,6 +8,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "node --test",
+    "perf:seed": "node perf/seed-performance-data.js",
+    "perf:bench": "node perf/run-query-benchmarks.js",
     "db:init": "node init-db.js"
   },
   "dependencies": {
