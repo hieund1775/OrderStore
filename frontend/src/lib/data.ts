@@ -113,6 +113,44 @@ export type Product = {
   tags: ProductTag[];
 };
 
+export type ApiCatalogProduct = {
+  id: number | string;
+  name?: string;
+  slug?: string;
+  base_tea?: string;
+  description?: string;
+  price?: number | string;
+  image_url?: string | null;
+  rating?: number | string;
+  review_count?: number | string;
+  calories?: number | string;
+  category_name?: string | null;
+  is_bestseller?: boolean;
+  is_seasonal?: boolean;
+};
+
+/** Maps the PostgreSQL catalog DTO to the storefront card shape. */
+export function mapApiProduct(product: ApiCatalogProduct): Product {
+  const category = product.category_name?.trim() || 'Trà Trái Cây Tươi';
+  const tags: ProductTag[] = [];
+  if (product.is_bestseller) tags.push('best-seller');
+  if (product.is_seasonal) tags.push('seasonal');
+  return {
+    id: String(product.id),
+    name: product.name || 'Sản phẩm TeaPlus',
+    base: product.base_tea || 'Trà đậm vị',
+    desc: product.description || '',
+    price: Number(product.price || 0),
+    image: product.image_url || camSa,
+    rating: Number(product.rating || 0),
+    reviews: Number(product.review_count || 0),
+    calories: Number(product.calories || 0),
+    line: category,
+    fruit: category,
+    tags,
+  };
+}
+
 export const teaLines = [
   'Trà Trái Cây Tươi',
   'Trà Đậm Vị',

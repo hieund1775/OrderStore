@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { useCart } from "@/lib/cart";
-import { fruitGroups, products, teaLines, vnd } from "@/lib/data";
+import { fruitGroups, mapApiProduct, products, teaLines, vnd, type ApiCatalogProduct } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 
 export const Route = createFileRoute("/menu")({
@@ -45,12 +45,23 @@ export const Route = createFileRoute("/menu")({
 function MenuPage() {
   const [line, setLine] = useState<string>("Tất cả");
   const [fruit, setFruit] = useState<string>("Tất cả");
+  const [catalogProducts, setCatalogProducts] = useState(products);
   const { items, subtotal, count } = useCart();
   const { table_id, store_id } = useSearch({ from: "/menu" });
   const [tableInfo, setTableInfo] = useState<{
     table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
   } | null>(null);
   const [storeInfo, setStoreInfo] = useState<{ id: number; name: string; address?: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiCatalogProduct[]>("/api/products")
+      .then((rows) => {
+        if (!cancelled && rows.length > 0) setCatalogProducts(rows.map(mapApiProduct));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (table_id) {
@@ -105,10 +116,10 @@ function MenuPage() {
 
   const filtered = useMemo(
     () =>
-      products.filter(
+      catalogProducts.filter(
         (p) => (line === "Tất cả" || p.line === line) && (fruit === "Tất cả" || p.fruit === fruit),
       ),
-    [line, fruit],
+    [catalogProducts, line, fruit],
   );
 
   return (

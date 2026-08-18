@@ -232,7 +232,11 @@ function Checkout() {
         apiGet<{ id: number; label: string }[]>("/api/options/sizes"),
         apiGet<{ id: number; name: string }[]>("/api/options/toppings"),
       ]);
-      const productIdBySlug = new Map(products.map((p) => [p.slug, p.id]));
+      const productIdBySlug = new Map<string, number>();
+      for (const product of products) {
+        productIdBySlug.set(String(product.id), Number(product.id));
+        if (product.slug) productIdBySlug.set(product.slug, Number(product.id));
+      }
       const sizeIdByLabel = new Map(sizes.map((s) => [s.label.toLowerCase(), s.id]));
       const toppingIdByName = new Map(toppings.map((t) => [t.name.toLowerCase(), t.id]));
 
@@ -250,7 +254,7 @@ function Checkout() {
         return_url: `${window.location.origin}/theo-doi-don`,
         cancel_url: `${window.location.origin}/thanh-toan`,
         items: items.map((i) => ({
-          product_id: productIdBySlug.get(i.productId),
+          product_id: productIdBySlug.get(i.productId) ?? Number(i.productId),
           size_id: sizeIdByLabel.get(i.size.toLowerCase()) ?? null,
           base_tea: i.base,
           sugar_level: i.sugar,

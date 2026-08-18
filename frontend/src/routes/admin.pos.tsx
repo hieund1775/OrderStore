@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost } from "@/lib/api";
-import { vnd, type Product, products as mockProducts, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
+import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, products as mockProducts, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
   head: () => ({
@@ -89,11 +89,12 @@ function PosPage() {
       apiGet<Store[]>("/api/stores"),
       apiGet<SizeOption[]>("/api/options/sizes"),
       apiGet<ToppingOption[]>("/api/options/toppings"),
-    ]).then(([st, sz, top]) => {
+      apiGet<ApiCatalogProduct[]>("/api/products"),
+    ]).then(([st, sz, top, catalog]) => {
       if (cancelled) return;
       setStores(st);
       if (st.length > 0) setSelectedStoreId(st[0].id);
-      setProducts(mockProducts);
+      setProducts(catalog.length > 0 ? catalog.map(mapApiProduct) : mockProducts);
       setSizes(sz);
       setToppings(top);
       setLoading(false);
@@ -212,7 +213,7 @@ function PosPage() {
         customer_phone: "0000000000",
         source: "pos",
         items: cart.map(i => ({
-          product_id: i.product_id,
+          product_id: Number(i.product_id),
           size_id: i.size_id,
           base_tea: i.base_tea,
           sugar_level: i.sugar_level,
