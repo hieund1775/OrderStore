@@ -5,7 +5,7 @@ import { validatePostgresTestGuard, redactDatabaseUrl } from '../../config/postg
 const { Pool } = pg;
 
 async function resetIdentitySequences(client) {
-  for (const table of ['stores', 'users', 'categories', 'products', 'size_options', 'sugar_options', 'ice_options', 'toppings', 'promotions']) {
+  for (const table of ['stores', 'users', 'categories', 'products', 'size_options', 'sugar_options', 'ice_options', 'toppings', 'promotions', 'ingredients']) {
     await client.query(`SELECT setval(pg_get_serial_sequence($1, 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 1), true)`, [table]);
   }
 }
@@ -75,9 +75,24 @@ export async function seedDemoData({ customUrl = null, pool = null } = {}) {
       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title;
       INSERT INTO promotion_stores (promotion_id, store_id) VALUES (1, 1), (1, 2), (2, 1), (2, 2) ON CONFLICT DO NOTHING;
     `);
+    await client.query(`
+      INSERT INTO ingredients (id, store_id, name, kind, unit, stock, safe_level) VALUES
+        (1, 1, 'Trà đen', 'dry', 'g', 5000, 1000),
+        (2, 1, 'Sữa tươi', 'fresh', 'ml', 1800, 500),
+        (3, 2, 'Trà lài', 'dry', 'g', 4200, 900),
+        (4, 2, 'Đào ngâm', 'canned', 'g', 750, 300)
+      ON CONFLICT (id) DO UPDATE SET
+        store_id = EXCLUDED.store_id,
+        name = EXCLUDED.name,
+        kind = EXCLUDED.kind,
+        unit = EXCLUDED.unit,
+        stock = EXCLUDED.stock,
+        safe_level = EXCLUDED.safe_level,
+        updated_at = CURRENT_TIMESTAMP;
+    `);
     await resetIdentitySequences(client);
     await client.query('COMMIT');
-    return { stores: 2, users: 5, categories: 4, products: 4, toppings: 4, promotions: 2 };
+    return { stores: 2, users: 5, categories: 4, products: 4, toppings: 4, promotions: 2, ingredients: 4 };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

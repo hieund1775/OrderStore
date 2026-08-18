@@ -5,7 +5,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
 import adminRoutes from '../routes/admin.js';
-import db, { compileQuery } from '../config/db.js';
+import db from '../config/db-postgres.js';
 import { encodeCursor } from '../services/cursor-pagination.js';
 
 describe('Admin Orders Cursor Pagination & Scope Suite (Real Express Network Requests)', () => {
@@ -32,27 +32,26 @@ describe('Admin Orders Cursor Pagination & Scope Suite (Real Express Network Req
 
   const mockDbAdapter = {
     async query(sqlText, params = []) {
-      // Validate that the query compiles cleanly in both SQL Auth and Trusted modes
-      compileQuery(sqlText, params, false);
-      compileQuery(sqlText, params, true);
-
       if (sqlText.includes('FROM orders') && sqlText.includes('SELECT')) {
         let filtered = [...testOrders];
 
-        // Store scope filter
-        const storeIdMatch = sqlText.match(/o\.store_id\s*=\s*\?/);
+        // Store scope filter: o.store_id = $...
+        const storeIdMatch = sqlText.match(/o\.store_id\s*=\s*\$(\d+)/);
         if (storeIdMatch) {
-          // If query has store_id filter, find its param index
-          const storeParam = params.find((p, idx) => idx > 0 && typeof p === 'number');
+          const paramIdx = Number(storeIdMatch[1]) - 1;
+          const storeParam = params[paramIdx];
           if (storeParam) {
             filtered = filtered.filter((o) => o.store_id === storeParam);
           }
         }
 
-        // Cursor filter: (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
-        if (sqlText.includes('o.created_at < ?')) {
-          const cursorCreatedAt = new Date(params[params.length - 3]);
-          const cursorId = Number(params[params.length - 1]);
+        // Cursor filter: (o.created_at < $... OR (o.created_at = $... AND o.id < $...))
+        const cursorMatch = sqlText.match(/o\.created_at\s*<\s*\$(\d+)/);
+        if (cursorMatch) {
+          const createdAtIdx = Number(cursorMatch[1]) - 1;
+          const idIdx = createdAtIdx + 1;
+          const cursorCreatedAt = new Date(params[createdAtIdx]);
+          const cursorId = Number(params[idIdx]);
 
           filtered = filtered.filter((o) => {
             const oTime = o.created_at.getTime();
@@ -63,7 +62,8 @@ describe('Admin Orders Cursor Pagination & Scope Suite (Real Express Network Req
 
         filtered.sort((a, b) => b.created_at.getTime() - a.created_at.getTime() || b.id - a.id);
 
-        const limit = typeof params[0] === 'number' ? params[0] : 50;
+        const limitParam = params[params.length - 1];
+        const limit = typeof limitParam === 'number' ? limitParam : 50;
         const page = filtered.slice(0, limit);
 
         const rows = page.map((o) => ({

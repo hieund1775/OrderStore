@@ -5,7 +5,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
 import adminRoutes from '../routes/admin.js';
-import db from '../config/db.js';
+import db from '../config/db-postgres.js';
 
 describe('KDS Batch Query & Query Count Optimization Suite', () => {
   let app;
@@ -63,10 +63,11 @@ describe('KDS Batch Query & Query Count Optimization Suite', () => {
         return [[...mockOrders, ...mockOrdersBranch2], mockOrders.length + mockOrdersBranch2.length];
       }
 
-      // 2) Batch items query: WHERE order_id IN (?, ?, ...)
-      if (sqlText.includes('FROM order_items') && sqlText.includes('WHERE order_id IN')) {
+      // 2) Batch items query: WHERE order_id IN (?, ...) or WHERE order_id = ANY($1)
+      if (sqlText.includes('FROM order_items') && (sqlText.includes('WHERE order_id IN') || sqlText.includes('WHERE order_id = ANY'))) {
+        const orderIds = Array.isArray(params[0]) ? params[0] : params;
         const items = [];
-        for (const orderId of params) {
+        for (const orderId of orderIds) {
           items.push({
             id: orderId * 10 + 1,
             order_id: orderId,
@@ -81,10 +82,11 @@ describe('KDS Batch Query & Query Count Optimization Suite', () => {
         return [items, items.length];
       }
 
-      // 3) Batch toppings query: WHERE order_item_id IN (?, ?, ...)
-      if (sqlText.includes('FROM order_item_toppings') && sqlText.includes('WHERE order_item_id IN')) {
+      // 3) Batch toppings query: WHERE order_item_id IN (?, ...) or WHERE order_item_id = ANY($1)
+      if (sqlText.includes('FROM order_item_toppings') && (sqlText.includes('WHERE order_item_id IN') || sqlText.includes('WHERE order_item_id = ANY'))) {
+        const itemIds = Array.isArray(params[0]) ? params[0] : params;
         const toppings = [];
-        for (const itemId of params) {
+        for (const itemId of itemIds) {
           toppings.push({
             id: itemId * 100 + 1,
             order_item_id: itemId,

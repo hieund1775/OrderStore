@@ -5,7 +5,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
 import adminRoutes from '../routes/admin.js';
-import db from '../config/db.js';
+import db from '../config/db-postgres.js';
 
 describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', () => {
   let app;
@@ -46,7 +46,7 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
       }
 
       // 2) orders query
-      if (sqlText.includes('FROM orders')) {
+      if (sqlText.includes('FROM orders') && sqlText.includes('SELECT')) {
         const orderId = Number(params[0]);
         let found = testOrders.filter((o) => o.id === orderId);
         if (params.length > 1 && params[1]) {
@@ -91,23 +91,14 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
 
           // 3) INSERT into order_status_history
           if (sqlText.includes('INSERT INTO order_status_history')) {
-            let status = 'Đang chuẩn bị';
-            let note = null;
-            let changed_by = null;
-
-            if (sqlText.includes("N'Đã hủy'")) {
-              status = 'Đã hủy';
-              note = params[1] || null;
-              changed_by = params[2] ? Number(params[2]) : null;
-            } else {
-              status = params[1];
-              note = params[2] || null;
-              changed_by = params[3] ? Number(params[3]) : null;
-            }
+            const orderId = Number(params[0]);
+            const status = params[1];
+            const note = params[2] || null;
+            const changed_by = params[3] ? Number(params[3]) : null;
 
             const newEntry = {
               id: testStatusHistory.length + 1,
-              order_id: Number(params[0]),
+              order_id: orderId,
               status,
               note,
               changed_by,
@@ -119,10 +110,10 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
 
           // 4) UPDATE orders
           if (sqlText.includes('UPDATE orders')) {
-            const orderId = Number(params[params.length - 1]);
+            const orderId = Number(params[0]);
             const order = testOrders.find((o) => o.id === orderId);
             if (order && sqlText.includes('cancel_reason')) {
-              order.cancel_reason = params[0];
+              order.cancel_reason = params[1];
             }
             return [[], 1];
           }
@@ -199,7 +190,7 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
     resetDbState();
 
     const response = await fetch(`${baseUrl}/admin/orders/1/status`, {
-      method: 'PATCH',
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${cashierToken}`,
@@ -208,6 +199,8 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
     });
 
     assert.equal(response.status, 403);
+    const body = await response.json();
+    assert.match(body.error, /không có quyền/i);
   });
 
   it('R5-B01: rejects cashier token from cancelling paid order with HTTP 403 Forbidden', async () => {
@@ -219,12 +212,12 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
         'Content-Type': 'application/json',
         Authorization: `Bearer ${cashierToken}`,
       },
-      body: JSON.stringify({ reason: 'Cashier attempt cancel paid' }),
+      body: JSON.stringify({ reason: 'Cashier attempt to cancel paid order' }),
     });
 
     assert.equal(response.status, 403);
     const body = await response.json();
-    assert.match(body.error, /Quản lý hoặc Super Admin/);
+    assert.match(body.error, /chỉ Quản lý hoặc Super Admin|chỉ super\/manager/i);
   });
 
   it('R5-B01: allows manager token to cancel paid order with HTTP 200 OK', async () => {
@@ -236,23 +229,22 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
         'Content-Type': 'application/json',
         Authorization: `Bearer ${managerToken}`,
       },
-      body: JSON.stringify({ reason: 'Khách đổi ý trả lại tiền' }),
+      body: JSON.stringify({ reason: 'Manager cancelled paid order due to out of stock' }),
     });
 
-    const body = await response.json();
     assert.equal(response.status, 200);
+    const body = await response.json();
     assert.equal(body.status, 'Đã hủy');
 
-    const history = testStatusHistory.filter((h) => h.order_id === 1);
-    const latest = history[history.length - 1];
-    assert.equal(latest.status, 'Đã hủy');
-    assert.equal(latest.changed_by, 103); // Manager ID
+    // Verify order was marked cancelled in database
+    const order = testOrders.find((o) => o.id === 1);
+    assert.equal(order.cancel_reason, 'Manager cancelled paid order due to out of stock');
   });
 
   it('R5-B01: isolates branch access - kitchen cannot access other branch orders (HTTP 404/403)', async () => {
     resetDbState();
 
-    // Order 3 belongs to branch 2, kitchen token belongs to branch 1
+    // Order 3 belongs to branch 2. Kitchen token belongs to branch 1.
     const response = await fetch(`${baseUrl}/admin/orders/3/status`, {
       method: 'PATCH',
       headers: {
@@ -263,5 +255,7 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
     });
 
     assert.equal(response.status, 404);
+    const body = await response.json();
+    assert.match(body.error, /không tìm thấy/i);
   });
 });

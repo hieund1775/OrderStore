@@ -34,6 +34,10 @@ if (!isTrusted) {
 let pool;
 let mockAdapter = null;
 
+export function isMockAdapterActive() {
+  return Boolean(mockAdapter);
+}
+
 async function getPool() {
   if (mockAdapter?.getPool) return mockAdapter.getPool();
   if (!pool) {
