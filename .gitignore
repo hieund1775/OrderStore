@@ -22,6 +22,8 @@ teaplusdb.sql
 *.sql
 !backend/database/*.sql
 !backend/database/**/*.sql
+backend/database/postgres/migration/data/
+**/migration/data/
 
 # ------------------------------------------
 # 2. AI Agents & Editor Settings
