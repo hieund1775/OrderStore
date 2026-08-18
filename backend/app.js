@@ -19,9 +19,14 @@ export function createApp() {
 
   // ─── Reverse Proxy Trust (Render standard: 1 hop) ───
   const rawTrustProxy = process.env.TRUST_PROXY;
-  const trustProxySetting = rawTrustProxy === undefined || rawTrustProxy === ''
+  const normalizedTrustProxy = rawTrustProxy?.trim().toLowerCase();
+  const trustProxySetting = normalizedTrustProxy === undefined || normalizedTrustProxy === ''
     ? 1
-    : (/^\d+$/.test(rawTrustProxy) ? Number(rawTrustProxy) : rawTrustProxy);
+    : normalizedTrustProxy === 'true'
+      ? true
+      : normalizedTrustProxy === 'false'
+        ? false
+        : (/^\d+$/.test(normalizedTrustProxy) ? Number(normalizedTrustProxy) : rawTrustProxy.trim());
   app.set('trust proxy', trustProxySetting);
 
   // ─── Security Middleware (OWASP) ───

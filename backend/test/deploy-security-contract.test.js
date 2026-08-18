@@ -164,6 +164,17 @@ describe('Deploy & Security Contract Suite', () => {
     assert.equal(res.body.ip, '203.0.113.195', 'Client IP should match client IP from X-Forwarded-For');
   });
 
+  it('parses Render TRUST_PROXY=true as a boolean instead of an invalid IP string', async () => {
+    const originalTrustProxy = process.env.TRUST_PROXY;
+    process.env.TRUST_PROXY = 'true';
+    try {
+      const { createApp } = await import('../app.js');
+      assert.equal(createApp().get('trust proxy'), true);
+    } finally {
+      process.env.TRUST_PROXY = originalTrustProxy;
+    }
+  });
+
   it('verifies Swagger docs are disabled/hidden in production when ENABLE_API_DOCS is false or unset', async () => {
     let appMod = null;
     try {
