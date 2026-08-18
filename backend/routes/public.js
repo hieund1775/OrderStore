@@ -29,7 +29,7 @@ const router = Router();
  *         description: Server is running
  */
 router.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'TeaPlus API (SQL Server)', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', message: 'TeaPlus API (PostgreSQL)', timestamp: new Date().toISOString() });
 });
 
 /**
