@@ -128,8 +128,4 @@ export async function runStagingSmoke({
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('render-staging-smoke.js') && !process.env.NODE_TEST_CONTEXT) {
-  runStagingSmoke().then(() => process.exit(0)).catch(() => process.exit(1));
-}
-
 export default runStagingSmoke;

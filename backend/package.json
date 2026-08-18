@@ -9,7 +9,7 @@
     "dev": "nodemon server.js",
     "test": "node --test",
     "test:integration": "node --test test/performance-harness.test.js test/performance-index-migration.test.js",
-    "test:staging-smoke": "node test/render-staging-smoke.js",
+    "test:staging-smoke": "node scripts/render-staging-smoke.js",
     "test:postgres": "node --env-file=.env --test --test-concurrency=1 test/postgres-adapter.integration.test.js test/postgres-schema.integration.test.js test/postgres-seed.integration.test.js test/postgres-auth.integration.test.js test/postgres-public-read.integration.test.js test/postgres-orders.integration.test.js test/postgres-order-concurrency.integration.test.js test/postgres-voucher.integration.test.js test/postgres-payment.integration.test.js test/postgres-admin.integration.test.js test/postgres-test-guard.test.js test/postgres-schema-contract.test.js test/no-sql-server-production.test.js",
     "db:pg:migrate": "node database/postgres/migrate.js",
     "db:pg:migrate:test": "node database/postgres/migrate.js",
