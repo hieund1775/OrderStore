@@ -5,6 +5,10 @@ dotenv.config();
 
 let payOSInstance = null;
 
+export function setPayOSForTest(instance = null) {
+  payOSInstance = instance;
+}
+
 export function isPayOSConfigured() {
   const cid = process.env.PAYOS_CLIENT_ID?.trim();
   const key = process.env.PAYOS_API_KEY?.trim();
@@ -30,6 +34,7 @@ export async function createPaymentLinkForOrder({
   orderId,
   orderCode,
   total,
+  payosOrderCode: reservedPayosOrderCode,
   returnUrl,
   cancelUrl,
   description,
@@ -43,7 +48,7 @@ export async function createPaymentLinkForOrder({
   // Dùng 6 chữ số cuối timestamp + 4 chữ số cuối orderId → tương đương 10 chữ số để tránh vượt giới hạn API.
   const timePart = String(Date.now()).slice(-6);
   const idPart = String(orderId % 10000).padStart(4, '0');
-  const payosOrderCode = Number(`${timePart}${idPart}`);
+  const payosOrderCode = reservedPayosOrderCode || Number(`${timePart}${idPart}`);
   const timeoutMinutes = parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10);
   const expiredAtSec = Math.floor(Date.now() / 1000) + timeoutMinutes * 60;
   const paymentExpiresAt = new Date(expiredAtSec * 1000);

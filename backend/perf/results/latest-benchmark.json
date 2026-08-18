@@ -1,0 +1,217 @@
+{
+  "metadata": {
+    "runner": "backend/perf/run-query-benchmarks.js",
+    "database": "teaplus_perf",
+    "seed": 42,
+    "prefix": "TP",
+    "git_commit": "303cc1f261b3733eadcdc4c0e5efa97ba0cd201d",
+    "executed_at": "2026-08-17T09:20:34.020Z",
+    "query_count": 6,
+    "dataset_counts": {
+      "orders_count": 100000,
+      "items_count": 199763,
+      "status_history_count": 100000,
+      "voucher_usage_count": 19868
+    },
+    "acceptance_verified": true
+  },
+  "results": [
+    {
+      "name": "admin-orders",
+      "rowCount": 50,
+      "elapsedMs": 35,
+      "wallClockMs": 53.1,
+      "cpuTimeMs": 34,
+      "totalLogicalReads": 527,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 527,
+        "last_physical_reads": 373,
+        "last_elapsed_ms": 35,
+        "last_cpu_ms": 34,
+        "last_rows": 50
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_store_payment_created"
+        },
+        {
+          "operator": "Index Seek",
+          "table": "order_status_history",
+          "index": "IX_order_status_history_order_created"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:31.950Z",
+      "status": "success"
+    },
+    {
+      "name": "customer-history",
+      "rowCount": 50,
+      "elapsedMs": 1,
+      "wallClockMs": 14.38,
+      "cpuTimeMs": 1,
+      "totalLogicalReads": 217,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 217,
+        "last_physical_reads": 3,
+        "last_elapsed_ms": 1,
+        "last_cpu_ms": 1,
+        "last_rows": 50
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_user_created"
+        },
+        {
+          "operator": "Index Seek",
+          "table": "order_status_history",
+          "index": "IX_order_status_history_order_created"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:31.986Z",
+      "status": "success"
+    },
+    {
+      "name": "dashboard",
+      "rowCount": 1,
+      "elapsedMs": 7,
+      "wallClockMs": 15.44,
+      "cpuTimeMs": 7,
+      "totalLogicalReads": 316,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 316,
+        "last_physical_reads": 0,
+        "last_elapsed_ms": 7,
+        "last_cpu_ms": 7,
+        "last_rows": 1
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_store_payment_created"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:32.020Z",
+      "status": "success"
+    },
+    {
+      "name": "kds-orders",
+      "rowCount": 6596,
+      "elapsedMs": 132,
+      "wallClockMs": 141.68,
+      "cpuTimeMs": 55,
+      "totalLogicalReads": 22033,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 22033,
+        "last_physical_reads": 0,
+        "last_elapsed_ms": 132,
+        "last_cpu_ms": 55,
+        "last_rows": 6596
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_store_payment_created"
+        },
+        {
+          "operator": "Index Seek",
+          "table": "order_status_history",
+          "index": "IX_order_status_history_order_created"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:32.177Z",
+      "status": "success"
+    },
+    {
+      "name": "payos-expiry",
+      "rowCount": 8460,
+      "elapsedMs": 1721,
+      "wallClockMs": 1735.52,
+      "cpuTimeMs": 1207,
+      "totalLogicalReads": 225021,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 225021,
+        "last_physical_reads": 6188,
+        "last_elapsed_ms": 1721,
+        "last_cpu_ms": 1207,
+        "last_rows": 8460
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Clustered Index Update",
+          "table": "orders",
+          "index": "PK__orders__3213E83FDFBA3F06"
+        },
+        {
+          "operator": "Clustered Index Update",
+          "table": "orders",
+          "index": "IX_orders_store_payment_created"
+        },
+        {
+          "operator": "Clustered Index Update",
+          "table": "orders",
+          "index": "IX_orders_payment_expiry"
+        },
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_user_created"
+        },
+        {
+          "operator": "Index Seek",
+          "table": "orders",
+          "index": "IX_orders_payment_expiry"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:33.942Z",
+      "status": "success"
+    },
+    {
+      "name": "voucher-usage",
+      "rowCount": 1,
+      "elapsedMs": 0,
+      "wallClockMs": 44.32,
+      "cpuTimeMs": 0,
+      "totalLogicalReads": 2,
+      "io_stats_available": true,
+      "engine_stats": {
+        "last_logical_reads": 2,
+        "last_physical_reads": 0,
+        "last_elapsed_ms": 0,
+        "last_cpu_ms": 0,
+        "last_rows": 1
+      },
+      "execution_plan_summary": [
+        {
+          "operator": "Index Seek",
+          "table": "voucher_usage_history",
+          "index": "IX_voucher_usage_promotion_phone"
+        }
+      ],
+      "tables": {},
+      "rawMessages": [],
+      "timestamp": "2026-08-17T09:20:34.016Z",
+      "status": "success"
+    }
+  ]
+}

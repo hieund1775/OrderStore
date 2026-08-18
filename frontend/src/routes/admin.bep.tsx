@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Clock, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { apiGet, apiPatch } from "@/lib/api";
 import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
+import { PollingController } from "@/lib/polling-controller";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -163,10 +164,10 @@ function KdsPage() {
       .catch(() => setBranches([]));
   }, []);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (signal?: AbortSignal) => {
     try {
       const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
-      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`);
+      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, signal ? { signal } : undefined);
       setOrders(rows);
       const ids = new Set(rows.map((o) => o.id));
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
@@ -196,22 +197,30 @@ function KdsPage() {
       }
       prevIds.current = ids;
     } catch {
-      /* server tạm ngắt — giữ trạng thái cũ */
+      /* server tạm ngắt hoặc abort — giữ trạng thái cũ */
     }
   }, [soundEnabled, storeFilter]);
 
-  // Polling realtime & Storage Event Listener cho Standalone mode
+  // Polling realtime (Non-overlapping) & Storage Event Listener cho Standalone mode
   useEffect(() => {
-    fetchOrders();
-    const t = setInterval(fetchOrders, POLL_MS);
+    const controller = new PollingController({
+      fetchFn: async (signal) => {
+        await fetchOrders(signal);
+      },
+      visibleIntervalMs: 10_000,
+      hiddenIntervalMs: 60_000,
+    });
+    controller.start();
+
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "teaplus_orders") {
-        fetchOrders();
+        controller.triggerImmediate();
       }
     };
     window.addEventListener("storage", handleStorage);
+
     return () => {
-      clearInterval(t);
+      controller.stop();
       window.removeEventListener("storage", handleStorage);
     };
   }, [fetchOrders]);

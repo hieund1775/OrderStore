@@ -1,0 +1,66 @@
+{
+  "specification_metadata": {
+    "type": "Structural Baseline Specification",
+    "target_database": "Microsoft SQL Server 2019",
+    "queries_directory": "backend/perf/queries/",
+    "measured_runs_artifact": "backend/perf/results/latest-benchmark.json"
+  },
+  "baseline_query_patterns": [
+    {
+      "case": "Dashboard Summary",
+      "query_file": "backend/perf/queries/dashboard.sql",
+      "entry_point": "GET /admin/dashboard/summary?branch_id=1",
+      "pattern_before": "CAST(created_at AS DATE) = CAST(GETDATE() AS DATE)",
+      "query_count": 1,
+      "scan_characteristic": "Non-sargable CAST predicate forces Clustered Index Scan across orders"
+    },
+    {
+      "case": "Dashboard Revenue Range",
+      "query_file": "backend/perf/queries/dashboard.sql",
+      "entry_point": "GET /admin/dashboard/revenue?from=...&to=...",
+      "pattern_before": "CAST(created_at AS DATE) BETWEEN ? AND ?",
+      "query_count": 1,
+      "scan_characteristic": "Non-sargable CAST predicate forces full table scan on date range"
+    },
+    {
+      "case": "Admin Orders List",
+      "query_file": "backend/perf/queries/admin-orders.sql",
+      "entry_point": "GET /admin/orders",
+      "pattern_before": "Offset / subquery without composite keyset index",
+      "query_count": 1,
+      "scan_characteristic": "Full scan with correlated subquery for latest status"
+    },
+    {
+      "case": "KDS Kitchen Orders",
+      "query_file": "backend/perf/queries/kds-orders.sql",
+      "entry_point": "GET /admin/kitchen/orders",
+      "pattern_before": "N+1 loop: 1 order query + N item queries + M topping queries",
+      "query_count": "51 queries for 50 orders (1 order + 50 items)",
+      "scan_characteristic": "Multiple round-trips over network"
+    },
+    {
+      "case": "Customer Order History",
+      "query_file": "backend/perf/queries/customer-history.sql",
+      "entry_point": "GET /api/users/:id/orders",
+      "pattern_before": "N+1 loop: 1 order query + N item queries + M topping queries",
+      "query_count": "51 queries for 50 orders (1 order + 50 items)",
+      "scan_characteristic": "Multiple round-trips over network"
+    },
+    {
+      "case": "PayOS Auto-Expire Scan",
+      "query_file": "backend/perf/queries/payos-expiry.sql",
+      "entry_point": "expireUnpaidPayOSOrders()",
+      "pattern_before": "Table scan without filtered index on (payment_provider, payment_status, payment_expires_at)",
+      "query_count": 1,
+      "scan_characteristic": "Periodic scan over active table"
+    },
+    {
+      "case": "Voucher Usage Verification",
+      "query_file": "backend/perf/queries/voucher-usage.sql",
+      "entry_point": "POST /api/orders (voucher verification)",
+      "pattern_before": "Table scan on voucher_usage_history without covering composite index",
+      "query_count": 1,
+      "scan_characteristic": "Clustered index scan"
+    }
+  ]
+}

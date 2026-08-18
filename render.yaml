@@ -1,0 +1,112 @@
+services:
+  # ═══════════════════════════════════════════════════════════════════
+  # 1. Primary Backend API Web Service
+  # ═══════════════════════════════════════════════════════════════════
+  - type: web
+    name: teaplus-order-backend
+    runtime: node
+    plan: starter
+    region: singapore # sin region closest to Vietnam for low latency
+    rootDir: backend
+    buildCommand: npm install --omit=dev
+    preDeployCommand: npm run db:pg:migrate
+    startCommand: npm start
+    healthCheckPath: /ready
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        sync: false # Set securely in Render Dashboard (Supabase PostgreSQL pooler URL)
+      - key: PGSSLMODE
+        value: require
+      - key: PG_POOL_MAX
+        value: "10"
+      - key: PG_IDLE_TIMEOUT
+        value: "30000"
+      - key: PG_CONNECT_TIMEOUT
+        value: "5000"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: FRONTEND_URL
+        sync: false # e.g. https://teaplus.vn,https://admin.teaplus.vn
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ENABLE_API_DOCS
+        value: "false" # Disabled by default in production
+      - key: PAYOS_CLIENT_ID
+        sync: false
+      - key: PAYOS_API_KEY
+        sync: false
+      - key: PAYOS_CHECKSUM_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 2. PayOS Order Expiry Cron Job (Runs every 5 minutes)
+  # ═══════════════════════════════════════════════════════════════════
+  - type: web
+    name: teaplus-order-frontend
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: node .output/server/index.mjs
+    healthCheckPath: /
+    autoDeploy: false
+    envVars:
+      - key: VITE_API_URL
+        sync: false # Set to the deployed backend URL in Render Dashboard
+      - key: VITE_STANDALONE
+        value: "false"
+
+  - type: cron
+    name: teaplus-payos-expiry-cron
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend
+    schedule: "*/5 * * * *"
+    buildCommand: npm install --omit=dev
+    startCommand: npm run payos:expire
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: PGSSLMODE
+        value: require
+      - key: PAYOS_EXPIRE_BATCH_SIZE
+        value: "50"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 3. Expired OTP Cleanup Cron Job (Runs hourly)
+  # ═══════════════════════════════════════════════════════════════════
+  - type: cron
+    name: teaplus-otp-cleanup-cron
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend
+    schedule: "0 * * * *"
+    buildCommand: npm install --omit=dev
+    startCommand: npm run db:pg:otp:cleanup
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: PGSSLMODE
+        value: require

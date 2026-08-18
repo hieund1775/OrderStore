@@ -1,0 +1,66 @@
+{
+  "specification_metadata": {
+    "type": "Structural Optimization Specification",
+    "target_database": "Microsoft SQL Server 2019",
+    "migration_script": "backend/database/phase-2-performance-indexes.sql",
+    "measured_runs_artifact": "backend/perf/results/latest-benchmark.json"
+  },
+  "optimized_query_patterns": [
+    {
+      "case": "Dashboard Summary",
+      "entry_point": "GET /admin/dashboard/summary?branch_id=1",
+      "optimization": "Replaced CAST(created_at AS DATE) with sargable half-open interval [start, end) + added IX_orders_store_payment_created",
+      "query_count": 1,
+      "scan_characteristic": "Sargable interval enables Index Seek on composite index"
+    },
+    {
+      "case": "Dashboard Revenue Range",
+      "entry_point": "GET /admin/dashboard/revenue?from=...&to=...",
+      "optimization": "Sargable date range boundaries via parseDateRangeBoundaries() + IX_orders_store_payment_created",
+      "query_count": 1,
+      "scan_characteristic": "Bounded range seek replacing full table scan"
+    },
+    {
+      "case": "Admin Orders List",
+      "entry_point": "GET /admin/orders?limit=50&cursor=...",
+      "optimization": "Keyset cursor pagination (created_at < ? OR (created_at = ? AND id < ?)) + IX_orders_store_payment_created + IX_order_status_history_order_created",
+      "query_count": 1,
+      "scan_characteristic": "Deterministic keyset traversal without offset scanning"
+    },
+    {
+      "case": "KDS Kitchen Orders",
+      "entry_point": "GET /admin/kitchen/orders",
+      "optimization": "Batch loader (batchLoadOrderDetails) loading items and toppings via IN (?) lists + IX_order_items_order_id + IX_order_item_toppings_item_id",
+      "query_count": "Exactly 3 constant queries regardless of order count (reduced from 51)",
+      "scan_characteristic": "Constant batch queries replacing N+1 network loop"
+    },
+    {
+      "case": "Customer Order History",
+      "entry_point": "GET /api/users/:id/orders?limit=50&cursor=...",
+      "optimization": "Keyset cursor pagination + batchLoadOrderDetails + IX_orders_user_created",
+      "query_count": "Exactly 3 constant queries regardless of order count (reduced from 51)",
+      "scan_characteristic": "Constant batch queries replacing N+1 network loop"
+    },
+    {
+      "case": "PayOS Auto-Expire Scan",
+      "entry_point": "expireUnpaidPayOSOrders()",
+      "optimization": "Covering index IX_orders_payment_expiry on (payment_provider, payment_status, payment_expires_at)",
+      "query_count": 1,
+      "scan_characteristic": "Direct index seek on expired unpaid PayOS records"
+    },
+    {
+      "case": "Voucher Usage Verification",
+      "entry_point": "POST /api/orders (voucher verification)",
+      "optimization": "Covering index IX_voucher_usage_promotion_phone on (promotion_id, user_phone)",
+      "query_count": 1,
+      "scan_characteristic": "Single index seek replacing clustered table scan"
+    },
+    {
+      "case": "Create Order Item Lookup",
+      "entry_point": "POST /api/orders",
+      "optimization": "Returned server-verified product_name from price-engine calcLineTotals()",
+      "query_count": "0 extra queries per item during insertion loop",
+      "scan_characteristic": "DTO in-memory reuse eliminating redundant database lookups"
+    }
+  ]
+}

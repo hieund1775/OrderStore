@@ -156,7 +156,8 @@ function OrdersPage() {
       if (status !== "Tất cả") params.set("status", status);
       if (branchId !== "all") params.set("store_id", branchId);
       if (q.trim()) params.set("search", q.trim());
-      const rows = await apiGet<AdminOrderRow[]>(`/admin/orders?${params.toString()}`);
+      const res = await apiGet<AdminOrderRow[] | { orders: AdminOrderRow[]; page_info: any }>(`/admin/orders?${params.toString()}`);
+      const rows = Array.isArray(res) ? res : (res?.orders || []);
       setOrders(
         rows.filter(
           (o) =>

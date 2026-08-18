@@ -1,31 +1,21 @@
 import { Router } from 'express';
-import db from '../config/db.js';
 import { OAuth2Client } from 'google-auth-library';
 import { signCustomerToken } from '../middleware/auth.js';
+import { requestOtpCode, verifyOtpCode, normalizePhone } from '../services/otp-service.js';
+import usersRepository from '../repositories/postgres/users.js';
+import { IdentityError } from '../repositories/postgres/errors.js';
 
 const router = Router();
-
-// In-memory OTP Store: Map<phone, { code, expiresAt, attempts }>
-const otpStore = new Map();
-
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-/**
- * Clean phone number helper (removes spaces, dashes, etc.)
- */
-function cleanPhoneNumber(phone) {
-  if (!phone) return '';
-  return String(phone).replace(/\D/g, '');
-}
 
 /**
  * POST /api/auth/send-otp
  * Payload: { phone: string, fullname: string }
  */
-router.post('/send-otp', async (req, res) => {
+router.post('/send-otp', async (req, res, next) => {
   try {
     const { phone, fullname } = req.body || {};
-    const cleanPhone = cleanPhoneNumber(phone);
+    const cleanPhone = normalizePhone(phone);
 
     if (!fullname || String(fullname).trim().length < 2) {
       return res.status(400).json({ error: 'Vui lòng nhập họ và tên hợp lệ (ít nhất 2 ký tự)' });
@@ -35,21 +25,13 @@ router.post('/send-otp', async (req, res) => {
       return res.status(400).json({ error: 'Số điện thoại không hợp lệ (ít nhất 10 chữ số)' });
     }
 
-    const code = '123456'; // Default demo OTP code
-    otpStore.set(cleanPhone, {
-      code,
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-      attempts: 0,
-    });
-
-    const isDev = process.env.NODE_ENV !== 'production';
-
-    res.json({
-      message: 'Đã gửi mã OTP thành công',
-      demo_otp: isDev ? code : undefined,
-    });
+    const result = await requestOtpCode({ phone: cleanPhone });
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
   }
 });
 
@@ -57,10 +39,10 @@ router.post('/send-otp', async (req, res) => {
  * POST /api/auth/verify-otp
  * Payload: { phone: string, code: string, fullname: string }
  */
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', async (req, res, next) => {
   try {
     const { phone, code, fullname } = req.body || {};
-    const cleanPhone = cleanPhoneNumber(phone);
+    const cleanPhone = normalizePhone(phone);
     const inputCode = String(code || '').trim();
 
     if (!cleanPhone || cleanPhone.length < 10) {
@@ -71,56 +53,13 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ error: 'Vui lòng nhập mã OTP' });
     }
 
-    const record = otpStore.get(cleanPhone);
-    const isDev = process.env.NODE_ENV !== 'production';
-
-    if (!record && !isDev) {
-      return res.status(400).json({ error: 'Mã OTP chưa được gửi hoặc đã hết hạn' });
+    const verifyResult = await verifyOtpCode({ phone: cleanPhone, code: inputCode });
+    if (!verifyResult.valid) {
+      return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
     }
 
-    if (record) {
-      if (Date.now() > record.expiresAt) {
-        otpStore.delete(cleanPhone);
-        return res.status(400).json({ error: 'Mã OTP đã hết hạn (quá 5 phút)' });
-      }
-
-      if (record.attempts >= 5) {
-        otpStore.delete(cleanPhone);
-        return res.status(400).json({ error: 'Đã thử sai quá 5 lần. Vui lòng xin mã OTP mới' });
-      }
-
-      if (record.code !== inputCode && !(isDev && inputCode === '123456')) {
-        record.attempts += 1;
-        return res.status(400).json({ error: 'Mã OTP không chính xác' });
-      }
-    } else if (isDev && inputCode !== '123456') {
-      return res.status(400).json({ error: 'Mã OTP không chính xác' });
-    }
-
-    // Clear OTP after successful verification (Anti-replay)
-    otpStore.delete(cleanPhone);
-
-    // Search user in SQL Server
-    const [existingUsers] = await db.query(
-      'SELECT TOP 1 * FROM users WHERE phone = ? AND is_admin = 0',
-      [cleanPhone]
-    );
-
-    let user = existingUsers && existingUsers[0];
-
-    if (!user) {
-      const displayName = (fullname && fullname.trim()) ? fullname.trim() : `Khách hàng ${cleanPhone.slice(-4)}`;
-      await db.query(
-        'INSERT INTO users (phone, fullname, is_admin) VALUES (?, ?, 0)',
-        [cleanPhone, displayName]
-      );
-      
-      const [newUsers] = await db.query(
-        'SELECT TOP 1 * FROM users WHERE phone = ? AND is_admin = 0',
-        [cleanPhone]
-      );
-      user = newUsers && newUsers[0];
-    }
+    const displayName = (fullname && fullname.trim()) ? fullname.trim() : `Khách hàng ${cleanPhone.slice(-4)}`;
+    const user = await usersRepository.findOrCreateCustomerByPhone({ phone: cleanPhone, fullname: displayName });
 
     if (!user) {
       return res.status(500).json({ error: 'Không thể khởi tạo tài khoản khách hàng' });
@@ -139,7 +78,10 @@ router.post('/verify-otp', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof IdentityError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
   }
 });
 
@@ -147,7 +89,7 @@ router.post('/verify-otp', async (req, res) => {
  * POST /api/auth/google
  * Payload: { credential: string } — Google ID Token (JWT) từ GIS One-Tap
  */
-router.post('/google', async (req, res) => {
+router.post('/google', async (req, res, next) => {
   try {
     const { credential } = req.body || {};
     if (!credential || typeof credential !== 'string') {
@@ -172,23 +114,11 @@ router.post('/google', async (req, res) => {
     const email = String(payload.email).toLowerCase();
     const fullname = payload.name || email.split('@')[0];
 
-    let [users] = await db.query(
-      'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
-      [email]
-    );
-    let user = users[0];
-
-    if (!user) {
-      await db.query(
-        'INSERT INTO users (phone, fullname, email, is_admin) VALUES (NULL, ?, ?, 0)',
-        [fullname, email]
-      );
-      [users] = await db.query(
-        'SELECT TOP 1 * FROM users WHERE email = ? AND is_admin = 0',
-        [email]
-      );
-      user = users[0];
-    }
+    const user = await usersRepository.findOrCreateGoogleCustomer({
+      subject: String(payload.sub),
+      email,
+      fullname,
+    });
 
     if (!user) {
       return res.status(500).json({ error: 'Không thể khởi tạo tài khoản Google' });
@@ -207,7 +137,10 @@ router.post('/google', async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err instanceof IdentityError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
   }
 });
 

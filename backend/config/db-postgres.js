@@ -1,0 +1,132 @@
+import pg from 'pg';
+
+const { Pool } = pg;
+
+let pool = null;
+let mockAdapter = null;
+
+export function isMockAdapterActive() {
+  return Boolean(mockAdapter);
+}
+
+/**
+ * Builds pg.Pool configuration from environment
+ */
+export function getPostgresPoolConfig(customUrl = null) {
+  // Tests must never silently prefer an application DATABASE_URL over their
+  // explicit dedicated target.
+  const connectionString = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+
+  const config = {
+    max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+    idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
+    connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
+  };
+
+  if (connectionString) {
+    config.connectionString = connectionString;
+  } else {
+    config.host = process.env.PGHOST || 'localhost';
+    config.port = parseInt(process.env.PGPORT || '5432', 10);
+    config.user = process.env.PGUSER || 'postgres';
+    config.password = process.env.PGPASSWORD || '';
+    config.database = process.env.PGDATABASE || 'teaplus_dev';
+  }
+
+  // SSL Configuration
+  const isProduction = process.env.NODE_ENV === 'production';
+  const sslMode = process.env.PGSSLMODE || process.env.PG_SSL;
+
+  if (sslMode === 'require' || sslMode === 'true' || isProduction) {
+    config.ssl = {
+      rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false',
+    };
+  } else if (sslMode === 'disable' || sslMode === 'false') {
+    config.ssl = false;
+  }
+
+  return config;
+}
+
+/**
+ * Returns or initializes singleton pg.Pool
+ */
+export function getPool(customUrl = null) {
+  if (customUrl) {
+    return new Pool(getPostgresPoolConfig(customUrl));
+  }
+  if (!pool) {
+    pool = new Pool(getPostgresPoolConfig());
+    pool.on('error', (err) => {
+      console.error('❌ [PostgreSQL Pool Error]:', err.message);
+    });
+  }
+  return pool;
+}
+
+/**
+ * PostgreSQL Database Adapter implementing [rows, affectedCount] contract
+ */
+export const postgresDb = {
+  dialect: 'postgres',
+
+  setMockAdapter(mock) {
+    mockAdapter = mock;
+  },
+
+  resetMockAdapter() {
+    mockAdapter = null;
+  },
+
+  async query(sqlText, params = []) {
+    if (mockAdapter) {
+      return mockAdapter.query(sqlText, params);
+    }
+
+    const currentPool = getPool();
+    const result = await currentPool.query(sqlText, params);
+    return [result.rows, result.rowCount ?? 0];
+  },
+
+  async transaction(callback) {
+    if (mockAdapter && typeof mockAdapter.transaction === 'function') {
+      return mockAdapter.transaction(callback);
+    }
+
+    const currentPool = getPool();
+    const client = await currentPool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const tx = {
+        async query(sqlText, params = []) {
+          const res = await client.query(sqlText, params);
+          return [res.rows, res.rowCount ?? 0];
+        },
+      };
+
+      const result = await callback(tx, client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        throw new AggregateError([err, rollbackErr], 'PostgreSQL transaction failed and rollback could not be confirmed.');
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  async close() {
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
+  },
+};
+
+export default postgresDb;
