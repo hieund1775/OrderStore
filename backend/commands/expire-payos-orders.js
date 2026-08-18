@@ -6,7 +6,7 @@ export async function runPayOSExpiryCommand({
   expire = expireUnpaidPayOSOrders,
   close = () => postgresDb.close(),
   logger = console,
-  batchSize = Number.parseInt(process.env.PAYOS_EXPIRY_BATCH_SIZE || '100', 10),
+  batchSize = Number.parseInt(process.env.PAYOS_EXPIRE_BATCH_SIZE || '100', 10),
 } = {}) {
   let failure = null;
   try {

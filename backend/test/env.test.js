@@ -10,8 +10,7 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
           {
             JWT_SECRET: 'teaplus-dev-secret-change-me',
             FRONTEND_URL: 'https://example.com',
-            DB_SERVER: 'localhost',
-            DB_NAME: 'db',
+            DATABASE_URL: 'postgresql://user:pass@db.example.test:5432/teaplus_test',
           },
           true
         ),
@@ -19,15 +18,14 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
     );
   });
 
-  it('fails fast when FRONTEND_URL or DB config is missing in production', () => {
+  it('fails fast when FRONTEND_URL or DATABASE_URL is missing in production', () => {
     assert.throws(
       () =>
         validateEnv(
           {
             JWT_SECRET: 'custom-production-secret-1234567890',
             FRONTEND_URL: '',
-            DB_SERVER: 'localhost',
-            DB_NAME: 'db',
+            DATABASE_URL: 'postgresql://user:pass@db.example.test:5432/teaplus_test',
           },
           true
         ),
@@ -39,12 +37,11 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
           {
             JWT_SECRET: 'custom-production-secret-1234567890',
             FRONTEND_URL: 'https://app.com',
-            DB_SERVER: '',
-            DB_NAME: 'db',
+            DATABASE_URL: '',
           },
           true
         ),
-      /Production requires DB_SERVER and DB_NAME/
+      /Production requires DATABASE_URL/
     );
   });
 
@@ -59,8 +56,7 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
     const base = {
       JWT_SECRET: 'super-secure-production-key-32-chars-long',
       FRONTEND_URL: 'https://order.teaplus.vn',
-      DB_SERVER: 'sql-prod.internal',
-      DB_NAME: 'teaplus_prod',
+      DATABASE_URL: 'postgresql://user:pass@db.example.test:5432/teaplus_test',
       PHONE_OTP_ENABLED: 'true',
     };
 
@@ -79,8 +75,7 @@ describe('Environment & Fail-Fast Validation Policy (Production Module)', () => 
       {
         JWT_SECRET: 'super-secure-production-key-32-chars-long',
         FRONTEND_URL: 'https://order.teaplus.vn',
-        DB_SERVER: 'sql-prod.internal',
-        DB_NAME: 'teaplus_prod',
+        DATABASE_URL: 'postgresql://user:pass@db.example.test:5432/teaplus_test',
         PAYOS_CLIENT_ID: 'id_123',
         PAYOS_API_KEY: 'key_123',
         PAYOS_CHECKSUM_KEY: 'checksum_123',

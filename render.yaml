@@ -31,7 +31,7 @@ services:
         value: "5000"
       - key: TRUST_PROXY
         value: "true"
-      - key: CORS_ORIGIN
+      - key: FRONTEND_URL
         sync: false # e.g. https://teaplus.vn,https://admin.teaplus.vn
       - key: JWT_SECRET
         sync: false

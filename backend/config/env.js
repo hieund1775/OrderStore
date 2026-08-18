@@ -31,8 +31,8 @@ export function validateEnv(envVars = {}, isProd = false) {
     if (!envVars.FRONTEND_URL?.trim()) {
       throw new Error('[FATAL] Production requires FRONTEND_URL environment variable to be explicitly configured.');
     }
-    if (!envVars.DB_SERVER?.trim() || !envVars.DB_NAME?.trim()) {
-      throw new Error('[FATAL] Production requires DB_SERVER and DB_NAME environment variables.');
+    if (!envVars.DATABASE_URL?.trim()) {
+      throw new Error('[FATAL] Production requires DATABASE_URL environment variable.');
     }
   }
 
