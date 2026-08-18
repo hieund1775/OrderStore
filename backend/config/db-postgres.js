@@ -5,6 +5,10 @@ const { Pool } = pg;
 let pool = null;
 let mockAdapter = null;
 
+export function isMockAdapterActive() {
+  return Boolean(mockAdapter);
+}
+
 /**
  * Builds pg.Pool configuration from environment
  */

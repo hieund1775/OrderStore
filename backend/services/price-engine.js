@@ -1,12 +1,12 @@
-import db from '../config/db.js';
+import postgresDb from '../config/db-postgres.js';
 
 /**
  * Tính line_total từ DB — KHÔNG tin bất kỳ giá nào từ client (Zero-Trust).
  * unit_price = product_price + size_extra_price
  * line_total = (unit_price + sum(topping_prices)) * qty
- * @param {*} q query runner (db.query mặc định, hoặc tx.query trong transaction)
+ * @param {*} q query runner (postgresDb.query mặc định, hoặc tx.query trong transaction)
  */
-export async function calcLineTotals({ product_id, size_id, topping_ids = [], qty = 1 }, q = db.query) {
+export async function calcLineTotals({ product_id, size_id, topping_ids = [], qty = 1 }, q = postgresDb.query) {
   if (!product_id || !Number.isInteger(Number(product_id))) {
     throw new Error('product_id không hợp lệ');
   }
@@ -15,7 +15,7 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
   }
 
   const [products] = await q(
-    'SELECT id, name, price FROM products WHERE id = ? AND is_available = 1',
+    'SELECT id, name, price FROM products WHERE id = $1 AND is_available = TRUE',
     [product_id],
   );
   const product = products[0];
@@ -23,7 +23,7 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
 
   let sizeExtra = 0;
   if (size_id != null) {
-    const [sizes] = await q('SELECT id, price_extra FROM size_options WHERE id = ?', [size_id]);
+    const [sizes] = await q('SELECT id, price_extra FROM size_options WHERE id = $1', [size_id]);
     const size = sizes[0];
     if (!size) throw new Error('Size không hợp lệ');
     sizeExtra = size.price_extra || 0;
@@ -34,10 +34,9 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
   if (Array.isArray(topping_ids) && topping_ids.length > 0) {
     const unique = [...new Set(topping_ids.map(Number))].filter((id) => Number.isInteger(id));
     if (unique.length > 0) {
-      const placeholders = unique.map(() => '?').join(',');
       const [toppingRows] = await q(
-        `SELECT id, name, price FROM toppings WHERE id IN (${placeholders}) AND is_available = 1`,
-        unique,
+        'SELECT id, name, price FROM toppings WHERE id = ANY($1::int[]) AND is_available = TRUE',
+        [unique],
       );
       const map = new Map(toppingRows.map((t) => [t.id, t]));
       for (const id of unique) {
@@ -61,13 +60,13 @@ export async function calcLineTotals({ product_id, size_id, topping_ids = [], qt
  * calculated_discount = round(subtotal * percent / 100)
  * discount_amount = max_discount ? min(calculated, max_discount) : calculated
  */
-export async function validateVoucher({ code, subtotal, customer_phone }, q = db.query) {
+export async function validateVoucher({ code, subtotal, customer_phone }, q = postgresDb.query) {
   if (!code) return { discount_amount: 0, promotion_id: null };
 
   const [rows] = await q(
     `SELECT id, discount_value, discount_type, max_discount, min_order,
             voucher_type, usage_limit, used_count, start_date, end_date, status
-     FROM promotions WHERE code = ? AND is_active = 1`,
+     FROM promotions WHERE code = $1 AND is_active = TRUE`,
     [code],
   );
   const promo = rows[0];
@@ -86,7 +85,7 @@ export async function validateVoucher({ code, subtotal, customer_phone }, q = db
 
   if (promo.voucher_type === 'single_use') {
     const [used] = await q(
-      'SELECT COUNT(*) AS cnt FROM voucher_usage_history WHERE promotion_id = ? AND user_phone = ?',
+      'SELECT COUNT(*)::int AS cnt FROM voucher_usage_history WHERE promotion_id = $1 AND user_phone = $2',
       [promo.id, customer_phone],
     );
     if (used[0].cnt > 0) throw new Error('Mã giảm giá đã được sử dụng cho số điện thoại này');
@@ -104,24 +103,24 @@ export async function validateVoucher({ code, subtotal, customer_phone }, q = db
 /**
  * Tiêu hao voucher một cách atomic (chống race condition):
  * UPDATE promotions SET used_count = used_count + 1
- *   WHERE id = ? AND (usage_limit IS NULL OR used_count < usage_limit)
+ *   WHERE id = $1 AND (usage_limit IS NULL OR used_count < usage_limit)
  * Trả false nếu hết lượt (rowsAffected = 0).
  */
-export async function consumeVoucher(promoId, q = db.query) {
+export async function consumeVoucher(promoId, q = postgresDb.query) {
   const [, affected] = await q(
-    'UPDATE promotions SET used_count = used_count + 1 WHERE id = ? AND (usage_limit IS NULL OR used_count < usage_limit)',
+    'UPDATE promotions SET used_count = used_count + 1 WHERE id = $1 AND (usage_limit IS NULL OR used_count < usage_limit)',
     [promoId],
   );
   return affected > 0;
 }
 
 /** Sinh order_code duy nhất: TP + YYMMDD + 4 số ngẫu nhiên (kiểm tra trùng). */
-export async function generateOrderCode(q = db.query) {
+export async function generateOrderCode(q = postgresDb.query) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const yymmdd = new Date().toISOString().slice(2, 10).replace(/-/g, '');
     const rand = String(Math.floor(1000 + Math.random() * 9000));
     const code = `TP${yymmdd}${rand}`;
-    const [rows] = await q('SELECT 1 AS x FROM orders WHERE order_code = ?', [code]);
+    const [rows] = await q('SELECT 1 AS x FROM orders WHERE order_code = $1', [code]);
     if (rows.length === 0) return code;
   }
   throw new Error('Không sinh được mã đơn duy nhất, thử lại');

@@ -12,7 +12,7 @@ import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import paymentRoutes, { handlePayOSWebhook } from './routes/payments.js';
-import db from './config/db.js';
+import postgresDb from './config/db-postgres.js';
 
 export function createApp() {
   const app = express();
@@ -44,7 +44,7 @@ export function createApp() {
   app.get('/ready', async (req, res) => {
     let timeoutId;
     try {
-      const probePromise = db.query('SELECT 1');
+      const probePromise = postgresDb.query('SELECT 1');
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error('DB readiness probe timed out after 3000ms')), 3000);
       });

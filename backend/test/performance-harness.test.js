@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import db from '../config/db.js';
+import db from '../config/db-postgres.js';
 import {
   validatePerfGuard,
   generateDeterministicOrders,

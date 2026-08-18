@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileQuery, esc } from '../config/db.js';
+import { compileQuery, esc } from '../database/legacy/sqlserver-db.js';
 
 describe('Database Parameter Compiler & Query Contract Suite', () => {
   it('escapes primitives and strings safely for Trusted connection inlining', () => {

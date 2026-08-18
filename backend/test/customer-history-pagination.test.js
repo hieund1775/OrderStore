@@ -80,9 +80,9 @@ describe('Customer History & Cursor Pagination Service Suite', () => {
       executedQueries.push({ sql: sqlText, params });
 
       if (sqlText.includes('FROM order_items')) {
-        // Return 2 items per order
+        const orderIds = Array.isArray(params[0]) ? params[0] : params;
         const items = [];
-        for (const orderId of params) {
+        for (const orderId of orderIds) {
           items.push({ id: orderId * 10 + 1, order_id: orderId, product_id: 1, product_name: 'Trà Sữa', qty: 1, unit_price: 30000 });
           items.push({ id: orderId * 10 + 2, order_id: orderId, product_id: 2, product_name: 'Trà Đào', qty: 1, unit_price: 35000 });
         }
@@ -90,8 +90,9 @@ describe('Customer History & Cursor Pagination Service Suite', () => {
       }
 
       if (sqlText.includes('FROM order_item_toppings')) {
+        const itemIds = Array.isArray(params[0]) ? params[0] : params;
         const toppings = [];
-        for (const itemId of params) {
+        for (const itemId of itemIds) {
           toppings.push({ id: itemId * 100 + 1, order_item_id: itemId, topping_name: 'Trân châu', topping_price: 5000 });
         }
         return [toppings, toppings.length];

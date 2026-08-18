@@ -1,6 +1,6 @@
 import { PORT, validateEnv } from './config/env.js';
 import app from './app.js';
-import db from './config/db.js';
+import postgresDb from './config/db-postgres.js';
 
 // Validate environment policy at startup
 try {
@@ -29,8 +29,8 @@ async function handleShutdown(signal) {
   server.close(async () => {
     console.log('✅ HTTP server closed. Draining database pool...');
     try {
-      if (typeof db.close === 'function') {
-        await db.close();
+      if (typeof postgresDb.close === 'function') {
+        await postgresDb.close();
       }
       console.log('✅ Database connections closed. Process terminating cleanly.');
       process.exit(0);

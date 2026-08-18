@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import db from '../config/db.js';
+import postgresDb from '../config/db-postgres.js';
 import { JWT_SECRET } from '../config/env.js';
 import { authenticate } from '../middleware/auth.js';
 import { isPayOSConfigured } from '../services/payos.js';
@@ -168,6 +168,10 @@ router.get('/stores/districts', async (req, res) => {
 
 /**
  * @swagger
+});
+
+/**
+ * @swagger
  * /api/promotions:
  *   get:
  *     tags: [Promotions]
@@ -182,11 +186,14 @@ router.get('/stores/districts', async (req, res) => {
 router.get('/promotions', async (req, res) => {
   try {
     const { status } = req.query;
-    let sql = 'SELECT * FROM promotions WHERE is_active = 1';
+    let sql = 'SELECT * FROM promotions WHERE is_active = TRUE';
     const params = [];
-    if (status) { sql += ' AND status = ?'; params.push(status); }
+    if (status) {
+      params.push(status);
+      sql += ` AND status = $${params.length}`;
+    }
     sql += ' ORDER BY start_date DESC';
-    const [rows] = await db.query(sql, params);
+    const [rows] = await postgresDb.query(sql, params);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -229,14 +236,13 @@ router.get('/jobs', async (req, res) => {
 router.post('/jobs/:id/apply', async (req, res) => {
   try {
     const { fullname, phone, email, store_id, cv_url } = req.body;
-    const [r] = await db.query(
-      'INSERT INTO job_applications (job_id, store_id, fullname, phone, email, cv_url) OUTPUT INSERTED.id VALUES (?,?,?,?,?,?)',
-      [req.params.id, store_id || null, fullname, phone, email, cv_url || null]
+    const [r] = await postgresDb.query(
+      'INSERT INTO job_applications (job_id, store_id, fullname, phone, email, cv_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.params.id, store_id || null, fullname, phone, email, cv_url || null],
     );
     res.status(201).json({ id: r[0].id, message: 'Nộp hồ sơ thành công!' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 /**
  * @swagger
  * /api/tiers:
@@ -379,9 +385,9 @@ function requireCustomerSelf(req, res, next) {
 
 router.get('/users/:id', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT id, fullname, phone, email, avatar_url, address, tier, points, total_spent, created_at FROM users WHERE id = ? AND is_admin = 0 AND is_active = 1',
-      [req.params.id]
+    const [rows] = await postgresDb.query(
+      'SELECT id, fullname, phone, email, avatar_url, address, tier, points, total_spent, created_at FROM users WHERE id = $1 AND is_admin = FALSE AND is_active = TRUE',
+      [req.params.id],
     );
     if (!rows.length) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     res.json(rows[0]);
@@ -419,12 +425,12 @@ router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, async (req,
 router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf, async (req, res) => {
   try {
     const { id, productId } = req.params;
-    const [existing] = await db.query('SELECT id FROM wishlists WHERE user_id = ? AND product_id = ?', [id, productId]);
+    const [existing] = await postgresDb.query('SELECT id FROM wishlists WHERE user_id = $1 AND product_id = $2', [id, productId]);
     if (existing.length) {
-      await db.query('DELETE FROM wishlists WHERE id = ?', [existing[0].id]);
+      await postgresDb.query('DELETE FROM wishlists WHERE id = $1', [existing[0].id]);
       res.json({ added: false, message: 'Đã xóa khỏi wishlist' });
     } else {
-      await db.query('INSERT INTO wishlists (user_id, product_id) VALUES (?,?)', [id, productId]);
+      await postgresDb.query('INSERT INTO wishlists (user_id, product_id) VALUES ($1, $2)', [id, productId]);
       res.status(201).json({ added: true, message: 'Đã thêm vào wishlist' });
     }
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -432,17 +438,17 @@ router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf,
 
 router.get('/users/:id/notifications', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const [r] = await db.query('SELECT TOP 30 * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC', [req.params.id]);
+    const [r] = await postgresDb.query('SELECT * FROM notifications WHERE user_id = $1 OR user_id IS NULL ORDER BY created_at DESC LIMIT 30', [req.params.id]);
     res.json(r);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.get('/users/:id/vouchers', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const [r] = await db.query(`
-      SELECT uv.*, p.title AS promotion_title, p.[rule], p.discount_value, p.discount_type, p.max_discount, p.min_order
+    const [r] = await postgresDb.query(`
+      SELECT uv.*, p.title AS promotion_title, p.rule, p.discount_value, p.discount_type, p.max_discount, p.min_order
       FROM user_vouchers uv LEFT JOIN promotions p ON uv.promotion_id = p.id
-      WHERE uv.user_id = ? AND uv.used_at IS NULL AND (uv.expires_at IS NULL OR uv.expires_at >= CAST(GETDATE() AS DATE))
+      WHERE uv.user_id = $1 AND uv.used_at IS NULL AND (uv.expires_at IS NULL OR uv.expires_at >= CURRENT_DATE)
       ORDER BY uv.created_at DESC
     `, [req.params.id]);
     res.json(r);
@@ -462,28 +468,27 @@ router.post('/products/:id/reviews', authenticate, async (req, res) => {
     if (!rating) return res.status(400).json({ error: 'Thiếu rating đánh giá' });
 
     if (order_item_id) {
-      const [matched] = await db.query(
-        'SELECT 1 FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = ? AND o.user_id = ?',
-        [order_item_id, userId]
+      const [matched] = await postgresDb.query(
+        'SELECT 1 FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.id = $1 AND o.user_id = $2',
+        [order_item_id, userId],
       );
       if (!matched.length) {
         return res.status(403).json({ error: 'Bạn chỉ có thể đánh giá món từ đơn hàng của chính mình' });
       }
     }
 
-    await db.query(
-      'INSERT INTO reviews (user_id, product_id, order_item_id, rating, comment, image_urls) VALUES (?,?,?,?,?,?)',
-      [userId, req.params.id, order_item_id || null, rating, comment || null, image_urls ? JSON.stringify(image_urls) : null]
+    await postgresDb.query(
+      'INSERT INTO reviews (user_id, product_id, order_item_id, rating, comment, image_urls) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, req.params.id, order_item_id || null, comment || null, image_urls ? JSON.stringify(image_urls) : null],
     );
-    const [stats] = await db.query('SELECT AVG(CAST(rating AS DECIMAL(2,1))) AS avg_rating, COUNT(*) AS cnt FROM reviews WHERE product_id = ?', [req.params.id]);
-    await db.query('UPDATE products SET rating = ?, review_count = ? WHERE id = ?', [stats[0].avg_rating, stats[0].cnt, req.params.id]);
+    const [stats] = await postgresDb.query('SELECT AVG(rating::numeric(2,1)) AS avg_rating, COUNT(*)::int AS cnt FROM reviews WHERE product_id = $1', [req.params.id]);
+    await postgresDb.query('UPDATE products SET rating = $1, review_count = $2 WHERE id = $3', [stats[0].avg_rating, stats[0].cnt, req.params.id]);
     res.status(201).json({ message: 'Đánh giá thành công!' });
   } catch (err) {
-    if (err.message && err.message.includes('UQ_review')) return res.status(409).json({ error: 'Bạn đã đánh giá món này rồi' });
+    if (err.message && err.message.includes('uq_review')) return res.status(409).json({ error: 'Bạn đã đánh giá món này rồi' });
     res.status(500).json({ error: err.message });
   }
 });
-
 
 router.get('/search/suggestions', async (req, res) => {
   try {
@@ -563,10 +568,10 @@ router.get('/table/resolve', async (req, res) => {
   try {
     const { table_id } = req.query;
     if (!table_id) return res.status(400).json({ error: 'Thiếu table_id' });
-    const [rows] = await db.query(
+    const [rows] = await postgresDb.query(
       `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address
        FROM tables t JOIN stores s ON s.id = t.store_id
-       WHERE t.id = ? AND t.is_active = 1`,
+       WHERE t.id = $1 AND t.is_active = TRUE`,
       [table_id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy bàn hoặc bàn đã ngưng hoạt động' });
