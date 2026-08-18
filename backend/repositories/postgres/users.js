@@ -1,5 +1,6 @@
 import postgresDb from '../../config/db-postgres.js';
 import { IdentityError, isUniqueViolation } from './errors.js';
+import bcrypt from 'bcryptjs';
 
 const CUSTOMER_FIELD_NAMES = ['id', 'fullname', 'phone', 'email', 'tier', 'points', 'is_active', 'token_version', 'is_admin', 'admin_role', 'admin_branch_id'];
 const CUSTOMER_COLUMNS = CUSTOMER_FIELD_NAMES.join(', ');
@@ -26,6 +27,50 @@ export function createUsersRepository(database = postgresDb) {
          WHERE id = $1 AND is_active = TRUE
          LIMIT 1`,
         [id],
+      );
+      return rows[0] || null;
+    },
+
+    async registerCustomer({ phone, fullname, password }) {
+      const passwordHash = await bcrypt.hash(password, 12);
+      return database.transaction(async (tx) => {
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`customer-phone:${phone}`]);
+        const [existingRows] = await tx.query(
+          'SELECT id, is_admin, password_hash FROM users WHERE phone = $1 LIMIT 1 FOR UPDATE',
+          [phone],
+        );
+        const existing = existingRows[0];
+        if (existing?.is_admin) {
+          throw new IdentityError('PHONE_RESERVED', 'Số điện thoại này đã được dùng cho tài khoản quản trị', 409);
+        }
+        if (existing?.password_hash) {
+          throw new IdentityError('PHONE_EXISTS', 'Số điện thoại đã được đăng ký', 409);
+        }
+
+        if (existing) {
+          const [updatedRows] = await tx.query(
+            `UPDATE users SET fullname = $2, password_hash = $3, is_active = TRUE, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 RETURNING ${CUSTOMER_COLUMNS}`,
+            [existing.id, fullname, passwordHash],
+          );
+          return updatedRows[0];
+        }
+
+        const [createdRows] = await tx.query(
+          `INSERT INTO users (phone, fullname, password_hash, is_admin)
+           VALUES ($1, $2, $3, FALSE)
+           RETURNING ${CUSTOMER_COLUMNS}`,
+          [phone, fullname, passwordHash],
+        );
+        return createdRows[0];
+      });
+    },
+
+    async findActiveCustomerByPhone(phone) {
+      const [rows] = await database.query(
+        `SELECT ${CUSTOMER_COLUMNS}, password_hash
+         FROM users WHERE phone = $1 AND is_admin = FALSE AND is_active = TRUE LIMIT 1`,
+        [phone],
       );
       return rows[0] || null;
     },

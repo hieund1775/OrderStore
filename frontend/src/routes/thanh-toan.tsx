@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { vnd } from "@/lib/data";
-import { apiGet, apiPost, createIdempotencyKey } from "@/lib/api";
+import { apiGet, apiPost, createIdempotencyKey, getCustomerToken } from "@/lib/api";
 
 export const Route = createFileRoute("/thanh-toan")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
@@ -219,6 +219,9 @@ function Checkout() {
 
   async function submitOrder() {
     if (items.length === 0) return;
+    if (!getCustomerToken()) {
+      return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
+    }
     if (!name.trim() || !phone.trim()) {
       return toast.error("Vui lòng nhập họ tên và số điện thoại");
     }

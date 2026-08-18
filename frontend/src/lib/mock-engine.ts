@@ -68,6 +68,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
     const orderCode = 'TP' + Math.floor(100000 + Math.random() * 900000);
     const user = getStoredCustomerUser();
+    if (!user) return Promise.reject(new Error('Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng'));
     const isPayOS = body.payment_method === 'VietQR';
     const payment_status = 'unpaid';
     const payment_provider = isPayOS ? 'payos' : body.payment_method?.toLowerCase() || 'cod';
@@ -193,24 +194,24 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     return Promise.resolve({ message: 'Đã hủy đơn hàng thành công' } as T);
   }
 
-  // 4. POST /api/auth/send-otp
-  if (path === '/api/auth/send-otp') {
-    return Promise.resolve({ message: 'Đã gửi mã OTP thành công', demo_otp: '123456' } as T);
-  }
-
-  // 5. POST /api/auth/verify-otp
-  if (path === '/api/auth/verify-otp') {
-    const user = {
-      id: 99,
-      fullname: body.fullname || `Khách hàng ${String(body.phone || '').slice(-4)}`,
-      phone: body.phone || '0901234567',
-      tier: 'Đồng',
-      points: 50,
-    };
+  // 4. Customer phone + password auth (standalone-only local mock)
+  if (path === '/api/auth/register' || path === '/api/auth/login') {
+    const accountKey = 'teaplus_customer_account';
+    let account: any = null;
+    try { account = JSON.parse(localStorage.getItem(accountKey) || 'null'); } catch { account = null; }
+    if (path.endsWith('/register')) {
+      if (!body.phone || !body.password || !body.fullname) return Promise.reject(new Error('Vui lòng nhập đủ thông tin'));
+      if (account && account.phone === body.phone) return Promise.reject(new Error('Số điện thoại đã được đăng ký'));
+      account = { id: 99, fullname: body.fullname, phone: body.phone, password: body.password, tier: 'Đồng', points: 50 };
+      localStorage.setItem(accountKey, JSON.stringify(account));
+    } else if (!account || account.phone !== body.phone || account.password !== body.password) {
+      return Promise.reject(new Error('Số điện thoại hoặc mật khẩu không đúng'));
+    }
+    const user = { id: account.id, fullname: account.fullname, phone: account.phone, tier: account.tier, points: account.points };
     return Promise.resolve({ token: 'demo-customer-token', user } as T);
   }
 
-  // 6. POST /api/auth/google
+  // 5. POST /api/auth/google
   if (path === '/api/auth/google') {
     const user = {
       id: 100,

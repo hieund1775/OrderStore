@@ -663,6 +663,10 @@ router.post('/orders', async (req, res) => {
       } catch {}
     }
 
+    if (normalizedSource === 'online' && !customerUserId) {
+      return res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản trước khi đặt hàng' });
+    }
+
     // Generate guest cancellation token if guest order
     let rawCancelToken = null;
     let cancelTokenHash = null;

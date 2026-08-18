@@ -4,9 +4,61 @@ import { signCustomerToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode, normalizePhone } from '../services/otp-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
+import bcrypt from 'bcryptjs';
 
 const router = Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+function customerPayload(user) {
+  return {
+    id: user.id,
+    fullname: user.fullname,
+    phone: user.phone,
+    tier: user.tier || 'Đồng',
+    points: user.points || 0,
+  };
+}
+
+function validatePassword(password) {
+  return typeof password === 'string' && password.length >= 8 && password.length <= 128;
+}
+
+/** POST /api/auth/register — customer phone + password registration */
+router.post('/register', async (req, res, next) => {
+  try {
+    const { phone, fullname, password } = req.body || {};
+    const cleanPhone = normalizePhone(phone);
+    const cleanName = String(fullname || '').trim();
+    if (!cleanPhone || cleanPhone.length < 10) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' });
+    if (cleanName.length < 2 || cleanName.length > 120) return res.status(400).json({ error: 'Họ và tên không hợp lệ' });
+    if (!validatePassword(password)) return res.status(400).json({ error: 'Mật khẩu phải dài từ 8 đến 128 ký tự' });
+
+    const user = await usersRepository.registerCustomer({ phone: cleanPhone, fullname: cleanName, password });
+    const token = signCustomerToken(user);
+    res.status(201).json({ token, user: customerPayload(user) });
+  } catch (err) {
+    if (err instanceof IdentityError) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** POST /api/auth/login — customer phone + password login */
+router.post('/login', async (req, res, next) => {
+  try {
+    const { phone, password } = req.body || {};
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone || !validatePassword(password)) {
+      return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
+    }
+    const user = await usersRepository.findActiveCustomerByPhone(cleanPhone);
+    const matches = user?.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
+    if (!matches) return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
+    const token = signCustomerToken(user);
+    res.json({ token, user: customerPayload(user) });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * POST /api/auth/send-otp

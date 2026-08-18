@@ -295,14 +295,12 @@ const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.goo
 function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken());
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [userName, setUserName] = useState(() => getCustomerUser()?.fullname || '');
   const [userTier, setUserTier] = useState(() => getCustomerUser()?.tier || 'Đồng');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [demoOtp, setDemoOtp] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [nameInput, setNameInput] = useState('');
   const [open, setOpen] = useState(false);
   const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
@@ -346,7 +344,7 @@ function ProfileButton() {
     } catch (e) {
       console.error('Google button render error:', e);
     }
-  }, [open, googleScriptLoaded, googleBtnNode, step]);
+  }, [open, googleScriptLoaded, googleBtnNode]);
 
   async function handleGoogleCredential(res: { credential: string }) {
     try {
@@ -368,45 +366,18 @@ function ProfileButton() {
     }
   }
 
-  async function handleSendOtp() {
-    const name = nameInput.trim();
-    if (!name) {
-      setError('Vui lòng nhập tên của bạn');
+  async function handlePasswordAuth() {
+    const cleanName = nameInput.trim();
+    if (authMode === 'register' && (cleanName.length < 2 || !/^[\p{L}\s']+$/u.test(cleanName))) {
+      setError('Vui lòng nhập họ tên hợp lệ');
       return;
     }
-    if (name.length < 2) {
-      setError('Tên quá ngắn, vui lòng nhập họ tên đầy đủ');
-      return;
-    }
-    // Chỉ cho phép chữ cái (có dấu tiếng Việt), khoảng trắng và dấu nháy đơn
-    if (!/^[\p{L}\s']+$/u.test(name)) {
-      setError('Tên không được chứa số hoặc ký tự đặc biệt');
-      return;
-    }
-    if (!phone || phone.replace(/\s/g, '').length < 10) {
+    if (phone.replace(/\s/g, '').length < 10) {
       setError('Vui lòng nhập số điện thoại hợp lệ (ít nhất 10 số)');
       return;
     }
-    setLoading(true);
-    setError('');
-    try {
-      const data = await apiPost<{ message: string; demo_otp?: string }>('/api/auth/send-otp', {
-        phone,
-        fullname: nameInput.trim(),
-      });
-      setStep('otp');
-      setOtpSent(true);
-      setDemoOtp(data.demo_otp || '');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Không thể kết nối đến máy chủ');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleVerifyOtp() {
-    if (!otp || otp.length < 6) {
-      setError('Vui lòng nhập đủ 6 số mã OTP');
+    if (password.length < 8) {
+      setError('Mật khẩu phải có ít nhất 8 ký tự');
       return;
     }
     setLoading(true);
@@ -415,10 +386,10 @@ function ProfileButton() {
       const data = await apiPost<{
         token: string;
         user: { id: number; fullname: string; phone: string; tier: string; points: number };
-      }>('/api/auth/verify-otp', {
+      }>(authMode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         phone,
-        code: otp,
-        fullname: nameInput.trim(),
+        ...(authMode === 'register' ? { fullname: cleanName } : {}),
+        password,
       });
       setCustomerToken(data.token);
       setCustomerUser(data.user);
@@ -436,11 +407,9 @@ function ProfileButton() {
     clearCustomerToken();
     setLoggedIn(false);
     setPhone('');
-    setOtp('');
-    setStep('phone');
+    setPassword('');
+    setAuthMode('login');
     setError('');
-    setOtpSent(false);
-    setDemoOtp('');
     setUserName('');
     setNameInput('');
   }
@@ -452,10 +421,9 @@ function ProfileButton() {
         onOpenChange={(o) => {
           setOpen(o);
           if (!o) {
-            setStep('phone');
+            setAuthMode('login');
             setError('');
-            setOtp('');
-            setOtpSent(false);
+            setPassword('');
           }
         }}
       >
@@ -467,65 +435,45 @@ function ProfileButton() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-display text-center">
-              {step === 'phone' ? 'Đăng nhập / Đăng ký' : 'Nhập mã OTP'}
+              {authMode === 'login' ? 'Đăng nhập' : 'Đăng ký tài khoản'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {step === 'phone' ? (
-              <>
+            <>
+              {authMode === 'register' && (
                 <Input
-                  placeholder="Tên của bạn"
+                  placeholder="Họ và tên"
                   value={nameInput}
                   onChange={(e) => { setNameInput(e.target.value); setError(''); }}
                 />
-                <Input
-                  placeholder="Số điện thoại"
-                  inputMode="tel"
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); setError(''); }}
-                />
-                {error && <p className="text-berry text-xs">{error}</p>}
-                <Button variant="hero" className="w-full" onClick={handleSendOtp} disabled={loading}>
-                  {loading ? 'Đang gửi mã…' : 'Nhận mã OTP'}
-                </Button>
-                <div className="text-muted-foreground flex items-center gap-3 text-xs">
-                  <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
-                </div>
-                <div ref={setGoogleBtnNode} className="w-full flex justify-center min-h-[44px] items-center" />
-                <p className="text-muted-foreground text-center text-xs">
-                  Nhập tên & SĐT để nhận mã OTP xác thực.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-muted-foreground text-center text-sm">
-                  Mã OTP đã được gửi đến <strong>{phone}</strong>
-                </p>
-                {demoOtp && (
-                  <p className="text-leaf text-center text-xs font-semibold bg-leaf/10 rounded py-1">
-                    🔢 Demo OTP: {demoOtp}
-                  </p>
-                )}
-                <Input
-                  placeholder="Nhập mã OTP 6 số"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
-                  className="text-center text-lg tracking-[0.3em]"
-                />
-                {error && <p className="text-berry text-xs">{error}</p>}
-                <Button variant="hero" className="w-full" onClick={handleVerifyOtp} disabled={loading}>
-                  {loading ? 'Đang xác thực…' : 'Xác nhận'}
-                </Button>
-                <button
-                  className="text-muted-foreground text-xs text-center w-full underline"
-                  onClick={() => { setStep('phone'); setError(''); setOtp(''); setOtpSent(false); }}
-                >
-                  Quay lại
-                </button>
-              </>
-            )}
+              )}
+              <Input
+                placeholder="Số điện thoại"
+                inputMode="tel"
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); setError(''); }}
+              />
+              <Input
+                placeholder="Mật khẩu (tối thiểu 8 ký tự)"
+                type="password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+              />
+              {error && <p className="text-berry text-xs">{error}</p>}
+              <Button variant="hero" className="w-full" onClick={handlePasswordAuth} disabled={loading}>
+                {loading ? 'Đang xử lý…' : authMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}
+              </Button>
+              <button
+                className="text-muted-foreground text-xs text-center w-full underline"
+                onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}
+              >
+                {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
+              </button>
+              <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
+              </div>
+              <div ref={setGoogleBtnNode} className="w-full flex justify-center min-h-[44px] items-center" />
+            </>
           </div>
         </DialogContent>
       </Dialog>
