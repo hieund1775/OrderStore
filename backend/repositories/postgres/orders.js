@@ -2,11 +2,12 @@ import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
 import promotionsRepository from './promotions.js';
 import { claimOrderIdempotency, completeOrderIdempotency } from '../../services/order-idempotency.js';
+import { OrderDomainError } from '../../services/orders/order-errors.js';
 
-export class OrderError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
+export class OrderError extends OrderDomainError {
+  constructor(message, status = 400, code = 'ORDER_BUSINESS_RULE') {
+    super(message, { status, code, expose: true });
+    this.name = 'OrderError';
   }
 }
 

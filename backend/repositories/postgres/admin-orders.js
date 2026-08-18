@@ -1,10 +1,11 @@
 import postgresDb from '../../config/db-postgres.js';
 import { batchLoadPostgresOrderDetails } from '../../services/order-batch-loader.js';
+import { OrderDomainError } from '../../services/orders/order-errors.js';
 
-export class AdminOrderError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
+export class AdminOrderError extends OrderDomainError {
+  constructor(message, status = 400, code = 'ADMIN_ORDER_BUSINESS_RULE') {
+    super(message, { status, code, expose: true });
+    this.name = 'AdminOrderError';
   }
 }
 

@@ -5,6 +5,9 @@ import { logAudit } from '../services/audit.js';
 import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries } from '../services/date-range.js';
 import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
+import { asyncHandler } from '../middleware/async-handler.js';
+import { orderErrorStatus } from '../services/orders/order-errors.js';
+import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../validation/order-schemas.js';
 
 import adminOrdersRepository from '../repositories/postgres/admin-orders.js';
 import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
@@ -105,6 +108,7 @@ router.get('/dashboard/top-products', requireRole('super', 'manager'), async (re
 router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
   try {
     const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
+    validateOrderFilters({ status, store_id, search });
     const scopedStoreId = resolveStoreScope(req.user, store_id);
     const limit = validatePaginationLimit(rawLimit, 50, 100);
     const cursor = decodeCursor(rawCursor);
@@ -139,6 +143,7 @@ router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), asy
 
 router.get('/orders/:id', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
   try {
+    validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
     const order = await adminOrdersRepository.detail({ orderId: req.params.id, scopedStoreId });
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
@@ -151,9 +156,10 @@ router.get('/orders/:id', requireRole('super', 'manager', 'cashier', 'kitchen'),
 
 export const updateOrderStatus = async (req, res) => {
   const { status, note, driver_name, driver_phone, tracking_url } = req.body;
-  if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Trạng thái không hợp lệ' });
-
   try {
+    validateOrderId(req.params.id);
+    validateOrderStatus(status, VALID_STATUSES);
+    validateOrderMutationInput({ note });
     const scopedStoreId = resolveStoreScope(req.user);
     const result = await adminOrdersRepository.transition({
       orderId: req.params.id,
@@ -170,17 +176,19 @@ export const updateOrderStatus = async (req, res) => {
     await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
     res.json({ ...result, message: `Đơn hàng → ${status}` });
   } catch (err) {
-    const status = err.status || 400;
+    const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
   }
 };
 
-router.put('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), updateOrderStatus);
-router.patch('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), updateOrderStatus);
+router.put('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
+router.patch('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
 
-router.put('/orders/:id/cancel', requireRole('super', 'manager', 'cashier'), async (req, res) => {
+router.put('/orders/:id/cancel', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   try {
     const { reason } = req.body;
+    validateOrderId(req.params.id);
+    validateOrderMutationInput({ reason });
     const scopedStoreId = resolveStoreScope(req.user);
     const result = await adminOrdersRepository.cancel({
       orderId: req.params.id,
@@ -193,13 +201,14 @@ router.put('/orders/:id/cancel', requireRole('super', 'manager', 'cashier'), asy
     await logAudit(req.user.sub, `Hủy đơn #${req.params.id}`, reason || `Hủy bởi ${req.user.role}`, req);
     res.json({ ...result, message: 'Đơn hàng đã bị hủy' });
   } catch (err) {
-    const status = err.status || 400;
+    const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
   }
-});
+}));
 
-router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashier'), async (req, res) => {
+router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   try {
+    validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
     const result = await adminOrdersRepository.confirmPayment({
       orderId: req.params.id,
@@ -212,10 +221,10 @@ router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashi
       payment_status: 'paid',
     });
   } catch (err) {
-    const status = err.status || 400;
+    const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
   }
-});
+}));
 
 // ═══════════ MENU (CRUD) ═══════════
 

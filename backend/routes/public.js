@@ -15,6 +15,9 @@ import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
 import promotionsRepository from '../repositories/postgres/promotions.js';
 import ordersRepository from '../repositories/postgres/orders.js';
 import { hashOrderRequest } from '../services/order-idempotency.js';
+import { asyncHandler } from '../middleware/async-handler.js';
+import { orderErrorStatus } from '../services/orders/order-errors.js';
+import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
 const router = Router();
 
@@ -396,7 +399,7 @@ router.get('/users/:id', authenticate, requireCustomerSelf, async (req, res) => 
 
 router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, res) => {
   try {
-    const requestedId = Number(req.params.id);
+    const requestedId = validateOrderId(req.params.id);
     const limit = validatePaginationLimit(req.query.limit, 50, 100);
     const cursor = decodeCursor(req.query.cursor);
     const rows = await ordersRepository.listCustomerOrders({ userId: requestedId, limit, cursor });
@@ -530,6 +533,9 @@ export const handleCustomerCancelOrder = async (req, res) => {
   try {
     const { reason, cancel_token } = req.body || {};
     const orderIdentifier = req.params.id || req.body?.order_id || req.body?.order_code;
+    if (req.params.id || req.body?.order_code) validateOrderReference(orderIdentifier);
+    if (req.body?.order_id) validateOrderId(req.body.order_id);
+    validateOrderMutationInput({ reason });
     const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim();
 
     // 1) Verify customer JWT identity if logged in
@@ -555,13 +561,13 @@ export const handleCustomerCancelOrder = async (req, res) => {
 
     res.json({ ...result, message: 'Đã hủy đơn hàng thành công' });
   } catch (err) {
-    const status = err.status || 400;
+    const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
   }
 };
 
-router.post('/orders/:id/cancel', handleCustomerCancelOrder);
-router.post('/orders/cancel', handleCustomerCancelOrder);
+router.post('/orders/:id/cancel', asyncHandler(handleCustomerCancelOrder));
+router.post('/orders/cancel', asyncHandler(handleCustomerCancelOrder));
 
 // ═══════════ TABLE RESOLVE (QR) ═══════════
 router.get('/table/resolve', async (req, res) => {
@@ -597,7 +603,7 @@ router.post('/vouchers/apply', async (req, res) => {
 });
 
 // ═══════════ CREATE ORDER (Zero-Trust Price Engine) ═══════════
-router.post('/orders', async (req, res) => {
+router.post('/orders', asyncHandler(async (req, res) => {
   try {
     const {
       store_id, table_id, order_type = 'Take-away', payment_method = 'VietQR',
@@ -611,6 +617,7 @@ router.post('/orders', async (req, res) => {
     if (!inputValidation.valid) {
       return res.status(400).json({ error: inputValidation.error });
     }
+    validateCreateOrderInput(req.body);
 
     const normalizedSource = source || 'online';
     const normalizedOrderType = order_type || 'Take-away';
@@ -709,9 +716,9 @@ router.post('/orders', async (req, res) => {
     });
     res.status(order.replay ? 200 : 201).json({ ...order, status: 'Đang chuẩn bị' });
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message });
+    res.status(orderErrorStatus(err)).json({ error: err.message });
   }
-});
+}));
 
 
 export default router;
