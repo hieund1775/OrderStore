@@ -45,6 +45,12 @@ services:
         sync: false
       - key: PAYOS_CHECKSUM_KEY
         sync: false
+      - key: PAYOS_RETURN_URL
+        sync: false # https://<frontend-render-url>/theo-doi-don
+      - key: PAYOS_CANCEL_URL
+        sync: false # https://<frontend-render-url>/thanh-toan
+      - key: PAYOS_PAYMENT_TIMEOUT_MINUTES
+        value: "15"
       - key: GOOGLE_CLIENT_ID
         sync: false
 
