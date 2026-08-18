@@ -50,7 +50,7 @@ export const REQUIRED_POSTGRES_COLUMNS = {
   categories: ['id', 'name', 'slug', 'sort_order', 'is_visible'],
   products: ['id', 'category_id', 'slug', 'base_tea', 'price', 'image_url', 'is_available'],
   tables: ['id', 'store_id', 'name', 'qr_code_token', 'is_active'],
-  orders: ['id', 'order_code', 'store_id', 'table_id', 'order_type', 'payment_status', 'payment_provider', 'payment_expires_at', 'delivery_addr', 'cancel_token_hash'],
+  orders: ['id', 'order_code', 'store_id', 'table_id', 'order_type', 'payment_status', 'payment_provider', 'payment_link_id', 'payos_order_code', 'payment_checkout_url', 'payment_qr_code', 'payment_expires_at', 'delivery_addr', 'cancel_token_hash'],
   order_items: ['id', 'order_id', 'product_id', 'size_label', 'base_tea', 'sugar_level', 'ice_level', 'unit_price', 'line_total'],
   order_status_history: ['id', 'order_id', 'status', 'changed_by'],
   voucher_usage_history: ['id', 'promotion_id', 'user_phone', 'order_id'],

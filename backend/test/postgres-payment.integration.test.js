@@ -77,6 +77,8 @@ describe('PostgreSQL PayOS Integration Suite', () => {
       assert.equal(first.id, retry.id);
       assert.equal(calls, 1);
       assert.ok(first.checkout_url);
+      assert.equal(retry.checkout_url, first.checkout_url);
+      assert.equal(retry.qr_code, first.qr_code);
     } finally {
       setPayOSForTest();
       await postgresDb.close();

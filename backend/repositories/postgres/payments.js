@@ -5,7 +5,8 @@ export function createPaymentsRepository(database = postgresDb) {
     async reservePayOSOrder({ orderId, payosOrderCode, paymentExpiresAt }) {
       return database.transaction(async (tx) => {
         const [rows] = await tx.query(
-          `SELECT id, order_code, total, payment_link_id, payos_order_code, payment_expires_at
+          `SELECT id, order_code, total, payment_link_id, payos_order_code,
+                  payment_checkout_url, payment_qr_code, payment_expires_at
            FROM orders WHERE id = $1 AND payment_provider = 'payos' AND payment_status = 'unpaid'
            FOR UPDATE`,
           [orderId],
@@ -16,23 +17,26 @@ export function createPaymentsRepository(database = postgresDb) {
         const [reserved] = await tx.query(
           `UPDATE orders SET payos_order_code = $2, payment_expires_at = $3,
              payment_created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 RETURNING id, order_code, total, payment_link_id, payos_order_code, payment_expires_at`,
+           WHERE id = $1 RETURNING id, order_code, total, payment_link_id, payos_order_code,
+             payment_checkout_url, payment_qr_code, payment_expires_at`,
           [orderId, payosOrderCode, paymentExpiresAt],
         );
         return reserved[0];
       });
     },
 
-    async attachPaymentLink({ orderId, paymentLinkId, payosOrderCode, paymentExpiresAt }) {
+    async attachPaymentLink({ orderId, paymentLinkId, payosOrderCode, paymentExpiresAt, checkoutUrl = null, qrCode = null }) {
       const [rows] = await database.query(
         `UPDATE orders
          SET payment_link_id = $2, payos_order_code = $3,
+             payment_checkout_url = $5, payment_qr_code = $6,
              payment_created_at = CURRENT_TIMESTAMP, payment_expires_at = $4,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND payment_provider = 'payos' AND payment_status = 'unpaid'
          RETURNING id, order_code, total, payment_status, payment_provider,
-                   payment_link_id, payos_order_code, payment_expires_at`,
-        [orderId, paymentLinkId, payosOrderCode, paymentExpiresAt],
+                   payment_link_id, payos_order_code, payment_checkout_url,
+                   payment_qr_code, payment_expires_at`,
+        [orderId, paymentLinkId, payosOrderCode, paymentExpiresAt, checkoutUrl, qrCode],
       );
       return rows[0] || null;
     },

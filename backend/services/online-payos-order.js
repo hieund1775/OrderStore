@@ -26,15 +26,39 @@ export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, c
     paymentExpiresAt: expiresAt,
   });
   if (!reserved) throw new Error('Không thể khởi tạo thanh toán PayOS');
-  if (reserved.payment_link_id) return { ...order, payment_link_id: reserved.payment_link_id, payment_expires_at: reserved.payment_expires_at };
+  if (reserved.payment_link_id) {
+    if (!reserved.payment_checkout_url && !reserved.payment_qr_code) {
+      const error = new Error('PayOS đã có liên kết nhưng thiếu mã QR thanh toán, vui lòng thử lại');
+      error.status = 502;
+      throw error;
+    }
+    return {
+      ...order,
+      checkout_url: reserved.payment_checkout_url,
+      qr_code: reserved.payment_qr_code,
+      payment_link_id: reserved.payment_link_id,
+      payos_order_code: reserved.payos_order_code,
+      payment_expires_at: reserved.payment_expires_at,
+    };
+  }
   const link = await createPaymentLinkForOrder({
     orderId: order.id, orderCode: order.order_code, total: order.total,
     payosOrderCode: reserved.payos_order_code, paymentExpiresAt: reserved.payment_expires_at,
     returnUrl: input.return_url, cancelUrl: input.cancel_url,
   });
+  if (!link.checkoutUrl && !link.qrCode) {
+    const error = new Error('PayOS không trả về mã QR thanh toán');
+    error.status = 502;
+    throw error;
+  }
   const payment = await paymentsRepository.attachPaymentLink({
     orderId: order.id, paymentLinkId: link.paymentLinkId, payosOrderCode: reserved.payos_order_code,
-    paymentExpiresAt: reserved.payment_expires_at,
+    paymentExpiresAt: reserved.payment_expires_at, checkoutUrl: link.checkoutUrl, qrCode: link.qrCode,
   });
+  if (!payment) {
+    const error = new Error('Không thể lưu liên kết thanh toán PayOS');
+    error.status = 502;
+    throw error;
+  }
   return { ...order, checkout_url: link.checkoutUrl, qr_code: link.qrCode, payment_link_id: payment.payment_link_id, payos_order_code: payment.payos_order_code, payment_expires_at: payment.payment_expires_at };
 }
