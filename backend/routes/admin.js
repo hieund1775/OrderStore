@@ -4,12 +4,13 @@ import { resolveStoreScope } from '../middleware/branch-scope.js';
 import { logAudit } from '../services/audit.js';
 import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries } from '../services/date-range.js';
-import { decodeCursor, validatePaginationLimit, buildPageInfo } from '../services/cursor-pagination.js';
+import { decodeCursor, validatePaginationLimit } from '../services/cursor-pagination.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { orderErrorStatus } from '../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../validation/order-schemas.js';
 
 import adminOrdersRepository from '../repositories/postgres/admin-orders.js';
+import adminOrderService from '../services/orders/admin-order-service.js';
 import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
 import adminStoresRepository from '../repositories/postgres/admin-stores.js';
 import adminPromotionsRepository from '../repositories/postgres/admin-promotions.js';
@@ -127,14 +128,11 @@ router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), asy
       dateTo = end;
     }
 
-    const rows = await adminOrdersRepository.list({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit });
-    const { rows: pagedOrders, page_info } = buildPageInfo({ rows, limit });
-
-    if (rawCursor !== undefined || rawLimit !== undefined) {
-      return res.json({ orders: pagedOrders, page_info });
-    }
-
-    res.json(pagedOrders);
+    const result = await adminOrderService.list({
+      status, storeId: scopedStoreId, dateFrom, dateTo, search, cursor, limit,
+      paginated: rawCursor !== undefined || rawLimit !== undefined,
+    });
+    res.json(result);
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
@@ -145,7 +143,7 @@ router.get('/orders/:id', requireRole('super', 'manager', 'cashier', 'kitchen'),
   try {
     validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
-    const order = await adminOrdersRepository.detail({ orderId: req.params.id, scopedStoreId });
+    const order = await adminOrderService.getDetail({ orderId: req.params.id, storeId: scopedStoreId });
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
     res.json(order);
   } catch (err) {
@@ -596,7 +594,7 @@ router.post('/inventory/:id/log', requireRole('super', 'manager'), async (req, r
 router.get('/kitchen/orders', requireRole('super', 'manager', 'kitchen'), async (req, res) => {
   try {
     const scopedStoreId = resolveStoreScope(req.user);
-    const orders = await adminOrdersRepository.listKitchen({ scopedStoreId });
+    const orders = await adminOrderService.listKitchen({ storeId: scopedStoreId });
     res.json(orders);
   } catch (err) {
     const status = err.status || 500;
