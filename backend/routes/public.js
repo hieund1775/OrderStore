@@ -700,7 +700,7 @@ router.post('/orders', async (req, res) => {
     });
     res.status(order.replay ? 200 : 201).json({ ...order, status: 'Đang chuẩn bị' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message });
   }
 });
 
