@@ -5,12 +5,11 @@ services:
   - type: web
     name: teaplus-order-backend
     runtime: node
-    plan: starter
+    plan: free
     region: singapore # sin region closest to Vietnam for low latency
     rootDir: backend
     buildCommand: npm install --omit=dev
-    preDeployCommand: npm run db:pg:migrate
-    startCommand: npm start
+    startCommand: npm run db:pg:migrate && npm start
     healthCheckPath: /ready
     autoDeploy: false
     envVars:
@@ -55,7 +54,7 @@ services:
   - type: web
     name: teaplus-order-frontend
     runtime: node
-    plan: starter
+    plan: free
     region: singapore
     rootDir: frontend
     buildCommand: npm install && npm run build
@@ -68,45 +67,6 @@ services:
       - key: VITE_STANDALONE
         value: "false"
 
-  - type: cron
-    name: teaplus-payos-expiry-cron
-    runtime: node
-    plan: starter
-    region: singapore
-    rootDir: backend
-    schedule: "*/5 * * * *"
-    buildCommand: npm install --omit=dev
-    startCommand: npm run payos:expire
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DB_DIALECT
-        value: postgres
-      - key: DATABASE_URL
-        sync: false
-      - key: PGSSLMODE
-        value: require
-      - key: PAYOS_EXPIRE_BATCH_SIZE
-        value: "50"
-
   # ═══════════════════════════════════════════════════════════════════
   # 3. Expired OTP Cleanup Cron Job (Runs hourly)
   # ═══════════════════════════════════════════════════════════════════
-  - type: cron
-    name: teaplus-otp-cleanup-cron
-    runtime: node
-    plan: starter
-    region: singapore
-    rootDir: backend
-    schedule: "0 * * * *"
-    buildCommand: npm install --omit=dev
-    startCommand: npm run db:pg:otp:cleanup
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DB_DIALECT
-        value: postgres
-      - key: DATABASE_URL
-        sync: false
-      - key: PGSSLMODE
-        value: require
