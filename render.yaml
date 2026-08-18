@@ -9,6 +9,7 @@ services:
     region: singapore # sin region closest to Vietnam for low latency
     rootDir: backend
     buildCommand: npm install --omit=dev
+    preDeployCommand: npm run db:pg:migrate
     startCommand: npm start
     healthCheckPath: /ready
     autoDeploy: false
@@ -51,6 +52,22 @@ services:
   # ═══════════════════════════════════════════════════════════════════
   # 2. PayOS Order Expiry Cron Job (Runs every 5 minutes)
   # ═══════════════════════════════════════════════════════════════════
+  - type: web
+    name: teaplus-order-frontend
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: node .output/server/index.mjs
+    healthCheckPath: /
+    autoDeploy: false
+    envVars:
+      - key: VITE_API_URL
+        sync: false # Set to the deployed backend URL in Render Dashboard
+      - key: VITE_STANDALONE
+        value: "false"
+
   - type: cron
     name: teaplus-payos-expiry-cron
     runtime: node
