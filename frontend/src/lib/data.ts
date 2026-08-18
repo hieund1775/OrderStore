@@ -12,8 +12,9 @@ export const brand = {
   email: 'cskh@tratraicayto.vn',
 };
 
-export function vnd(value: number) {
-  return value.toLocaleString('vi-VN') + '₫';
+export function vnd(value: number | string | null | undefined) {
+  const amount = Number(value);
+  return (Number.isFinite(amount) ? amount : 0).toLocaleString('vi-VN') + '₫';
 }
 
 /**

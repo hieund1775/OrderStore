@@ -288,6 +288,8 @@ function Checkout() {
       }>("/api/orders", payload, { headers: { "Idempotency-Key": idempotencyKey } });
 
       orderRequestRef.current = null;
+      const responseTotal = Number(res.total);
+      const orderTotal = Number.isFinite(responseTotal) ? responseTotal : total;
 
       if (res.cancel_token) {
         try {
@@ -300,7 +302,7 @@ function Checkout() {
         const pending = {
           order_code: res.order_code,
           order_id: res.order_id,
-          total: res.total,
+          total: orderTotal,
           checkout_url: res.checkout_url,
           qr_code: res.qr_code,
           payment_expires_at: res.payment_expires_at,
@@ -311,7 +313,7 @@ function Checkout() {
       } else {
         clear();
         toast.success("Đặt hàng thành công!", {
-          description: `Mã đơn ${res.order_code} · ${vnd(res.total)} — đang chờ xác nhận.`,
+          description: `Mã đơn ${res.order_code} · ${vnd(orderTotal)} — đang chờ xác nhận.`,
         });
         navigate({ to: "/theo-doi-don", search: { code: res.order_code } });
       }

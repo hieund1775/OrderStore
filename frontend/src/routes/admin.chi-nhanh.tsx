@@ -152,7 +152,7 @@ function parseAmenities(s: string | null): string[] {
 }
 
 function vnd(n: number) {
-  return n.toLocaleString("vi-VN") + "₫";
+  return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
 }
 
 function storeMapUrl(s: Store) {

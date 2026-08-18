@@ -62,7 +62,7 @@ export function ProductCard({ product }: { product: Product }) {
           <div className="text-muted-foreground flex items-center gap-1 text-xs">
             <Star className="fill-primary text-primary size-3.5" />
             <span className="text-foreground font-semibold">{product.rating}</span>
-            <span>· {product.reviews.toLocaleString('vi-VN')} đánh giá</span>
+            <span>· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
           </div>
           <p className="text-primary mt-1 text-lg font-bold">{vnd(product.price)}</p>
           <div className="mt-3 flex gap-2">
