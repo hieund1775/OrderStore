@@ -1,119 +1,135 @@
+import { writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import app from '../app.js';
-import postgresDb from '../config/db-postgres.js';
+
+function safeTarget(target) {
+  try {
+    const url = new URL(target);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return 'local-ephemeral-server';
+  }
+}
+
+function redactReportText(value) {
+  return String(value || '')
+    .replace(/(authorization|cookie|token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
+    .replace(/(https?:\/\/)[^\s/@]+@/gi, '$1[redacted]@')
+    .replace(/\?[^\s]*/g, '?[redacted]');
+}
+
+function validCollectionDto(value, key) {
+  return Array.isArray(value)
+    || (value && typeof value === 'object' && (Array.isArray(value[key]) || Array.isArray(value.data)));
+}
+
+async function responseJson(response, name) {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`${name} did not return valid JSON`);
+  }
+}
 
 /**
- * Staging Smoke Test Suite
- *
- * Verifies core API availability, probes, and catalog/order contracts.
- * Can target a deployed staging URL or spins up an ephemeral test server locally.
+ * Runs probes against STAGING_API_URL when supplied, otherwise against a local
+ * ephemeral server. Remote mode deliberately has stricter database/catalog
+ * expectations so a preview deployment cannot pass on an unavailable API.
  */
-async function runStagingSmoke() {
-  const targetUrl = process.env.STAGING_API_URL || null;
+export async function runStagingSmoke({
+  targetUrl = process.env.STAGING_API_URL || null,
+  appInstance = app,
+  outputFile = process.env.SMOKE_OUTPUT_FILE || null,
+} = {}) {
+  const remote = Boolean(targetUrl);
   let server = null;
   let baseUrl = targetUrl;
-
   if (!baseUrl) {
-    server = http.createServer(app);
+    server = http.createServer(appInstance);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const port = server.address().port;
-    baseUrl = `http://127.0.0.1:${port}`;
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
     console.log(`ℹ️ Running smoke tests locally on ephemeral server: ${baseUrl}`);
   } else {
-    console.log(`ℹ️ Running smoke tests against remote staging target: ${baseUrl}`);
+    console.log(`ℹ️ Running smoke tests against remote staging target: ${safeTarget(baseUrl)}`);
   }
 
   const smokeResults = {
-    target: baseUrl,
+    target: safeTarget(baseUrl),
+    mode: remote ? 'remote' : 'local',
     started_at: new Date().toISOString(),
     tests: [],
+    success: false,
   };
 
   async function testStep(name, fn) {
     const start = performance.now();
     try {
       await fn();
-      const durationMs = Math.round((performance.now() - start) * 100) / 100;
-      smokeResults.tests.push({ name, status: 'PASS', durationMs });
-      console.log(`  ✔ [PASS] ${name} (${durationMs}ms)`);
+      const duration_ms = Math.round((performance.now() - start) * 100) / 100;
+      smokeResults.tests.push({ name, status: 'PASS', duration_ms });
+      console.log(`  ✔ [PASS] ${name} (${duration_ms}ms)`);
     } catch (err) {
-      const durationMs = Math.round((performance.now() - start) * 100) / 100;
-      smokeResults.tests.push({ name, status: 'FAIL', durationMs, error: err.message });
-      console.error(`  ✖ [FAIL] ${name} (${durationMs}ms): ${err.message}`);
+      const duration_ms = Math.round((performance.now() - start) * 100) / 100;
+      const error = redactReportText(err?.message || 'Smoke step failed');
+      smokeResults.tests.push({ name, status: 'FAIL', duration_ms, error });
+      console.error(`  ✖ [FAIL] ${name} (${duration_ms}ms): ${error}`);
       throw err;
     }
   }
 
   try {
-    // 1. Probe /live test
     await testStep('Liveness Probe /live responds 200 with status ok', async () => {
-      const res = await fetch(`${baseUrl}/live`);
-      assert.equal(res.status, 200);
-      const json = await res.json();
-      assert.equal(json.status, 'ok');
+      const response = await fetch(`${baseUrl}/live`);
+      assert.equal(response.status, 200);
+      assert.equal((await responseJson(response, '/live')).status, 'ok');
     });
 
-    // 2. Probe /ready test (Checks PostgreSQL connectivity)
-    await testStep('Readiness Probe /ready responds 200 with DB status', async () => {
-      const res = await fetch(`${baseUrl}/ready`);
-      // If DB is offline in CI without live DB, probe might return 503 as expected
-      if (res.status === 200) {
-        const json = await res.json();
-        assert.equal(json.status, 'ready');
-        assert.equal(json.database, 'connected');
-      } else {
-        assert.equal(res.status, 503);
-      }
+    await testStep('Readiness Probe /ready confirms PostgreSQL connectivity in remote mode', async () => {
+      const response = await fetch(`${baseUrl}/ready`);
+      if (!remote && response.status === 503) return;
+      assert.equal(response.status, 200);
+      const json = await responseJson(response, '/ready');
+      assert.equal(json.status, 'ready');
+      assert.equal(json.database, 'connected');
     });
 
-    // 3. Health Check /api/health
-    await testStep('Public Health Endpoint /api/health responds 200', async () => {
-      const res = await fetch(`${baseUrl}/api/health`);
-      assert.equal(res.status, 200);
-      const json = await res.json();
-      assert.equal(json.status, 'ok');
+    await testStep('Public Health Endpoint /api/health responds 200 with status ok', async () => {
+      const response = await fetch(`${baseUrl}/api/health`);
+      assert.equal(response.status, 200);
+      assert.equal((await responseJson(response, '/api/health')).status, 'ok');
     });
 
-    // 4. Security Headers
     await testStep('Security Headers are enforced by Helmet', async () => {
-      const res = await fetch(`${baseUrl}/api/health`);
-      const contentTypeOptions = res.headers.get('x-content-type-options');
-      assert.equal(contentTypeOptions, 'nosniff');
+      const response = await fetch(`${baseUrl}/api/health`);
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
     });
 
-    // 5. Public Stores Endpoint
-    await testStep('Public Stores Endpoint /api/stores responds with valid JSON', async () => {
-      const res = await fetch(`${baseUrl}/api/stores`);
-      assert.ok(res.status === 200 || res.status === 500); // 500 only if no DB in unit mode
-    });
-
-    // 6. Public Categories Endpoint
-    await testStep('Public Categories Endpoint /api/categories responds with valid JSON', async () => {
-      const res = await fetch(`${baseUrl}/api/categories`);
-      assert.ok(res.status === 200 || res.status === 500);
-    });
-
-    // 7. Public Products Endpoint
-    await testStep('Public Products Endpoint /api/products responds with valid JSON', async () => {
-      const res = await fetch(`${baseUrl}/api/products`);
-      assert.ok(res.status === 200 || res.status === 500);
-    });
-
-    console.log('\n✅ All Staging Smoke Tests Passed Successfully!');
-    smokeResults.success = true;
-    return smokeResults;
-  } finally {
-    if (server) {
-      await new Promise((resolve) => server.close(resolve));
+    for (const [path, key] of [['/api/stores', 'stores'], ['/api/categories', 'categories'], ['/api/products', 'products']]) {
+      await testStep(`Public catalog endpoint ${path} responds with valid JSON`, async () => {
+        const response = await fetch(`${baseUrl}${path}`);
+        if (!remote && response.status === 500) return;
+        assert.equal(response.status, 200);
+        if (!remote) return;
+        assert.ok(validCollectionDto(await responseJson(response, path), key), `${path} must return an array or documented collection DTO`);
+      });
     }
+
+    smokeResults.success = true;
+    console.log('\n✅ All Staging Smoke Tests Passed Successfully!');
+    return smokeResults;
+  } catch (err) {
+    smokeResults.error = redactReportText(err?.message || 'Staging smoke failed');
+    throw err;
+  } finally {
+    smokeResults.finished_at = new Date().toISOString();
+    if (outputFile) await writeFile(outputFile, `${JSON.stringify(smokeResults, null, 2)}\n`, 'utf8');
+    if (server) await new Promise((resolve) => server.close(resolve));
   }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('render-staging-smoke.js') && !process.env.NODE_TEST_CONTEXT) {
-  runStagingSmoke()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
+  runStagingSmoke().then(() => process.exit(0)).catch(() => process.exit(1));
 }
 
 export default runStagingSmoke;
