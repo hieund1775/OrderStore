@@ -30,7 +30,9 @@ describe('PostgreSQL Test Guard & Redaction Suite', () => {
       () => {
         validatePostgresTestGuard('postgresql://user:pass@localhost:5432/teaplus_test', {
           env: 'development',
-          confirmFlag: undefined,
+          // Do not rely on the process environment: integration runs set this
+          // flag globally, but the guard must still reject an absent/invalid value.
+          confirmFlag: '0',
         });
       },
       /GUARDS VIOLATION: PostgreSQL integration tests require explicit POSTGRES_INTEGRATION=1/

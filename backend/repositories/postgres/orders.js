@@ -86,7 +86,7 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
           `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
              payment_method, payment_status, payment_provider, cancel_token_hash, customer_name, customer_phone,
              delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
            RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
           [orderCode(), userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
             input.payment_method || 'COD', paymentProvider, cancelTokenHash, input.customer_name, input.customer_phone,

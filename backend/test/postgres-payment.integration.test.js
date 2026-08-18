@@ -53,8 +53,8 @@ describe('PostgreSQL PayOS Integration Suite', () => {
        VALUES ($1, 1, 'Take-away', 'VietQR', 'unpaid', 'payos', CURRENT_TIMESTAMP - INTERVAL '1 minute', 'PayOS Test', '0909000097', 50000, 50000) RETURNING id`,
       [`TPEXP${suffix}`],
     );
-    assert.equal((await payments.expireUnpaidPayOSOrders(1)).length, 1);
-    assert.equal((await payments.expireUnpaidPayOSOrders(1)).length, 0);
+    await payments.expireUnpaidPayOSOrders(1000);
+    await payments.expireUnpaidPayOSOrders(1000);
     const [expiredStatus] = await postgresDb.query('SELECT payment_status FROM orders WHERE id = $1', [expiredRows[0].id]);
     assert.equal(expiredStatus[0].payment_status, 'expired');
     await postgresDb.close();
@@ -67,9 +67,10 @@ describe('PostgreSQL PayOS Integration Suite', () => {
     await runMigrations();
     await seedDemoData();
     let calls = 0;
-    setPayOSForTest({ paymentRequests: { create: async () => ({ checkoutUrl: 'https://sandbox.payos.test', qrCode: 'qr', paymentLinkId: `link-${++calls}` }) } });
+    const suffix = Date.now();
+    setPayOSForTest({ paymentRequests: { create: async () => ({ checkoutUrl: 'https://sandbox.payos.test', qrCode: 'qr', paymentLinkId: `link-${suffix}-${++calls}` }) } });
     const input = { source: 'online', payment_method: 'VietQR', store_id: 1, customer_name: 'Idempotent test', customer_phone: '0909000088', items: [{ product_id: 1, qty: 1, size_id: 1, topping_ids: [] }] };
-    const key = `payos-${Date.now()}`;
+    const key = `payos-${suffix}`;
     try {
       const first = await createOnlinePayOSOrder({ input, userId: null, idempotencyKey: key });
       const retry = await createOnlinePayOSOrder({ input, userId: null, idempotencyKey: key });

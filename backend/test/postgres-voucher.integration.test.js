@@ -34,7 +34,7 @@ describe('PostgreSQL voucher integration suite', () => {
         /không tồn tại|không áp dụng/i,
       );
 
-      setPayOSForTest({ paymentRequests: { create: async () => ({ checkoutUrl: 'https://sandbox.payos.test', qrCode: 'qr', paymentLinkId: `voucher-link-${++payosCalls}` }) } });
+      setPayOSForTest({ paymentRequests: { create: async () => ({ checkoutUrl: 'https://sandbox.payos.test', qrCode: 'qr', paymentLinkId: `voucher-link-${suffix}-${++payosCalls}` }) } });
       const input = {
         source: 'online', payment_method: 'VietQR', store_id: 1,
         customer_name: 'Voucher race', customer_phone: '0909000011', voucher_code: code,
