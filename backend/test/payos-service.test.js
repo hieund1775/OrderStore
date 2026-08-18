@@ -11,7 +11,7 @@ describe('PayOS SDK boundary', () => {
       captured = payload;
       return { checkoutUrl: 'https://sandbox.payos.test/checkout', qrCode: 'qr', paymentLinkId: 'link-1' };
     } } });
-    const result = await createPaymentLinkForOrder({ orderId: 12, orderCode: 'TPTEST', total: 50000, payosOrderCode: 812345001 });
+    const result = await createPaymentLinkForOrder({ orderId: 12, orderCode: 'TPTEST', total: 50000, payosOrderCode: '812345001' });
     assert.equal(captured.orderCode, 812345001);
     assert.equal(captured.amount, 50000);
     assert.equal(result.payosOrderCode, 812345001);

@@ -48,7 +48,15 @@ export async function createPaymentLinkForOrder({
   // Dùng 6 chữ số cuối timestamp + 4 chữ số cuối orderId → tương đương 10 chữ số để tránh vượt giới hạn API.
   const timePart = String(Date.now()).slice(-6);
   const idPart = String(orderId % 10000).padStart(4, '0');
-  const payosOrderCode = reservedPayosOrderCode || Number(`${timePart}${idPart}`);
+  // PostgreSQL returns BIGINT columns as strings. PayOS requires orderCode
+  // to be a positive safe integer, so normalize it before calling the SDK.
+  const generatedOrderCode = Number(`${timePart}${idPart}`);
+  const payosOrderCode = reservedPayosOrderCode == null
+    ? generatedOrderCode
+    : Number(reservedPayosOrderCode);
+  if (!Number.isSafeInteger(payosOrderCode) || payosOrderCode <= 0) {
+    throw new Error('Mã đơn PayOS không hợp lệ');
+  }
   const timeoutMinutes = parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10);
   const expiredAtSec = Math.floor(Date.now() / 1000) + timeoutMinutes * 60;
   const paymentExpiresAt = new Date(expiredAtSec * 1000);
