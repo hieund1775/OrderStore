@@ -2,20 +2,23 @@ import crypto from 'node:crypto';
 import ordersRepository from '../repositories/postgres/orders.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 import { createPaymentLinkForOrder } from './payos.js';
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
-  return value;
-}
+import { hashOrderRequest } from './order-idempotency.js';
 
 function makePayOSCode(orderId) {
   return Number(`${String(Date.now()).slice(-6)}${String(Number(orderId) % 10000).padStart(4, '0')}`);
 }
 
-export async function createOnlinePayOSOrder({ input, userId, idempotencyKey }) {
-  const requestHash = crypto.createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex');
-  const order = await ordersRepository.createOnlineOrder({ input, userId, idempotencyKey, requestHash });
+export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, cancelToken, idempotencyKey }) {
+  const requestHash = hashOrderRequest(input);
+  let rawCancelToken = cancelToken;
+  let tokenHash = cancelTokenHash;
+  if (!userId && !rawCancelToken) {
+    rawCancelToken = crypto.randomBytes(32).toString('hex');
+    tokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
+  }
+  const order = await ordersRepository.createPublicOrder({
+    input, userId, cancelTokenHash: tokenHash, cancelToken: rawCancelToken, idempotencyKey, requestHash, paymentProvider: 'payos',
+  });
   const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
   const reserved = await paymentsRepository.reservePayOSOrder({
     orderId: order.id,

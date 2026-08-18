@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import db from '../config/db.js';
+import db from '../config/db-postgres.js';
 import { handleCustomerCancelOrder } from '../routes/public.js';
 
 describe('Order Security & Concurrency Guard (Production Handler + DB Adapter)', () => {
@@ -96,12 +96,8 @@ describe('Order Security & Concurrency Guard (Production Handler + DB Adapter)',
 
             // 3) INSERT into order_status_history
             if (sqlText.includes('INSERT INTO order_status_history')) {
-              let status = 'Đã hủy';
-              let note = params[1] || null;
-              if (!sqlText.includes("N'Đã hủy'")) {
-                status = params[1];
-                note = params[2] || null;
-              }
+              const status = 'Đã hủy';
+              const note = params[1] || null;
 
               const newEntry = {
                 id: testStatusHistory.length + 1,

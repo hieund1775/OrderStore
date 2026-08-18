@@ -5,7 +5,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
 import publicRoutes from '../routes/public.js';
-import db, { compileQuery } from '../config/db.js';
+import db from '../config/db-postgres.js';
 import {
   encodeCursor,
   decodeCursor,
@@ -151,23 +151,19 @@ describe('Customer History HTTP Integration Suite (Real Express Network Requests
 
   const mockDbAdapter = {
     async query(sqlText, params = []) {
-      // Validate query compilation across both SQL Auth and Trusted modes
-      compileQuery(sqlText, params, false);
-      compileQuery(sqlText, params, true);
-
       queryHistory.push({ sql: sqlText, params });
 
       // 1) Orders list query
-      if (sqlText.includes('FROM orders o') && sqlText.includes('WHERE o.user_id = ?')) {
-        const limit = Number(params[0]);
-        const targetUserId = Number(params[1]);
+      if (sqlText.includes('FROM orders o') && sqlText.includes('WHERE o.user_id = $1')) {
+        const limit = Number(params.at(-1));
+        const targetUserId = Number(params[0]);
 
         let filtered = testOrders.filter((o) => o.user_id === targetUserId);
 
         // Cursor filter: (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
-        if (sqlText.includes('o.created_at < ?')) {
-          const cursorCreatedAt = new Date(params[2]);
-          const cursorId = Number(params[4]);
+        if (sqlText.includes('o.created_at < $2')) {
+          const cursorCreatedAt = new Date(params[1]);
+          const cursorId = Number(params[2]);
 
           filtered = filtered.filter((o) => {
             const oTime = o.created_at.getTime();
@@ -189,9 +185,9 @@ describe('Customer History HTTP Integration Suite (Real Express Network Requests
       }
 
       // 2) Batch items query
-      if (sqlText.includes('FROM order_items') && sqlText.includes('WHERE order_id IN')) {
+      if (sqlText.includes('FROM order_items') && sqlText.includes('WHERE order_id = ANY')) {
         const items = [];
-        for (const orderId of params) {
+        for (const orderId of params[0]) {
           items.push({
             id: orderId * 10 + 1,
             order_id: orderId,
@@ -207,9 +203,9 @@ describe('Customer History HTTP Integration Suite (Real Express Network Requests
       }
 
       // 3) Batch toppings query
-      if (sqlText.includes('FROM order_item_toppings') && sqlText.includes('WHERE order_item_id IN')) {
+      if (sqlText.includes('FROM order_item_toppings') && sqlText.includes('WHERE order_item_id = ANY')) {
         const toppings = [];
-        for (const itemId of params) {
+        for (const itemId of params[0]) {
           toppings.push({
             id: itemId * 100 + 1,
             order_item_id: itemId,
