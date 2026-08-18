@@ -60,7 +60,7 @@ export async function handlePayOSWebhook(req, res) {
 
     return res.status(classified.statusCode).json({ ok: classified.ok, message: classified.message });
   } catch (err) {
-    console.error('💥 PayOS Webhook Infrastructure Error:', err);
+    console.error('PayOS webhook infrastructure error:', err?.name || 'unknown');
     // Lỗi hạ tầng / Database timeout phải trả HTTP 500 để PayOS retry
     const classified = classifyWebhookError({ type: 'INFRASTRUCTURE', message: err.message });
     return res.status(classified.statusCode).json(classified.body);

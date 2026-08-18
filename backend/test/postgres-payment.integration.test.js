@@ -9,7 +9,7 @@ import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
 import { setPayOSForTest } from '../services/payos.js';
 
 const enabled = process.env.POSTGRES_INTEGRATION === '1';
-const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+const url = process.env.TEST_DATABASE_URL;
 
 describe('PostgreSQL PayOS Integration Suite', () => {
   it('keeps webhook retries, amount checks, and expiry idempotent', async (t) => {
@@ -32,7 +32,31 @@ describe('PostgreSQL PayOS Integration Suite', () => {
     assert.equal((await payments.processSuccessfulWebhook({ eventKey: `event-${suffix}`, orderCode: reserved.payos_order_code, amount: 50000, paymentLinkId: `link-${suffix}` })).kind, 'duplicate');
     const status = await payments.findStatusByOrderCode(`TPPAY${suffix}`);
     assert.equal(status.payment_status, 'paid');
-    await assert.doesNotReject(() => payments.expireUnpaidPayOSOrders());
+
+    const [mismatchRows] = await postgresDb.query(
+      `INSERT INTO orders (order_code, store_id, order_type, payment_method, payment_status, payment_provider, customer_name, customer_phone, subtotal, total)
+       VALUES ($1, 1, 'Take-away', 'VietQR', 'unpaid', 'payos', 'PayOS Test', '0909000098', 50000, 50000) RETURNING id`,
+      [`TPMIS${suffix}`],
+    );
+    const mismatchCode = Number(`7${suffix}01`);
+    await payments.reservePayOSOrder({ orderId: mismatchRows[0].id, payosOrderCode: mismatchCode, paymentExpiresAt: new Date(Date.now() + 60_000) });
+    const mismatch = await payments.processSuccessfulWebhook({ eventKey: `mismatch-${suffix}`, orderCode: mismatchCode, amount: 40000 });
+    assert.equal(mismatch.kind, 'amount_mismatch');
+    const [eventRows] = await postgresDb.query(
+      'SELECT processing_status, error_code FROM payment_events WHERE provider_event_key = $1',
+      [`mismatch-${suffix}`],
+    );
+    assert.deepEqual(eventRows[0], { processing_status: 'ignored', error_code: 'AMOUNT_MISMATCH' });
+
+    const [expiredRows] = await postgresDb.query(
+      `INSERT INTO orders (order_code, store_id, order_type, payment_method, payment_status, payment_provider, payment_expires_at, customer_name, customer_phone, subtotal, total)
+       VALUES ($1, 1, 'Take-away', 'VietQR', 'unpaid', 'payos', CURRENT_TIMESTAMP - INTERVAL '1 minute', 'PayOS Test', '0909000097', 50000, 50000) RETURNING id`,
+      [`TPEXP${suffix}`],
+    );
+    assert.equal((await payments.expireUnpaidPayOSOrders(1)).length, 1);
+    assert.equal((await payments.expireUnpaidPayOSOrders(1)).length, 0);
+    const [expiredStatus] = await postgresDb.query('SELECT payment_status FROM orders WHERE id = $1', [expiredRows[0].id]);
+    assert.equal(expiredStatus[0].payment_status, 'expired');
     await postgresDb.close();
   });
 

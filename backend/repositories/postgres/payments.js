@@ -57,6 +57,16 @@ export function createPaymentsRepository(database = postgresDb) {
           [eventKey, JSON.stringify(payload)],
         );
         if (!eventRows[0]) return { kind: 'duplicate' };
+        const eventId = eventRows[0].id;
+        const finishEvent = async ({ orderId = null, status, errorCode = null }) => {
+          await tx.query(
+            `UPDATE payment_events
+             SET order_id = $1, processing_status = $2, error_code = $3,
+                 processed_at = CURRENT_TIMESTAMP
+             WHERE id = $4`,
+            [orderId, status, errorCode, eventId],
+          );
+        };
 
         const [orderRows] = await tx.query(
           `SELECT id, order_code, total, payment_status, payment_provider
@@ -66,27 +76,47 @@ export function createPaymentsRepository(database = postgresDb) {
           [orderCode, paymentLinkId || null],
         );
         const order = orderRows[0];
-        if (!order) return { kind: 'not_found', eventId: eventRows[0].id };
-        if (order.payment_status === 'paid') return { kind: 'already_paid', eventId: eventRows[0].id, order };
-        if (order.payment_status === 'expired') return { kind: 'expired', eventId: eventRows[0].id, order };
-        if (order.payment_provider !== 'payos') return { kind: 'wrong_provider', eventId: eventRows[0].id, order };
-        if (Number(order.total) !== Number(amount)) return { kind: 'amount_mismatch', eventId: eventRows[0].id, order };
+        if (!order) {
+          await finishEvent({ status: 'ignored', errorCode: 'NOT_FOUND' });
+          return { kind: 'not_found', eventId };
+        }
+        if (order.payment_status === 'paid') {
+          await finishEvent({ orderId: order.id, status: 'processed', errorCode: 'ALREADY_PAID' });
+          return { kind: 'already_paid', eventId, order };
+        }
+        if (order.payment_status === 'expired') {
+          await finishEvent({ orderId: order.id, status: 'ignored', errorCode: 'EXPIRED' });
+          return { kind: 'expired', eventId, order };
+        }
+        if (order.payment_provider !== 'payos') {
+          await finishEvent({ orderId: order.id, status: 'ignored', errorCode: 'WRONG_PROVIDER' });
+          return { kind: 'wrong_provider', eventId, order };
+        }
+        if (Number(order.total) !== Number(amount)) {
+          await finishEvent({ orderId: order.id, status: 'ignored', errorCode: 'AMOUNT_MISMATCH' });
+          return { kind: 'amount_mismatch', eventId, order };
+        }
 
-        await tx.query(
-          `UPDATE orders SET payment_status = 'paid', paid_at = CURRENT_TIMESTAMP,
-           transaction_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-          [order.id, reference || String(orderCode)],
+        const [paidRows] = await tx.query(
+          `UPDATE orders
+           SET payment_status = 'paid', paid_at = CURRENT_TIMESTAMP,
+               transaction_id = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND payment_provider = 'payos'
+             AND payment_status = 'unpaid' AND total = $3
+           RETURNING id`,
+          [order.id, reference || String(orderCode), amount],
         );
-        await tx.query(
-          `UPDATE payment_events SET order_id = $1, processing_status = 'processed',
-           processed_at = CURRENT_TIMESTAMP WHERE id = $2`,
-          [order.id, eventRows[0].id],
-        );
-        return { kind: 'paid', eventId: eventRows[0].id, order };
+        if (!paidRows[0]) {
+          await finishEvent({ orderId: order.id, status: 'ignored', errorCode: 'CAS_REJECTED' });
+          return { kind: 'cas_rejected', eventId, order };
+        }
+        await finishEvent({ orderId: order.id, status: 'processed' });
+        return { kind: 'paid', eventId, order };
       });
     },
 
     async expireUnpaidPayOSOrders(limit = 100) {
+      const batchSize = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 1000);
       return database.transaction(async (tx) => {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext('teaplus_payos_expiry'))");
         const [rows] = await tx.query(
@@ -100,7 +130,7 @@ export function createPaymentsRepository(database = postgresDb) {
            UPDATE orders o SET payment_status = 'expired', updated_at = CURRENT_TIMESTAMP
            FROM due WHERE o.id = due.id
            RETURNING o.id, o.order_code`,
-          [limit],
+          [batchSize],
         );
         return rows;
       });

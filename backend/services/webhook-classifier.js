@@ -6,14 +6,14 @@
 export const PAYOS_CAS_UPDATE_SQL = `
   UPDATE orders
   SET payment_status = 'paid',
-      paid_at = GETDATE(),
-      transaction_id = ?,
+      paid_at = CURRENT_TIMESTAMP,
+      transaction_id = $2,
       payment_provider = 'payos',
-      updated_at = GETDATE()
-  WHERE (payos_order_code = ? OR payment_link_id = ?)
+      updated_at = CURRENT_TIMESTAMP
+  WHERE (payos_order_code = $1 OR payment_link_id = $3)
     AND payment_status = 'unpaid'
     AND payment_provider = 'payos'
-    AND total = ?
+    AND total = $4
 `;
 
 /**

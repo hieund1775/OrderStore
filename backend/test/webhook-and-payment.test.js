@@ -10,7 +10,7 @@ describe('PayOS Webhook & Payment State Engine (Production Module)', () => {
   it('exports valid CAS query structure with payment_status=unpaid and total constraints', () => {
     assert.match(PAYOS_CAS_UPDATE_SQL, /payment_status = 'unpaid'/);
     assert.match(PAYOS_CAS_UPDATE_SQL, /payment_provider = 'payos'/);
-    assert.match(PAYOS_CAS_UPDATE_SQL, /total = \?/);
+    assert.match(PAYOS_CAS_UPDATE_SQL, /total = \$4/);
     assert.match(PAYOS_CAS_UPDATE_SQL, /payment_status = 'paid'/);
   });
 
