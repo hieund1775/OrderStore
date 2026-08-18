@@ -97,8 +97,18 @@ export class ApiError extends Error {
 }
 
 export const apiGet = <T>(path: string, options?: RequestInit) => apiFetch<T>(path, options);
-export const apiPost = <T>(path: string, body: unknown) =>
-  apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) });
+export const apiPost = <T>(path: string, body: unknown, options?: RequestInit) =>
+  apiFetch<T>(path, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: options?.headers,
+  });
+
+/** Create a client-side key for POST /api/orders idempotency. */
+export function createIdempotencyKey() {
+  return globalThis.crypto?.randomUUID?.() ?? `order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 export const apiPatch = <T>(path: string, body: unknown) =>
   apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 export const apiPut = <T>(path: string, body: unknown) =>

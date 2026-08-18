@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Bike, MapPin, Store, Ticket } from "lucide-react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { vnd } from "@/lib/data";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, createIdempotencyKey } from "@/lib/api";
 
 export const Route = createFileRoute("/thanh-toan")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
@@ -78,6 +78,7 @@ function Checkout() {
   const [pay, setPay] = useState("qr");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const [addr, setAddr] = useState("");
   const [branch, setBranch] = useState<string | null>(null);
   const [storeOptions, setStoreOptions] = useState<{ id: number; name: string }[]>([]);
@@ -267,6 +268,13 @@ function Checkout() {
         })),
       };
 
+      const signature = JSON.stringify(payload);
+      const previousRequest = orderRequestRef.current;
+      const idempotencyKey = previousRequest?.signature === signature
+        ? previousRequest.key
+        : createIdempotencyKey();
+      orderRequestRef.current = { signature, key: idempotencyKey };
+
       const res = await apiPost<{
         order_code: string;
         order_id: number;
@@ -277,7 +285,9 @@ function Checkout() {
         checkout_url?: string;
         qr_code?: string;
         payment_expires_at?: string;
-      }>("/api/orders", payload);
+      }>("/api/orders", payload, { headers: { "Idempotency-Key": idempotencyKey } });
+
+      orderRequestRef.current = null;
 
       if (res.cancel_token) {
         try {

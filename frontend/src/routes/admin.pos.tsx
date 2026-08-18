@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ShoppingCart, Trash2, X, Plus, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, createIdempotencyKey } from "@/lib/api";
 import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, products as mockProducts, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
@@ -73,6 +73,7 @@ function PosPage() {
   const [cart, setCart] = useState<PosCartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("COD");
   const [submitting, setSubmitting] = useState(false);
+  const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
 
   // Category filter
   const [activeTab, setActiveTab] = useState<string>("Tất cả");
@@ -224,7 +225,19 @@ function PosPage() {
         })),
       };
 
-      const res = await apiPost<{ order_code: string; order_id: number; total: number; qr_code?: string; checkout_url?: string }>("/api/orders", payload);
+      const signature = JSON.stringify(payload);
+      const previousRequest = orderRequestRef.current;
+      const idempotencyKey = previousRequest?.signature === signature
+        ? previousRequest.key
+        : createIdempotencyKey();
+      orderRequestRef.current = { signature, key: idempotencyKey };
+
+      const res = await apiPost<{ order_code: string; order_id: number; total: number; qr_code?: string; checkout_url?: string }>(
+        "/api/orders",
+        payload,
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      );
+      orderRequestRef.current = null;
       if (res.qr_code) {
         setCheckoutQr(res.qr_code);
         setQrOrderCode(res.order_code);
