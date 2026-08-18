@@ -37,7 +37,7 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
   before(async () => {
     calls = { admin: [], public: [], payment: [] };
     originals = {
-      admin: Object.fromEntries(['list', 'detail', 'transition', 'cancel', 'confirmPayment', 'listKitchen'].map((name) => [name, adminOrdersRepository[name]])),
+      admin: Object.fromEntries(['list', 'detail', 'transition', 'cancel', 'confirmPayment', 'markPrinted', 'listKitchen'].map((name) => [name, adminOrdersRepository[name]])),
       orders: Object.fromEntries(['findPublicOrder', 'loadPublicDetails', 'loadStatusHistory', 'cancelCustomerOrder', 'listCustomerOrders', 'createPublicOrder'].map((name) => [name, ordersRepository[name]])),
       payments: Object.fromEntries(['reservePayOSOrder', 'attachPaymentLink'].map((name) => [name, paymentsRepository[name]])),
     };
@@ -96,6 +96,10 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
       calls.admin.push({ name: 'confirmPayment', args });
       if (Number(args.orderId) === 99) throw error('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
       return { alreadyPaid: Number(args.orderId) === 12 };
+    };
+    adminOrdersRepository.markPrinted = async ({ orderId, scopedStoreId }) => {
+      calls.admin.push({ name: 'markPrinted', orderId, scopedStoreId });
+      return Number(orderId) === 11;
     };
     adminOrdersRepository.listKitchen = async ({ scopedStoreId }) => {
       calls.admin.push({ name: 'listKitchen', scopedStoreId });
@@ -167,10 +171,14 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
     const payment = await fetch(`${baseUrl}/admin/orders/12/payment/confirm`, { method: 'PUT', headers: { authorization: `Bearer ${managerToken}` } });
     assert.equal(payment.status, 200);
     assert.match((await payment.json()).message, /trước đó/i);
+    const printed = await fetch(`${baseUrl}/admin/orders/11/print`, { method: 'POST', headers: { authorization: `Bearer ${managerToken}` } });
+    assert.equal(printed.status, 200);
+    assert.match((await printed.json()).message, /đánh dấu in/i);
     const kds = await fetch(`${baseUrl}/admin/kitchen/orders`, { headers: { authorization: `Bearer ${kitchenToken}` } });
     assert.equal(kds.status, 200);
     assert.equal((await kds.json())[0].payment_status, 'paid');
     assert.equal(calls.admin.find((call) => call.name === 'listKitchen').scopedStoreId, 1);
+    assert.equal(calls.admin.find((call) => call.name === 'markPrinted').scopedStoreId, 1);
   });
 
   it('locks public lookup masking, customer ownership, cancel routes and history modes', async () => {

@@ -41,4 +41,50 @@ describe('Phase 3 admin order read service', () => {
       ['kitchen', { scopedStoreId: 4 }],
     ]);
   });
+
+  it('forwards mutation actor, branch scope, transition policy, and shipping input without HTTP state', async () => {
+    const calls = [];
+    const service = createAdminOrderService({
+      async transition(input) { calls.push(['transition', input]); return { order_id: input.orderId, status: input.targetStatus }; },
+      async cancel(input) { calls.push(['cancel', input]); return { order_id: input.orderId, already_cancelled: true }; },
+      async confirmPayment(input) { calls.push(['payment', input]); return { alreadyPaid: true }; },
+      async markPrinted(input) { calls.push(['print', input]); return true; },
+    });
+    const actor = { id: 7, role: 'manager' };
+
+    assert.deepEqual(await service.updateStatus({
+      orderId: 10, storeId: 3, status: 'Đang giao', note: 'rider assigned', actor,
+      driverName: 'A', driverPhone: '0901', trackingUrl: 'https://tracking.test/10',
+    }), { order_id: 10, status: 'Đang giao' });
+    assert.deepEqual(await service.cancel({ orderId: 10, storeId: 3, reason: 'out of stock', actor }), { order_id: 10, already_cancelled: true });
+    assert.deepEqual(await service.confirmPayment({ orderId: 10, storeId: 3, actor }), { alreadyPaid: true });
+    assert.equal(await service.markPrinted({ orderId: 10, storeId: 3 }), true);
+
+    assert.deepEqual(calls.map(([name, input]) => [name, input.orderId, input.scopedStoreId, input.actorId, input.actorRole]), [
+      ['transition', 10, 3, 7, 'manager'],
+      ['cancel', 10, 3, 7, 'manager'],
+      ['payment', 10, 3, 7, undefined],
+      ['print', 10, 3, undefined, undefined],
+    ]);
+    assert.equal(typeof calls[0][1].evaluateTransition, 'function');
+    assert.equal(typeof calls[1][1].evaluateTransition, 'function');
+  });
+
+  it('does not alter concurrent idempotent mutation results from the repository', async () => {
+    let calls = 0;
+    const service = createAdminOrderService({
+      async cancel(input) {
+        calls += 1;
+        return { order_id: input.orderId, already_cancelled: calls > 1 };
+      },
+    });
+    const actor = { id: 7, role: 'manager' };
+    const results = await Promise.all([
+      service.cancel({ orderId: 10, storeId: 3, reason: 'duplicate click', actor }),
+      service.cancel({ orderId: 10, storeId: 3, reason: 'duplicate click', actor }),
+    ]);
+
+    assert.equal(calls, 2);
+    assert.deepEqual(results.map((result) => result.already_cancelled).sort(), [false, true]);
+  });
 });

@@ -2,14 +2,13 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { resolveStoreScope } from '../middleware/branch-scope.js';
 import { logAudit } from '../services/audit.js';
-import { evaluateOrderTransition, VALID_STATUSES } from '../services/order-transition-policy.js';
+import { VALID_STATUSES } from '../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries } from '../services/date-range.js';
 import { decodeCursor, validatePaginationLimit } from '../services/cursor-pagination.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { orderErrorStatus } from '../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../validation/order-schemas.js';
 
-import adminOrdersRepository from '../repositories/postgres/admin-orders.js';
 import adminOrderService from '../services/orders/admin-order-service.js';
 import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
 import adminStoresRepository from '../repositories/postgres/admin-stores.js';
@@ -159,17 +158,15 @@ export const updateOrderStatus = async (req, res) => {
     validateOrderStatus(status, VALID_STATUSES);
     validateOrderMutationInput({ note });
     const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrdersRepository.transition({
+    const result = await adminOrderService.updateStatus({
       orderId: req.params.id,
-      scopedStoreId,
-      targetStatus: status,
+      storeId: scopedStoreId,
+      status,
       note,
-      actorId: req.user.sub,
-      actorRole: req.user.role,
+      actor: { id: req.user.sub, role: req.user.role },
       driverName: driver_name,
       driverPhone: driver_phone,
       trackingUrl: tracking_url,
-      evaluateTransition: evaluateOrderTransition,
     });
     await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
     res.json({ ...result, message: `Đơn hàng → ${status}` });
@@ -188,13 +185,11 @@ router.put('/orders/:id/cancel', requireRole('super', 'manager', 'cashier'), asy
     validateOrderId(req.params.id);
     validateOrderMutationInput({ reason });
     const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrdersRepository.cancel({
+    const result = await adminOrderService.cancel({
       orderId: req.params.id,
-      scopedStoreId,
+      storeId: scopedStoreId,
       reason,
-      actorId: req.user.sub,
-      actorRole: req.user.role,
-      evaluateTransition: evaluateOrderTransition,
+      actor: { id: req.user.sub, role: req.user.role },
     });
     await logAudit(req.user.sub, `Hủy đơn #${req.params.id}`, reason || `Hủy bởi ${req.user.role}`, req);
     res.json({ ...result, message: 'Đơn hàng đã bị hủy' });
@@ -208,10 +203,10 @@ router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashi
   try {
     validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrdersRepository.confirmPayment({
+    const result = await adminOrderService.confirmPayment({
       orderId: req.params.id,
-      scopedStoreId,
-      actorId: req.user.sub,
+      storeId: scopedStoreId,
+      actor: { id: req.user.sub, role: req.user.role },
     });
     await logAudit(req.user.sub, `Xác nhận thanh toán đơn #${req.params.id}`, '', req);
     res.json({
@@ -738,8 +733,9 @@ router.delete('/tables/:id', requireRole('super', 'manager'), async (req, res) =
 
 router.post('/orders/:id/print', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
   try {
+    validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
-    const marked = await adminOrdersRepository.markPrinted({ orderId: req.params.id, scopedStoreId });
+    const marked = await adminOrderService.markPrinted({ orderId: req.params.id, storeId: scopedStoreId });
     if (!marked) return res.status(404).json({ error: 'Không tìm thấy đơn hàng hoặc không có quyền thao tác' });
     await logAudit(req.user.sub, `In hóa đơn đơn #${req.params.id}`, '', req);
     res.json({ message: 'Đã đánh dấu in hóa đơn' });

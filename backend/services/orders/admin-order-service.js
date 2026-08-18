@@ -1,5 +1,6 @@
 import { buildPageInfo } from '../cursor-pagination.js';
 import adminOrdersRepository from '../../repositories/postgres/admin-orders.js';
+import { evaluateOrderTransition } from '../order-transition-policy.js';
 
 /**
  * HTTP-agnostic composition for admin and KDS reads. Scope resolution and
@@ -28,6 +29,44 @@ export function createAdminOrderService(repository = adminOrdersRepository) {
 
     listKitchen({ storeId }) {
       return repository.listKitchen({ scopedStoreId: storeId });
+    },
+
+    updateStatus({ orderId, storeId, status, note, actor, driverName, driverPhone, trackingUrl }) {
+      return repository.transition({
+        orderId,
+        scopedStoreId: storeId,
+        targetStatus: status,
+        note,
+        actorId: actor.id,
+        actorRole: actor.role,
+        driverName,
+        driverPhone,
+        trackingUrl,
+        evaluateTransition: evaluateOrderTransition,
+      });
+    },
+
+    cancel({ orderId, storeId, reason, actor }) {
+      return repository.cancel({
+        orderId,
+        scopedStoreId: storeId,
+        reason,
+        actorId: actor.id,
+        actorRole: actor.role,
+        evaluateTransition: evaluateOrderTransition,
+      });
+    },
+
+    confirmPayment({ orderId, storeId, actor }) {
+      return repository.confirmPayment({
+        orderId,
+        scopedStoreId: storeId,
+        actorId: actor.id,
+      });
+    },
+
+    markPrinted({ orderId, storeId }) {
+      return repository.markPrinted({ orderId, scopedStoreId: storeId });
     },
   };
 }
