@@ -20,6 +20,7 @@ import { orderErrorStatus } from '../services/orders/order-errors.js';
 import customerOrderService from '../services/orders/customer-order-service.js';
 import { toCustomerOrderListItemDto } from '../dto/order-dto.js';
 import publicOrdersRouter, { handleCustomerCancelOrder } from './public/orders.js';
+import publicCatalogRouter from './public/catalog.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
 const router = Router();
@@ -61,86 +62,8 @@ router.get('/health', (req, res) => {
  *       200:
  *         description: Danh sách sản phẩm
  */
-router.get('/products', async (req, res) => {
-  try {
-    res.json(await catalogRepository.listProducts(req.query));
-  } catch (err) { console.error('Public products read failed:', err.message); res.status(500).json({ error: 'Không thể tải sản phẩm lúc này' }); }
-});
-
-/**
- * @swagger
- * /api/products/{slug}:
- *   get:
- *     tags: [Products]
- *     summary: Chi tiết sản phẩm
- *     parameters:
- *       - in: path
- *         name: slug
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Chi tiết sản phẩm
- *       404:
- *         description: Không tìm thấy
- */
-router.get('/products/:slug', async (req, res) => {
-  try {
-    const product = await catalogRepository.findProductBySlug(req.params.slug);
-    if (!product) return res.status(404).json({ error: 'Không tìm thấy sản phẩm' });
-    res.json(product);
-  } catch (err) { console.error('Public product detail failed:', err.message); res.status(500).json({ error: 'Không thể tải sản phẩm lúc này' }); }
-});
-
-/**
- * @swagger
- * /api/categories:
- *   get:
- *     tags: [Categories]
- *     summary: Danh sách danh mục
- *     responses:
- *       200:
- *         description: Danh sách danh mục
- */
-router.get('/categories', async (req, res) => {
-  try { res.json(await catalogRepository.listCategories()); }
-  catch (err) { console.error('Public categories read failed:', err.message); res.status(500).json({ error: 'Không thể tải danh mục lúc này' }); }
-});
-
-/**
- * @swagger
- * /api/options/sizes:
- *   get:
- *     tags: [Options]
- *     summary: Tùy chọn kích cỡ
- *     responses: { 200: { description: OK } }
- * /api/options/bases:
- *   get:
- *     tags: [Options]
- *     summary: Tùy chọn cốt trà
- *     responses: { 200: { description: OK } }
- * /api/options/sugars:
- *   get:
- *     tags: [Options]
- *     summary: Tùy chọn mức đường
- *     responses: { 200: { description: OK } }
- * /api/options/ices:
- *   get:
- *     tags: [Options]
- *     summary: Tùy chọn mức đá
- *     responses: { 200: { description: OK } }
- * /api/options/toppings:
- *   get:
- *     tags: [Options]
- *     summary: Danh sách topping
- *     responses: { 200: { description: OK } }
- */
-for (const optionKind of ['sizes', 'bases', 'sugars', 'ices', 'toppings']) {
-  router.get(`/options/${optionKind}`, async (req, res) => {
-    try { res.json(await catalogRepository.listOptions(optionKind)); }
-    catch (err) { console.error(`Public ${optionKind} options read failed:`, err.message); res.status(500).json({ error: 'Không thể tải tùy chọn lúc này' }); }
-  });
-}
+// ═══════════ CATALOG DOMAIN ═══════════
+router.use('/', publicCatalogRouter);
 
 /**
  * @swagger
@@ -497,12 +420,6 @@ router.post('/products/:id/reviews', authenticate, async (req, res) => {
     if (err.message && err.message.includes('uq_review')) return res.status(409).json({ error: 'Bạn đã đánh giá món này rồi' });
     res.status(500).json({ error: err.message });
   }
-});
-
-router.get('/search/suggestions', async (req, res) => {
-  try {
-    res.json(await catalogRepository.listSearchSuggestions(req.query.q));
-  } catch (err) { console.error('Public search suggestions read failed:', err.message); res.status(500).json({ error: 'Không thể tải gợi ý tìm kiếm lúc này' }); }
 });
 
 // ═══════════ ORDERS DOMAIN ═══════════
