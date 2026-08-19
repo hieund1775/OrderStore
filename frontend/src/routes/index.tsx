@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Leaf, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProductCard } from "@/components/menu/ProductCard";
-import { products, promotions, stores } from "@/lib/data";
+import { mapApiProduct, products as fallbackProducts, promotions, stores as fallbackStores, type ApiCatalogProduct, type Product, type Store } from "@/lib/data";
+import { apiGet } from "@/lib/api";
 import heroImg from "@/assets/hero-tea.jpg";
 import storyImg from "@/assets/story.jpg";
 
@@ -37,7 +39,33 @@ const commitments = [
 ];
 
 function Home() {
-  const bestSellers = products.filter(
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(fallbackProducts);
+  const [storeList, setStoreList] = useState<Store[]>(fallbackStores);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiCatalogProduct[]>("/api/products")
+      .then((rows) => {
+        if (!cancelled && rows && rows.length > 0) {
+          setCatalogProducts(rows.map(mapApiProduct));
+        }
+      })
+      .catch(() => {});
+
+    apiGet<Store[]>("/api/stores")
+      .then((rows) => {
+        if (!cancelled && rows && rows.length > 0) {
+          setStoreList(rows);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const bestSellers = catalogProducts.filter(
     (p) => p.tags.includes("best-seller") || p.tags.includes("new"),
   );
 
@@ -199,7 +227,7 @@ function Home() {
           </Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {stores.slice(0, 3).map((s) => (
+          {storeList.slice(0, 3).map((s) => (
             <div key={s.id} className="bg-card rounded-2xl border p-5">
               <p className="font-semibold">{s.name}</p>
               <p className="text-muted-foreground mt-1 text-sm">{s.address}</p>
