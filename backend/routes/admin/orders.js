@@ -9,6 +9,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus } from '../../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../../validation/order-schemas.js';
 import adminOrderService from '../../services/orders/admin-order-service.js';
+import { toAdminOrderListItemDto, toAdminOrderDetailDto } from '../../dto/order-dto.js';
 
 const router = Router();
 
@@ -38,7 +39,13 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
       status, storeId: scopedStoreId, dateFrom, dateTo, search, cursor, limit,
       paginated: rawCursor !== undefined || rawLimit !== undefined,
     });
-    res.json(result);
+    if (Array.isArray(result)) {
+      return res.json(result.map(toAdminOrderListItemDto));
+    }
+    res.json({
+      ...result,
+      orders: result.orders.map(toAdminOrderListItemDto),
+    });
   } catch (err) {
     const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
@@ -51,7 +58,7 @@ router.get('/:id', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncH
     const scopedStoreId = resolveStoreScope(req.user);
     const order = await adminOrderService.getDetail({ orderId: req.params.id, storeId: scopedStoreId });
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
-    res.json(order);
+    res.json(toAdminOrderDetailDto(order));
   } catch (err) {
     const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });

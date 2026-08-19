@@ -18,6 +18,7 @@ import { hashOrderRequest } from '../services/order-idempotency.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { orderErrorStatus } from '../services/orders/order-errors.js';
 import customerOrderService from '../services/orders/customer-order-service.js';
+import { toCustomerOrderListItemDto } from '../dto/order-dto.js';
 import publicOrdersRouter, { handleCustomerCancelOrder } from './public/orders.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
@@ -411,7 +412,13 @@ router.get('/users/:id/orders', authenticate, requireCustomerSelf, asyncHandler(
       cursor,
       paginated,
     });
-    res.json(result);
+    if (Array.isArray(result)) {
+      return res.json(result.map(toCustomerOrderListItemDto));
+    }
+    res.json({
+      ...result,
+      orders: result.orders.map(toCustomerOrderListItemDto),
+    });
   } catch (err) {
     const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
