@@ -18,6 +18,7 @@ import { hashOrderRequest } from '../services/order-idempotency.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { orderErrorStatus } from '../services/orders/order-errors.js';
 import customerOrderService from '../services/orders/customer-order-service.js';
+import publicOrdersRouter, { handleCustomerCancelOrder } from './public/orders.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
 const router = Router();
@@ -497,71 +498,9 @@ router.get('/search/suggestions', async (req, res) => {
   } catch (err) { console.error('Public search suggestions read failed:', err.message); res.status(500).json({ error: 'Không thể tải gợi ý tìm kiếm lúc này' }); }
 });
 
-// ═══════════ ORDER LOOKUP (mã đơn / QR bill) ═══════════
-router.get('/orders/lookup', asyncHandler(async (req, res) => {
-  try {
-    const { code } = req.query;
-    if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });
-
-    let decodedToken = null;
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded?.role === 'customer') {
-          decodedToken = decoded;
-        }
-      } catch {}
-    }
-
-    const result = await customerOrderService.lookup({ code, tokenUser: decodedToken });
-    res.json(result);
-  } catch (err) {
-    const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
-  }
-}));
-
-// ═══════════ CANCEL ORDER (khách tự hủy — timingSafeEqual & atomic) ═══════════
-export const handleCustomerCancelOrder = async (req, res) => {
-  try {
-    const { reason, cancel_token } = req.body || {};
-    const orderIdentifier = req.params.id || req.body?.order_id || req.body?.order_code;
-    if (req.params.id || req.body?.order_code) validateOrderReference(orderIdentifier);
-    if (req.body?.order_id) validateOrderId(req.body.order_id);
-    validateOrderMutationInput({ reason });
-    const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim();
-
-    // 1) Verify customer JWT identity if logged in
-    let authUserId = null;
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded?.role === 'customer') {
-          authUserId = Number(decoded.id || decoded.sub);
-        }
-      } catch {}
-    }
-
-    const result = await customerOrderService.cancel({
-      identifier: orderIdentifier,
-      userId: authUserId,
-      cancelToken: rawCancelToken,
-      reason,
-    });
-
-    res.json(result);
-  } catch (err) {
-    const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
-  }
-};
-
-router.post('/orders/:id/cancel', asyncHandler(handleCustomerCancelOrder));
-router.post('/orders/cancel', asyncHandler(handleCustomerCancelOrder));
+// ═══════════ ORDERS DOMAIN ═══════════
+router.use('/orders', publicOrdersRouter);
+export { handleCustomerCancelOrder };
 
 // ═══════════ TABLE RESOLVE (QR) ═══════════
 router.get('/table/resolve', async (req, res) => {
@@ -595,35 +534,5 @@ router.post('/vouchers/apply', async (req, res) => {
     res.status(400).json({ valid: false, message: err.message });
   }
 });
-
-// ═══════════ CREATE ORDER (Zero-Trust Price Engine) ═══════════
-router.post('/orders', asyncHandler(async (req, res) => {
-  try {
-    validateCreateOrderInput(req.body);
-
-    let customerUserId = null;
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded && decoded.role === 'customer' && (decoded.id || decoded.sub)) {
-          customerUserId = Number(decoded.id || decoded.sub);
-        }
-      } catch {}
-    }
-
-    const idempotencyKey = String(req.headers['idempotency-key'] || '');
-    const order = await customerOrderService.create({
-      input: req.body,
-      userId: customerUserId,
-      idempotencyKey,
-    });
-
-    res.status(order.replay ? 200 : 201).json(order);
-  } catch (err) {
-    res.status(orderErrorStatus(err)).json({ error: err.message });
-  }
-}));
 
 export default router;

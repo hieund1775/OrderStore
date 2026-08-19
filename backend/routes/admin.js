@@ -10,6 +10,8 @@ import { orderErrorStatus } from '../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../validation/order-schemas.js';
 
 import adminOrderService from '../services/orders/admin-order-service.js';
+import adminOrdersRouter, { updateOrderStatus } from './admin/orders.js';
+import adminKitchenRouter from './admin/kitchen.js';
 import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
 import adminStoresRepository from '../repositories/postgres/admin-stores.js';
 import adminPromotionsRepository from '../repositories/postgres/admin-promotions.js';
@@ -103,121 +105,10 @@ router.get('/dashboard/top-products', requireRole('super', 'manager'), async (re
   }
 });
 
-// ═══════════ ORDERS ═══════════
-
-router.get('/orders', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
-  try {
-    const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
-    validateOrderFilters({ status, store_id, search });
-    const scopedStoreId = resolveStoreScope(req.user, store_id);
-    const limit = validatePaginationLimit(rawLimit, 50, 100);
-    const cursor = decodeCursor(rawCursor);
-
-    let dateFrom;
-    let dateTo;
-    if (date_from && date_to) {
-      const { start, end } = parseDateRangeBoundaries(date_from, date_to);
-      dateFrom = start;
-      dateTo = end;
-    } else if (date_from) {
-      const { start } = parseSingleDateBoundary(date_from);
-      dateFrom = start;
-    } else if (date_to) {
-      const { end } = parseSingleDateBoundary(date_to);
-      dateTo = end;
-    }
-
-    const result = await adminOrderService.list({
-      status, storeId: scopedStoreId, dateFrom, dateTo, search, cursor, limit,
-      paginated: rawCursor !== undefined || rawLimit !== undefined,
-    });
-    res.json(result);
-  } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
-  }
-});
-
-router.get('/orders/:id', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
-  try {
-    validateOrderId(req.params.id);
-    const scopedStoreId = resolveStoreScope(req.user);
-    const order = await adminOrderService.getDetail({ orderId: req.params.id, storeId: scopedStoreId });
-    if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
-    res.json(order);
-  } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
-  }
-});
-
-export const updateOrderStatus = async (req, res) => {
-  const { status, note, driver_name, driver_phone, tracking_url } = req.body;
-  try {
-    validateOrderId(req.params.id);
-    validateOrderStatus(status, VALID_STATUSES);
-    validateOrderMutationInput({ note });
-    const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrderService.updateStatus({
-      orderId: req.params.id,
-      storeId: scopedStoreId,
-      status,
-      note,
-      actor: { id: req.user.sub, role: req.user.role },
-      driverName: driver_name,
-      driverPhone: driver_phone,
-      trackingUrl: tracking_url,
-    });
-    await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
-    res.json({ ...result, message: `Đơn hàng → ${status}` });
-  } catch (err) {
-    const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
-  }
-};
-
-router.put('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
-router.patch('/orders/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
-
-router.put('/orders/:id/cancel', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
-  try {
-    const { reason } = req.body;
-    validateOrderId(req.params.id);
-    validateOrderMutationInput({ reason });
-    const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrderService.cancel({
-      orderId: req.params.id,
-      storeId: scopedStoreId,
-      reason,
-      actor: { id: req.user.sub, role: req.user.role },
-    });
-    await logAudit(req.user.sub, `Hủy đơn #${req.params.id}`, reason || `Hủy bởi ${req.user.role}`, req);
-    res.json({ ...result, message: 'Đơn hàng đã bị hủy' });
-  } catch (err) {
-    const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
-  }
-}));
-
-router.put('/orders/:id/payment/confirm', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
-  try {
-    validateOrderId(req.params.id);
-    const scopedStoreId = resolveStoreScope(req.user);
-    const result = await adminOrderService.confirmPayment({
-      orderId: req.params.id,
-      storeId: scopedStoreId,
-      actor: { id: req.user.sub, role: req.user.role },
-    });
-    await logAudit(req.user.sub, `Xác nhận thanh toán đơn #${req.params.id}`, '', req);
-    res.json({
-      message: result.alreadyPaid ? 'Đơn hàng đã được xác nhận thanh toán trước đó' : 'Đã xác nhận thanh toán thành công',
-      payment_status: 'paid',
-    });
-  } catch (err) {
-    const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
-  }
-}));
+// ═══════════ ORDERS & KITCHEN DOMAINS ═══════════
+router.use('/orders', adminOrdersRouter);
+router.use('/kitchen', adminKitchenRouter);
+export { updateOrderStatus };
 
 // ═══════════ MENU (CRUD) ═══════════
 
@@ -584,19 +475,6 @@ router.post('/inventory/:id/log', requireRole('super', 'manager'), async (req, r
   }
 });
 
-// ═══════════ KITCHEN (KDS) ═══════════
-
-router.get('/kitchen/orders', requireRole('super', 'manager', 'kitchen'), async (req, res) => {
-  try {
-    const scopedStoreId = resolveStoreScope(req.user);
-    const orders = await adminOrderService.listKitchen({ storeId: scopedStoreId });
-    res.json(orders);
-  } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
-  }
-});
-
 // ═══════════ REPORTS ═══════════
 
 router.get('/reports/kpi-summary', requireRole('super', 'manager'), async (req, res) => {
@@ -725,22 +603,6 @@ router.delete('/tables/:id', requireRole('super', 'manager'), async (req, res) =
     res.json({ message: 'Đã xóa bàn' });
   } catch (err) {
     const status = err.status || 400;
-    res.status(status).json({ error: err.message });
-  }
-});
-
-// ═══════════ PRINT TRACKING ═══════════
-
-router.post('/orders/:id/print', requireRole('super', 'manager', 'cashier', 'kitchen'), async (req, res) => {
-  try {
-    validateOrderId(req.params.id);
-    const scopedStoreId = resolveStoreScope(req.user);
-    const marked = await adminOrderService.markPrinted({ orderId: req.params.id, storeId: scopedStoreId });
-    if (!marked) return res.status(404).json({ error: 'Không tìm thấy đơn hàng hoặc không có quyền thao tác' });
-    await logAudit(req.user.sub, `In hóa đơn đơn #${req.params.id}`, '', req);
-    res.json({ message: 'Đã đánh dấu in hóa đơn' });
-  } catch (err) {
-    const status = err.status || 500;
     res.status(status).json({ error: err.message });
   }
 });
