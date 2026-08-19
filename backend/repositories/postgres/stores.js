@@ -24,6 +24,16 @@ export function createStoresRepository(database = postgresDb) {
       );
       return rows;
     },
+
+    async resolveTable(tableId) {
+      const [rows] = await database.query(
+        `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address
+         FROM tables t JOIN stores s ON s.id = t.store_id
+         WHERE t.id = $1 AND t.is_active = TRUE`,
+        [tableId],
+      );
+      return rows[0] || null;
+    },
   };
 }
 

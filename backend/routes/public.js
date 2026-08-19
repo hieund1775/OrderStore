@@ -21,6 +21,8 @@ import customerOrderService from '../services/orders/customer-order-service.js';
 import { toCustomerOrderListItemDto } from '../dto/order-dto.js';
 import publicOrdersRouter, { handleCustomerCancelOrder } from './public/orders.js';
 import publicCatalogRouter from './public/catalog.js';
+import publicStoresRouter from './public/stores.js';
+import publicPromotionsRouter from './public/promotions.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
 const router = Router();
@@ -58,74 +60,12 @@ router.get('/health', (req, res) => {
  *         name: tag
  *         schema: { type: string }
  *         description: Lọc theo tag (best-seller, new, seasonal)
- *     responses:
- *       200:
- *         description: Danh sách sản phẩm
  */
-// ═══════════ CATALOG DOMAIN ═══════════
+
+// ═══════════ CATALOG, STORES & PROMOTIONS DOMAINS ═══════════
 router.use('/', publicCatalogRouter);
-
-/**
- * @swagger
- * /api/stores:
- *   get:
- *     tags: [Stores]
- *     summary: Danh sách chi nhánh
- *     parameters:
- *       - in: query
- *         name: city
- *         schema: { type: string }
- *       - in: query
- *         name: district
- *         schema: { type: string }
- *     responses: { 200: { description: OK } }
- * /api/stores/districts:
- *   get:
- *     tags: [Stores]
- *     summary: Danh sách thành phố / quận
- *     responses: { 200: { description: OK } }
- */
-router.get('/stores', async (req, res) => {
-  try {
-    res.json(await storesRepository.listActiveStores(req.query));
-  } catch (err) { console.error('Public stores read failed:', err.message); res.status(500).json({ error: 'Không thể tải cửa hàng lúc này' }); }
-});
-router.get('/stores/districts', async (req, res) => {
-  try { res.json(await storesRepository.listActiveDistricts()); }
-  catch (err) { console.error('Public store districts read failed:', err.message); res.status(500).json({ error: 'Không thể tải khu vực lúc này' }); }
-});
-
-/**
- * @swagger
-});
-
-/**
- * @swagger
- * /api/promotions:
- *   get:
- *     tags: [Promotions]
- *     summary: Danh sách khuyến mãi
- *     parameters:
- *       - in: query
- *         name: status
- *         schema: { type: string }
- *         description: Lọc theo trạng thái
- *     responses: { 200: { description: OK } }
- */
-router.get('/promotions', async (req, res) => {
-  try {
-    const { status } = req.query;
-    let sql = 'SELECT * FROM promotions WHERE is_active = TRUE';
-    const params = [];
-    if (status) {
-      params.push(status);
-      sql += ` AND status = $${params.length}`;
-    }
-    sql += ' ORDER BY start_date DESC';
-    const [rows] = await postgresDb.query(sql, params);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+router.use('/', publicStoresRouter);
+router.use('/', publicPromotionsRouter);
 
 /**
  * @swagger
@@ -425,38 +365,5 @@ router.post('/products/:id/reviews', authenticate, async (req, res) => {
 // ═══════════ ORDERS DOMAIN ═══════════
 router.use('/orders', publicOrdersRouter);
 export { handleCustomerCancelOrder };
-
-// ═══════════ TABLE RESOLVE (QR) ═══════════
-router.get('/table/resolve', async (req, res) => {
-  try {
-    const { table_id } = req.query;
-    if (!table_id) return res.status(400).json({ error: 'Thiếu table_id' });
-    const [rows] = await postgresDb.query(
-      `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address
-       FROM tables t JOIN stores s ON s.id = t.store_id
-       WHERE t.id = $1 AND t.is_active = TRUE`,
-      [table_id],
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy bàn hoặc bàn đã ngưng hoạt động' });
-    res.json({ table: rows[0] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ═══════════ VOUCHER APPLY ═══════════
-router.post('/vouchers/apply', async (req, res) => {
-  try {
-    const { code, subtotal, customer_phone, store_id } = req.body;
-    if (!code) return res.status(400).json({ valid: false, message: 'Thiếu mã voucher' });
-    const { discount_amount } = await promotionsRepository.preview({
-      code,
-      subtotal: Number(subtotal) || 0,
-      phone: customer_phone || '',
-      storeId: Number(store_id),
-    });
-    res.json({ valid: true, discount_amount, code, message: 'Áp dụng thành công' });
-  } catch (err) {
-    res.status(400).json({ valid: false, message: err.message });
-  }
-});
 
 export default router;

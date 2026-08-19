@@ -54,7 +54,7 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
       'SELECT 1 FROM voucher_usage_history WHERE promotion_id = $1 AND user_phone = $2',
       [promotion.id, normalizedPhone],
     );
-    if (used[0]) throw new PromotionError('Mã giảm giá đã được sử dụng cho số điện thoại này');
+    if (!used[0]) throw new PromotionError('Mã giảm giá đã được sử dụng cho số điện thoại này');
   } else if (promotion.usage_limit != null && Number(promotion.used_count) >= Number(promotion.usage_limit)) {
     throw new PromotionError('Mã giảm giá đã hết lượt sử dụng');
   }
@@ -64,13 +64,27 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
 
 export function createPromotionsRepository(database = postgresDb) {
   return {
+    async listActivePromotions({ status } = {}) {
+      let sql = 'SELECT * FROM promotions WHERE is_active = TRUE';
+      const params = [];
+      if (status) {
+        params.push(status);
+        sql += ` AND status = $${params.length}`;
+      }
+      sql += ' ORDER BY start_date DESC';
+      const [rows] = await database.query(sql, params);
+      return rows;
+    },
+
     async preview({ code, subtotal, phone, storeId }) {
       return findEligiblePromotion({ code, subtotal, phone, storeId, tx: database });
     },
+
     async validateForOrder({ code, subtotal, phone, storeId, tx }) {
       if (!code || !String(code).trim()) return null;
       return findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock: true });
     },
+
     async consumeForOrder({ voucher, orderId, tx }) {
       if (!voucher) return;
       const { promotion, phone } = voucher;
