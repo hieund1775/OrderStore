@@ -17,6 +17,7 @@ import ordersRepository from '../repositories/postgres/orders.js';
 import { hashOrderRequest } from '../services/order-idempotency.js';
 import { asyncHandler } from '../middleware/async-handler.js';
 import { orderErrorStatus } from '../services/orders/order-errors.js';
+import customerOrderService from '../services/orders/customer-order-service.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../validation/order-schemas.js';
 
 const router = Router();
@@ -397,27 +398,24 @@ router.get('/users/:id', authenticate, requireCustomerSelf, async (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/users/:id/orders', authenticate, requireCustomerSelf, async (req, res) => {
+router.get('/users/:id/orders', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
   try {
     const requestedId = validateOrderId(req.params.id);
     const limit = validatePaginationLimit(req.query.limit, 50, 100);
     const cursor = decodeCursor(req.query.cursor);
-    const rows = await ordersRepository.listCustomerOrders({ userId: requestedId, limit, cursor });
-
-    const { rows: pagedOrders, page_info } = buildPageInfo({ rows, limit });
-
-    await batchLoadPostgresOrderDetails(pagedOrders);
-
-    if (req.query.cursor !== undefined || req.query.limit !== undefined) {
-      return res.json({ orders: pagedOrders, page_info });
-    }
-
-    res.json(pagedOrders);
+    const paginated = req.query.cursor !== undefined || req.query.limit !== undefined;
+    const result = await customerOrderService.listCustomerHistory({
+      userId: requestedId,
+      limit,
+      cursor,
+      paginated,
+    });
+    res.json(result);
   } catch (err) {
-    const status = err.status || 500;
+    const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
   }
-});
+}));
 
 router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, async (req, res) => {
   try {
@@ -500,12 +498,10 @@ router.get('/search/suggestions', async (req, res) => {
 });
 
 // ═══════════ ORDER LOOKUP (mã đơn / QR bill) ═══════════
-router.get('/orders/lookup', async (req, res) => {
+router.get('/orders/lookup', asyncHandler(async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });
-    const order = await ordersRepository.findPublicOrder(code);
-    if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
 
     let decodedToken = null;
     const authHeader = req.headers.authorization || '';
@@ -519,14 +515,13 @@ router.get('/orders/lookup', async (req, res) => {
       } catch {}
     }
 
-    const mappedItems = await ordersRepository.loadPublicDetails(order.id);
-    const history = await ordersRepository.loadStatusHistory(order.id);
-
-    const safeOrder = buildPublicLookupDto(order, decodedToken, mappedItems, history);
-
-    res.json({ order: safeOrder });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+    const result = await customerOrderService.lookup({ code, tokenUser: decodedToken });
+    res.json(result);
+  } catch (err) {
+    const status = orderErrorStatus(err);
+    res.status(status).json({ error: err.message });
+  }
+}));
 
 // ═══════════ CANCEL ORDER (khách tự hủy — timingSafeEqual & atomic) ═══════════
 export const handleCustomerCancelOrder = async (req, res) => {
@@ -551,15 +546,14 @@ export const handleCustomerCancelOrder = async (req, res) => {
       } catch {}
     }
 
-    const result = await ordersRepository.cancelCustomerOrder({
+    const result = await customerOrderService.cancel({
       identifier: orderIdentifier,
       userId: authUserId,
       cancelToken: rawCancelToken,
       reason,
-      evaluateTransition: evaluateOrderTransition,
     });
 
-    res.json({ ...result, message: 'Đã hủy đơn hàng thành công' });
+    res.json(result);
   } catch (err) {
     const status = orderErrorStatus(err);
     res.status(status).json({ error: err.message });
@@ -605,59 +599,8 @@ router.post('/vouchers/apply', async (req, res) => {
 // ═══════════ CREATE ORDER (Zero-Trust Price Engine) ═══════════
 router.post('/orders', asyncHandler(async (req, res) => {
   try {
-    const {
-      store_id, table_id, order_type = 'Take-away', payment_method = 'VietQR',
-      customer_name, customer_phone, delivery_addr = null,
-      voucher_code = null, note = null, items = [], source = 'online',
-      return_url, cancel_url,
-    } = req.body;
-
-    // Validate allowed source, payment_method, order_type via production validator
-    const inputValidation = validateOrderCreationInput(req.body);
-    if (!inputValidation.valid) {
-      return res.status(400).json({ error: inputValidation.error });
-    }
     validateCreateOrderInput(req.body);
 
-    const normalizedSource = source || 'online';
-    const normalizedOrderType = order_type || 'Take-away';
-    const normalizedPaymentMethod = payment_method || 'VietQR';
-
-    if (!store_id || !customer_name || !customer_phone || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Thiếu thông tin đơn hàng bắt buộc (store_id, tên, SĐT, danh sách món)' });
-    }
-
-    if (normalizedOrderType === 'Delivery' && (!delivery_addr || !delivery_addr.trim())) {
-      return res.status(400).json({ error: 'Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng' });
-    }
-
-    // Determine initial payment_status & payment_provider based on source and method
-    let payment_provider = 'cod';
-
-    if (normalizedSource === 'pos') {
-      if (normalizedPaymentMethod === 'VietQR') {
-        payment_provider = 'manual_vietqr';
-      } else if (normalizedPaymentMethod === 'COD') {
-        payment_provider = 'cod';
-      } else {
-        payment_provider = normalizedPaymentMethod.toLowerCase();
-      }
-    } else {
-      // source === 'online'
-      if (normalizedPaymentMethod === 'VietQR') {
-        if (isPayOSConfigured()) {
-          payment_provider = 'payos';
-        } else {
-          return res.status(400).json({ error: 'Cổng thanh toán trực tuyến PayOS chưa được kích hoạt trên hệ thống' });
-        }
-      } else if (normalizedPaymentMethod === 'COD') {
-        payment_provider = 'cod';
-      } else {
-        payment_provider = normalizedPaymentMethod.toLowerCase();
-      }
-    }
-
-    // Trích xuất customer user_id từ JWT Token nếu có (BẮT BUỘC role === 'customer')
     let customerUserId = null;
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -670,55 +613,17 @@ router.post('/orders', asyncHandler(async (req, res) => {
       } catch {}
     }
 
-    if (normalizedSource === 'online' && !customerUserId) {
-      return res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản trước khi đặt hàng' });
-    }
-
-    // Generate guest cancellation token if guest order
-    let rawCancelToken = null;
-    let cancelTokenHash = null;
-    if (!customerUserId && normalizedSource === 'online') {
-      rawCancelToken = crypto.randomBytes(32).toString('hex');
-      cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
-    }
-
     const idempotencyKey = String(req.headers['idempotency-key'] || '');
-    if (normalizedSource === 'online') {
-      if (normalizedPaymentMethod === 'VietQR') {
-        const payosOrder = await createOnlinePayOSOrder({
-          input: req.body,
-          userId: customerUserId,
-          cancelTokenHash,
-          cancelToken: rawCancelToken,
-          idempotencyKey,
-        });
-        return res.status(payosOrder.replay ? 200 : 201).json({ ...payosOrder, status: 'Đang chuẩn bị' });
-      }
-      const order = await ordersRepository.createPublicOrder({
-        input: req.body,
-        userId: customerUserId,
-        cancelTokenHash,
-        cancelToken: rawCancelToken,
-        idempotencyKey,
-        requestHash: hashOrderRequest(req.body),
-        paymentProvider: payment_provider,
-      });
-      return res.status(order.replay ? 200 : 201).json({ ...order, status: 'Đang chuẩn bị' });
-    }
-    const order = await ordersRepository.createPublicOrder({
+    const order = await customerOrderService.create({
       input: req.body,
       userId: customerUserId,
-      cancelTokenHash,
-      cancelToken: rawCancelToken,
       idempotencyKey,
-      requestHash: hashOrderRequest(req.body),
-      paymentProvider: payment_provider,
     });
-    res.status(order.replay ? 200 : 201).json({ ...order, status: 'Đang chuẩn bị' });
+
+    res.status(order.replay ? 200 : 201).json(order);
   } catch (err) {
     res.status(orderErrorStatus(err)).json({ error: err.message });
   }
 }));
-
 
 export default router;

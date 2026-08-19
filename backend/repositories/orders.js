@@ -1,5 +1,6 @@
 import postgresDb from '../config/db-postgres.js';
 import { batchLoadPostgresOrderDetails } from '../services/order-batch-loader.js';
+import defaultPostgresOrdersRepository, { createOrdersRepository } from './postgres/orders.js';
 
 function appendScope(sql, params, scopedStoreId, column = 'o.store_id') {
   if (scopedStoreId) {
@@ -95,4 +96,5 @@ export function createOrderReadRepository(database = postgresDb) {
 }
 
 export const orderReadRepository = createOrderReadRepository();
+export { createOrdersRepository, defaultPostgresOrdersRepository as ordersRepository };
 export default orderReadRepository;
