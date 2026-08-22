@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { vnd } from "@/lib/data";
-import { apiGet, apiPost, createIdempotencyKey, getCustomerToken } from "@/lib/api";
+import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
 
 export const Route = createFileRoute("/thanh-toan")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
@@ -89,6 +89,15 @@ function Checkout() {
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<PendingPayOSOrder | null>(null);
+
+  useEffect(() => {
+    const user = getCustomerUser();
+    if (user) {
+      if (user.fullname) setName(user.fullname);
+      if (user.phone) setPhone(user.phone);
+    }
+  }, []);
+
   // Khôi phục đơn PayOS đang chờ thanh toán khi quay lại trang thanh toán
   useEffect(() => {
     try {
@@ -222,8 +231,23 @@ function Checkout() {
     if (!getCustomerToken()) {
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
     }
-    if (!name.trim() || !phone.trim()) {
-      return toast.error("Vui lòng nhập họ tên và số điện thoại");
+    const cleanName = name.trim().replace(/\s+/g, " ");
+    let cleanPhone = phone.trim().replace(/[\s\(\)\.-]/g, "");
+    if (cleanPhone.startsWith("+84") && cleanPhone.length === 12) {
+      cleanPhone = "0" + cleanPhone.slice(3);
+    } else if (cleanPhone.startsWith("84") && cleanPhone.length === 11) {
+      cleanPhone = "0" + cleanPhone.slice(2);
+    }
+
+    const isVnPhone = /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone);
+    const isIntlPhone = /^\+[1-9][0-9]{7,14}$/.test(cleanPhone);
+    const vnNameRegex = /^([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*)(\s([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*))+$/;
+
+    if (!cleanName || !vnNameRegex.test(cleanName)) {
+      return toast.error("Họ và tên không hợp lệ (tối thiểu 2 từ, viết hoa chữ cái đầu và không chứa số/ký tự lạ)");
+    }
+    if (!cleanPhone || (!isVnPhone && !isIntlPhone)) {
+      return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
     }
     if (!branch && !tableInfo) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");

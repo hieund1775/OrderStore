@@ -71,7 +71,7 @@ export function ProductCard({ product }: { product: Product }) {
               size="sm"
               className="flex-1"
               onClick={() => {
-                addItem({
+                const added = addItem({
                   productId: product.id,
                   name: product.name,
                   image: product.image,
@@ -83,7 +83,9 @@ export function ProductCard({ product }: { product: Product }) {
                   unitPrice: product.price,
                   qty: 1,
                 });
-                toast.success('Đã thêm vào giỏ', { description: product.name });
+                if (added) {
+                  toast.success('Đã thêm vào giỏ', { description: product.name });
+                }
               }}
             >
               <Plus className="size-4" /> Thêm nhanh
@@ -253,7 +255,7 @@ function CustomizeDialog({
                 variant="hero"
                 className="flex-1"
                 onClick={() => {
-                  addItem({
+                  const added = addItem({
                     productId: product.id,
                     name: product.name,
                     image: product.image,
@@ -268,8 +270,10 @@ function CustomizeDialog({
                     unitPrice,
                     qty,
                   });
-                  toast.success('Đã thêm vào giỏ', { description: `${product.name} · ${size}` });
-                  onOpenChange(false);
+                  if (added) {
+                    toast.success('Đã thêm vào giỏ', { description: `${product.name} · ${size}` });
+                    onOpenChange(false);
+                  }
                 }}
               >
                 Thêm vào giỏ · {vnd(unitPrice * qty)}

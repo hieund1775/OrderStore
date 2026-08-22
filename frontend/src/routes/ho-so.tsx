@@ -141,15 +141,9 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
-
           <div className="bg-card rounded-2xl border p-5">
             <p className="mb-3 text-sm font-semibold">Thông báo</p>
-            {notifications.map((n) => (
-              <div key={n.id} className="border-b py-2 last:border-0">
-                <p className="text-sm">{n.title}</p>
-                <p className="text-muted-foreground text-xs">{n.time}</p>
-              </div>
-            ))}
+            <p className="text-muted-foreground text-xs">Chưa có thông báo mới.</p>
           </div>
         </aside>
 
@@ -157,7 +151,6 @@ function Profile() {
           <TabsList className="mb-4 flex-wrap">
             <TabsTrigger value="orders">Lịch sử đơn hàng ({userOrders.length})</TabsTrigger>
             <TabsTrigger value="wishlist">Yêu thích</TabsTrigger>
-            <TabsTrigger value="review">Đánh giá</TabsTrigger>
             <TabsTrigger value="info">Thông tin</TabsTrigger>
           </TabsList>
 
@@ -216,45 +209,21 @@ function Profile() {
 
           <TabsContent value="wishlist">
             <div className="grid gap-4 sm:grid-cols-2">
-              {saved.length === 0 && (
-                <p className="text-muted-foreground text-sm">Chưa có món yêu thích nào.</p>
-              )}
-              {saved.map((p) => (
-                <div key={p.id} className="bg-card flex items-center gap-3 rounded-2xl border p-4">
-                  <img
-                    src={p.image}
-                    alt={p.name}
-                    loading="lazy"
-                    className="size-16 rounded-xl object-cover"
-                  />
-                  <div className="flex-1">
-                    <p className="font-semibold">{p.name}</p>
-                    <p className="text-muted-foreground text-xs">{p.base}</p>
-                    <p className="text-primary font-bold">{vnd(p.price)}</p>
+              {saved.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-4">Chưa có món yêu thích nào.</p>
+              ) : (
+                saved.map((p) => (
+                  <div key={p.id} className="bg-card flex items-center justify-between rounded-2xl border p-4">
+                    <div>
+                      <p className="font-semibold text-sm">{p.name}</p>
+                      <p className="text-primary font-bold text-xs">{vnd(p.price)}</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => toggleWishlist(p.id)}>
+                      <Heart className="size-4 fill-berry text-berry" />
+                    </Button>
                   </div>
-                  <button onClick={() => toggleWishlist(p.id)} aria-label="Bỏ yêu thích">
-                    <Heart className="fill-berry text-berry size-5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="review">
-            <div className="bg-card space-y-4 rounded-2xl border p-5">
-              <p className="font-display text-lg font-bold">Đánh giá đơn VX240712</p>
-              <div className="flex gap-1">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Star key={i} className="fill-primary text-primary size-6" />
-                ))}
-              </div>
-              <Textarea rows={3} placeholder="Chia sẻ cảm nhận của bạn về ly trà…" />
-              <label className="hover:border-primary text-muted-foreground flex cursor-pointer items-center justify-center rounded-xl border border-dashed p-4 text-sm">
-                Tải ảnh ly trà thực tế
-              </label>
-              <Button variant="hero" onClick={() => toast.success("Cảm ơn bạn đã đánh giá!")}>
-                Gửi đánh giá
-              </Button>
+                ))
+              )}
             </div>
           </TabsContent>
 
@@ -266,25 +235,18 @@ function Profile() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="p-phone">Số điện thoại</Label>
-                <Input id="p-phone" defaultValue={user.phone} />
+                <Input id="p-phone" defaultValue={user.phone || ""} readOnly className="bg-muted" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="p-email">Email</Label>
-                <Input id="p-email" defaultValue="minhtrang@email.com" />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label>Địa chỉ đã lưu</Label>
-                <div className="text-muted-foreground space-y-2 text-sm">
-                  <p className="rounded-xl border p-3">🏠 Nhà · 125 Nguyễn Huệ, Quận 1</p>
-                  <p className="rounded-xl border p-3">🏢 Công ty · 88 Võ Văn Tần, Quận 3</p>
-                </div>
+                <Label htmlFor="p-email">Hạng hội viên</Label>
+                <Input id="p-email" value={`Hạng ${userTier} · ${userPoints} điểm`} readOnly className="bg-muted" />
               </div>
               <Button
                 variant="hero"
                 className="sm:col-span-2"
-                onClick={() => toast.success("Đã lưu thay đổi")}
+                onClick={() => toast.success("Thông tin tài khoản đã được đồng bộ")}
               >
-                Lưu thay đổi
+                Cập nhật thông tin
               </Button>
             </div>
           </TabsContent>

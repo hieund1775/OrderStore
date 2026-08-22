@@ -1,4 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
+import { getCustomerToken } from './api';
 
 export type CartItem = {
   key: string;
@@ -17,7 +19,7 @@ export type CartItem = {
 
 type CartContextValue = {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, 'key'>) => void;
+  addItem: (item: Omit<CartItem, 'key'>) => boolean;
   removeItem: (key: string) => void;
   setQty: (key: string, qty: number) => void;
   clear: () => void;
@@ -31,7 +33,7 @@ const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [wishlist, setWishlist] = useState<string[]>(['tra-dau-tay']);
+  const [wishlist, setWishlist] = useState<string[]>([]);
 
   const value = useMemo<CartContextValue>(() => {
     const count = items.reduce((s, i) => s + i.qty, 0);
@@ -41,7 +43,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       count,
       subtotal,
       wishlist,
-      addItem: (item) =>
+      addItem: (item) => {
+        const token = getCustomerToken();
+        if (!token) {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
+          return false;
+        }
         setItems((prev) => {
           const key = [
             item.productId,
@@ -56,7 +63,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
             return prev.map((p) => (p.key === key ? { ...p, qty: p.qty + item.qty } : p));
           }
           return [...prev, { ...item, key }];
-        }),
+        });
+        return true;
+      },
       removeItem: (key) => setItems((prev) => prev.filter((p) => p.key !== key)),
       setQty: (key, qty) =>
         setItems((prev) =>
@@ -65,8 +74,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
             : prev.map((p) => (p.key === key ? { ...p, qty } : p)),
         ),
       clear: () => setItems([]),
-      toggleWishlist: (id) =>
-        setWishlist((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id])),
+      toggleWishlist: (id) => {
+        const token = getCustomerToken();
+        if (!token) {
+          toast.error('Vui lòng đăng nhập tài khoản để lưu món yêu thích');
+          return;
+        }
+        setWishlist((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+      },
     };
   }, [items, wishlist]);
 

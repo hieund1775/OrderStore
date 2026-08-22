@@ -339,6 +339,8 @@ export const stores = [
   },
 ];
 
+export type Store = (typeof stores)[number];
+
 export type PromoStatus = 'Đang diễn ra' | 'Sắp diễn ra' | 'Đã kết thúc';
 
 export const promotions: {
