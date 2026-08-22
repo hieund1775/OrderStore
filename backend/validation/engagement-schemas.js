@@ -1,3 +1,5 @@
+import { normalizeAndValidatePhone, normalizeAndValidateFullName } from './customer-schemas.js';
+
 export class EngagementValidationError extends Error {
   constructor(message, code = 'ENGAGEMENT_VALIDATION_ERROR', status = 400) {
     super(message);
@@ -42,14 +44,18 @@ export function validateJobApplyInput(body = {}) {
     throw new EngagementValidationError('Dữ liệu ứng tuyển không hợp lệ');
   }
   const { fullname, phone, email, store_id, cv_url } = body;
-  if (!fullname || !String(fullname).trim()) throw new EngagementValidationError('Họ và tên không được để trống');
-  if (!phone || !String(phone).trim()) throw new EngagementValidationError('Số điện thoại không được để trống');
-  if (!email || !String(email).trim()) throw new EngagementValidationError('Email không được để trống');
+  const validName = normalizeAndValidateFullName(fullname, { required: true });
+  const validPhone = normalizeAndValidatePhone(phone, { required: true });
+
+  const emailStr = String(email || '').trim();
+  if (!emailStr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+    throw new EngagementValidationError('Email không đúng định dạng');
+  }
 
   return {
-    fullname: String(fullname).trim(),
-    phone: String(phone).trim(),
-    email: String(email).trim(),
+    fullname: validName,
+    phone: validPhone,
+    email: emailStr,
     store_id: store_id ? positiveInteger(store_id, 'store_id', { required: false }) : null,
     cv_url: cv_url ? String(cv_url).trim() : null,
   };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Pencil, Plus, Ticket } from "lucide-react";
+import { Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import { vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/khuyen-mai")({
@@ -66,15 +66,6 @@ type Promotion = {
   is_active: boolean;
 };
 
-const statusTone: Record<string, string> = {
-  "Đang diễn ra": "bg-leaf/15 text-leaf",
-  "Đang chạy": "bg-leaf/15 text-leaf",
-  "Lên lịch": "bg-primary/15 text-primary",
-  "Sắp diễn ra": "bg-primary/15 text-primary",
-  "Đã kết thúc": "bg-muted text-muted-foreground",
-  "Kết thúc": "bg-muted text-muted-foreground",
-};
-
 const emptyForm = {
   title: "",
   code: "",
@@ -87,6 +78,23 @@ const emptyForm = {
   end_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
 };
 
+function getVoucherStatusBadge(p: Promotion) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isExpiredByDate = p.end_date && p.end_date.slice(0, 10) < today;
+  const isExpiredByUsage = p.usage_limit != null && p.used_count >= p.usage_limit;
+
+  if (!p.is_active) {
+    return <Badge variant="secondary" className="bg-muted text-muted-foreground">Tạm tắt</Badge>;
+  }
+  if (isExpiredByDate || isExpiredByUsage) {
+    return <Badge variant="destructive">Hết hạn</Badge>;
+  }
+  if (p.voucher_type === "single_use" && (!p.end_date || p.end_date.startsWith("2099") || p.end_date.startsWith("9999"))) {
+    return <Badge variant="secondary" className="bg-purple-100 text-purple-700">Vô hạn</Badge>;
+  }
+  return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 font-medium">Còn hạn</Badge>;
+}
+
 function PromotionsAdminPage() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,6 +102,10 @@ function PromotionsAdminPage() {
   const [editing, setEditing] = useState<Promotion | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedToDelete, setSelectedToDelete] = useState<Promotion | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,6 +145,27 @@ function PromotionsAdminPage() {
     setDialogOpen(true);
   }
 
+  function openDelete(p: Promotion) {
+    setSelectedToDelete(p);
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!selectedToDelete) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/admin/promotions/${selectedToDelete.id}`);
+      toast.success(`Đã xóa voucher ${selectedToDelete.code}`);
+      setDeleteDialogOpen(false);
+      setSelectedToDelete(null);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xóa thất bại");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function save() {
     if (!form.title.trim()) return toast.error("Nhập tên chương trình");
     if (!form.code.trim()) return toast.error("Nhập mã giảm giá");
@@ -140,6 +173,10 @@ function PromotionsAdminPage() {
     if (!discount || discount <= 0 || discount > 100) {
       return toast.error("Phần trăm giảm phải từ 1 đến 100");
     }
+    if (form.start_date && form.end_date && form.end_date < form.start_date) {
+      return toast.error("Ngày kết thúc không được trước ngày bắt đầu");
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -188,7 +225,7 @@ function PromotionsAdminPage() {
     <>
       <AdminPageHeader
         title="Khuyến mãi & Voucher"
-        desc="Mã giảm giá % — dùng 1 lần hoặc theo thời hạn giới hạn lượt"
+        desc="Quản lý mã giảm giá — dùng 1 lần theo SĐT hoặc theo thời hạn & lượt dùng"
         actions={
           <Button onClick={openCreate}>
             <Plus className="size-4" /> Tạo mã giảm giá
@@ -222,7 +259,7 @@ function PromotionsAdminPage() {
               </TableHeader>
               <TableBody>
                 {promos.map((p) => (
-                  <TableRow key={p.id} className={p.is_active ? "" : "opacity-50"}>
+                  <TableRow key={p.id} className={p.is_active ? "" : "opacity-60"}>
                     <TableCell>
                       <p className="font-semibold">{p.title}</p>
                       <p className="text-primary font-mono text-xs font-bold">{p.code}</p>
@@ -240,7 +277,7 @@ function PromotionsAdminPage() {
                     <TableCell>
                       {p.voucher_type === "single_use" ? (
                         <Badge variant="secondary" className="bg-berry/10 text-berry">
-                          🎟️ Mã 1 lần
+                          🎟️ Mã 1 lần / SĐT
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="bg-primary/10 text-primary">
@@ -249,22 +286,25 @@ function PromotionsAdminPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
-                      {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn"}
+                      {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn đơn"}
                     </TableCell>
                     <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
                       {p.start_date?.slice(0, 10)} → {p.end_date?.slice(0, 10)}
                     </TableCell>
                     <TableCell className="hidden text-xs lg:table-cell">
-                      {p.used_count}
-                      {p.usage_limit != null && ` / ${p.usage_limit}`}
+                      {p.voucher_type === "single_use" ? (
+                        <span className="text-muted-foreground italic">Không áp dụng</span>
+                      ) : (
+                        <span className="font-medium">
+                          {p.used_count} / {p.usage_limit != null ? p.usage_limit : "Không giới hạn"}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={statusTone[p.status] || ""}>
-                        {p.status}
-                      </Badge>
+                      {getVoucherStatusBadge(p)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
                         <Switch
                           checked={p.is_active}
                           onCheckedChange={(v) => toggleActive(p, v)}
@@ -278,6 +318,15 @@ function PromotionsAdminPage() {
                         >
                           <Pencil className="size-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => openDelete(p)}
+                          aria-label={`Xóa mã ${p.code}`}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -288,6 +337,7 @@ function PromotionsAdminPage() {
         )}
       </Card>
 
+      {/* Dialog Tạo / Sửa mã */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -330,7 +380,7 @@ function PromotionsAdminPage() {
                 id="promo-max"
                 type="number"
                 min={0}
-                placeholder="VD: 30000"
+                placeholder="VD: 30000 (để trống nếu không giới hạn)"
                 value={form.max_discount}
                 onChange={(e) => setForm({ ...form, max_discount: e.target.value })}
               />
@@ -341,7 +391,7 @@ function PromotionsAdminPage() {
                 id="promo-min"
                 type="number"
                 min={0}
-                placeholder="VD: 89000"
+                placeholder="VD: 89000 (để trống nếu không giới hạn)"
                 value={form.min_order}
                 onChange={(e) => setForm({ ...form, min_order: e.target.value })}
               />
@@ -370,7 +420,7 @@ function PromotionsAdminPage() {
                   id="promo-limit"
                   type="number"
                   min={1}
-                  placeholder="VD: 500"
+                  placeholder="VD: 500 (để trống nếu không giới hạn)"
                   value={form.usage_limit}
                   onChange={(e) => setForm({ ...form, usage_limit: e.target.value })}
                 />
@@ -382,7 +432,14 @@ function PromotionsAdminPage() {
                 id="promo-start"
                 type="date"
                 value={form.start_date}
-                onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                onChange={(e) => {
+                  const newStart = e.target.value;
+                  setForm({
+                    ...form,
+                    start_date: newStart,
+                    end_date: form.end_date < newStart ? newStart : form.end_date,
+                  });
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -390,6 +447,7 @@ function PromotionsAdminPage() {
               <Input
                 id="promo-end"
                 type="date"
+                min={form.start_date}
                 value={form.end_date}
                 onChange={(e) => setForm({ ...form, end_date: e.target.value })}
               />
@@ -401,6 +459,28 @@ function PromotionsAdminPage() {
             </Button>
             <Button onClick={save} disabled={saving}>
               {saving ? "Đang lưu…" : editing ? "Cập nhật" : "Tạo mã"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Xác nhận xóa voucher */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận xóa voucher</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Bạn có chắc chắn muốn xóa voucher{" "}
+            <strong className="text-foreground font-mono">{selectedToDelete?.code}</strong>{" "}
+            ({selectedToDelete?.title})? Thao tác này sẽ xóa vĩnh viễn voucher và không thể hoàn tác.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? "Đang xóa..." : "Xác nhận xóa"}
             </Button>
           </DialogFooter>
         </DialogContent>

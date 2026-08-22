@@ -6,6 +6,7 @@ import { validateCustomerId } from '../../validation/customer-schemas.js';
 import { toReviewDto, toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
 import { toCustomerDto } from '../../dto/customer-dto.js';
 import engagementService from '../../services/engagement/engagement-service.js';
+import recruitmentService from '../../services/recruitment/recruitment-service.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ router.get('/jobs', asyncHandler(async (req, res) => {
 router.post('/jobs/:id/apply', asyncHandler(async (req, res) => {
   try {
     const validated = validateJobApplyInput(req.body);
-    const created = await engagementService.applyJob({
+    const created = await recruitmentService.applyJob({
       jobId: req.params.id,
       storeId: validated.store_id,
       fullname: validated.fullname,

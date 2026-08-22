@@ -134,6 +134,32 @@ export function createAdminPromotionsRepository(database = postgresDb) {
         return rows[0] || null;
       });
     },
+
+    async deletePromotion(id) {
+      return database.transaction(async (tx) => {
+        const [historyRows] = await tx.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM orders WHERE promotion_id = $1
+             UNION ALL
+             SELECT 1 FROM voucher_usage_history WHERE promotion_id = $1
+             UNION ALL
+             SELECT 1 FROM user_vouchers WHERE promotion_id = $1
+           ) AS has_history`,
+          [id],
+        );
+        if (historyRows[0]?.has_history === true || historyRows[0]?.has_history === 'true') {
+          const [, affected] = await tx.query(
+            'UPDATE promotions SET is_active = FALSE WHERE id = $1',
+            [id],
+          );
+          return Boolean(affected);
+        }
+
+        await tx.query('DELETE FROM promotion_stores WHERE promotion_id = $1', [id]);
+        const [, affected] = await tx.query('DELETE FROM promotions WHERE id = $1', [id]);
+        return Boolean(affected);
+      });
+    },
   };
 }
 

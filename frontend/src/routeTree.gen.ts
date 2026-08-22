@@ -29,6 +29,7 @@ import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminPosRouteImport } from './routes/admin.pos'
 import { Route as AdminThongBaoRouteImport } from './routes/admin.thong-bao'
 import { Route as AdminThucDonRouteImport } from './routes/admin.thuc-don'
+import { Route as AdminTuyenDungRouteImport } from './routes/admin.tuyen-dung'
 import { Route as AdminViTriRouteImport } from './routes/admin.vi-tri'
 
 const IndexRoute = IndexRouteImport.update({
@@ -131,6 +132,11 @@ const AdminThucDonRoute = AdminThucDonRouteImport.update({
   path: '/thuc-don',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTuyenDungRoute = AdminTuyenDungRouteImport.update({
+  id: '/tuyen-dung',
+  path: '/tuyen-dung',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminViTriRoute = AdminViTriRouteImport.update({
   id: '/vi-tri',
   path: '/vi-tri',
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/admin/pos': typeof AdminPosRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/admin/pos': typeof AdminPosRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/admin/pos': typeof AdminPosRoute
   '/admin/thong-bao': typeof AdminThongBaoRoute
   '/admin/thuc-don': typeof AdminThucDonRoute
+  '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/admin/pos'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/admin/pos'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/admin'
   id:
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/admin/pos'
     | '/admin/thong-bao'
     | '/admin/thuc-don'
+    | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -432,6 +444,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminThucDonRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/tuyen-dung': {
+      id: '/admin/tuyen-dung'
+      path: '/tuyen-dung'
+      fullPath: '/admin/tuyen-dung'
+      preLoaderRoute: typeof AdminTuyenDungRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/vi-tri': {
       id: '/admin/vi-tri'
       path: '/vi-tri'
@@ -452,6 +471,7 @@ interface AdminRouteChildren {
   AdminPosRoute: typeof AdminPosRoute
   AdminThongBaoRoute: typeof AdminThongBaoRoute
   AdminThucDonRoute: typeof AdminThucDonRoute
+  AdminTuyenDungRoute: typeof AdminTuyenDungRoute
   AdminViTriRoute: typeof AdminViTriRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
@@ -466,6 +486,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPosRoute: AdminPosRoute,
   AdminThongBaoRoute: AdminThongBaoRoute,
   AdminThucDonRoute: AdminThucDonRoute,
+  AdminTuyenDungRoute: AdminTuyenDungRoute,
   AdminViTriRoute: AdminViTriRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

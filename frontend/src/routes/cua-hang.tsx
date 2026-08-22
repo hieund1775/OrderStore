@@ -227,17 +227,17 @@ function StoresPage() {
 
   const mapIframeUrl = useMemo(() => {
     if (selected) {
-      if (selected.lat != null && selected.lng != null) {
-        return `https://maps.google.com/maps?q=${selected.lat},${selected.lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
-      }
       const fullAddr = formatFullAddress(selected.address, selected.district, selected.city);
+      if (selected.lat != null && selected.lng != null) {
+        return `https://maps.google.com/maps?q=${selected.lat},${selected.lng}+(${encodeURIComponent(selected.name)})&t=&z=16&ie=UTF8&iwloc=B&hl=vi&output=embed`;
+      }
       const query = encodeURIComponent(`${selected.name}, ${fullAddr}`);
-      return `https://maps.google.com/maps?q=${query}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
+      return `https://maps.google.com/maps?q=${query}&t=&z=16&ie=UTF8&iwloc=B&hl=vi&output=embed`;
     }
     if (mapCoords.lat != null && mapCoords.lng != null) {
-      return `https://maps.google.com/maps?q=${mapCoords.lat},${mapCoords.lng}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
+      return `https://maps.google.com/maps?q=${mapCoords.lat},${mapCoords.lng}+(${encodeURIComponent(mapCoords.title)})&t=&z=15&ie=UTF8&iwloc=B&hl=vi&output=embed`;
     }
-    return `https://maps.google.com/maps?q=TP.+H%E1%BB%93+Ch%C3%AD+Minh&t=&z=12&ie=UTF8&iwloc=&output=embed`;
+    return `https://maps.google.com/maps?q=TP.+H%E1%BB%93+Ch%C3%AD+Minh&t=&z=12&ie=UTF8&iwloc=B&hl=vi&output=embed`;
   }, [selected, mapCoords]);
 
   return (

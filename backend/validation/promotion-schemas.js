@@ -39,7 +39,7 @@ export function validatePromotionInput(body = {}, { isUpdate = false } = {}) {
   if (typeof body !== 'object' || body === null) {
     throw new PromotionValidationError('Dữ liệu khuyến mãi không hợp lệ');
   }
-  const { title, description, code, discount_type, discount_value, min_order, max_discount, start_date, end_date, is_active, store_id, rule } = body;
+  const { title, description, code, discount_type, discount_value, min_order, max_discount, start_date, end_date, is_active, store_id, rule, voucher_type, usage_limit, store_ids } = body;
 
   if (!isUpdate || title !== undefined) boundedText(title, 'Tiêu đề khuyến mãi', 150, { required: !isUpdate });
   if (!isUpdate || code !== undefined) boundedText(code, 'Mã khuyến mãi', 50, { required: !isUpdate });
@@ -48,18 +48,33 @@ export function validatePromotionInput(body = {}, { isUpdate = false } = {}) {
     throw new PromotionValidationError('Loại giảm giá phải là percent hoặc fixed');
   }
 
+  if (voucher_type !== undefined && !['single_use', 'time_bounded'].includes(voucher_type)) {
+    throw new PromotionValidationError('Loại voucher phải là single_use hoặc time_bounded');
+  }
+
+  if (start_date && end_date) {
+    const start = new Date(start_date);
+    const end = new Date(end_date);
+    if (end < start) {
+      throw new PromotionValidationError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu', 'PROMOTION_INVALID_DATES');
+    }
+  }
+
   return {
     title: title ? title.trim() : undefined,
     description: description ? description.trim() : undefined,
     code: code ? code.trim().toUpperCase() : undefined,
     discount_type: discount_type || undefined,
-    discount_value: discount_value !== undefined ? Number(discount_value) : undefined,
-    min_order: min_order !== undefined ? Number(min_order) : undefined,
-    max_discount: max_discount !== undefined ? Number(max_discount) : undefined,
+    discount_value: discount_value !== undefined && discount_value !== '' ? Number(discount_value) : undefined,
+    min_order: min_order !== undefined && min_order !== '' ? Number(min_order) : undefined,
+    max_discount: max_discount !== undefined && max_discount !== '' ? Number(max_discount) : undefined,
+    voucher_type: voucher_type || undefined,
+    usage_limit: usage_limit !== undefined && usage_limit !== '' ? Number(usage_limit) : undefined,
     start_date: start_date || undefined,
     end_date: end_date || undefined,
     is_active: is_active !== undefined ? Boolean(is_active) : undefined,
     store_id: store_id != null ? Number(store_id) : undefined,
+    store_ids: Array.isArray(store_ids) ? store_ids.map(Number) : undefined,
     rule: rule ? (typeof rule === 'object' ? JSON.stringify(rule) : String(rule).trim()) : undefined,
   };
 }

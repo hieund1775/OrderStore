@@ -11,6 +11,7 @@ import { dashboardRouter, reportsRouter } from './admin/reports.js';
 import adminCustomersRouter from './admin/customers.js';
 import adminSettingsRouter from './admin/settings.js';
 import adminNotificationsRouter from './admin/notifications.js';
+import adminRecruitmentRouter from './admin/recruitment.js';
 
 const router = Router();
 
@@ -26,6 +27,8 @@ router.use('/menu', adminMenuRouter);
 router.use('/branches', branchesRouter);
 router.use('/tables', tablesRouter);
 router.use('/promotions', adminPromotionsRouter);
+// Recruitment router owns the explicit /jobs and /job-applications paths.
+router.use('/', adminRecruitmentRouter);
 router.use('/inventory', adminInventoryRouter);
 router.use('/customers', adminCustomersRouter);
 router.use('/settings', adminSettingsRouter);

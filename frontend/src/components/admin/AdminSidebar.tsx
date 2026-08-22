@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ShoppingCart,
+  Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,7 @@ export const adminNav = [
   { to: '/admin/thuc-don', label: 'Thực đơn', icon: UtensilsCrossed },
   { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store },
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone },
+  { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase },
   { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell },
   { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings },
 ] as const;
