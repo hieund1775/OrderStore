@@ -72,13 +72,13 @@ graph TD
 
 ### 2.3. Vấn đề 4 & 4.1: Ràng Buộc Validation Form (SĐT & Họ Tên)
 
-#### A. Ràng buộc Số điện thoại (Việt Nam)
+#### A. Ràng buộc Số điện thoại (Việt Nam & Quốc tế E.164)
 * **Quy chuẩn**:
-  * Bắt buộc đúng **10 chữ số** (sau khi chuẩn hóa từ `+84` hoặc `84` thành `0`).
-  * Phải thuộc các dải đầu số hợp lệ của các nhà mạng tại Việt Nam: `03x`, `05x`, `07x`, `08x`, `09x`.
-* **Biểu thức chính quy (Regex)**:
+  * **Số điện thoại Việt Nam**: Đúng **10 chữ số** (sau khi chuẩn hóa từ `+84` hoặc `84` thành `0`). Thuộc các đầu số mạng di động hợp lệ: `03x`, `05x`, `07x`, `08x`, `09x`.
+  * **Số điện thoại Quốc tế (Nước ngoài)**: Bắt buộc bắt đầu bằng dấu `+` kèm mã quốc gia (ví dụ: `+1...`, `+82...`, `+86...`, `+81...`, `+65...`), tổng độ dài từ **8 đến 15 chữ số** theo chuẩn viễn thông quốc tế ITU-T E.164.
+* **Biểu thức chính quy Hợp nhất (Unified Regex)**:
   ```regex
-  ^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$
+  ^(?:(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}|\+[1-9][0-9]{7,14})$
   ```
 
 #### B. Ràng buộc Họ và Tên (Tiếng Việt Chuẩn)
