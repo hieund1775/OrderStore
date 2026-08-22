@@ -112,14 +112,14 @@ export function createEngagementRepository(database = postgresDb) {
 
     async listTiers() {
       const [rows] = await database.query(
-        'SELECT * FROM tiers ORDER BY min_points ASC',
+        'SELECT * FROM tier_rules ORDER BY min_points ASC',
       );
       return rows;
     },
 
     async listRewards() {
       const [rows] = await database.query(
-        'SELECT * FROM rewards WHERE is_active = TRUE ORDER BY points_required ASC',
+        'SELECT * FROM rewards WHERE is_active = TRUE ORDER BY points_cost ASC',
       );
       return rows;
     },

@@ -54,7 +54,7 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
       'SELECT 1 FROM voucher_usage_history WHERE promotion_id = $1 AND user_phone = $2',
       [promotion.id, normalizedPhone],
     );
-    if (!used[0]) throw new PromotionError('Mã giảm giá đã được sử dụng cho số điện thoại này');
+    if (used[0]) throw new PromotionError('Mã giảm giá đã được sử dụng cho số điện thoại này');
   } else if (promotion.usage_limit != null && Number(promotion.used_count) >= Number(promotion.usage_limit)) {
     throw new PromotionError('Mã giảm giá đã hết lượt sử dụng');
   }

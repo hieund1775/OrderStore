@@ -25,7 +25,8 @@ describe('PostgreSQL Public Read Integration Suite', () => {
       return;
     }
 
-    validatePostgresTestGuard(testDbUrl);
+    const guard = validatePostgresTestGuard(testDbUrl);
+    assert.equal(guard.valid, true, guard.reason || 'PostgreSQL integration target must be a dedicated test database');
     await postgresDb.close();
     await runMigrations();
     await seedDemoData();
