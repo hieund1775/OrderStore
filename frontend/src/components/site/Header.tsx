@@ -553,12 +553,6 @@ function ProfileButton() {
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/ho-so">QR tích điểm</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/theo-doi-don" search={{ code: undefined }}>Theo dõi đơn hàng</Link>
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={resetLogin}>Đăng xuất</DropdownMenuItem>
       </DropdownMenuContent>
