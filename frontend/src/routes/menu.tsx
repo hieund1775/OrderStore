@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { useCart } from "@/lib/cart";
-import { fruitGroups, mapApiProduct, products, teaLines, vnd, type ApiCatalogProduct } from "@/lib/data";
+import { mapApiProduct, products, vnd, type ApiCatalogProduct } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 
 export const Route = createFileRoute("/menu")({
@@ -30,12 +30,12 @@ export const Route = createFileRoute("/menu")({
       {
         name: "description",
         content:
-          "Menu trà trái cây tươi, trà đậm vị, trà tuyết và Hi-Tea detox. Lọc theo dòng trà, vị trái cây và đặt hàng ngay.",
+          "Menu trà trái cây tươi, trà đậm vị, trà tuyết và Hi-Tea detox. Lọc theo danh mục, cốt trà nền và đặt hàng ngay.",
       },
       { property: "og:title", content: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
       {
         property: "og:description",
-        content: "Lọc theo dòng trà và vị trái cây, tùy chỉnh từng ly.",
+        content: "Lọc theo danh mục và cốt trà nền, tùy chỉnh từng ly.",
       },
     ],
   }),
@@ -43,9 +43,11 @@ export const Route = createFileRoute("/menu")({
 });
 
 function MenuPage() {
-  const [line, setLine] = useState<string>("Tất cả");
-  const [fruit, setFruit] = useState<string>("Tất cả");
+  const [selectedCategory, setSelectedCategory] = useState<string>("Tất cả");
+  const [selectedBase, setSelectedBase] = useState<string>("Tất cả");
   const [catalogProducts, setCatalogProducts] = useState(products);
+  const [dbCategories, setDbCategories] = useState<{ id: number; name: string }[]>([]);
+  const [dbBases, setDbBases] = useState<{ id: number; name: string }[]>([]);
   const { items, subtotal, count } = useCart();
   const { table_id, store_id } = useSearch({ from: "/menu" });
   const [tableInfo, setTableInfo] = useState<{
@@ -55,11 +57,27 @@ function MenuPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // 1. Fetch Products
     apiGet<ApiCatalogProduct[]>("/api/products")
       .then((rows) => {
         if (!cancelled && rows.length > 0) setCatalogProducts(rows.map(mapApiProduct));
       })
       .catch(() => {});
+
+    // 2. Fetch Categories directly from Database API
+    apiGet<{ id: number; name: string }[]>("/api/categories")
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows)) setDbCategories(rows);
+      })
+      .catch(() => {});
+
+    // 3. Fetch Base Options directly from Database API
+    apiGet<{ id: number; name: string }[]>("/api/options/bases")
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows)) setDbBases(rows);
+      })
+      .catch(() => {});
+
     return () => { cancelled = true; };
   }, []);
 
@@ -114,12 +132,30 @@ function MenuPage() {
     };
   }, [store_id]);
 
+  const categoryList = useMemo(() => {
+    if (dbCategories.length > 0) {
+      return ["Tất cả", ...dbCategories.map((c) => c.name)];
+    }
+    const derived = Array.from(new Set(catalogProducts.map((p) => p.line).filter(Boolean)));
+    return ["Tất cả", ...derived];
+  }, [dbCategories, catalogProducts]);
+
+  const baseList = useMemo(() => {
+    if (dbBases.length > 0) {
+      return ["Tất cả", ...dbBases.map((b) => b.name)];
+    }
+    const derived = Array.from(new Set(catalogProducts.map((p) => p.base).filter(Boolean)));
+    return ["Tất cả", ...derived];
+  }, [dbBases, catalogProducts]);
+
   const filtered = useMemo(
     () =>
       catalogProducts.filter(
-        (p) => (line === "Tất cả" || p.line === line) && (fruit === "Tất cả" || p.fruit === fruit),
+        (p) =>
+          (selectedCategory === "Tất cả" || p.line === selectedCategory) &&
+          (selectedBase === "Tất cả" || p.base === selectedBase),
       ),
-    [catalogProducts, line, fruit],
+    [catalogProducts, selectedCategory, selectedBase],
   );
 
   return (
@@ -127,7 +163,7 @@ function MenuPage() {
       <PageHeader
         eyebrow="Menu"
         title="Thực đơn trà trái cây tươi"
-        desc="Chọn dòng trà yêu thích, tùy chỉnh mức đường – đá – topping theo đúng khẩu vị của bạn."
+        desc="Chọn danh mục và cốt trà nền yêu thích, tùy chỉnh mức đường – đá – topping theo đúng khẩu vị của bạn."
       />
 
       {tableInfo && (
@@ -179,21 +215,31 @@ function MenuPage() {
       <div className="container-page grid gap-8 py-10 lg:grid-cols-[1fr_320px]">
         <div>
           {/* Filters */}
-          <div className="bg-card top-32 z-20 mb-6 space-y-3 rounded-2xl border p-4">
+          <div className="bg-card top-32 z-20 mb-6 space-y-3 rounded-2xl border p-4 shadow-sm">
             <div className="text-muted-foreground flex items-center gap-2 text-xs font-bold tracking-wide uppercase">
-              <SlidersHorizontal className="size-3.5" /> Dòng trà
+              <SlidersHorizontal className="size-3.5" /> Danh mục
             </div>
             <div className="flex flex-wrap gap-2">
-              {["Tất cả", ...teaLines].map((l) => (
-                <FilterChip key={l} active={line === l} onClick={() => setLine(l)} label={l} />
+              {categoryList.map((c) => (
+                <FilterChip
+                  key={c}
+                  active={selectedCategory === c}
+                  onClick={() => setSelectedCategory(c)}
+                  label={c}
+                />
               ))}
             </div>
             <div className="text-muted-foreground flex items-center gap-2 pt-1 text-xs font-bold tracking-wide uppercase">
-              Vị trái cây
+              Cốt trà nền
             </div>
             <div className="flex flex-wrap gap-2">
-              {["Tất cả", ...fruitGroups].map((f) => (
-                <FilterChip key={f} active={fruit === f} onClick={() => setFruit(f)} label={f} />
+              {baseList.map((b) => (
+                <FilterChip
+                  key={b}
+                  active={selectedBase === b}
+                  onClick={() => setSelectedBase(b)}
+                  label={b}
+                />
               ))}
             </div>
           </div>
@@ -206,7 +252,7 @@ function MenuPage() {
           </div>
           {filtered.length === 0 && (
             <p className="text-muted-foreground py-16 text-center text-sm">
-              Chưa có món nào khớp bộ lọc. Thử bỏ bớt một tiêu chí nhé.
+              Chưa có món nào khớp bộ lọc. Thử chọn danh mục hoặc cốt trà khác nhé.
             </p>
           )}
         </div>
