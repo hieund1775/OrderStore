@@ -32,8 +32,11 @@ export function createApp() {
   // ─── Security Middleware (OWASP) ───
   app.use(helmet());
   app.use(cors({ origin: allowedOrigins }));
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Product images are sent as base64 data URLs (frontend limit: 2MB).
+  // Keep a small envelope for JSON metadata without allowing oversized
+  // request bodies across every endpoint.
+  app.use(express.json({ limit: '4mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '4mb' }));
 
   // ─── Request Context & Tracing ───
   app.use(requestContext);

@@ -12,11 +12,12 @@ function handleCatalogDbError(error, defaultMsg = 'Lỗi xử lý dữ liệu th
   if (error instanceof AdminCatalogError) throw error;
   if (error?.code === '23505') {
     const detail = error.detail || error.message || '';
-    if (detail.includes('slug') || detail.includes('products_slug_key')) {
-      throw new AdminCatalogError('Đường dẫn (slug) hoặc tên món đã tồn tại trong thực đơn. Vui lòng đổi tên khác.', 409);
-    }
-    if (detail.includes('categories_name_key') || detail.includes('categories_slug_key')) {
+    const constraint = error.constraint || '';
+    if (constraint.includes('categories_') || detail.includes('categories_name_key') || detail.includes('categories_slug_key')) {
       throw new AdminCatalogError('Tên hoặc đường dẫn danh mục đã tồn tại trong thực đơn.', 409);
+    }
+    if (constraint.includes('products_') || detail.includes('products_slug_key') || detail.includes('slug')) {
+      throw new AdminCatalogError('Đường dẫn (slug) hoặc tên món đã tồn tại trong thực đơn. Vui lòng đổi tên khác.', 409);
     }
     if (detail.includes('base_options_name_key')) {
       throw new AdminCatalogError('Tên cốt trà đã tồn tại trong danh sách lựa chọn.', 409);
@@ -44,13 +45,17 @@ export function createAdminCatalogRepository(database = postgresDb) {
     },
 
     async createCategory({ name, slug, sort_order = 0, is_visible = true }) {
-      const [rows] = await database.query(
-        `INSERT INTO categories (name, slug, sort_order, is_visible)
-         VALUES ($1, $2, $3, $4)
-         RETURNING *`,
-        [name.trim(), slug.trim(), Number(sort_order) || 0, is_visible !== false],
-      );
-      return rows[0];
+      try {
+        const [rows] = await database.query(
+          `INSERT INTO categories (name, slug, sort_order, is_visible)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [name.trim(), slug.trim(), Number(sort_order) || 0, is_visible !== false],
+        );
+        return rows[0];
+      } catch (err) {
+        handleCatalogDbError(err, 'Lỗi thêm danh mục');
+      }
     },
 
     async updateCategory(id, { name, slug, sort_order, is_visible }) {
@@ -74,11 +79,15 @@ export function createAdminCatalogRepository(database = postgresDb) {
       }
       if (fields.length === 0) return null;
       params.push(id);
-      const [rows] = await database.query(
-        `UPDATE categories SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
-        params,
-      );
-      return rows[0] || null;
+      try {
+        const [rows] = await database.query(
+          `UPDATE categories SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
+          params,
+        );
+        return rows[0] || null;
+      } catch (err) {
+        handleCatalogDbError(err, 'Lỗi cập nhật danh mục');
+      }
     },
 
     async deleteCategory(id) {
