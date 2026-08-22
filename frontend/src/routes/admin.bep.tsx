@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
@@ -235,15 +236,53 @@ function KdsPage() {
     return () => clearInterval(t);
   }, [doneAt]);
 
+  const [handoverOrder, setHandoverOrder] = useState<KitchenOrder | null>(null);
+  const [handoverDriverName, setHandoverDriverName] = useState("");
+  const [handoverDriverPhone, setHandoverDriverPhone] = useState("");
+  const [handoverLoading, setHandoverLoading] = useState(false);
+
+  async function completePreparation(o: KitchenOrder) {
+    if (o.order_type === "Delivery") {
+      setHandoverOrder(o);
+      setHandoverDriverName("");
+      setHandoverDriverPhone("");
+    } else {
+      await move(o, "done");
+    }
+  }
+
+  async function submitHandover(o: KitchenOrder, withDriver = true) {
+    setHandoverLoading(true);
+    try {
+      const payload: { status: string; driver_name?: string; driver_phone?: string } = {
+        status: "Đang giao",
+      };
+      if (withDriver) {
+        if (handoverDriverName.trim()) payload.driver_name = handoverDriverName.trim();
+        if (handoverDriverPhone.trim()) payload.driver_phone = handoverDriverPhone.trim();
+      }
+      await apiPatch(`/admin/orders/${o.id}/status`, payload);
+      setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
+      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), o]);
+      toast.success(`Đơn ${o.order_code} → 🚚 Đang giao (Đã bàn giao shipper)`);
+      setHandoverOrder(null);
+      fetchOrders();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Chuyển trạng thái thất bại");
+    } finally {
+      setHandoverLoading(false);
+    }
+  }
+
   async function move(o: KitchenOrder, target: "prep" | "done") {
-    const status = target === "prep" ? "Đang chuẩn bị" : "Hoàn thành";
+    const status = target === "prep" ? "Đang chuẩn bị" : (o.order_type === "Delivery" ? "Đang giao" : "Hoàn thành");
     try {
       await apiPatch(`/admin/orders/${o.id}/status`, { status });
       if (target === "done") {
         setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
         setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), o]);
       }
-      toast.success(`Đơn ${o.order_code} → ${lanes.find((l) => l.id === target)?.label}`);
+      toast.success(`Đơn ${o.order_code} → ${target === "prep" ? "🔴 Đang chuẩn bị" : (o.order_type === "Delivery" ? "🚚 Đang giao" : "🟢 Hoàn thành")}`);
       fetchOrders();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Chuyển trạng thái thất bại");
@@ -422,17 +461,31 @@ function KdsPage() {
                           </Button>
                         ) : (
                           <>
-                            <Button
-                              variant="hero"
-                              size="sm"
-                              className="flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                move(o, "done");
-                              }}
-                            >
-                              Hoàn thành
-                            </Button>
+                            {o.order_type === "Delivery" ? (
+                              <Button
+                                variant="hero"
+                                size="sm"
+                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  completePreparation(o);
+                                }}
+                              >
+                                🚚 Pha xong ➔ Giao Shipper
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="hero"
+                                size="sm"
+                                className="flex-1 font-bold"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  completePreparation(o);
+                                }}
+                              >
+                                ✅ Hoàn thành
+                              </Button>
+                            )}
                           </>
                         )}
                       </div>
@@ -525,6 +578,57 @@ function KdsPage() {
         onOpenChange={setPairingOpen}
         onConfigSaved={() => { setPrinterConfig(getActivePrinterConfig()); setBleConnected(!!getConnectedPrinter()); }}
       />
+
+      {/* Dialog Bàn giao Shipper cho đơn Delivery trên KDS */}
+      <Dialog open={!!handoverOrder} onOpenChange={(open) => !open && setHandoverOrder(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bàn giao Shipper — Đơn {handoverOrder?.order_code}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <div className="rounded-xl bg-muted/60 p-3 space-y-1 text-xs">
+              <p><strong>Khách hàng:</strong> {handoverOrder?.customer_name} ({handoverOrder?.customer_phone})</p>
+              <p><strong>Địa chỉ giao:</strong> {handoverOrder?.delivery_addr || "Giao tận nơi"}</p>
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Tên Shipper / Hãng giao</label>
+              <Input
+                value={handoverDriverName}
+                onChange={(e) => setHandoverDriverName(e.target.value)}
+                placeholder="VD: Nguyễn Văn A (Grab / Ahamove)"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold">Số điện thoại Shipper</label>
+              <Input
+                value={handoverDriverPhone}
+                onChange={(e) => setHandoverDriverPhone(e.target.value)}
+                placeholder="VD: 0901234567"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={handoverLoading}
+              onClick={() => handoverOrder && submitHandover(handoverOrder, false)}
+            >
+              Chuyển Đang giao (Gán Shipper sau)
+            </Button>
+            <Button
+              variant="hero"
+              size="sm"
+              disabled={handoverLoading}
+              onClick={() => handoverOrder && submitHandover(handoverOrder, true)}
+            >
+              Xác nhận Bàn giao Shipper
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
