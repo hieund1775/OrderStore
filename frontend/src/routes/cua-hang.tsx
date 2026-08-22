@@ -248,174 +248,182 @@ function StoresPage() {
         desc="Chọn khu vực hoặc bật định vị để tìm tiệm trà gần bạn nhất trên bản đồ Google Maps."
       />
 
-      <div className="container-page grid gap-6 py-10 lg:grid-cols-[380px_1fr]">
-        <div className="space-y-4">
-          <div className="bg-card space-y-3 rounded-2xl border p-4 shadow-sm">
-            <Select value={city} onValueChange={handleCityChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Tỉnh / Thành phố" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả tỉnh / thành</SelectItem>
-                {cities.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <div className="container-page py-6 md:py-10">
+        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+          <div className="space-y-4">
+            <div className="bg-card space-y-3 rounded-2xl border p-4 shadow-sm">
+              <Select value={city} onValueChange={handleCityChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Tỉnh / Thành phố" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả tỉnh / thành</SelectItem>
+                  {cities.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select value={district} onValueChange={handleDistrictChange}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Quận / Huyện" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả quận / huyện</SelectItem>
-                {districts.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select value={district} onValueChange={handleDistrictChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Quận / Huyện" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả quận / huyện</SelectItem>
+                  {districts.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Button variant="leaf" className="w-full font-semibold" onClick={findNearest} disabled={locating}>
-              {locating ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <LocateFixed className="size-4" />
-              )}
-              Tìm chi nhánh gần tôi nhất (GPS)
-            </Button>
+              <Button variant="leaf" className="w-full font-semibold flex items-center justify-center gap-2" onClick={findNearest} disabled={locating}>
+                {locating ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <LocateFixed className="size-4" />
+                )}
+                <span>Tìm chi nhánh gần tôi nhất (GPS)</span>
+              </Button>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" />
+              </div>
+            ) : (
+              <div className="max-h-[480px] md:max-h-[580px] space-y-3 overflow-y-auto pr-1">
+                {list.map((s) => (
+                  <article
+                    key={s.id}
+                    onClick={() => handleSelectStore(s)}
+                    className={`bg-card cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all ${
+                      selectedId === s.id
+                        ? "border-primary ring-2 ring-primary/20 shadow-md"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <h2 className="font-display font-bold text-base sm:text-lg">{s.name}</h2>
+                    <p className="text-muted-foreground mt-1 flex items-start gap-2 text-xs sm:text-sm">
+                      <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
+                      <span className="flex-1 leading-relaxed">{formatFullAddress(s.address, s.district, s.city)}</span>
+                    </p>
+                    <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-xs sm:text-sm">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <Clock className="text-primary size-4 shrink-0" />
+                        <span className="truncate">{s.hours}</span>
+                      </div>
+                      {s.is_active ? (
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-200 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-medium shrink-0"
+                        >
+                          🟢 Đang mở cửa
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="destructive"
+                          className="rounded-full text-[11px] font-medium shrink-0"
+                        >
+                          🔴 Đã đóng cửa
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground mt-1.5 flex items-center gap-2 text-xs sm:text-sm">
+                      <Phone className="text-primary size-4 shrink-0" />
+                      <a href={`tel:${s.phone}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                        {s.phone}
+                      </a>
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {parseAmenities(s.amenities).map((a) => (
+                        <Badge
+                          key={a}
+                          variant="secondary"
+                          className="rounded-full text-[11px] font-normal"
+                        >
+                          {a}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="mt-3.5 grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs sm:text-sm px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(
+                            `https://www.google.com/maps/dir/?api=1&destination=${mapQuery(s)}`,
+                            "_blank",
+                            "noopener",
+                          );
+                        }}
+                      >
+                        <Navigation className="size-3.5 shrink-0" /> <span className="truncate">Google Maps</span>
+                      </Button>
+                      <Button
+                        variant="hero"
+                        size="sm"
+                        className="w-full text-xs sm:text-sm px-2"
+                        disabled={!s.is_active}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          orderFrom(s);
+                        }}
+                      >
+                        <ShoppingBag className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+                {list.length === 0 && (
+                  <p className="text-muted-foreground py-10 text-center text-sm">
+                    Không có chi nhánh nào trong khu vực này
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <Loader2 className="size-5 animate-spin" />
-            </div>
-          ) : (
-            <div className="max-h-[580px] space-y-3 overflow-y-auto pr-1">
-              {list.map((s) => (
-                <article
-                  key={s.id}
-                  onClick={() => handleSelectStore(s)}
-                  className={`bg-card cursor-pointer rounded-2xl border p-4 transition-all ${
-                    selectedId === s.id
-                      ? "border-primary ring-2 ring-primary/20 shadow-md"
-                      : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <p className="font-display font-bold">{s.name}</p>
-                  <p className="text-muted-foreground mt-1 flex items-start gap-2 text-sm">
-                    <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {formatFullAddress(s.address, s.district, s.city)}
-                  </p>
-                  <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
-                    <Clock className="text-primary size-4 shrink-0" />
-                    <span className="min-w-0 flex-1">{s.hours}</span>
-                    {s.is_active ? (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-200 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-medium"
-                      >
-                        🟢 Đang mở cửa
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="destructive"
-                        className="rounded-full text-[11px] font-medium"
-                      >
-                        🔴 Đã đóng cửa
-                      </Badge>
-                    )}
-                  </p>
-                  <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
-                    <Phone className="text-primary size-4 shrink-0" /> {s.phone}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {parseAmenities(s.amenities).map((a) => (
-                      <Badge
-                        key={a}
-                        variant="secondary"
-                        className="rounded-full text-[11px] font-normal"
-                      >
-                        {a}
-                      </Badge>
-                    ))}
+          {/* Khung bản đồ Google Maps Iframe */}
+          <div className="flex flex-col gap-3">
+            {selected && (
+              <div className="bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 sm:p-4 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <MapPin className="text-primary size-5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-display font-bold text-sm sm:text-base truncate">{mapCoords.title || selected.name}</p>
+                    <p className="text-muted-foreground text-xs truncate">{formatFullAddress(selected.address, selected.district, selected.city)}</p>
                   </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(
-                          `https://www.google.com/maps/dir/?api=1&destination=${mapQuery(s)}`,
-                          "_blank",
-                          "noopener",
-                        );
-                      }}
-                    >
-                      <Navigation className="size-4" /> Google Maps
-                    </Button>
-                    <Button
-                      variant="hero"
-                      size="sm"
-                      className="flex-1"
-                      disabled={!s.is_active}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        orderFrom(s);
-                      }}
-                    >
-                      <ShoppingBag className="size-4" /> {s.is_active ? "Đặt món" : "Tạm đóng cửa"}
-                    </Button>
-                  </div>
-                </article>
-              ))}
-              {list.length === 0 && (
-                <p className="text-muted-foreground py-10 text-center text-sm">
-                  Không có chi nhánh nào trong khu vực này
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Khung bản đồ Google Maps Iframe */}
-        <div className="flex flex-col gap-3">
-          {selected && (
-            <div className="bg-card flex items-center justify-between rounded-xl border px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-2">
-                <MapPin className="text-primary size-5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-display font-bold text-sm truncate">{mapCoords.title || selected.name}</p>
-                  <p className="text-muted-foreground text-xs truncate">{formatFullAddress(selected.address, selected.district, selected.city)}</p>
                 </div>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${mapQuery(selected)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 w-full sm:w-auto"
+                >
+                  <Button variant="hero" size="sm" className="w-full sm:w-auto">
+                    <Navigation className="size-4" /> Mở Google Maps
+                  </Button>
+                </a>
               </div>
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${mapQuery(selected)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0"
-              >
-                <Button variant="hero" size="sm">
-                  <Navigation className="size-4" /> Mở Google Maps
-                </Button>
-              </a>
-            </div>
-          )}
+            )}
 
-          <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border shadow-md">
-            <iframe
-              key={selected ? `store-${selected.id}` : `coords-${mapCoords.lat}-${mapCoords.lng}`}
-              title={`Bản đồ ${selected?.name || mapCoords.title}`}
-              src={mapIframeUrl}
-              className="h-full min-h-[480px] w-full border-0"
-              loading="lazy"
-              allowFullScreen
-              referrerPolicy="no-referrer-when-downgrade"
-            />
+            <div className="relative h-[320px] sm:h-[400px] md:h-[480px] lg:h-[580px] w-full overflow-hidden rounded-2xl border shadow-md">
+              <iframe
+                key={selected ? `store-${selected.id}` : `coords-${mapCoords.lat}-${mapCoords.lng}`}
+                title={`Bản đồ ${selected?.name || mapCoords.title}`}
+                src={mapIframeUrl}
+                className="h-full w-full border-0"
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
           </div>
         </div>
       </div>
