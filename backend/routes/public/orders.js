@@ -79,11 +79,23 @@ router.post('/cancel', asyncHandler(handleCustomerCancelOrder));
 
 router.post('/', asyncHandler(async (req, res) => {
   try {
-    validateCreateOrderInput(req.body);
+    const validated = validateCreateOrderInput(req.body);
+    const input = {
+      ...req.body,
+      store_id: validated.storeId,
+      table_id: validated.tableId,
+      source: validated.source,
+      order_type: validated.orderType,
+      payment_method: validated.paymentMethod,
+      customer_name: validated.customerName,
+      customer_phone: validated.customerPhone,
+      note: validated.note,
+      delivery_addr: validated.deliveryAddress,
+    };
     const customerUserId = extractCustomerUserId(req);
     const idempotencyKey = String(req.headers['idempotency-key'] || '');
     const order = await customerOrderService.create({
-      input: req.body,
+      input,
       userId: customerUserId,
       idempotencyKey,
     });

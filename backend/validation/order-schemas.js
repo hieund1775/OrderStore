@@ -116,5 +116,15 @@ export function validateCreateOrderInput(body = {}) {
     throw new OrderValidationError(err.message, 'ORDER_INVALID_NAME');
   }
 
-  return { storeId, tableId, source, orderType, paymentMethod, note, deliveryAddress };
+  return {
+    storeId,
+    tableId,
+    source,
+    orderType,
+    paymentMethod,
+    note,
+    deliveryAddress,
+    customerName: normalizeAndValidateFullName(customerName),
+    customerPhone: normalizeAndValidatePhone(customerPhone),
+  };
 }

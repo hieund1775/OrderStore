@@ -10,12 +10,14 @@ describe('Orders Auth Gate & Ownership Suite', () => {
   let server;
   let baseUrl;
   let originalCreatePublicOrder;
+  let lastCreateInput;
 
   const customerToken = jwt.sign({ id: 10, sub: 10, role: 'customer', phone: '0901234567' }, JWT_SECRET);
 
   before(async () => {
     originalCreatePublicOrder = ordersRepository.createPublicOrder;
-    ordersRepository.createPublicOrder = async ({ userId, source, customerPhone, customerName }) => {
+    ordersRepository.createPublicOrder = async ({ input, userId, source, customerPhone, customerName }) => {
+      lastCreateInput = { input, userId, source, customerPhone, customerName };
       return {
         id: 999,
         order_code: 'TP999999',
@@ -84,6 +86,32 @@ describe('Orders Auth Gate & Ownership Suite', () => {
     assert.equal(res.status, 201);
     const data = await res.json();
     assert.equal(data.user_id, 10);
+  });
+
+  it('passes canonical customer contact values to the repository', async () => {
+    const payload = {
+      store_id: 1,
+      customer_name: '  Nguy\u1ec5n   V\u0103n An  ',
+      customer_phone: '+84 901 234 567',
+      order_type: 'Take-away',
+      payment_method: 'COD',
+      items: [{ product_id: 1, qty: 1 }],
+      source: 'online',
+    };
+
+    const res = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${customerToken}`,
+        'idempotency-key': 'auth-test-key-normalization',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 201);
+    assert.equal(lastCreateInput.input.customer_name, 'Nguy\u1ec5n V\u0103n An');
+    assert.equal(lastCreateInput.input.customer_phone, '0901234567');
   });
 
   it('allows counter POS orders without customer token for guest in-store checkout', async () => {

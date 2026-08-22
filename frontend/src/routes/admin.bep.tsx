@@ -262,8 +262,14 @@ function KdsPage() {
         if (handoverDriverPhone.trim()) payload.driver_phone = handoverDriverPhone.trim();
       }
       await apiPatch(`/admin/orders/${o.id}/status`, payload);
+      const handedOverOrder = {
+        ...o,
+        current_status: "Đang giao",
+        shipping_driver_name: payload.driver_name || null,
+        shipping_driver_phone: payload.driver_phone || null,
+      };
       setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
-      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), o]);
+      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), handedOverOrder]);
       toast.success(`Đơn ${o.order_code} → 🚚 Đang giao (Đã bàn giao shipper)`);
       setHandoverOrder(null);
       fetchOrders();
@@ -448,6 +454,7 @@ function KdsPage() {
                       </ul>
                       <div className="mt-4 flex gap-2">
                         {lane.id === "done" ? (
+                          o.order_type === "Delivery" ? null : (
                           <Button
                             variant="outline"
                             size="sm"
@@ -459,6 +466,7 @@ function KdsPage() {
                           >
                             Lùi lại
                           </Button>
+                          )
                         ) : (
                           <>
                             {o.order_type === "Delivery" ? (
