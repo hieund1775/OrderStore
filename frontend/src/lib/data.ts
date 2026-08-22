@@ -1,10 +1,3 @@
-import camSa from '@/assets/p-cam-sa.jpg';
-import dauTay from '@/assets/p-dau-tay.jpg';
-import xoai from '@/assets/p-xoai.jpg';
-import daoVai from '@/assets/p-dao-vai.jpg';
-import duaHau from '@/assets/p-dua-hau.jpg';
-import nho from '@/assets/p-nho.jpg';
-
 export const brand = {
   name: 'Trà Trái Cây Tô',
   tagline: 'Trà đậm vị – Trái cây tươi mỗi ngày',
@@ -142,7 +135,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     base: product.base_tea || 'Trà đậm vị',
     desc: product.description || '',
     price: Number(product.price || 0),
-    image: product.image_url || camSa,
+    image: product.image_url || '',
     rating: Number(product.rating || 0),
     reviews: Number(product.review_count || 0),
     calories: Number(product.calories || 0),
@@ -175,7 +168,7 @@ export const products: Product[] = [
     base: 'Cốt Lục Trà Lài',
     desc: 'Vị chua dịu của cam vàng hòa cùng sả thơm và mật ong rừng, hậu trà thanh mát.',
     price: 45000,
-    image: camSa,
+    image: '',
     rating: 4.8,
     reviews: 1240,
     calories: 180,
@@ -189,7 +182,7 @@ export const products: Product[] = [
     base: 'Cốt Lục Trà Lài',
     desc: 'Dâu tây Đà Lạt dầm tươi quyện lục trà nhài thơm ngát, chua ngọt cân bằng.',
     price: 55000,
-    image: dauTay,
+    image: '',
     rating: 4.9,
     reviews: 2038,
     calories: 210,
@@ -203,7 +196,7 @@ export const products: Product[] = [
     base: 'Trà Đen Đậm Vị',
     desc: 'Xoài chín cắt khúc, chanh dây nguyên hạt, vị nhiệt đới rực rỡ.',
     price: 52000,
-    image: xoai,
+    image: '',
     rating: 4.7,
     reviews: 864,
     calories: 230,
@@ -217,7 +210,7 @@ export const products: Product[] = [
     base: 'Trà Ô Long',
     desc: 'Đào ngâm giòn ngọt cùng vải thiều, nền ô long nướng nhẹ thơm sữa.',
     price: 49000,
-    image: daoVai,
+    image: '',
     rating: 4.6,
     reviews: 512,
     calories: 195,
@@ -231,7 +224,7 @@ export const products: Product[] = [
     base: 'Lục Trà',
     desc: 'Dưa hấu xay tuyết mát lạnh, thêm táo giòn – giải nhiệt tức thì.',
     price: 58000,
-    image: duaHau,
+    image: '',
     rating: 4.5,
     reviews: 390,
     calories: 240,
@@ -245,7 +238,7 @@ export const products: Product[] = [
     base: 'Lục Trà Không Đường',
     desc: 'Nho mọng cùng nha đam giòn, ít đường, thanh lọc nhẹ nhàng.',
     price: 54000,
-    image: nho,
+    image: '',
     rating: 4.7,
     reviews: 623,
     calories: 150,
