@@ -144,8 +144,8 @@ stateDiagram-v2
 1. **Tại KDS (`admin.bep.tsx`)**:
    * Kiểm tra thuộc tính `order_type` của thẻ đơn:
      * Nếu `order_type === 'Delivery'`: Hiển thị nút màu cam/xanh dương: `"🚚 Pha xong ➔ Giao Shipper"`.
-     * Khi bấm: Mở `Dialog` bàn giao Shipper (nhập Tên tài xế, SĐT tài xế - có thể bỏ trống để Admin gán sau). Gọi `PATCH /api/admin/orders/:id/status` với target `status: 'Đang giao'`.
-     * Nếu `order_type !== 'Delivery'`: Hiển thị nút `"✅ Hoàn thành"`, gọi `PATCH /api/admin/orders/:id/status` với `status: 'Hoàn thành'`.
+     * Khi bấm: Mở `Dialog` bàn giao Shipper (nhập Tên tài xế, SĐT tài xế - có thể bỏ trống để Admin gán sau). Gọi `PATCH /admin/orders/:id/status` với target `status: 'Đang giao'`.
+     * Nếu `order_type !== 'Delivery'`: Hiển thị nút `"✅ Hoàn thành"`, gọi `PATCH /admin/orders/:id/status` với `status: 'Hoàn thành'`.
 2. **Tại Quản lý Đơn hàng Admin (`admin.don-hang.tsx`)**:
    * Giữ nguyên và hoàn thiện bộ form chỉnh sửa Shipper (`driver_name`, `driver_phone`, `tracking_url`).
    * Bổ sung nút xác nhận `"Đã giao thành công ➔ Hoàn thành"` dành riêng cho các đơn đang ở trạng thái `Đang giao`.
