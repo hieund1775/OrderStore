@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { signCustomerToken } from '../middleware/auth.js';
+import { signCustomerToken, signToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode } from '../services/otp-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
@@ -22,6 +22,9 @@ function customerPayload(user) {
     phone: user.phone,
     tier: user.tier || 'Đồng',
     points: user.points || 0,
+    is_admin: Boolean(user.is_admin),
+    admin_role: user.admin_role || null,
+    admin_branch_id: user.admin_branch_id ?? null,
   };
 }
 
@@ -44,7 +47,7 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
-/** POST /api/auth/login — customer phone + password login */
+/** POST /api/auth/login — customer & admin phone + password login */
 router.post('/login', async (req, res, next) => {
   try {
     const { phone, password } = req.body || {};
@@ -57,10 +60,10 @@ router.post('/login', async (req, res, next) => {
     if (!cleanPhone || !validatePassword(password)) {
       return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
     }
-    const user = await usersRepository.findActiveCustomerByPhone(cleanPhone);
+    const user = await usersRepository.findActiveUserByPhone(cleanPhone);
     const matches = user?.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
     if (!matches) return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
-    const token = signCustomerToken(user);
+    const token = user.is_admin ? signToken(user) : signCustomerToken(user);
     res.json({ token, user: customerPayload(user) });
   } catch (err) {
     next(err);

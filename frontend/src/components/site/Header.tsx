@@ -40,7 +40,19 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
-import { apiPost, getCustomerToken, getCustomerUser, setCustomerToken, setCustomerUser, clearCustomerToken } from '@/lib/api';
+import {
+  apiPost,
+  getCustomerToken,
+  getCustomerUser,
+  setCustomerToken,
+  setCustomerUser,
+  clearCustomerToken,
+  getToken,
+  getUser,
+  setToken,
+  setUser,
+  clearToken,
+} from '@/lib/api';
 import { brand, notifications, products, searchSuggestions, stores, vnd } from '@/lib/data';
 
 const navItems = [
@@ -294,6 +306,7 @@ const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.goo
 
 function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken());
+  const [isAdmin, setIsAdmin] = useState(() => !!getCustomerUser()?.is_admin || !!getUser()?.role);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [userName, setUserName] = useState(() => getCustomerUser()?.fullname || '');
@@ -385,7 +398,7 @@ function ProfileButton() {
     try {
       const data = await apiPost<{
         token: string;
-        user: { id: number; fullname: string; phone: string; tier: string; points: number };
+        user: { id: number; fullname: string; phone: string; tier: string; points: number; is_admin?: boolean; admin_role?: string; admin_branch_id?: number | null };
       }>(authMode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         phone,
         ...(authMode === 'register' ? { fullname: cleanName } : {}),
@@ -395,7 +408,21 @@ function ProfileButton() {
       setCustomerUser(data.user);
       setUserName(data.user.fullname);
       setUserTier(data.user.tier);
+      if (data.user.is_admin) {
+        setToken(data.token);
+        setUser({
+          id: data.user.id,
+          fullname: data.user.fullname,
+          phone: data.user.phone,
+          role: data.user.admin_role || 'super',
+          branch_id: data.user.admin_branch_id ?? null,
+        });
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
       setLoggedIn(true);
+      setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không thể kết nối đến máy chủ');
     } finally {
@@ -405,6 +432,8 @@ function ProfileButton() {
 
   function resetLogin() {
     clearCustomerToken();
+    clearToken();
+    setIsAdmin(false);
     setLoggedIn(false);
     setPhone('');
     setPassword('');
@@ -489,9 +518,24 @@ function ProfileButton() {
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>{userName} · Hạng {userTier}</DropdownMenuLabel>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>
+          <div className="flex flex-col">
+            <span className="font-bold">{userName}</span>
+            <span className="text-muted-foreground text-xs font-normal">
+              {isAdmin ? '👑 Quản trị viên' : `Hạng ${userTier}`}
+            </span>
+          </div>
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {isAdmin && (
+          <>
+            <DropdownMenuItem asChild className="bg-primary/10 text-primary font-bold focus:bg-primary/20 focus:text-primary cursor-pointer">
+              <Link to="/admin">👑 Trang Quản Trị (Admin)</Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>

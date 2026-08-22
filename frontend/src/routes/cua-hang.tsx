@@ -166,6 +166,8 @@ function StoresPage() {
     setSelectedId(s.id);
     if (s.lat != null && s.lng != null) {
       setMapCoords({ lat: s.lat, lng: s.lng, title: s.name });
+    } else {
+      setMapCoords({ lat: null, lng: null, title: s.name });
     }
   };
 
@@ -178,7 +180,13 @@ function StoresPage() {
     [stores, city, district],
   );
 
-  const selected = stores.find((s) => s.id === selectedId) ?? list[0] ?? null;
+  const selected = useMemo(() => {
+    if (selectedId != null) {
+      const found = stores.find((s) => s.id === selectedId);
+      if (found) return found;
+    }
+    return list[0] ?? null;
+  }, [stores, selectedId, list]);
 
   function findNearest() {
     if (!("geolocation" in navigator)) {
@@ -218,14 +226,19 @@ function StoresPage() {
   }
 
   const mapIframeUrl = useMemo(() => {
+    if (selected) {
+      if (selected.lat != null && selected.lng != null) {
+        return `https://maps.google.com/maps?q=${selected.lat},${selected.lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
+      }
+      const fullAddr = formatFullAddress(selected.address, selected.district, selected.city);
+      const query = encodeURIComponent(`${selected.name}, ${fullAddr}`);
+      return `https://maps.google.com/maps?q=${query}&t=&z=16&ie=UTF8&iwloc=&output=embed`;
+    }
     if (mapCoords.lat != null && mapCoords.lng != null) {
       return `https://maps.google.com/maps?q=${mapCoords.lat},${mapCoords.lng}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
     }
-    if (selected) {
-      return `https://maps.google.com/maps?q=${mapQuery(selected)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
-    }
     return `https://maps.google.com/maps?q=TP.+H%E1%BB%93+Ch%C3%AD+Minh&t=&z=12&ie=UTF8&iwloc=&output=embed`;
-  }, [mapCoords, selected]);
+  }, [selected, mapCoords]);
 
   return (
     <>
@@ -395,7 +408,8 @@ function StoresPage() {
 
           <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border shadow-md">
             <iframe
-              title={`Bản đồ ${mapCoords.title}`}
+              key={selected ? `store-${selected.id}` : `coords-${mapCoords.lat}-${mapCoords.lng}`}
+              title={`Bản đồ ${selected?.name || mapCoords.title}`}
               src={mapIframeUrl}
               className="h-full min-h-[480px] w-full border-0"
               loading="lazy"

@@ -84,6 +84,11 @@ export function createAdminStoresRepository(database = postgresDb) {
         throw new AdminStoreError(`Không thể xóa chi nhánh "${exists[0].name}" vì đã có ${cnt[0].c} đơn hàng. Hãy dùng chức năng "Tạm ngưng" thay vì xóa.`);
       }
       return database.transaction(async (tx) => {
+        await tx.query('DELETE FROM promotion_stores WHERE store_id = $1', [id]);
+        await tx.query('DELETE FROM job_stores WHERE store_id = $1', [id]);
+        await tx.query('UPDATE job_applications SET store_id = NULL WHERE store_id = $1', [id]);
+        await tx.query('UPDATE users SET admin_branch_id = NULL WHERE admin_branch_id = $1', [id]);
+        await tx.query('DELETE FROM ingredients WHERE store_id = $1', [id]);
         await tx.query('DELETE FROM tables WHERE store_id = $1', [id]);
         const [, affected] = await tx.query('DELETE FROM stores WHERE id = $1', [id]);
         return affected > 0;

@@ -3,12 +3,8 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Bell,
-  CreditCard,
   Loader2,
-  PackageX,
   ShoppingBag,
-  Ticket,
-  UserPlus,
 } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
@@ -22,8 +18,7 @@ export const Route = createFileRoute("/admin/thong-bao")({
       { title: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
       {
         name: "description",
-        content:
-          "Đơn mới, cảnh báo tồn kho, voucher sắp hết hạn, duyệt nhân viên và lỗi thanh toán.",
+        content: "Đơn hàng mới và cập nhật tiến độ vận hành real-time cho toàn chuỗi.",
       },
       { name: "robots", content: "noindex" },
       { property: "og:title", content: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
@@ -50,19 +45,10 @@ type AdminNotification = {
 const filters = [
   { id: "all", label: "Tất cả" },
   { id: "order", label: "Đơn hàng mới" },
-  { id: "stock", label: "Cảnh báo kho" },
-  { id: "voucher", label: "Voucher" },
-  { id: "staff", label: "Nhân sự" },
-  { id: "payment", label: "Thanh toán" },
-  { id: "system", label: "Hệ thống" },
 ];
 
 const icons: Record<string, typeof Bell> = {
   order: ShoppingBag,
-  stock: PackageX,
-  voucher: Ticket,
-  staff: UserPlus,
-  payment: CreditCard,
   system: Bell,
 };
 

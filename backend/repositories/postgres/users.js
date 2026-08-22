@@ -75,6 +75,15 @@ export function createUsersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
+    async findActiveUserByPhone(phone) {
+      const [rows] = await database.query(
+        `SELECT ${CUSTOMER_COLUMNS}, password_hash
+         FROM users WHERE phone = $1 AND is_active = TRUE LIMIT 1`,
+        [phone],
+      );
+      return rows[0] || null;
+    },
+
     async findOrCreateCustomerByPhone({ phone, fullname }) {
       return database.transaction(async (tx) => {
         await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`customer-phone:${phone}`]);

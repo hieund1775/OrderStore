@@ -152,13 +152,17 @@ export function createAdminCatalogRepository(database = postgresDb) {
       return affected > 0;
     },
 
-    async listAllOptions() {
+    async listOptions() {
       const [sizes] = await database.query('SELECT * FROM size_options ORDER BY sort_order, id');
       const [bases] = await database.query('SELECT * FROM base_options ORDER BY sort_order, id');
       const [sugars] = await database.query('SELECT * FROM sugar_options ORDER BY sort_order, id');
       const [ices] = await database.query('SELECT * FROM ice_options ORDER BY sort_order, id');
       const [toppings] = await database.query('SELECT * FROM toppings ORDER BY sort_order, id');
       return { sizes, bases, sugars, ices, toppings };
+    },
+
+    async listAllOptions() {
+      return this.listOptions();
     },
 
     async createTopping({ name, price, is_available = true }) {
