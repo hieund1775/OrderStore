@@ -682,11 +682,15 @@ function ProductForm({
     if (!name.trim() || !price.trim()) {
       return toast.error("Vui lòng nhập tên và giá");
     }
+    const catId = Number(categoryId);
+    if (!catId || Number.isNaN(catId) || catId <= 0) {
+      return toast.error("Vui lòng chọn danh mục cho sản phẩm");
+    }
     const slug = slugify(name.trim());
     setSaving(true);
     try {
       const payload = {
-        category_id: Number(categoryId),
+        category_id: catId,
         name: name.trim(),
         slug,
         base_tea: baseTea.trim() || "Lục Trà",

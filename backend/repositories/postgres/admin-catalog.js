@@ -3,8 +3,33 @@ import postgresDb from '../../config/db-postgres.js';
 export class AdminCatalogError extends Error {
   constructor(message, status = 400) {
     super(message);
+    this.name = 'AdminCatalogError';
     this.status = status;
   }
+}
+
+function handleCatalogDbError(error, defaultMsg = 'Lỗi xử lý dữ liệu thực đơn') {
+  if (error instanceof AdminCatalogError) throw error;
+  if (error?.code === '23505') {
+    const detail = error.detail || error.message || '';
+    if (detail.includes('slug') || detail.includes('products_slug_key')) {
+      throw new AdminCatalogError('Đường dẫn (slug) hoặc tên món đã tồn tại trong thực đơn. Vui lòng đổi tên khác.', 409);
+    }
+    if (detail.includes('categories_name_key') || detail.includes('categories_slug_key')) {
+      throw new AdminCatalogError('Tên hoặc đường dẫn danh mục đã tồn tại trong thực đơn.', 409);
+    }
+    if (detail.includes('base_options_name_key')) {
+      throw new AdminCatalogError('Tên cốt trà đã tồn tại trong danh sách lựa chọn.', 409);
+    }
+    throw new AdminCatalogError('Dữ liệu đã tồn tại trong hệ thống.', 409);
+  }
+  if (error?.code === '23503') {
+    throw new AdminCatalogError('Danh mục hoặc dữ liệu liên kết không tồn tại hoặc đã bị xóa.', 400);
+  }
+  if (error?.code === '22001') {
+    throw new AdminCatalogError('Dữ liệu nhập vào vượt quá độ dài tối đa cho phép.', 400);
+  }
+  throw error;
 }
 
 export function createAdminCatalogRepository(database = postgresDb) {
@@ -91,24 +116,28 @@ export function createAdminCatalogRepository(database = postgresDb) {
     },
 
     async createProduct({ category_id, name, slug, base_tea, description, price, image_url, calories, fruit_group, tags }) {
-      const [rows] = await database.query(
-        `INSERT INTO products (category_id, name, slug, base_tea, description, price, image_url, calories, fruit_group, tags)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING *`,
-        [
-          category_id,
-          name.trim(),
-          slug.trim(),
-          base_tea || 'Lục trà',
-          description || null,
-          Number(price) || 0,
-          image_url || null,
-          Number(calories) || 0,
-          fruit_group || null,
-          tags ? (typeof tags === 'string' ? tags : JSON.stringify(tags)) : null,
-        ],
-      );
-      return rows[0];
+      try {
+        const [rows] = await database.query(
+          `INSERT INTO products (category_id, name, slug, base_tea, description, price, image_url, calories, fruit_group, tags)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`,
+          [
+            category_id,
+            name.trim(),
+            slug.trim(),
+            base_tea || 'Lục trà',
+            description || null,
+            Number(price) || 0,
+            image_url || null,
+            Number(calories) || 0,
+            fruit_group || null,
+            tags ? (typeof tags === 'string' ? tags : JSON.stringify(tags)) : null,
+          ],
+        );
+        return rows[0];
+      } catch (err) {
+        handleCatalogDbError(err, 'Lỗi thêm sản phẩm');
+      }
     },
 
     async updateProduct(id, fields) {
@@ -124,11 +153,15 @@ export function createAdminCatalogRepository(database = postgresDb) {
       if (sets.length === 0) return null;
       sets.push('updated_at = CURRENT_TIMESTAMP');
       params.push(id);
-      const [rows] = await database.query(
-        `UPDATE products SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
-        params,
-      );
-      return rows[0] || null;
+      try {
+        const [rows] = await database.query(
+          `UPDATE products SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+          params,
+        );
+        return rows[0] || null;
+      } catch (err) {
+        handleCatalogDbError(err, 'Lỗi cập nhật sản phẩm');
+      }
     },
 
     async toggleProductAvailability(id) {
