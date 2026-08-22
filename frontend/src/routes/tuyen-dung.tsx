@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet, apiPost } from "@/lib/api";
+import tuyendungBannerImg from "@/assets/tuyendung.webp";
 
 export const Route = createFileRoute("/tuyen-dung")({
   head: () => ({
@@ -159,6 +160,7 @@ function RecruitmentPage() {
         eyebrow="Tuyển dụng"
         title="Cùng pha nên vị tươi mới"
         desc="Chúng tôi tìm những người yêu nguyên liệu thật và thích chăm sóc khách hàng."
+        bannerImg={tuyendungBannerImg}
       />
 
       {loading ? (

@@ -14,6 +14,7 @@ import {
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet } from "@/lib/api";
 import { formatFullAddress } from "@/lib/data";
+import cuahangBannerImg from "@/assets/cuahang.jpg";
 
 export const Route = createFileRoute("/cua-hang")({
   head: () => ({
@@ -246,6 +247,7 @@ function StoresPage() {
         eyebrow="Cửa hàng & Google Maps"
         title="Hệ thống chi nhánh"
         desc="Chọn khu vực hoặc bật định vị để tìm tiệm trà gần bạn nhất trên bản đồ Google Maps."
+        bannerImg={cuahangBannerImg}
       />
 
       <div className="container-page py-6 md:py-10">

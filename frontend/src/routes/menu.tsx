@@ -8,6 +8,7 @@ import { ProductCard } from "@/components/menu/ProductCard";
 import { useCart } from "@/lib/cart";
 import { mapApiProduct, products, vnd, type ApiCatalogProduct } from "@/lib/data";
 import { apiGet } from "@/lib/api";
+import menuBannerImg from "@/assets/menu.jpg";
 
 export const Route = createFileRoute("/menu")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string; store_id?: string } => ({
@@ -164,6 +165,7 @@ function MenuPage() {
         eyebrow="Menu"
         title="Thực đơn trà trái cây tươi"
         desc="Chọn danh mục và cốt trà nền yêu thích, tùy chỉnh mức đường – đá – topping theo đúng khẩu vị của bạn."
+        bannerImg={menuBannerImg}
       />
 
       {tableInfo && (

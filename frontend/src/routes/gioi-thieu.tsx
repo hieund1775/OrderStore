@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/site/PageHeader";
-import storyImg from "@/assets/story.jpg";
+import bannerIntroImg from "@/assets/banner-anh-gioithieu.jpg";
 
 export const Route = createFileRoute("/gioi-thieu")({
   head: () => ({
@@ -52,12 +52,12 @@ function About() {
 
       <section className="container-page grid items-center gap-10 py-14 md:grid-cols-2">
         <img
-          src={storyImg}
-          alt="Sơ chế trái cây tươi tại quầy pha chế"
+          src={bannerIntroImg}
+          alt="Câu chuyện thương hiệu và sơ chế trái cây tươi tại quầy pha chế Trà Trái Cây Tô"
           loading="lazy"
           width={1024}
           height={768}
-          className="rounded-3xl object-cover"
+          className="rounded-3xl object-cover shadow-md w-full max-h-[480px]"
         />
         <div className="space-y-4">
           <h2 className="font-display text-2xl font-extrabold">Nguyên liệu thật, vị thật</h2>
