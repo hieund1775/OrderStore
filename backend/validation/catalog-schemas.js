@@ -84,7 +84,8 @@ export function validateProductInput(body = {}, { isUpdate = false } = {}) {
     base_tea: base_tea ? base_tea.trim() : undefined,
     description: description ? description.trim() : undefined,
     image_url: image_url || undefined,
-    calories: calories !== undefined ? Number(calories) || null : undefined,
+    // Keep zero as a valid value; products.calories is NOT NULL in PostgreSQL.
+    calories: calories !== undefined && calories !== null ? Number(calories) : undefined,
     fruit_group: fruit_group ? fruit_group.trim() : undefined,
     tags: tags ? (Array.isArray(tags) ? JSON.stringify(tags) : String(tags).trim()) : undefined,
   };

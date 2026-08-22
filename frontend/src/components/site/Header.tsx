@@ -305,12 +305,15 @@ function NotificationButton() {
 const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.googleusercontent.com';
 
 function ProfileButton() {
-  const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken() || !!getUser()?.role);
-  const [isAdmin, setIsAdmin] = useState(() => !!getCustomerUser()?.is_admin || !!getUser()?.role);
+  // Keep the first render identical between SSR and the browser. Reading
+  // localStorage in a state initializer makes Render hydration disagree with
+  // the server whenever a user already has a session.
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [userName, setUserName] = useState(() => getCustomerUser()?.fullname || '');
-  const [userTier, setUserTier] = useState(() => getCustomerUser()?.tier || 'Đồng');
+  const [userName, setUserName] = useState('');
+  const [userTier, setUserTier] = useState('Đồng');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -318,6 +321,15 @@ function ProfileButton() {
   const [open, setOpen] = useState(false);
   const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
   const [googleBtnNode, setGoogleBtnNode] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const customerUser = getCustomerUser();
+    const adminUser = getUser();
+    setLoggedIn(Boolean(getCustomerToken() || adminUser?.role));
+    setIsAdmin(Boolean(customerUser?.is_admin || adminUser?.role));
+    setUserName(customerUser?.fullname || adminUser?.fullname || '');
+    setUserTier(customerUser?.tier || 'Đồng');
+  }, []);
 
   // Load Google Identity Services script (chỉ 1 lần)
   useEffect(() => {

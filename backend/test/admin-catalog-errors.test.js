@@ -1,8 +1,21 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { AdminCatalogError, createAdminCatalogRepository } from '../repositories/postgres/admin-catalog.js';
+import { validateProductInput } from '../validation/catalog-schemas.js';
 
 describe('Admin Catalog PostgreSQL Error Mapping Suite', () => {
+  it('preserves zero calories for PostgreSQL NOT NULL products.calories', () => {
+    const validated = validateProductInput({
+      category_id: 1,
+      name: 'Trà mới',
+      slug: 'tra-moi',
+      price: 0,
+      calories: 0,
+    });
+
+    assert.equal(validated.calories, 0);
+  });
+
   it('maps duplicate category slug to HTTP 409 with a category-specific message', async () => {
     const db = {
       async query(sql) {
