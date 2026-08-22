@@ -1,6 +1,7 @@
 import { OrderValidationError } from '../services/orders/order-errors.js';
 import { VALID_ORDER_TYPES, VALID_PAYMENT_METHODS, VALID_SOURCES } from '../services/public-dto.js';
 import { VALID_STATUSES } from '../services/order-transition-policy.js';
+import { normalizeAndValidatePhone, normalizeAndValidateFullName } from './customer-schemas.js';
 
 function positiveInteger(value, field, { required = true } = {}) {
   if (value === undefined || value === null || value === '') {
@@ -101,6 +102,18 @@ export function validateCreateOrderInput(body = {}) {
   }
   if (orderType === 'Delivery' && !deliveryAddress) {
     throw new OrderValidationError('Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng', 'ORDER_DELIVERY_ADDRESS_REQUIRED');
+  }
+
+  try {
+    normalizeAndValidatePhone(customerPhone);
+  } catch (err) {
+    throw new OrderValidationError(err.message, 'ORDER_INVALID_PHONE');
+  }
+
+  try {
+    normalizeAndValidateFullName(customerName);
+  } catch (err) {
+    throw new OrderValidationError(err.message, 'ORDER_INVALID_NAME');
   }
 
   return { storeId, tableId, source, orderType, paymentMethod, note, deliveryAddress };

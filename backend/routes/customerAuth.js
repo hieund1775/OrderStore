@@ -1,9 +1,15 @@
 import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { signCustomerToken } from '../middleware/auth.js';
-import { requestOtpCode, verifyOtpCode, normalizePhone } from '../services/otp-service.js';
+import { requestOtpCode, verifyOtpCode } from '../services/otp-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
+import {
+  CustomerValidationError,
+  validateCustomerRegisterInput,
+  normalizeAndValidatePhone,
+  normalizeAndValidateFullName,
+} from '../validation/customer-schemas.js';
 import bcrypt from 'bcryptjs';
 
 const router = Router();
@@ -26,17 +32,13 @@ function validatePassword(password) {
 /** POST /api/auth/register — customer phone + password registration */
 router.post('/register', async (req, res, next) => {
   try {
-    const { phone, fullname, password } = req.body || {};
-    const cleanPhone = normalizePhone(phone);
-    const cleanName = String(fullname || '').trim();
-    if (!cleanPhone || cleanPhone.length < 10) return res.status(400).json({ error: 'Số điện thoại không hợp lệ' });
-    if (cleanName.length < 2 || cleanName.length > 120) return res.status(400).json({ error: 'Họ và tên không hợp lệ' });
-    if (!validatePassword(password)) return res.status(400).json({ error: 'Mật khẩu phải dài từ 8 đến 128 ký tự' });
+    const { phone, fullname, password } = validateCustomerRegisterInput(req.body);
 
-    const user = await usersRepository.registerCustomer({ phone: cleanPhone, fullname: cleanName, password });
+    const user = await usersRepository.registerCustomer({ phone, fullname, password });
     const token = signCustomerToken(user);
     res.status(201).json({ token, user: customerPayload(user) });
   } catch (err) {
+    if (err instanceof CustomerValidationError) return res.status(err.status || 400).json({ error: err.message });
     if (err instanceof IdentityError) return res.status(err.status).json({ error: err.message });
     next(err);
   }
@@ -46,7 +48,12 @@ router.post('/register', async (req, res, next) => {
 router.post('/login', async (req, res, next) => {
   try {
     const { phone, password } = req.body || {};
-    const cleanPhone = normalizePhone(phone);
+    let cleanPhone;
+    try {
+      cleanPhone = normalizeAndValidatePhone(phone);
+    } catch {
+      return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
+    }
     if (!cleanPhone || !validatePassword(password)) {
       return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
     }
@@ -67,19 +74,13 @@ router.post('/login', async (req, res, next) => {
 router.post('/send-otp', async (req, res, next) => {
   try {
     const { phone, fullname } = req.body || {};
-    const cleanPhone = normalizePhone(phone);
-
-    if (!fullname || String(fullname).trim().length < 2) {
-      return res.status(400).json({ error: 'Vui lòng nhập họ và tên hợp lệ (ít nhất 2 ký tự)' });
-    }
-
-    if (!cleanPhone || cleanPhone.length < 10) {
-      return res.status(400).json({ error: 'Số điện thoại không hợp lệ (ít nhất 10 chữ số)' });
-    }
+    const cleanName = normalizeAndValidateFullName(fullname);
+    const cleanPhone = normalizeAndValidatePhone(phone);
 
     const result = await requestOtpCode({ phone: cleanPhone });
     res.json(result);
   } catch (err) {
+    if (err instanceof CustomerValidationError) return res.status(err.status || 400).json({ error: err.message });
     if (err.status) {
       return res.status(err.status).json({ error: err.message });
     }
@@ -94,12 +95,8 @@ router.post('/send-otp', async (req, res, next) => {
 router.post('/verify-otp', async (req, res, next) => {
   try {
     const { phone, code, fullname } = req.body || {};
-    const cleanPhone = normalizePhone(phone);
+    const cleanPhone = normalizeAndValidatePhone(phone);
     const inputCode = String(code || '').trim();
-
-    if (!cleanPhone || cleanPhone.length < 10) {
-      return res.status(400).json({ error: 'Số điện thoại không hợp lệ' });
-    }
 
     if (!inputCode) {
       return res.status(400).json({ error: 'Vui lòng nhập mã OTP' });
@@ -110,7 +107,11 @@ router.post('/verify-otp', async (req, res, next) => {
       return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
     }
 
-    const displayName = (fullname && fullname.trim()) ? fullname.trim() : `Khách hàng ${cleanPhone.slice(-4)}`;
+    let displayName = `Khách hàng ${cleanPhone.slice(-4)}`;
+    if (fullname && String(fullname).trim()) {
+      displayName = normalizeAndValidateFullName(fullname);
+    }
+
     const user = await usersRepository.findOrCreateCustomerByPhone({ phone: cleanPhone, fullname: displayName });
 
     if (!user) {
@@ -123,13 +124,14 @@ router.post('/verify-otp', async (req, res, next) => {
       token,
       user: {
         id: user.id,
-        fullname: user.fullname || fullname || `Khách hàng ${cleanPhone.slice(-4)}`,
+        fullname: user.fullname || displayName,
         phone: user.phone,
         tier: user.tier || 'Đồng',
         points: user.points || 0,
       },
     });
   } catch (err) {
+    if (err instanceof CustomerValidationError) return res.status(err.status || 400).json({ error: err.message });
     if (err instanceof IdentityError) {
       return res.status(err.status).json({ error: err.message });
     }

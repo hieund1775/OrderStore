@@ -11,7 +11,7 @@ import { asyncHandler } from '../middleware/async-handler.js';
 const managerToken = jwt.sign({ sub: 1, role: 'manager' }, JWT_SECRET);
 const validPosOrder = {
   store_id: 1,
-  customer_name: 'Validation test',
+  customer_name: 'Validation Test',
   customer_phone: '0900000000',
   items: [{ product_id: 1, qty: 1 }],
   source: 'pos',

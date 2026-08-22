@@ -200,7 +200,7 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
 
   it('locks public create validation, idempotency and PayOS provider mapping', async () => {
     const customerToken = token('customer', { sub: 7, id: 7 });
-    const required = { source: 'online', payment_method: 'COD', store_id: 1, customer_name: 'Customer', customer_phone: '0901234567', items: [{ product_id: 1, qty: 1, price: 1 }] };
+    const required = { source: 'online', payment_method: 'COD', store_id: 1, customer_name: 'Khách Hàng', customer_phone: '0901234567', items: [{ product_id: 1, qty: 1, price: 1 }] };
     const missingDelivery = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { authorization: `Bearer ${customerToken}`, 'content-type': 'application/json', 'idempotency-key': 'delivery-key' }, body: JSON.stringify({ ...required, order_type: 'Delivery' }) });
     assert.equal(missingDelivery.status, 400);
     const pos = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'pos-key' }, body: JSON.stringify({ ...required, source: 'pos' }) });

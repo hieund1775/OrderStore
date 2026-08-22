@@ -48,7 +48,7 @@ describe('Public order idempotency conflict contract', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': 'same-key' },
         body: JSON.stringify({
-          source: 'pos', payment_method: 'COD', store_id: 1, customer_name: 'Test', customer_phone: '0900000000',
+          source: 'pos', payment_method: 'COD', store_id: 1, customer_name: 'Khách Hàng', customer_phone: '0900000000',
           items: [{ product_id: 1, qty: 1 }],
         }),
       });
