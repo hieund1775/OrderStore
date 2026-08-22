@@ -5,6 +5,17 @@ dotenv.config();
 
 let payOSInstance = null;
 
+function appendQueryParam(value, key, paramValue) {
+  if (!value) return value;
+  const hashIndex = value.indexOf('#');
+  const hash = hashIndex >= 0 ? value.slice(hashIndex) : '';
+  const base = hashIndex >= 0 ? value.slice(0, hashIndex) : value;
+  const separator = base.includes('?')
+    ? (base.endsWith('?') || base.endsWith('&') ? '' : '&')
+    : '?';
+  return `${base}${separator}${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}${hash}`;
+}
+
 export function setPayOSForTest(instance = null) {
   payOSInstance = instance;
 }
@@ -69,8 +80,11 @@ export async function createPaymentLinkForOrder({
     orderCode: payosOrderCode,
     amount: Math.round(total),
     description: desc,
-    returnUrl: rUrl,
-    cancelUrl: cUrl,
+    // PayOS also appends its own `code`/`orderCode` query params. Preserve
+    // the application's order code under a separate key so the return page
+    // can load the correct order after a successful payment.
+    returnUrl: appendQueryParam(rUrl, 'order_code', orderCode),
+    cancelUrl: appendQueryParam(cUrl, 'order_code', orderCode),
     expiredAt: expiredAtSec,
   };
 

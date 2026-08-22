@@ -32,8 +32,9 @@ import { apiGet, apiPost } from "@/lib/api";
 import { fmtDateTime, vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/theo-doi-don")({
-  validateSearch: (search: Record<string, unknown>): { code?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { code?: string; order_code?: string } => ({
     code: typeof search.code === "string" ? search.code : undefined,
+    order_code: typeof search.order_code === "string" ? search.order_code : undefined,
   }),
   head: () => ({
     meta: [
@@ -123,8 +124,9 @@ function itemOptions(it: LookupItem) {
 }
 
 function Tracking() {
-  const { code: searchCode } = Route.useSearch();
-  const [input, setInput] = useState(searchCode ?? "");
+  const { code: searchCode, order_code: returnOrderCode } = Route.useSearch();
+  const resolvedSearchCode = returnOrderCode || searchCode;
+  const [input, setInput] = useState(resolvedSearchCode ?? "");
   const [order, setOrder] = useState<LookupOrder | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -157,8 +159,8 @@ function Tracking() {
   );
 
   useEffect(() => {
-    if (searchCode) load(searchCode);
-  }, [searchCode, load]);
+    if (resolvedSearchCode) load(resolvedSearchCode);
+  }, [resolvedSearchCode, load]);
 
   // Polling real-time mỗi 5 giây
   useEffect(() => {

@@ -14,6 +14,8 @@ describe('PayOS SDK boundary', () => {
     const result = await createPaymentLinkForOrder({ orderId: 12, orderCode: 'TPTEST', total: 50000, payosOrderCode: '812345001' });
     assert.equal(captured.orderCode, 812345001);
     assert.equal(captured.amount, 50000);
+    assert.match(captured.returnUrl, /order_code=TPTEST/);
+    assert.match(captured.cancelUrl, /order_code=TPTEST/);
     assert.equal(result.payosOrderCode, 812345001);
     assert.equal(result.paymentLinkId, 'link-1');
   });
