@@ -305,7 +305,7 @@ function NotificationButton() {
 const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.googleusercontent.com';
 
 function ProfileButton() {
-  const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken());
+  const [loggedIn, setLoggedIn] = useState(() => !!getCustomerToken() || !!getUser()?.role);
   const [isAdmin, setIsAdmin] = useState(() => !!getCustomerUser()?.is_admin || !!getUser()?.role);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -404,11 +404,10 @@ function ProfileButton() {
         ...(authMode === 'register' ? { fullname: cleanName } : {}),
         password,
       });
-      setCustomerToken(data.token);
-      setCustomerUser(data.user);
       setUserName(data.user.fullname);
       setUserTier(data.user.tier);
       if (data.user.is_admin) {
+        clearCustomerToken();
         setToken(data.token);
         setUser({
           id: data.user.id,
@@ -419,6 +418,9 @@ function ProfileButton() {
         });
         setIsAdmin(true);
       } else {
+        clearToken();
+        setCustomerToken(data.token);
+        setCustomerUser(data.user);
         setIsAdmin(false);
       }
       setLoggedIn(true);

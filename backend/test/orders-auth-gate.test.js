@@ -13,6 +13,7 @@ describe('Orders Auth Gate & Ownership Suite', () => {
   let lastCreateInput;
 
   const customerToken = jwt.sign({ id: 10, sub: 10, role: 'customer', phone: '0901234567' }, JWT_SECRET);
+  const adminToken = jwt.sign({ sub: 1, role: 'super', branch_id: null }, JWT_SECRET);
 
   before(async () => {
     originalCreatePublicOrder = ordersRepository.createPublicOrder;
@@ -86,6 +87,32 @@ describe('Orders Auth Gate & Ownership Suite', () => {
     assert.equal(res.status, 201);
     const data = await res.json();
     assert.equal(data.user_id, 10);
+  });
+
+  it('rejects online order creation when an admin Bearer token is provided', async () => {
+    const payload = {
+      store_id: 1,
+      customer_name: 'Nguyễn Văn An',
+      customer_phone: '0901234567',
+      order_type: 'Take-away',
+      payment_method: 'COD',
+      items: [{ product_id: 1, qty: 1 }],
+      source: 'online',
+    };
+
+    const res = await fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${adminToken}`,
+        'idempotency-key': 'auth-test-key-admin',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.match(data.error, /đăng nhập tài khoản/i);
   });
 
   it('passes canonical customer contact values to the repository', async () => {

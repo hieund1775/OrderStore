@@ -8,15 +8,13 @@ import customerOrderService from '../../services/orders/customer-order-service.j
 
 const router = Router();
 
-const VALID_USER_ROLES = ['customer', 'super', 'manager', 'cashier', 'kitchen'];
-
 function extractCustomerUserId(req) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded && (VALID_USER_ROLES.includes(decoded.role) || decoded.is_admin) && (decoded.id || decoded.sub)) {
+      if (decoded?.role === 'customer' && (decoded.id || decoded.sub)) {
         return Number(decoded.id || decoded.sub);
       }
     } catch {}
@@ -30,7 +28,7 @@ function extractCustomerToken(req) {
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded && (VALID_USER_ROLES.includes(decoded?.role) || decoded?.is_admin)) {
+      if (decoded?.role === 'customer') {
         return decoded;
       }
     } catch {}
