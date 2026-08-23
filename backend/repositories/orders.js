@@ -18,7 +18,7 @@ export function createOrderReadRepository(database = postgresDb) {
   return {
     async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
       const params = [];
-      let filters = 'WHERE TRUE';
+      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS')";
       if (status) {
         params.push(status);
         filters += ` AND latest.status = $${params.length}`;

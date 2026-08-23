@@ -8,12 +8,15 @@ import { hashOrderRequest } from '../order-idempotency.js';
 import { OrderDomainError } from './order-errors.js';
 import defaultOrdersRepository from '../../repositories/postgres/orders.js';
 import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder } from '../online-payos-order.js';
+import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
+import { reconcilePayOSOrder } from '../payos-reconciliation.js';
 
 export function createCustomerOrderService({
   repository = defaultOrdersRepository,
   createPayOSOrder = defaultCreateOnlinePayOSOrder,
   checkPayOSConfigured = isPayOSConfigured,
   batchLoader = batchLoadPostgresOrderDetails,
+  paymentsRepository = defaultPaymentsRepository,
 } = {}) {
   return {
     async create({ input, userId = null, idempotencyKey = '' }) {
@@ -105,9 +108,13 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Không tìm thấy đơn hàng', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
       }
 
-      const mappedItems = await repository.loadPublicDetails(order.id);
+      await reconcilePayOSOrder({ order, paymentRepository: paymentsRepository });
+      const refreshedOrder = order.payment_provider === 'payos' && order.payment_status === 'unpaid'
+        ? await repository.findPublicOrder(code)
+        : order;
+      const mappedItems = await repository.loadPublicDetails(refreshedOrder.id);
       const history = await repository.loadStatusHistory(order.id);
-      const safeOrder = buildPublicLookupDto(order, tokenUser, mappedItems, history);
+      const safeOrder = buildPublicLookupDto(refreshedOrder, tokenUser, mappedItems, history);
       return { order: safeOrder };
     },
 

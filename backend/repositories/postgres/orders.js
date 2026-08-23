@@ -86,12 +86,13 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
         const total = subtotal - discountAmount;
         const [orders] = await tx.query(
           `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
-             payment_method, payment_status, payment_provider, cancel_token_hash, customer_name, customer_phone,
+             payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
              delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
            RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
           [orderCode(), userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
-            input.payment_method || 'COD', paymentProvider, cancelTokenHash, input.customer_name, input.customer_phone,
+            input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
+            (input.order_type === 'POS' || input.source === 'pos') ? new Date() : null, cancelTokenHash, input.customer_name, input.customer_phone,
             input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null],
         );
         const order = orders[0];
@@ -119,7 +120,8 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
     async findPublicOrder(orderCodeValue) {
       const [rows] = await database.query(
         `SELECT o.id, o.order_code, o.user_id, o.store_id, o.location_name, o.order_type,
-                o.payment_method, o.payment_status, o.customer_name, o.customer_phone, o.delivery_addr,
+                o.payment_method, o.payment_status, o.payment_provider, o.paid_at,
+                o.payment_link_id, o.payos_order_code, o.customer_name, o.customer_phone, o.delivery_addr,
                 o.discount_amount, o.subtotal, o.total, o.payment_expires_at, o.created_at,
                 s.name AS store_name, latest.status AS current_status
          FROM orders o

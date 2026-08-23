@@ -54,6 +54,8 @@ function Profile() {
     id: number;
     order_code: string;
     total: number;
+    payment_status?: string;
+    payment_provider?: string;
     current_status: string;
     created_at: string;
     store_name: string;
@@ -69,6 +71,8 @@ function Profile() {
       id: number;
       order_code: string;
       total: number;
+      payment_status?: string;
+      payment_provider?: string;
       current_status: string;
       created_at: string;
       store_name: string;
@@ -177,14 +181,29 @@ function Profile() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
-                        {o.current_status || "Đang xử lý"}
-                      </Badge>
-                      <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                        <Link to="/theo-doi-don" search={{ code: o.order_code }}>
-                          Theo dõi
-                        </Link>
-                      </Button>
+                      {o.payment_status === "unpaid" && o.payment_provider === "payos" && o.current_status !== "Đã hủy" ? (
+                        <>
+                          <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold">
+                            ⏳ Chờ thanh toán
+                          </Badge>
+                          <Button asChild variant="hero" size="sm" className="h-7 text-xs">
+                            <Link to="/theo-doi-don" search={{ code: o.order_code }}>
+                              Thanh toán ngay
+                            </Link>
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
+                            {o.current_status || "Đang xử lý"}
+                          </Badge>
+                          <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+                            <Link to="/theo-doi-don" search={{ code: o.order_code }}>
+                              Theo dõi
+                            </Link>
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 

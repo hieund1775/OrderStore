@@ -71,7 +71,6 @@ function PosPage() {
   const [loading, setLoading] = useState(true);
 
   const [cart, setCart] = useState<PosCartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState("COD");
   const [submitting, setSubmitting] = useState(false);
   const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
 
@@ -209,7 +208,7 @@ function PosPage() {
         store_id: selectedStoreId,
         table_id: selectedTableId,
         order_type: "POS",
-        payment_method: paymentMethod,
+        payment_method: "COD",
         customer_name: "Khách Tại Quầy",
         customer_phone: "0000000000",
         source: "pos",
@@ -404,18 +403,7 @@ function PosPage() {
             <div className="h-8"></div>
           </ScrollArea>
 
-          <div className="p-5 border-t bg-background space-y-5 shrink-0 z-10">
-            <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="flex gap-6">
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="COD" id="r1" className="text-leaf border-leaf" />
-                <Label htmlFor="r1" className="cursor-pointer font-semibold text-sm">Tiền mặt</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="VietQR" id="r2" className="text-leaf border-leaf" />
-                <Label htmlFor="r2" className="cursor-pointer font-semibold text-sm">VietQR tĩnh</Label>
-              </div>
-            </RadioGroup>
-
+          <div className="p-5 border-t bg-background space-y-4 shrink-0 z-10">
             <div className="flex justify-between items-end bg-gradient-to-r from-muted/50 to-muted/20 p-4 rounded-2xl border border-muted">
               <span className="text-muted-foreground font-bold text-sm">Tổng thanh toán</span>
               <span className="text-3xl font-extrabold text-leaf font-display tracking-tight drop-shadow-sm">{vnd(cartTotal)}</span>
@@ -427,7 +415,7 @@ function PosPage() {
               disabled={cart.length === 0 || submitting}
               onClick={checkout}
             >
-              {submitting ? <Loader2 className="animate-spin size-5" /> : "Thanh toán ngay"}
+              {submitting ? <Loader2 className="animate-spin size-5" /> : "Xác nhận & Thu tiền ngay"}
             </Button>
           </div>
         </div>

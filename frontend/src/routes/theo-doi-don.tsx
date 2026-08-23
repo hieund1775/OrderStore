@@ -133,6 +133,27 @@ function Tracking() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [repaying, setRepaying] = useState(false);
+
+  async function handleRepayPayOS() {
+    if (!order) return;
+    setRepaying(true);
+    try {
+      const res = await apiPost<{ ok: boolean; order: { checkout_url: string; qr_code?: string } }>(
+        "/api/payments/payos/regenerate-qr",
+        { order_code: order.order_code },
+      );
+      if (res.order?.checkout_url) {
+        window.location.href = res.order.checkout_url;
+      } else {
+        toast.error("Không thể mở lại trang thanh toán lúc này");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lỗi kết nối cổng thanh toán");
+    } finally {
+      setRepaying(false);
+    }
+  }
   const load = useCallback(
     async (c: string, silent = false): Promise<{ ok: boolean; status?: number }> => {
       if (!c.trim()) return { ok: false };
@@ -335,8 +356,9 @@ function Tracking() {
               <p className="mt-1 text-xs opacity-90">
                 Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công.
               </p>
-              <Button asChild variant="hero" size="sm" className="mt-3">
-                <Link to="/thanh-toan">Thanh toán ngay / Xem mã QR</Link>
+              <Button variant="hero" size="sm" className="mt-3" disabled={repaying} onClick={handleRepayPayOS}>
+                {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
+                Mở cổng thanh toán PayOS / Quét mã QR
               </Button>
             </div>
           )}
