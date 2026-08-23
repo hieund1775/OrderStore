@@ -16,6 +16,9 @@ import postgresDb from './config/db-postgres.js';
 
 export function createApp() {
   const app = express();
+  // Disable automatic ETag freshness handling for dynamic polling responses.
+  // Otherwise Express can turn KDS requests into 304 responses with no JSON body.
+  app.set('etag', false);
 
   // ─── Reverse Proxy Trust (Render standard: 1 hop) ───
   const rawTrustProxy = process.env.TRUST_PROXY;

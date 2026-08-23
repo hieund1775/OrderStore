@@ -53,7 +53,11 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   }
 
   try {
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      cache: options?.cache ?? 'no-store',
+      headers,
+    });
     const contentType = res.headers.get('content-type') || '';
     
     // Nếu server trả HTML thay vì JSON (sai URL / Vercel SPA routing)

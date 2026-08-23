@@ -5,6 +5,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus } from '../../services/orders/order-errors.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../../validation/order-schemas.js';
 import customerOrderService from '../../services/orders/customer-order-service.js';
+import { noCache } from '../../middleware/no-cache.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ function extractCustomerToken(req) {
   return null;
 }
 
-router.get('/lookup', asyncHandler(async (req, res) => {
+router.get('/lookup', noCache, asyncHandler(async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });

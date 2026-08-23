@@ -4,6 +4,7 @@ import { JWT_SECRET } from '../config/env.js';
 import { verifyWebhookData } from '../services/payos.js';
 import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
+import { noCache } from '../middleware/no-cache.js';
 
 const router = Router();
 
@@ -89,7 +90,7 @@ router.post('/payos/webhook', handlePayOSWebhook);
  * Endpoint tra cứu trạng thái thanh toán đơn PayOS
  * GET /api/payments/payos/status?code=TPxxxxxx
  */
-router.get('/payos/status', async (req, res) => {
+router.get('/payos/status', noCache, async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn code' });
