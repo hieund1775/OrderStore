@@ -27,11 +27,12 @@ describe('PayOS QR Lifecycle & Regenerate Contract', () => {
         query: async () => [[{
           id: 10,
           order_code: 'TP2608230001',
-          customer_id: 99,
+          user_id: 99,
           customer_phone: '0901234567',
-          cancel_token: 'secret_token_123',
+          cancel_token_hash: 'secret_token_hash',
           total: 50000,
           payment_status: 'unpaid',
+          payment_provider: 'payos',
           current_status: 'Đang chuẩn bị',
         }]],
       }),
@@ -65,10 +66,11 @@ describe('PayOS QR Lifecycle & Regenerate Contract', () => {
         query: async () => [[{
           id: 10,
           order_code: 'TP2608230001',
-          customer_id: 1,
-          cancel_token: 'tok123',
+          user_id: 1,
+          cancel_token_hash: 'tok123',
           total: 50000,
           payment_status: 'unpaid',
+          payment_provider: 'payos',
           current_status: 'Đã hủy',
         }]],
       }),
@@ -89,10 +91,11 @@ describe('PayOS QR Lifecycle & Regenerate Contract', () => {
         query: async () => [[{
           id: 10,
           order_code: 'TP2608230001',
-          customer_id: 1,
-          cancel_token: 'tok123',
+          user_id: 1,
+          cancel_token_hash: 'tok123',
           total: 50000,
           payment_status: 'paid',
+          payment_provider: 'payos',
           current_status: 'Đang chuẩn bị',
         }]],
       }),
@@ -118,11 +121,12 @@ describe('PayOS QR Lifecycle & Regenerate Contract', () => {
             return [[{
               id: 10,
               order_code: 'TP2608230001',
-              customer_id: 1,
+              user_id: 1,
               customer_phone: '0901234567',
-              cancel_token: 'tok123',
+              cancel_token_hash: 'tok123',
               total: 65000,
               payment_status: 'unpaid',
+              payment_provider: 'payos',
               current_status: 'Đang chuẩn bị',
               payos_order_code: 1111111111,
               payment_link_id: 'old_link_1',
@@ -205,5 +209,63 @@ describe('PayOS QR Lifecycle & Regenerate Contract', () => {
     });
 
     assert.equal(result.kind, 'not_found');
+  });
+
+  it('reuses an active regenerated link on retry instead of creating another link', async () => {
+    let createCalls = 0;
+    const mockDb = {
+      transaction: async (fn) => fn({
+        query: async (sql) => {
+          if (sql.includes('SELECT')) {
+            return [[{
+              id: 10,
+              order_code: 'TP2608230001',
+              user_id: 1,
+              total: 50000,
+              payment_status: 'unpaid',
+              payment_provider: 'payos',
+              current_status: 'Đang chuẩn bị',
+              payment_link_id: 'active-link',
+              payos_order_code: 2222222222,
+              payment_checkout_url: 'https://pay.payos.vn/active',
+              payment_qr_code: 'active-qr',
+              payment_expires_at: new Date(Date.now() + 60_000),
+            }]];
+          }
+          throw new Error('UPDATE should not run for an active retry');
+        },
+      }),
+    };
+    const repo = createPaymentsRepository(mockDb);
+    const result = await repo.renewPayOSOrderLink({
+      orderCode: 'TP2608230001',
+      userId: 1,
+      createLinkFn: async () => { createCalls += 1; return {}; },
+    });
+    assert.equal(createCalls, 0);
+    assert.equal(result.payment_link_id, 'active-link');
+  });
+
+  it('rejects simulator requests for non-PayOS orders', async () => {
+    const mockDb = {
+      transaction: async (fn) => fn({
+        query: async () => [[{
+          id: 10,
+          order_code: 'TPCOD0001',
+          payment_status: 'unpaid',
+          payment_provider: 'cod',
+          current_status: 'Đang chuẩn bị',
+        }]],
+      }),
+    };
+    const repo = createPaymentsRepository(mockDb);
+    await assert.rejects(
+      () => repo.simulatePaymentSuccess({ orderCode: 'TPCOD0001' }),
+      (err) => {
+        assert.equal(err.status, 400);
+        assert.match(err.message, /không sử dụng PayOS/);
+        return true;
+      },
+    );
   });
 });

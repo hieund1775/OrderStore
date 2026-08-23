@@ -13,7 +13,7 @@ function extractCustomerToken(req) {
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded?.role === 'customer' || decoded?.sub) {
+      if (decoded?.role === 'customer' && (decoded.id || decoded.sub)) {
         return decoded;
       }
     } catch {}
@@ -108,23 +108,19 @@ router.get('/payos/status', async (req, res) => {
  */
 router.post('/payos/regenerate-qr', async (req, res) => {
   try {
-    const { order_code, cancel_token, return_url, cancel_url } = req.body || {};
+    const { order_code, cancel_token } = req.body || {};
     if (!order_code || typeof order_code !== 'string') {
       return res.status(400).json({ error: 'Thiếu mã đơn hàng order_code' });
     }
 
     const decodedToken = extractCustomerToken(req);
     const userId = decodedToken ? Number(decodedToken.id || decodedToken.sub) : null;
-    const userPhone = decodedToken?.phone || null;
     const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim() || null;
 
     const updatedOrder = await paymentsRepository.renewPayOSOrderLink({
       orderCode: order_code.trim(),
       userId,
-      userPhone,
       cancelToken: rawCancelToken,
-      returnUrl: return_url || null,
-      cancelUrl: cancel_url || null,
     });
 
     res.json({
@@ -140,8 +136,11 @@ router.post('/payos/regenerate-qr', async (req, res) => {
     });
   } catch (err) {
     console.error('Regenerate PayOS QR failed:', err.message);
-    const status = err.status || (err.message.includes('quyền') ? 403 : 500);
-    res.status(status).json({ error: err.message || 'Không thể tạo lại mã thanh toán lúc này' });
+    const status = err.status || (err.message.includes('quyền') ? 403 : 502);
+    const message = err.status && err.status < 500
+      ? err.message
+      : 'Không thể tạo lại mã thanh toán lúc này';
+    res.status(status).json({ error: message });
   }
 });
 
@@ -164,7 +163,10 @@ router.post('/payos/simulate-success', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Simulate PayOS payment failed:', err.message);
-    res.status(err.status || 500).json({ error: err.message || 'Không thể giả lập thanh toán lúc này' });
+    const status = err.status || 500;
+    res.status(status).json({
+      error: status < 500 ? err.message : 'Không thể giả lập thanh toán lúc này',
+    });
   }
 });
 

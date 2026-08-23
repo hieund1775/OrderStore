@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
 
 export function createPaymentsRepository(database = postgresDb) {
@@ -122,7 +123,6 @@ export function createPaymentsRepository(database = postgresDb) {
     async renewPayOSOrderLink({
       orderCode,
       userId = null,
-      userPhone = null,
       cancelToken = null,
       returnUrl = null,
       cancelUrl = null,
@@ -130,8 +130,8 @@ export function createPaymentsRepository(database = postgresDb) {
     }) {
       return database.transaction(async (tx) => {
         const [rows] = await tx.query(
-          `SELECT id, order_code, customer_id, customer_phone, total,
-                  payment_status, payment_provider, current_status, cancel_token,
+          `SELECT id, order_code, user_id, customer_phone, total,
+                  payment_status, payment_provider, current_status, cancel_token_hash,
                   payos_order_code, payment_link_id, payment_checkout_url,
                   payment_qr_code, payment_expires_at
            FROM orders
@@ -146,11 +146,15 @@ export function createPaymentsRepository(database = postgresDb) {
           throw err;
         }
 
-        const isOwnerByUserId = userId != null && Number(order.customer_id) === Number(userId);
-        const isOwnerByPhone = userPhone != null && order.customer_phone === userPhone;
-        const isOwnerByCancelToken = cancelToken != null && typeof cancelToken === 'string' && Boolean(order.cancel_token) && order.cancel_token === cancelToken;
+        const isOwnerByUserId = userId != null && Number(order.user_id) === Number(userId);
+        const isOwnerByCancelToken = (() => {
+          if (!cancelToken || typeof cancelToken !== 'string' || !order.cancel_token_hash) return false;
+          const providedHash = crypto.createHash('sha256').update(cancelToken).digest();
+          const storedHash = Buffer.from(String(order.cancel_token_hash).trim(), 'hex');
+          return providedHash.length === storedHash.length && crypto.timingSafeEqual(providedHash, storedHash);
+        })();
 
-        if (!isOwnerByUserId && !isOwnerByPhone && !isOwnerByCancelToken) {
+        if (!isOwnerByUserId && !isOwnerByCancelToken) {
           const err = new Error('Bạn không có quyền thao tác trên đơn hàng này');
           err.status = 403;
           throw err;
@@ -166,6 +170,28 @@ export function createPaymentsRepository(database = postgresDb) {
           const err = new Error('Đơn hàng đã được thanh toán thành công');
           err.status = 400;
           throw err;
+        }
+
+        if (order.payment_provider !== 'payos') {
+          const err = new Error('Đơn hàng không sử dụng PayOS');
+          err.status = 400;
+          throw err;
+        }
+
+        // A retry after the first regeneration must reuse the active link.
+        if (order.payment_link_id && order.payment_expires_at && new Date(order.payment_expires_at).getTime() > Date.now()) {
+          return {
+            id: order.id,
+            order_code: order.order_code,
+            total: order.total,
+            payment_status: order.payment_status,
+            payment_provider: order.payment_provider,
+            payment_link_id: order.payment_link_id,
+            payos_order_code: order.payos_order_code,
+            payment_checkout_url: order.payment_checkout_url,
+            payment_qr_code: order.payment_qr_code,
+            payment_expires_at: order.payment_expires_at,
+          };
         }
 
         const timePart = String(Date.now()).slice(-6);
@@ -222,7 +248,7 @@ export function createPaymentsRepository(database = postgresDb) {
         const [orderRows] = await tx.query(
           `SELECT id, order_code, total, payment_status, payment_provider, current_status
            FROM orders
-           WHERE order_code = $1
+           WHERE order_code = $1 AND payment_provider = 'payos'
            FOR UPDATE`,
           [orderCode],
         );
@@ -234,6 +260,11 @@ export function createPaymentsRepository(database = postgresDb) {
         }
         if (order.current_status === 'Đã hủy') {
           const err = new Error('Đơn hàng đã bị hủy');
+          err.status = 400;
+          throw err;
+        }
+        if (order.payment_provider !== 'payos') {
+          const err = new Error('Đơn hàng không sử dụng PayOS');
           err.status = 400;
           throw err;
         }
