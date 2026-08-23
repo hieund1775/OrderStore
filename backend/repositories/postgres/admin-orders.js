@@ -83,6 +83,10 @@ export function createAdminOrdersRepository(database = postgresDb) {
     async listKitchen({ scopedStoreId }) {
       return readRepository.listKitchen({ scopedStoreId });
     },
+
+    async listPendingPayOS({ scopedStoreId }) {
+      return readRepository.listPendingPayOS({ scopedStoreId });
+    },
   };
 }
 

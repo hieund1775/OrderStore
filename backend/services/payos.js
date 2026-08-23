@@ -127,17 +127,19 @@ export function verifyWebhookData(body) {
 /**
  * Chủ động truy vấn trạng thái link thanh toán từ PayOS
  */
-export async function getPaymentLinkInformation(orderCode) {
+export async function getPaymentLinkInformation(orderCode, paymentLinkId = null) {
   const instance = getPayOS();
   if (!instance) return null;
 
   try {
-    const numericCode = Number(orderCode);
-    if (!Number.isSafeInteger(numericCode) || numericCode <= 0) return null;
-
     if (typeof instance.paymentRequests?.get === 'function') {
-      return await instance.paymentRequests.get(numericCode);
+      // PayOS Node v2 expects the paymentLinkId, not the numeric orderCode.
+      const lookupId = paymentLinkId || orderCode;
+      if (!lookupId) return null;
+      return await instance.paymentRequests.get(String(lookupId));
     } else if (typeof instance.getPaymentLinkInformation === 'function') {
+      const numericCode = Number(orderCode);
+      if (!Number.isSafeInteger(numericCode) || numericCode <= 0) return null;
       return await instance.getPaymentLinkInformation(numericCode);
     }
     return null;

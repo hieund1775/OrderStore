@@ -92,6 +92,21 @@ export function createOrderReadRepository(database = postgresDb) {
       );
       return batchLoadPostgresOrderDetails(orders, database.query);
     },
+
+    async listPendingPayOS({ scopedStoreId }) {
+      const params = [];
+      let filter = "WHERE o.payment_status = 'unpaid' AND o.payment_provider = 'payos' AND o.payos_order_code IS NOT NULL AND latest.status IN ('Đang chuẩn bị', 'Chờ xác nhận')";
+      filter = appendScope(filter, params, scopedStoreId);
+      const [orders] = await database.query(
+        `SELECT o.id, o.order_code, o.total, o.payment_status, o.payment_provider,
+                o.payment_link_id, o.payos_order_code
+         FROM orders o
+         JOIN LATERAL (SELECT status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1) latest ON TRUE
+         ${filter}`,
+        params,
+      );
+      return orders;
+    },
   };
 }
 

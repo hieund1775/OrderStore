@@ -119,7 +119,7 @@ describe('KDS Batch Query & Query Count Optimization Suite', () => {
     await new Promise((resolve) => server.close(resolve));
   });
 
-  it('fetches 50 KDS orders with EXACTLY 3 constant queries (1 orders + 1 items + 1 toppings)', async () => {
+  it('fetches 50 KDS orders with 4 constant queries (reconcile candidates + orders + items + toppings)', async () => {
     queryLog = [];
 
     const response = await fetch(`${baseUrl}/admin/kitchen/orders`, {
@@ -134,10 +134,11 @@ describe('KDS Batch Query & Query Count Optimization Suite', () => {
     assert.equal(orders[0].items[0].toppings.length, 1);
     assert.equal(orders[0].items[0].toppings[0].name, 'Trân Châu Hoàng Gia');
 
-    // CRITICAL ASSERTION: Exactly 3 queries for 50 orders!
+    // The first query finds unpaid PayOS orders that need active reconciliation.
+    // The remaining three queries batch-load the visible KDS orders and details.
     assert.equal(
       queryLog.length,
-      3,
+      4,
       `Expected exactly 3 queries, but got ${queryLog.length}. Details: ${JSON.stringify(queryLog.map((q) => q.sql))}`
     );
   });
