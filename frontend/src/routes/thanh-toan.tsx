@@ -499,6 +499,7 @@ function Checkout() {
           payment_expires_at: res.payment_expires_at,
         };
         setPendingOrder(pending);
+        sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
         toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
       } else if (pay === "qr") {
         toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
