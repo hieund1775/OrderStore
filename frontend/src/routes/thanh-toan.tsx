@@ -89,6 +89,9 @@ function Checkout() {
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<PendingPayOSOrder | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [regeneratingQr, setRegeneratingQr] = useState(false);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
 
   useEffect(() => {
     const user = getCustomerUser();
@@ -131,11 +134,6 @@ function Checkout() {
             description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
           });
           navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
-        } else if (res.order?.payment_status === "expired") {
-          clearInterval(interval);
-          sessionStorage.removeItem("teaplus_pending_payment");
-          setPendingOrder(null);
-          toast.error("Đơn hàng đã hết hạn thanh toán!");
         }
       } catch {}
     }, 3000);
@@ -148,9 +146,15 @@ function Checkout() {
     if (!pendingOrder?.payment_expires_at) return;
     const expiresMs = new Date(pendingOrder.payment_expires_at).getTime();
 
-    const timer = setInterval(() => {
+    const updateTimer = () => {
       const remaining = Math.max(0, Math.floor((expiresMs - Date.now()) / 1000));
       setCountdownSec(remaining);
+      return remaining;
+    };
+
+    updateTimer();
+    const timer = setInterval(() => {
+      const remaining = updateTimer();
       if (remaining <= 0) {
         clearInterval(timer);
       }
@@ -158,6 +162,108 @@ function Checkout() {
 
     return () => clearInterval(timer);
   }, [pendingOrder]);
+
+  async function checkPaymentNow() {
+    if (!pendingOrder) return;
+    setCheckingPayment(true);
+    try {
+      const res = await apiGet<{ order: { payment_status: string } }>(
+        `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
+      );
+      if (res.order?.payment_status === "paid") {
+        clear();
+        sessionStorage.removeItem("teaplus_pending_payment");
+        toast.success("Thanh toán thành công!", {
+          description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
+        });
+        navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+      } else {
+        toast.info("Hệ thống chưa nhận được tín hiệu tiền về từ ngân hàng. Vui lòng đợi trong giây lát.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kiểm tra thanh toán thất bại");
+    } finally {
+      setCheckingPayment(false);
+    }
+  }
+
+  async function regeneratePayOSQr() {
+    if (!pendingOrder) return;
+    setRegeneratingQr(true);
+    try {
+      const cancelToken =
+        sessionStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        localStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        undefined;
+      const res = await apiPost<{
+        ok: boolean;
+        order: {
+          order_code: string;
+          total: number;
+          checkout_url?: string;
+          qr_code?: string;
+          payment_expires_at?: string;
+        };
+      }>("/api/payments/payos/regenerate-qr", {
+        order_code: pendingOrder.order_code,
+        cancel_token: cancelToken,
+        return_url: `${window.location.origin}/theo-doi-don`,
+        cancel_url: `${window.location.origin}/thanh-toan`,
+      });
+
+      const updated = {
+        order_code: res.order.order_code,
+        order_id: pendingOrder.order_id,
+        total: res.order.total || pendingOrder.total,
+        checkout_url: res.order.checkout_url,
+        qr_code: res.order.qr_code,
+        payment_expires_at: res.order.payment_expires_at,
+      };
+      setPendingOrder(updated);
+      sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(updated));
+      toast.success("Đã tạo mã QR thanh toán mới (thời hạn 15 phút)!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không thể tạo lại mã QR lúc này");
+    } finally {
+      setRegeneratingQr(false);
+    }
+  }
+
+  async function cancelPendingOrder() {
+    if (!pendingOrder) return;
+    setCancellingOrder(true);
+    try {
+      const cancelToken =
+        sessionStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        localStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        undefined;
+      await apiPost("/api/orders/cancel", {
+        order_code: pendingOrder.order_code,
+        reason: "Khách hàng hủy đơn khi chưa thanh toán",
+        cancel_token: cancelToken,
+      });
+      sessionStorage.removeItem("teaplus_pending_payment");
+      setPendingOrder(null);
+      toast.success("Đã hủy đơn hàng thành công");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Hủy đơn thất bại");
+    } finally {
+      setCancellingOrder(false);
+    }
+  }
+
+  async function simulatePaymentDev() {
+    if (!pendingOrder) return;
+    try {
+      await apiPost("/api/payments/payos/simulate-success", {
+        order_code: pendingOrder.order_code,
+      });
+      toast.success("Đã kích hoạt giả lập thanh toán!");
+      await checkPaymentNow();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không thể giả lập thanh toán");
+    }
+  }
 
   // Quét QR bàn → tự nhận diện bàn, mặc định "Tại bàn"
   useEffect(() => {
@@ -358,17 +464,20 @@ function Checkout() {
   const timeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 
   if (pendingOrder) {
+    const isExpired = countdownSec <= 0;
     return (
       <>
         <PageHeader eyebrow="Thanh toán PayOS" title="Đang chờ chuyển khoản" />
         <div className="container-page py-10 max-w-xl mx-auto">
           <div className="bg-card rounded-2xl border p-6 text-center space-y-6 shadow-lg">
-            <div className="inline-flex items-center justify-center size-14 rounded-full bg-amber-500/10 text-amber-600 animate-pulse">
+            <div className={`inline-flex items-center justify-center size-14 rounded-full ${isExpired ? "bg-amber-500/10 text-amber-600" : "bg-primary/10 text-primary animate-pulse"}`}>
               <Ticket className="size-7" />
             </div>
 
             <div>
-              <h2 className="font-display text-2xl font-bold">Vui lòng thanh toán đơn hàng</h2>
+              <h2 className="font-display text-2xl font-bold">
+                {isExpired ? "Mã thanh toán đã hết hạn" : "Vui lòng thanh toán đơn hàng"}
+              </h2>
               <p className="text-muted-foreground text-sm mt-1">
                 Mã đơn: <span className="font-mono font-bold text-foreground">{pendingOrder.order_code}</span>
               </p>
@@ -378,12 +487,18 @@ function Checkout() {
             </div>
 
             {/* Countdown Badge */}
-            <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-xl p-3 inline-block font-mono text-sm font-semibold">
-              ⏳ Mã thanh toán hết hạn sau: <span className="text-base font-bold">{timeStr}</span>
-            </div>
+            {isExpired ? (
+              <div className="bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-xl p-3 inline-block text-sm font-semibold">
+                ⚠️ Mã QR đã quá 15 phút. Đơn hàng của bạn vẫn được lưu giữ an toàn. Bạn có thể tạo mã mới bên dưới.
+              </div>
+            ) : (
+              <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-xl p-3 inline-block font-mono text-sm font-semibold">
+                ⏳ Mã thanh toán hết hạn sau: <span className="text-base font-bold">{timeStr}</span>
+              </div>
+            )}
 
             {/* QR Image / Code */}
-            {pendingOrder.qr_code && (
+            {!isExpired && pendingOrder.qr_code && (
               <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-gray-200 max-w-xs mx-auto shadow-inner">
                 {pendingOrder.qr_code.startsWith("http") || pendingOrder.qr_code.startsWith("data:image") ? (
                   <img
@@ -405,40 +520,86 @@ function Checkout() {
             )}
 
             <div className="space-y-3 pt-2">
-              {pendingOrder.checkout_url && (
-                <Button
-                  asChild
-                  variant="hero"
-                  className="w-full text-base py-6"
-                >
-                  <a href={pendingOrder.checkout_url} target="_blank" rel="noopener noreferrer">
-                    Mở trang thanh toán PayOS ↗
-                  </a>
-                </Button>
+              {!isExpired && (
+                <div className="space-y-2">
+                  <Button
+                    variant="hero"
+                    className="w-full text-base py-5 font-bold"
+                    disabled={checkingPayment}
+                    onClick={checkPaymentNow}
+                  >
+                    {checkingPayment ? "Đang kiểm tra..." : "🔍 Tôi đã chuyển khoản xong (Kiểm tra ngay)"}
+                  </Button>
+
+                  {pendingOrder.checkout_url && (
+                    <Button
+                      asChild
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <a href={pendingOrder.checkout_url} target="_blank" rel="noopener noreferrer">
+                        Mở trang thanh toán PayOS ↗
+                      </a>
+                    </Button>
+                  )}
+                </div>
               )}
 
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    clear();
-                    navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
-                  }}
-                >
-                  Theo dõi đơn hàng
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="flex-1 text-muted-foreground"
-                  onClick={() => {
-                    sessionStorage.removeItem("teaplus_pending_payment");
-                    setPendingOrder(null);
-                  }}
-                >
-                  Quay lại đặt lại
-                </Button>
-              </div>
+              {isExpired ? (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    variant="hero"
+                    className="flex-1 py-5 font-bold"
+                    disabled={regeneratingQr}
+                    onClick={regeneratePayOSQr}
+                  >
+                    {regeneratingQr ? "Đang tạo mã..." : "🔄 Tạo mã QR thanh toán mới"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-berry border-berry/30 hover:bg-berry/10"
+                    disabled={cancellingOrder}
+                    onClick={cancelPendingOrder}
+                  >
+                    {cancellingOrder ? "Đang hủy..." : "🗑️ Hủy / Xóa đơn này"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      clear();
+                      navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+                    }}
+                  >
+                    Theo dõi đơn hàng
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1 text-berry hover:bg-berry/10"
+                    disabled={cancellingOrder}
+                    onClick={cancelPendingOrder}
+                  >
+                    {cancellingOrder ? "Đang hủy..." : "Hủy đơn này"}
+                  </Button>
+                </div>
+              )}
+
+              {/* Dev Simulation Helper */}
+              {import.meta.env.DEV && (
+                <div className="pt-2 border-t">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="text-xs bg-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-500/30"
+                    onClick={simulatePaymentDev}
+                  >
+                    ⚡ [Dev Test] Giả lập thanh toán PayOS thành công
+                  </Button>
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-muted-foreground italic">

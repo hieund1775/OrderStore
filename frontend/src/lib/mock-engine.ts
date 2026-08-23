@@ -134,6 +134,52 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     } as T);
   }
 
+  // 1b. POST /api/payments/payos/regenerate-qr
+  if (path === '/api/payments/payos/regenerate-qr' && method === 'POST') {
+    const code = body.order_code;
+    const orders = getLocalOrders();
+    const found = orders.find((o: any) => o.order_code === code);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const updated = orders.map((o: any) => {
+      if (o.order_code === code) {
+        return {
+          ...o,
+          payment_status: 'unpaid',
+          payment_expires_at: expiresAt,
+          checkout_url: `https://payos.vn/demo-pay?code=${code}&renew=1`,
+          qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VIETQR-DEMO-${code}-RENEW`,
+        };
+      }
+      return o;
+    });
+    saveLocalOrders(updated);
+    return Promise.resolve({
+      ok: true,
+      order: {
+        order_code: code,
+        total: found ? found.total : 45000,
+        checkout_url: `https://payos.vn/demo-pay?code=${code}&renew=1`,
+        qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VIETQR-DEMO-${code}-RENEW`,
+        payment_expires_at: expiresAt,
+        payment_status: 'unpaid',
+      },
+    } as T);
+  }
+
+  // 1c. POST /api/payments/payos/simulate-success
+  if (path === '/api/payments/payos/simulate-success' && method === 'POST') {
+    const code = body.order_code;
+    const orders = getLocalOrders();
+    const updated = orders.map((o: any) => {
+      if (o.order_code === code) {
+        return { ...o, payment_status: 'paid', paid_at: new Date().toISOString() };
+      }
+      return o;
+    });
+    saveLocalOrders(updated);
+    return Promise.resolve({ ok: true, message: 'Đã giả lập thanh toán thành công' } as T);
+  }
+
   // 2. GET /api/orders/lookup?code=X & /api/orders/track?code=X (Tra cứu đơn hàng)
   if (path.startsWith('/api/orders/lookup') || path.startsWith('/api/orders/track')) {
     const code = new URLSearchParams(path.split('?')[1] || '').get('code');

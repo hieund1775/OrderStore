@@ -268,10 +268,10 @@ function Tracking() {
               <p className="text-muted-foreground text-xs">Mã đơn</p>
               <p className="font-display text-xl font-extrabold">{order.order_code}</p>
             </div>
-            {cancelled || order.payment_status === "expired" ? (
-              <Badge className="bg-berry/15 text-berry">
-                {order.payment_status === "expired" ? "Hết hạn thanh toán" : "Đã hủy"}
-              </Badge>
+            {cancelled ? (
+              <Badge className="bg-berry/15 text-berry">Đã hủy</Badge>
+            ) : order.payment_status === "unpaid" && order.payment_provider === "payos" ? (
+              <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-semibold">Chờ chuyển khoản</Badge>
             ) : completed ? (
               <Badge className="bg-leaf/15 text-leaf">Hoàn thành</Badge>
             ) : (
@@ -279,14 +279,14 @@ function Tracking() {
             )}
           </div>
 
-          {/* Payment Status Banner */}
-          {order.payment_status === "unpaid" && !cancelled && (
+          {/* Payment Status Banner - Chỉ hiện khi đơn chưa thanh toán */}
+          {order.payment_status === "unpaid" && order.payment_provider === "payos" && !cancelled && (
             <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 mt-4 rounded-xl border p-4">
               <div className="flex items-center gap-2 font-bold text-sm">
                 <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(order.total)})
               </div>
               <p className="mt-1 text-xs opacity-90">
-                Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công (0ms webhook).
+                Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công.
               </p>
               <Button asChild variant="hero" size="sm" className="mt-3">
                 <Link to="/thanh-toan">Thanh toán ngay / Xem mã QR</Link>
@@ -294,18 +294,8 @@ function Tracking() {
             </div>
           )}
 
-          {order.payment_status === "expired" && (
-            <div className="bg-berry/10 border-berry/30 text-berry mt-4 rounded-xl border p-4">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <XCircle className="size-5" /> ❌ Đơn hàng đã hết hạn thanh toán
-              </div>
-              <p className="mt-1 text-xs opacity-90">
-                Mã thanh toán PayOS đã quá 15 phút không nhận được chuyển khoản. Đơn hàng đã bị hủy tự động.
-              </p>
-            </div>
-          )}
-
-          {!(order.payment_status === "unpaid" && !cancelled) && (
+          {/* Timeline 3 bước */}
+          {!(order.payment_status === "unpaid" && order.payment_provider === "payos" && !cancelled) && (
             <ol className="mt-8 space-y-0">
               {steps.map((s, i) => {
                 const done = !cancelled && (currentStep > i || completed);

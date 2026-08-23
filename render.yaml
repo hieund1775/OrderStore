@@ -57,7 +57,7 @@ services:
         sync: false
 
   # ═══════════════════════════════════════════════════════════════════
-  # 2. PayOS Order Expiry Cron Job (Runs every 5 minutes)
+  # 2. Frontend Web Service (TanStack Start SSR)
   # ═══════════════════════════════════════════════════════════════════
   - type: web
     name: teaplus-order-frontend
@@ -76,5 +76,25 @@ services:
         value: "false"
 
   # ═══════════════════════════════════════════════════════════════════
-  # 3. Expired OTP Cleanup Cron Job (Runs hourly)
+  # 3. PayOS Order Expiry Cron Job (Runs every 5 minutes)
   # ═══════════════════════════════════════════════════════════════════
+  - type: cron
+    name: teaplus-payos-expiry-cron
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: backend
+    schedule: "*/5 * * * *"
+    buildCommand: npm install --omit=dev
+    startCommand: node commands/expire-payos-orders.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: PGSSLMODE
+        value: require
+      - key: PG_SSL_REJECT_UNAUTHORIZED
+        value: "false"

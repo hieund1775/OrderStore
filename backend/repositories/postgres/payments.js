@@ -119,6 +119,142 @@ export function createPaymentsRepository(database = postgresDb) {
       });
     },
 
+    async renewPayOSOrderLink({
+      orderCode,
+      userId = null,
+      userPhone = null,
+      cancelToken = null,
+      returnUrl = null,
+      cancelUrl = null,
+      createLinkFn = null,
+    }) {
+      return database.transaction(async (tx) => {
+        const [rows] = await tx.query(
+          `SELECT id, order_code, customer_id, customer_phone, total,
+                  payment_status, payment_provider, current_status, cancel_token,
+                  payos_order_code, payment_link_id, payment_checkout_url,
+                  payment_qr_code, payment_expires_at
+           FROM orders
+           WHERE order_code = $1
+           FOR UPDATE`,
+          [orderCode],
+        );
+        const order = rows[0];
+        if (!order) {
+          const err = new Error('Không tìm thấy đơn hàng');
+          err.status = 404;
+          throw err;
+        }
+
+        const isOwnerByUserId = userId != null && Number(order.customer_id) === Number(userId);
+        const isOwnerByPhone = userPhone != null && order.customer_phone === userPhone;
+        const isOwnerByCancelToken = cancelToken != null && typeof cancelToken === 'string' && Boolean(order.cancel_token) && order.cancel_token === cancelToken;
+
+        if (!isOwnerByUserId && !isOwnerByPhone && !isOwnerByCancelToken) {
+          const err = new Error('Bạn không có quyền thao tác trên đơn hàng này');
+          err.status = 403;
+          throw err;
+        }
+
+        if (order.current_status === 'Đã hủy') {
+          const err = new Error('Đơn hàng đã bị hủy, không thể tạo lại mã thanh toán');
+          err.status = 400;
+          throw err;
+        }
+
+        if (order.payment_status === 'paid') {
+          const err = new Error('Đơn hàng đã được thanh toán thành công');
+          err.status = 400;
+          throw err;
+        }
+
+        const timePart = String(Date.now()).slice(-6);
+        const idPart = String(order.id % 10000).padStart(4, '0');
+        const newPayosOrderCode = Number(`${timePart}${idPart}`);
+
+        const createPaymentLink = createLinkFn || (await import('../../services/payos.js')).createPaymentLinkForOrder;
+        const payosResult = await createPaymentLink({
+          orderId: order.id,
+          orderCode: order.order_code,
+          total: Number(order.total),
+          payosOrderCode: newPayosOrderCode,
+          returnUrl,
+          cancelUrl,
+        });
+
+        const [updatedRows] = await tx.query(
+          `UPDATE orders
+           SET payos_order_code = $2,
+               payment_link_id = $3,
+               payment_checkout_url = $4,
+               payment_qr_code = $5,
+               payment_expires_at = $6,
+               payment_status = 'unpaid',
+               payment_provider = 'payos',
+               payment_created_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND payment_status != 'paid' AND current_status != 'Đã hủy'
+           RETURNING id, order_code, total, payment_status, payment_provider,
+                     payment_link_id, payos_order_code, payment_checkout_url,
+                     payment_qr_code, payment_expires_at`,
+          [
+            order.id,
+            payosResult.payosOrderCode,
+            payosResult.paymentLinkId,
+            payosResult.checkoutUrl,
+            payosResult.qrCode,
+            payosResult.paymentExpiresAt,
+          ],
+        );
+
+        if (!updatedRows[0]) {
+          const err = new Error('Không thể cập nhật mã thanh toán mới');
+          err.status = 409;
+          throw err;
+        }
+
+        return updatedRows[0];
+      });
+    },
+
+    async simulatePaymentSuccess({ orderCode }) {
+      return database.transaction(async (tx) => {
+        const [orderRows] = await tx.query(
+          `SELECT id, order_code, total, payment_status, payment_provider, current_status
+           FROM orders
+           WHERE order_code = $1
+           FOR UPDATE`,
+          [orderCode],
+        );
+        const order = orderRows[0];
+        if (!order) {
+          const err = new Error('Không tìm thấy đơn hàng');
+          err.status = 404;
+          throw err;
+        }
+        if (order.current_status === 'Đã hủy') {
+          const err = new Error('Đơn hàng đã bị hủy');
+          err.status = 400;
+          throw err;
+        }
+        if (order.payment_status === 'paid') {
+          return { ok: true, message: 'Đơn hàng đã thanh toán từ trước', order };
+        }
+        const [paidRows] = await tx.query(
+          `UPDATE orders
+           SET payment_status = 'paid',
+               payment_provider = 'payos',
+               paid_at = CURRENT_TIMESTAMP,
+               transaction_id = $2,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1
+           RETURNING id, order_code, total, payment_status, payment_provider, paid_at`,
+          [order.id, `SIM_${Date.now()}`],
+        );
+        return { ok: true, message: 'Thanh toán giả lập thành công', order: paidRows[0] };
+      });
+    },
+
     async expireUnpaidPayOSOrders(limit = 100) {
       const batchSize = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 1000);
       return database.transaction(async (tx) => {

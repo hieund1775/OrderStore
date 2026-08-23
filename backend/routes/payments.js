@@ -1,9 +1,25 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/env.js';
 import { verifyWebhookData } from '../services/payos.js';
 import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 
 const router = Router();
+
+function extractCustomerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded?.role === 'customer' || decoded?.sub) {
+        return decoded;
+      }
+    } catch {}
+  }
+  return null;
+}
 
 /**
  * Webhook PayOS tự động nhận báo tiền về
@@ -83,6 +99,72 @@ router.get('/payos/status', async (req, res) => {
   } catch (err) {
     console.error('PayOS status lookup failed:', err.message);
     res.status(500).json({ error: 'Không thể tra cứu trạng thái thanh toán lúc này' });
+  }
+});
+
+/**
+ * Endpoint tái tạo mã QR thanh toán PayOS cho đơn cũ
+ * POST /api/payments/payos/regenerate-qr
+ */
+router.post('/payos/regenerate-qr', async (req, res) => {
+  try {
+    const { order_code, cancel_token, return_url, cancel_url } = req.body || {};
+    if (!order_code || typeof order_code !== 'string') {
+      return res.status(400).json({ error: 'Thiếu mã đơn hàng order_code' });
+    }
+
+    const decodedToken = extractCustomerToken(req);
+    const userId = decodedToken ? Number(decodedToken.id || decodedToken.sub) : null;
+    const userPhone = decodedToken?.phone || null;
+    const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim() || null;
+
+    const updatedOrder = await paymentsRepository.renewPayOSOrderLink({
+      orderCode: order_code.trim(),
+      userId,
+      userPhone,
+      cancelToken: rawCancelToken,
+      returnUrl: return_url || null,
+      cancelUrl: cancel_url || null,
+    });
+
+    res.json({
+      ok: true,
+      order: {
+        order_code: updatedOrder.order_code,
+        total: Number(updatedOrder.total),
+        checkout_url: updatedOrder.payment_checkout_url,
+        qr_code: updatedOrder.payment_qr_code,
+        payment_expires_at: updatedOrder.payment_expires_at,
+        payment_status: updatedOrder.payment_status,
+      },
+    });
+  } catch (err) {
+    console.error('Regenerate PayOS QR failed:', err.message);
+    const status = err.status || (err.message.includes('quyền') ? 403 : 500);
+    res.status(status).json({ error: err.message || 'Không thể tạo lại mã thanh toán lúc này' });
+  }
+});
+
+/**
+ * Giả lập thanh toán PayOS thành công (Chỉ bật khi dev/test cục bộ)
+ * POST /api/payments/payos/simulate-success
+ */
+router.post('/payos/simulate-success', async (req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_PAYOS_SIMULATOR !== 'true') {
+    return res.status(404).json({ error: 'Endpoint không khả dụng trên môi trường production' });
+  }
+
+  try {
+    const { order_code } = req.body || {};
+    if (!order_code || typeof order_code !== 'string') {
+      return res.status(400).json({ error: 'Thiếu mã đơn hàng order_code' });
+    }
+
+    const result = await paymentsRepository.simulatePaymentSuccess({ orderCode: order_code.trim() });
+    res.json(result);
+  } catch (err) {
+    console.error('Simulate PayOS payment failed:', err.message);
+    res.status(err.status || 500).json({ error: err.message || 'Không thể giả lập thanh toán lúc này' });
   }
 });
 
