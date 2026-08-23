@@ -10,7 +10,7 @@ const router = Router();
 
 router.get('/orders', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
-    const scopedStoreId = resolveStoreScope(req.user);
+    const scopedStoreId = resolveStoreScope(req.user, req.query.store_id);
     const orders = await adminOrderService.listKitchen({ storeId: scopedStoreId });
     res.json(orders.map(toKitchenOrderDto));
   } catch (err) {

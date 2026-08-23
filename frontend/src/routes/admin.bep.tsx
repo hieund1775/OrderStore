@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
-import { apiGet, apiPatch } from "@/lib/api";
+import { apiGet, apiPatch, getUser } from "@/lib/api";
 import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
@@ -39,46 +39,47 @@ type KitchenItem = {
   product_name: string;
   qty: number;
   size_label: string;
-  base_tea: string;
-  sugar_level: string;
-  ice_level: string;
-  note: string | null;
-  line_total: number;
+  base_tea?: string;
+  sugar_level?: string;
+  ice_level?: string;
+  note?: string | null;
   toppings: KitchenTopping[];
 };
-type KitchenOrder = {
+export type KitchenOrder = {
   id: number;
   order_code: string;
   order_type: string;
   customer_name: string;
-  customer_phone: string;
-  delivery_addr: string | null;
-  table_id: number | null;
-  store_id: number;
-  location_name: string | null;
-  note: string | null;
-  subtotal: number;
-  discount_amount: number;
-  total: number;
-  payment_method: string;
+  customer_phone?: string;
+  delivery_addr?: string | null;
+  store_id?: number;
+  store_name?: string;
+  table_id?: number | null;
+  location_name?: string | null;
+  note?: string | null;
+  subtotal?: number;
+  discount_amount?: number;
+  total?: number;
+  payment_method?: string;
   created_at: string;
-  store_name: string;
   current_status: string;
-  items: KitchenItem[];
+  items: (KitchenItem & { line_total?: number })[];
+  shipping_driver_name?: string | null;
+  shipping_driver_phone?: string | null;
 };
 
 function toBillOrder(o: KitchenOrder): BillOrder {
   return {
     id: o.id,
     order_code: o.order_code,
-    store_id: o.store_id,
-    store_name: o.store_name,
+    store_id: o.store_id || 0,
+    store_name: o.store_name || "",
     location_name: o.location_name,
     order_type: o.order_type,
     delivery_addr: o.delivery_addr,
     customer_name: o.customer_name,
-    customer_phone: o.customer_phone,
-    payment_method: o.payment_method,
+    customer_phone: o.customer_phone || "",
+    payment_method: o.payment_method || "",
     created_at: o.created_at,
     items: o.items.map((it) => ({
       product_name: it.product_name,
@@ -86,11 +87,11 @@ function toBillOrder(o: KitchenOrder): BillOrder {
       size_label: it.size_label,
       note: it.note,
       toppings: it.toppings,
-      line_total: it.line_total,
+      line_total: it.line_total || 0,
     })),
-    subtotal: o.subtotal,
-    discount_amount: o.discount_amount,
-    total: o.total,
+    subtotal: o.subtotal || 0,
+    discount_amount: o.discount_amount || 0,
+    total: o.total || 0,
   };
 }
 
@@ -143,6 +144,8 @@ function playDingDong() {
 }
 
 function KdsPage() {
+  const user = getUser();
+  const isSuperAdmin = user?.role === "super";
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [doneOrders, setDoneOrders] = useState<KitchenOrder[]>([]);
   const [doneAt, setDoneAt] = useState<Record<number, number>>({});
@@ -156,8 +159,18 @@ function KdsPage() {
   const [printerConfig, setPrinterConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
   const [bleConnected, setBleConnected] = useState<boolean>(() => !!getConnectedPrinter());
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
-  const [storeFilter, setStoreFilter] = useState("all");
+  const [storeFilter, setStoreFilter] = useState<string>(() => {
+    if (user?.role === "super") return "all";
+    return user?.branch_id ? String(user.branch_id) : "all";
+  });
   const prevIds = useRef<Set<number>>(new Set());
+
+  const handleStoreFilterChange = (newFilter: string) => {
+    setStoreFilter(newFilter);
+    setDoneOrders([]);
+    setDoneAt({});
+    prevIds.current = new Set();
+  };
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
@@ -319,22 +332,31 @@ function KdsPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-muted-foreground">Lọc bếp chi nhánh:</span>
-          <Select value={storeFilter} onValueChange={setStoreFilter}>
-            <SelectTrigger className="w-48 h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả chi nhánh</SelectItem>
-              {branches.map((b) => (
-                <SelectItem key={b.id} value={String(b.id)}>
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {isSuperAdmin ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Lọc bếp chi nhánh:</span>
+            <Select value={storeFilter} onValueChange={handleStoreFilterChange}>
+              <SelectTrigger className="w-48 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả chi nhánh</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <span>Chi nhánh bếp:</span>
+            <span className="rounded-md bg-card px-2.5 py-1 text-foreground border font-bold">
+              {branches.find((b) => String(b.id) === storeFilter)?.name || (user?.branch_id ? `Chi nhánh #${user.branch_id}` : "Chi nhánh hiện tại")}
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           {/* Printer Recognition Status Badge Button */}
           <Button
