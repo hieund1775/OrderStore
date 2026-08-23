@@ -3,6 +3,7 @@ import ordersRepository from '../repositories/postgres/orders.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 import { createPaymentLinkForOrder } from './payos.js';
 import { hashOrderRequest } from './order-idempotency.js';
+import config from '../config/env.js';
 
 function makePayOSCode(orderId) {
   return Number(`${String(Date.now()).slice(-6)}${String(Number(orderId) % 10000).padStart(4, '0')}`);
@@ -15,8 +16,33 @@ export function appendOrderCodeToUrl(baseUrlString, code) {
     url.searchParams.set('code', code);
     return url.toString();
   } catch {
-    return baseUrlString.includes('?') ? `${baseUrlString}&code=${encodeURIComponent(code)}` : `${baseUrlString}?code=${encodeURIComponent(code)}`;
+    return null;
   }
+}
+
+function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
+  const candidate = requestedUrl || fallbackUrl;
+  const fallback = fallbackUrl || candidate;
+  let candidateUrl;
+  let fallbackUrlObject;
+  try {
+    candidateUrl = new URL(candidate);
+    fallbackUrlObject = new URL(fallback);
+  } catch {
+    const error = new Error('URL chuyển hướng PayOS không hợp lệ');
+    error.status = 400;
+    throw error;
+  }
+
+  const allowedOrigins = new Set(config.allowedOrigins);
+  allowedOrigins.add(fallbackUrlObject.origin);
+  if (!allowedOrigins.has(candidateUrl.origin)) {
+    const error = new Error('URL chuyển hướng PayOS không được cho phép');
+    error.status = 400;
+    throw error;
+  }
+
+  return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
 }
 
 export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, cancelToken, idempotencyKey }) {
@@ -53,8 +79,8 @@ export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, c
     };
   }
 
-  const effectiveReturnUrl = appendOrderCodeToUrl(input.return_url, order.order_code) || input.return_url;
-  const effectiveCancelUrl = appendOrderCodeToUrl(input.cancel_url, order.order_code) || input.cancel_url;
+  const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, order.order_code);
+  const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, order.order_code);
 
   const link = await createPaymentLinkForOrder({
     orderId: order.id,
