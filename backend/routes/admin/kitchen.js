@@ -10,6 +10,8 @@ const router = Router();
 
 router.get('/orders', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
+    // KDS is a realtime view; never let browser/proxy validators turn a poll into 304.
+    res.set('Cache-Control', 'no-store');
     const scopedStoreId = resolveStoreScope(req.user, req.query.store_id);
     const orders = await adminOrderService.listKitchen({ storeId: scopedStoreId });
     res.json(orders.map(toKitchenOrderDto));

@@ -182,7 +182,10 @@ function KdsPage() {
   const fetchOrders = useCallback(async (signal?: AbortSignal) => {
     try {
       const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
-      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, signal ? { signal } : undefined);
+      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, {
+        ...(signal ? { signal } : {}),
+        cache: "no-store",
+      });
       setFetchError(null);
       setOrders(rows);
       const ids = new Set(rows.map((o) => o.id));
