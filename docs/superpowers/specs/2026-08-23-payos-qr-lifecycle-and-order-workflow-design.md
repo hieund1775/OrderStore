@@ -54,15 +54,24 @@
 
 ### 3.1. Backend API & Dữ Liệu
 
+#### Nguyên tắc trạng thái và chống thanh toán lại
+
+- Đơn hết thời hạn thanh toán vẫn giữ `payment_status = 'unpaid'`; `payment_expires_at < NOW()` chỉ có nghĩa là QR hiện tại không còn hợp lệ.
+- Chỉ webhook hợp lệ của QR đang được gắn với đơn, đúng `payos_order_code`, `payment_link_id`, provider và amount mới được CAS `unpaid -> paid`.
+- Webhook đến từ QR cũ, webhook đến sau khi đơn đã bị hủy, hoặc webhook đến sau khi QR đã được tái tạo phải được ghi nhận là ignored/idempotent và tuyệt đối không hồi sinh đơn.
+- Việc tái tạo QR và việc webhook cập nhật thanh toán phải dùng transaction lock/CAS. Hai request tái tạo đồng thời chỉ được tạo một liên kết mới có hiệu lực.
+
 1. **API Tái tạo mã QR PayOS cho đơn cũ**:
    - Endpoint: `POST /api/payments/payos/regenerate-qr`
    - Payload: `{ order_code: string }`
    - Logic:
-     - Kiểm tra đơn tồn tại, thuộc quyền sở hữu (hoặc đúng SĐT/JWT), `payment_status === 'unpaid'`.
+     - Kiểm tra quyền sở hữu bằng JWT của chủ đơn hoặc `cancel_token` guest; không cho phép chỉ dựa vào `order_code` có thể đoán được.
+     - Khóa đơn trong transaction và kiểm tra `payment_status === 'unpaid'`, không bị hủy, không bị trùng request đang tái tạo.
      - Sinh `payos_order_code` 10 số mới.
      - Gọi PayOS SDK `createPaymentLink` với thời hạn mới 15 phút.
      - Cập nhật DB: `payos_order_code`, `payment_link_id`, `payment_checkout_url`, `payment_qr_code`, `payment_expires_at = NOW() + 15m`.
      - Trả về `{ checkout_url, qr_code, payment_expires_at, order_code, total }`.
+     - Nếu provider tạo link thành công nhưng persistence thất bại, không trả success; phải log correlation id và cho phép retry idempotent có kiểm soát.
 
 2. **API Hủy đơn chưa thanh toán nhanh**:
    - Endpoint: `POST /api/orders/cancel-unpaid`
@@ -71,7 +80,8 @@
 
 3. **API Hỗ trợ kiểm thử Local Dev (Bypass Webhook khi test máy nội bộ)**:
    - Endpoint: `POST /api/payments/payos/simulate-success`
-   - Guard: `process.env.NODE_ENV !== 'production'`
+   - Guard: `process.env.NODE_ENV !== 'production' && process.env.ENABLE_PAYOS_SIMULATOR === 'true'`.
+   - Không được mount hoặc trả dữ liệu thành công trong production.
    - Payload: `{ order_code: string }`
    - Logic: Cập nhật ngay `payment_status = 'paid'`, `paid_at = NOW()`, kích hoạt đơn hàng vào Bếp KDS ngay trên máy local.
 
@@ -107,14 +117,24 @@
 4. **Quản lý Đơn hàng Admin (`admin.don-hang.tsx`)**:
    - Đơn ở trạng thái `Đang giao`: Hiển thị nút nổi bật **"Xác nhận giao xong (Hoàn thành)"** để Admin đóng đơn khi nhận được báo cáo từ Shipper.
 
+### 3.3. Vận hành Render và kiểm chứng PayOS
+
+- `render.yaml` phải khai báo service `type: cron` thật cho `node commands/expire-payos-orders.js`, chạy mỗi 5 phút; comment đơn thuần không được xem là đã cấu hình.
+- Staging smoke test bắt buộc chạy đủ: tạo đơn PayOS sandbox, nhận webhook signed, xác nhận `paid`, gửi lại webhook để kiểm tra idempotency, hết hạn/tái tạo QR và kiểm tra late webhook từ QR cũ.
+- Production chỉ được bật sau khi đã cấu hình đủ `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, return/cancel URL HTTPS và webhook URL; phải có người chịu trách nhiệm sign-off.
+
 ---
 
 ## 4. Kế Hoạch Kiểm Thử (Acceptance Criteria)
 
-- [x] Tạo đơn online PayOS $\rightarrow$ Khung QR hiện đầy đủ, đồng hồ đếm ngược 15 phút chạy đúng.
-- [x] Chuyển khoản thành công (hoặc simulate) $\rightarrow$ Khung QR đóng ngay lập tức, chuyển sang `/theo-doi-don`.
-- [x] Trang `/theo-doi-don` không còn bất kỳ nút/banner xác thực thanh toán thừa nào khi đơn đã `paid`.
-- [x] Để QR hết hạn 15 phút $\rightarrow$ Không mất đơn/món, bấm "Tạo mã QR mới" sinh được QR mới; bấm "Hủy đơn" hủy đơn sạch sẽ.
-- [x] Bếp KDS nhận đơn đã `paid` $\rightarrow$ Đơn Tại bàn ấn Hoàn thành $\rightarrow$ Đơn Giao hàng ấn Giao Shipper chuyển `Đang giao`.
-- [x] Admin ấn "Xác nhận giao xong" $\rightarrow$ Đơn chuyển `Hoàn thành`, khách thấy đơn hoàn tất.
-- [x] Type-check `tsc --noEmit` và build production thành công 100%.
+- [ ] Tạo đơn online PayOS $\rightarrow$ Khung QR hiện đầy đủ, đồng hồ đếm ngược 15 phút chạy đúng.
+- [ ] Chuyển khoản thành công (hoặc simulate có feature flag) $\rightarrow$ Khung QR đóng ngay lập tức, chuyển sang `/theo-doi-don`.
+- [ ] Trang `/theo-doi-don` không còn bất kỳ nút/banner xác thực thanh toán thừa nào khi đơn đã `paid`.
+- [ ] Để QR hết hạn 15 phút $\rightarrow$ Không mất đơn/món, bấm "Tạo mã QR mới" sinh được QR mới; bấm "Hủy đơn" hủy đơn sạch sẽ.
+- [ ] Hai request tái tạo QR đồng thời chỉ tạo một link có hiệu lực; webhook QR cũ không thể chuyển đơn thành `paid`.
+- [ ] Endpoint tái tạo/hủy bị từ chối nếu không có JWT/cancel token hợp lệ.
+- [ ] Bếp KDS nhận đơn đã `paid` $\rightarrow$ Đơn Tại bàn ấn Hoàn thành $\rightarrow$ Đơn Giao hàng ấn Giao Shipper chuyển `Đang giao`.
+- [ ] Admin ấn "Xác nhận giao xong" $\rightarrow$ Đơn chuyển `Hoàn thành`, khách thấy đơn hoàn tất.
+- [ ] Render có PayOS expiry cron thật và cron chạy thành công trên staging.
+- [ ] Staging smoke test PayOS signed webhook, duplicate webhook, amount mismatch, expiry và late webhook pass.
+- [ ] Type-check `tsc --noEmit` và build production thành công 100%.

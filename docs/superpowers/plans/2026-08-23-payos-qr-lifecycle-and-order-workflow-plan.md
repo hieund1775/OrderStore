@@ -29,9 +29,12 @@
   - `backend/services/payos.js` (Hỗ trợ tái tạo payment link cho `orderId`)
   - `backend/routes/payments.js` (Thêm route `POST /api/payments/payos/regenerate-qr`, `POST /api/payments/payos/simulate-success`)
 - **Nghiệp vụ**:
-  - `POST /api/payments/payos/regenerate-qr`: Nhận `order_code`, kiểm tra đơn chưa thanh toán (`unpaid`), gọi PayOS SDK tạo link mới với `payment_expires_at = NOW() + 15m`, cập nhật lại PostgreSQL và trả về QR/checkoutUrl mới.
-  - `POST /api/payments/payos/simulate-success`: (Chỉ chạy khi dev `NODE_ENV !== 'production'`) kích hoạt đơn thành `paid` để test cục bộ không cần cài ngrok.
-- **Verification**: Viết unit test `backend/test/payos-lifecycle.test.js`.
+  - `POST /api/payments/payos/regenerate-qr`: Nhận `order_code` kèm JWT/cancel token, khóa đơn trong transaction, kiểm tra `unpaid` và ownership, gọi PayOS SDK tạo link mới với `payment_expires_at = NOW() + 15m`, cập nhật PostgreSQL và trả về QR/checkoutUrl mới.
+  - Hai request tái tạo đồng thời phải idempotent; chỉ một payment link mới được ghi nhận là active.
+  - Webhook từ `payos_order_code` hoặc `payment_link_id` cũ phải bị ignore, không được đổi `unpaid` thành `paid`.
+  - `POST /api/payments/payos/simulate-success`: chỉ hoạt động khi `NODE_ENV !== 'production'` và `ENABLE_PAYOS_SIMULATOR=true`.
+  - Không đổi đơn hết hạn thành `expired` nếu yêu cầu nghiệp vụ là cho phép tái tạo; dùng `payment_expires_at` để biểu thị QR hết hạn.
+- **Verification**: Viết unit/integration test `backend/test/payos-lifecycle.test.js` cho ownership, concurrent regenerate, old webhook, retry và simulator production guard.
 
 ---
 
@@ -73,8 +76,22 @@
 
 ---
 
-### Task 5: Kiểm Thử Toàn Diện & Nghiệm Thu
+### Task 5: Vận hành — Render Cron và PayOS Staging Smoke
+- **Files**:
+  - `render.yaml`
+  - `backend/scripts/render-staging-smoke.js`
+  - `docs/deploy/postgres-cutover-runbook.md`
+- **Nghiệp vụ**:
+  - Khai báo service `type: cron`, lịch `*/5 * * * *`, chạy `node commands/expire-payos-orders.js`.
+  - Smoke test staging phải bao phủ tạo link, signed webhook, duplicate webhook, amount mismatch, hết hạn, tái tạo QR và late webhook.
+  - Bổ sung checklist xác nhận đủ PayOS secrets, HTTPS callback URL, cron active và production sign-off.
+- **Verification**: Blueprint Render có cron thực tế; smoke test staging pass; không đánh dấu production-ready nếu chưa có bằng chứng này.
+
+---
+
+### Task 6: Kiểm Thử Toàn Diện & Nghiệm Thu
 - Chạy backend test suite: `npm test` trong `backend/`
 - Chạy frontend type check: `npx tsc --noEmit` trong `frontend/`
 - Chạy frontend build: `npm run build` trong `frontend/`
 - Viết báo cáo bàn giao: `docs/reviews/2026-08-23-payos-qr-lifecycle-and-order-workflow-agy-handoff.md`
+- Acceptance criteria trong spec giữ `[ ]` cho tới khi từng kiểm thử có log/bằng chứng; không dùng handoff tự báo cáo thay cho staging smoke hoặc production sign-off.
