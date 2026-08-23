@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
-import { verifyWebhookData } from '../services/payos.js';
+import { verifyWebhookData, getPaymentLinkInformation } from '../services/payos.js';
 import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 import { noCache } from '../middleware/no-cache.js';
@@ -87,15 +87,32 @@ export async function handlePayOSWebhook(req, res) {
 router.post('/payos/webhook', handlePayOSWebhook);
 
 /**
- * Endpoint tra cứu trạng thái thanh toán đơn PayOS
+ * Endpoint tra cứu trạng thái thanh toán đơn PayOS (Kèm chủ động đối soát Active Reconciliation)
  * GET /api/payments/payos/status?code=TPxxxxxx
  */
 router.get('/payos/status', noCache, async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn code' });
-    const order = await paymentsRepository.findStatusByOrderCode(code);
+    let order = await paymentsRepository.findStatusByOrderCode(code);
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+
+    // Active Reconciliation: Nếu đơn PayOS vẫn 'unpaid', chủ động kiểm tra trực tiếp qua SDK PayOS
+    if (order.payment_status === 'unpaid' && order.payos_order_code && order.payment_provider === 'payos') {
+      const payosInfo = await getPaymentLinkInformation(order.payos_order_code);
+      if (payosInfo && (payosInfo.status === 'PAID' || Number(payosInfo.amountPaid) >= Number(order.total))) {
+        await paymentsRepository.processSuccessfulWebhook({
+          eventKey: `reconcile-${order.payos_order_code}-${payosInfo.id || Date.now()}`,
+          orderCode: order.payos_order_code,
+          amount: Number(payosInfo.amountPaid || order.total),
+          reference: payosInfo.transactions?.[0]?.reference || 'ACTIVE_RECONCILIATION',
+          paymentLinkId: payosInfo.id || null,
+          payload: payosInfo,
+        });
+        order = await paymentsRepository.findStatusByOrderCode(code);
+      }
+    }
+
     res.json({ order });
   } catch (err) {
     console.error('PayOS status lookup failed:', err.message);

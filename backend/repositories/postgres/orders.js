@@ -66,7 +66,8 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
             sizeExtra = Number(sizes[0].price_extra || 0);
             sizeLabel = sizes[0].label;
           }
-          const toppingIds = [...new Set((item.topping_ids || []).map(Number).filter(Number.isInteger))];
+          const rawToppings = item.topping_ids || (Array.isArray(item.toppings) ? item.toppings.map((t) => (typeof t === 'object' && t !== null ? t.topping_id : t)) : []);
+          const toppingIds = [...new Set(rawToppings.map(Number).filter(Number.isInteger))];
           const [toppings] = toppingIds.length
             ? await tx.query('SELECT id, name, price FROM toppings WHERE id = ANY($1::bigint[]) AND is_available = TRUE', [toppingIds])
             : [[]];

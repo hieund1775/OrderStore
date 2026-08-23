@@ -210,7 +210,7 @@ function PosPage() {
         table_id: selectedTableId,
         order_type: "POS",
         payment_method: paymentMethod,
-        customer_name: "Khách tại quầy",
+        customer_name: "Khách Tại Quầy",
         customer_phone: "0000000000",
         source: "pos",
         items: cart.map(i => ({
@@ -221,6 +221,7 @@ function PosPage() {
           ice_level: i.ice_level,
           qty: i.qty,
           note: i.note,
+          topping_ids: i.toppings.map(t => Number(t.topping_id)),
           toppings: i.toppings.map(t => ({ topping_id: t.topping_id, qty: t.qty })),
         })),
       };

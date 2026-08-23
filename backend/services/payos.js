@@ -123,3 +123,26 @@ export function verifyWebhookData(body) {
     throw new Error('SDK PayOS không tìm thấy hàm verify webhook');
   }
 }
+
+/**
+ * Chủ động truy vấn trạng thái link thanh toán từ PayOS
+ */
+export async function getPaymentLinkInformation(orderCode) {
+  const instance = getPayOS();
+  if (!instance) return null;
+
+  try {
+    const numericCode = Number(orderCode);
+    if (!Number.isSafeInteger(numericCode) || numericCode <= 0) return null;
+
+    if (typeof instance.paymentRequests?.get === 'function') {
+      return await instance.paymentRequests.get(numericCode);
+    } else if (typeof instance.getPaymentLinkInformation === 'function') {
+      return await instance.getPaymentLinkInformation(numericCode);
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[PayOS Active Recon] Không thể lấy thông tin link ${orderCode}:`, err.message);
+    return null;
+  }
+}

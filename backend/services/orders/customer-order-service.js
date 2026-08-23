@@ -25,9 +25,14 @@ export function createCustomerOrderService({
       const normalizedSource = input.source || 'online';
       const normalizedOrderType = input.order_type || 'Take-away';
       const normalizedPaymentMethod = input.payment_method || 'VietQR';
+      const isPosOrder = normalizedOrderType === 'POS' || normalizedSource === 'pos';
 
-      if (!input.store_id || !input.customer_name || !input.customer_phone || !Array.isArray(input.items) || input.items.length === 0) {
-        throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (store_id, tên, SĐT, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
+      if (!input.store_id || !Array.isArray(input.items) || input.items.length === 0) {
+        throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (store_id, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
+      }
+
+      if (!isPosOrder && (!input.customer_name || !input.customer_phone)) {
+        throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (tên, SĐT, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
       }
 
       if (normalizedOrderType === 'Delivery' && (!input.delivery_addr || !input.delivery_addr.trim())) {

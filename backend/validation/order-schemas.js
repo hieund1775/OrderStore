@@ -97,23 +97,46 @@ export function validateCreateOrderInput(body = {}) {
   const note = boundedText(body.note, 'Ghi chú');
   const deliveryAddress = boundedText(body.delivery_addr, 'Địa chỉ giao hàng', 500);
 
-  if (!customerName || !customerPhone || !Array.isArray(body.items) || body.items.length === 0) {
-    throw new OrderValidationError('Thiếu thông tin đơn hàng bắt buộc (store_id, tên, SĐT, danh sách món)', 'ORDER_REQUIRED_FIELDS');
+  const isPosOrder = orderType === 'POS' || source === 'pos';
+
+  if (!isPosOrder && (!customerName || !customerPhone)) {
+    throw new OrderValidationError('Thiếu thông tin đơn hàng bắt buộc (tên, SĐT, danh sách món)', 'ORDER_REQUIRED_FIELDS');
+  }
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    throw new OrderValidationError('Danh sách món không được để trống', 'ORDER_REQUIRED_FIELDS');
   }
   if (orderType === 'Delivery' && !deliveryAddress) {
     throw new OrderValidationError('Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng', 'ORDER_DELIVERY_ADDRESS_REQUIRED');
   }
 
-  try {
-    normalizeAndValidatePhone(customerPhone);
-  } catch (err) {
-    throw new OrderValidationError(err.message, 'ORDER_INVALID_PHONE');
+  let validPhone;
+  if (isPosOrder) {
+    if (!customerPhone || customerPhone.trim() === '0000000000') {
+      validPhone = '0000000000';
+    } else {
+      try {
+        validPhone = normalizeAndValidatePhone(customerPhone, { required: false });
+      } catch {
+        validPhone = customerPhone.trim();
+      }
+    }
+  } else {
+    try {
+      validPhone = normalizeAndValidatePhone(customerPhone);
+    } catch (err) {
+      throw new OrderValidationError(err.message, 'ORDER_INVALID_PHONE');
+    }
   }
 
-  try {
-    normalizeAndValidateFullName(customerName);
-  } catch (err) {
-    throw new OrderValidationError(err.message, 'ORDER_INVALID_NAME');
+  let validName;
+  if (isPosOrder) {
+    validName = customerName?.trim() || 'Khách Tại Quầy';
+  } else {
+    try {
+      validName = normalizeAndValidateFullName(customerName);
+    } catch (err) {
+      throw new OrderValidationError(err.message, 'ORDER_INVALID_NAME');
+    }
   }
 
   return {
@@ -124,7 +147,7 @@ export function validateCreateOrderInput(body = {}) {
     paymentMethod,
     note,
     deliveryAddress,
-    customerName: normalizeAndValidateFullName(customerName),
-    customerPhone: normalizeAndValidatePhone(customerPhone),
+    customerName: validName,
+    customerPhone: validPhone,
   };
 }
