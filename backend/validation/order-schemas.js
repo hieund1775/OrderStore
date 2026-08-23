@@ -117,7 +117,7 @@ export function validateCreateOrderInput(body = {}) {
       try {
         validPhone = normalizeAndValidatePhone(customerPhone, { required: false });
       } catch {
-        validPhone = customerPhone.trim();
+        validPhone = '0000000000';
       }
     }
   } else {

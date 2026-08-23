@@ -35,6 +35,20 @@ describe('POS Validation & Active Reconciliation Suite', () => {
     assert.equal(validated.customerName, 'Khách Tại Quầy');
   });
 
+  it('normalizes an invalid optional POS phone to the placeholder', () => {
+    const validated = validateCreateOrderInput({
+      store_id: 1,
+      order_type: 'POS',
+      source: 'pos',
+      payment_method: 'COD',
+      customer_name: 'Khách Tại Quầy',
+      customer_phone: 'not-a-phone',
+      items: [{ product_id: 1, qty: 1 }],
+    });
+
+    assert.equal(validated.customerPhone, '0000000000');
+  });
+
   it('still strictly rejects online delivery orders without valid phone', () => {
     assert.throws(
       () =>

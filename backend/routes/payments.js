@@ -100,12 +100,18 @@ router.get('/payos/status', noCache, async (req, res) => {
     // Active Reconciliation: Nếu đơn PayOS vẫn 'unpaid', chủ động kiểm tra trực tiếp qua SDK PayOS
     if (order.payment_status === 'unpaid' && order.payos_order_code && order.payment_provider === 'payos') {
       const payosInfo = await getPaymentLinkInformation(order.payos_order_code);
-      if (payosInfo && (payosInfo.status === 'PAID' || Number(payosInfo.amountPaid) >= Number(order.total))) {
+      const paidAmount = Number(payosInfo?.amountPaid ?? payosInfo?.amount);
+      const amountMatches = Number.isFinite(paidAmount) && paidAmount === Number(order.total);
+      if (payosInfo?.status === 'PAID' && amountMatches) {
+        const transactionReference = payosInfo.transactions?.[0]?.reference
+          || payosInfo.transactionId
+          || payosInfo.id
+          || order.payos_order_code;
         await paymentsRepository.processSuccessfulWebhook({
-          eventKey: `reconcile-${order.payos_order_code}-${payosInfo.id || Date.now()}`,
+          eventKey: `reconcile-${order.payos_order_code}-${transactionReference}`,
           orderCode: order.payos_order_code,
-          amount: Number(payosInfo.amountPaid || order.total),
-          reference: payosInfo.transactions?.[0]?.reference || 'ACTIVE_RECONCILIATION',
+          amount: paidAmount,
+          reference: transactionReference,
           paymentLinkId: payosInfo.id || null,
           payload: payosInfo,
         });
