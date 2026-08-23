@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -48,15 +47,6 @@ export const Route = createFileRoute("/thanh-toan")({
   component: Checkout,
 });
 
-const payMethods = [
-  { id: "qr", label: "Chuyển khoản online (VietQR / PayOS)" },
-  { id: "cod", label: "Thanh toán khi nhận hàng (COD)" },
-  { id: "momo", label: "Ví MoMo" },
-  { id: "zalopay", label: "Ví ZaloPay" },
-];
-
-const PAY_MAP: Record<string, string> = { cod: "COD", qr: "VietQR", momo: "MoMo", zalopay: "ZaloPay" };
-
 type TableInfo = {
   table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
 };
@@ -76,7 +66,6 @@ function Checkout() {
   const { table_id: searchTableId } = useSearch({ from: "/thanh-toan" });
 
   const [method, setMethod] = useState<"delivery" | "takeaway">("delivery");
-  const [pay, setPay] = useState("qr");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
@@ -428,7 +417,7 @@ function Checkout() {
         store_id: tableInfo ? tableInfo.table.store_id : Number(branch),
         table_id: tableId ? Number(tableId) : null,
         order_type: method === "delivery" ? "Delivery" : "Take-away",
-        payment_method: PAY_MAP[pay] || "VietQR",
+        payment_method: "VietQR",
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         delivery_addr: method === "delivery" && addr.trim() ? addr.trim() : null,
@@ -502,17 +491,8 @@ function Checkout() {
         setPendingOrder(pending);
         sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
         toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
-      } else if (pay === "qr") {
-        toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
       } else {
-        clear();
-        try {
-          sessionStorage.removeItem("teaplus_pending_payment");
-        } catch {}
-        toast.success("Đặt hàng thành công!", {
-          description: `Mã đơn ${res.order_code} · ${vnd(orderTotal)} — đang chờ xác nhận.`,
-        });
-        navigate({ to: "/theo-doi-don", search: { code: res.order_code } });
+        toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại");
