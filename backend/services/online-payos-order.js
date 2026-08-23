@@ -8,6 +8,17 @@ function makePayOSCode(orderId) {
   return Number(`${String(Date.now()).slice(-6)}${String(Number(orderId) % 10000).padStart(4, '0')}`);
 }
 
+export function appendOrderCodeToUrl(baseUrlString, code) {
+  if (!baseUrlString || typeof baseUrlString !== 'string') return null;
+  try {
+    const url = new URL(baseUrlString);
+    url.searchParams.set('code', code);
+    return url.toString();
+  } catch {
+    return baseUrlString.includes('?') ? `${baseUrlString}&code=${encodeURIComponent(code)}` : `${baseUrlString}?code=${encodeURIComponent(code)}`;
+  }
+}
+
 export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, cancelToken, idempotencyKey }) {
   const requestHash = hashOrderRequest(input);
   let rawCancelToken = cancelToken;
@@ -41,10 +52,18 @@ export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, c
       payment_expires_at: reserved.payment_expires_at,
     };
   }
+
+  const effectiveReturnUrl = appendOrderCodeToUrl(input.return_url, order.order_code) || input.return_url;
+  const effectiveCancelUrl = appendOrderCodeToUrl(input.cancel_url, order.order_code) || input.cancel_url;
+
   const link = await createPaymentLinkForOrder({
-    orderId: order.id, orderCode: order.order_code, total: order.total,
-    payosOrderCode: reserved.payos_order_code, paymentExpiresAt: reserved.payment_expires_at,
-    returnUrl: input.return_url, cancelUrl: input.cancel_url,
+    orderId: order.id,
+    orderCode: order.order_code,
+    total: order.total,
+    payosOrderCode: reserved.payos_order_code,
+    paymentExpiresAt: reserved.payment_expires_at,
+    returnUrl: effectiveReturnUrl,
+    cancelUrl: effectiveCancelUrl,
   });
   if (!link.checkoutUrl && !link.qrCode) {
     const error = new Error('PayOS không trả về mã QR thanh toán');

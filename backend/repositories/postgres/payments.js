@@ -194,9 +194,23 @@ export function createPaymentsRepository(database = postgresDb) {
           };
         }
 
+        function appendOrderCodeToUrl(baseUrlString, code) {
+          if (!baseUrlString || typeof baseUrlString !== 'string') return null;
+          try {
+            const url = new URL(baseUrlString);
+            url.searchParams.set('code', code);
+            return url.toString();
+          } catch {
+            return baseUrlString.includes('?') ? `${baseUrlString}&code=${encodeURIComponent(code)}` : `${baseUrlString}?code=${encodeURIComponent(code)}`;
+          }
+        }
+
         const timePart = String(Date.now()).slice(-6);
         const idPart = String(order.id % 10000).padStart(4, '0');
         const newPayosOrderCode = Number(`${timePart}${idPart}`);
+
+        const effectiveReturnUrl = appendOrderCodeToUrl(returnUrl, order.order_code) || returnUrl;
+        const effectiveCancelUrl = appendOrderCodeToUrl(cancelUrl, order.order_code) || cancelUrl;
 
         const createPaymentLink = createLinkFn || (await import('../../services/payos.js')).createPaymentLinkForOrder;
         const payosResult = await createPaymentLink({
@@ -204,8 +218,8 @@ export function createPaymentsRepository(database = postgresDb) {
           orderCode: order.order_code,
           total: Number(order.total),
           payosOrderCode: newPayosOrderCode,
-          returnUrl,
-          cancelUrl,
+          returnUrl: effectiveReturnUrl,
+          cancelUrl: effectiveCancelUrl,
         });
 
         const [updatedRows] = await tx.query(

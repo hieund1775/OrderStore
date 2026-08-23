@@ -101,16 +101,22 @@ function Checkout() {
     }
   }, []);
 
-  // Khôi phục đơn PayOS đang chờ thanh toán khi quay lại trang thanh toán
+  // Khôi phục đơn PayOS đang chờ thanh toán nếu không có giỏ hàng mới
   useEffect(() => {
     try {
+      if (items.length > 0) {
+        // Nếu khách có món mới trong giỏ hàng -> xóa sạch pending cũ để thanh toán giỏ mới
+        sessionStorage.removeItem("teaplus_pending_payment");
+        setPendingOrder(null);
+        return;
+      }
       const raw = sessionStorage.getItem("teaplus_pending_payment");
       if (raw) {
         const stored = JSON.parse(raw) as PendingPayOSOrder;
         if (stored?.order_code) setPendingOrder(stored);
       }
     } catch {}
-  }, []);
+  }, [items.length]);
   const [countdownSec, setCountdownSec] = useState<number>(900);
   const [tableId, setTableId] = useState<string | null>(
     searchTableId ||
@@ -474,7 +480,16 @@ function Checkout() {
       }
 
 
-      if (res.checkout_url || res.qr_code) {
+      if (res.checkout_url) {
+        clear();
+        try {
+          sessionStorage.removeItem("teaplus_pending_payment");
+        } catch {}
+        toast.success("Đang chuyển hướng sang cổng thanh toán PayOS...");
+        window.location.href = res.checkout_url;
+        return;
+      } else if (res.qr_code) {
+        clear();
         const pending = {
           order_code: res.order_code,
           order_id: res.order_id,
@@ -484,12 +499,14 @@ function Checkout() {
           payment_expires_at: res.payment_expires_at,
         };
         setPendingOrder(pending);
-        sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
         toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
       } else if (pay === "qr") {
-        toast.error("PayOS chưa trả về mã QR thanh toán. Đơn chưa được xác nhận, vui lòng thử lại.");
+        toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
       } else {
         clear();
+        try {
+          sessionStorage.removeItem("teaplus_pending_payment");
+        } catch {}
         toast.success("Đặt hàng thành công!", {
           description: `Mã đơn ${res.order_code} · ${vnd(orderTotal)} — đang chờ xác nhận.`,
         });

@@ -279,7 +279,11 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
   if (path.startsWith('/admin/kitchen/orders')) {
     const storeId = new URLSearchParams(path.split('?')[1] || '').get('store_id');
     let orders = getLocalOrders();
-    if (storeId) {
+    orders = orders.filter((o: any) =>
+      (o.payment_status === 'paid' || o.payment_method === 'COD' || o.order_type === 'POS') &&
+      (o.current_status === 'Đang chuẩn bị' || o.current_status === 'Chờ xác nhận')
+    );
+    if (storeId && storeId !== 'all') {
       orders = orders.filter((o: any) => String(o.store_id) === String(storeId));
     }
     return Promise.resolve(orders as T);
