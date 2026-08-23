@@ -57,4 +57,21 @@ describe('Rate Limiting Tiering & Polling Isolation', () => {
       assert.equal(Number(limitHeader), 1200, 'Polling limit should be 1200');
     });
   });
+
+  it('protects order mutations without applying the old lookup limit', async () => {
+    const testApp = createApp();
+    await withServer(testApp, async (baseUrl) => {
+      const statuses = [];
+      for (let i = 0; i < 61; i += 1) {
+        const res = await fetch(`${baseUrl}/api/orders`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        statuses.push(res.status);
+      }
+      assert.ok(statuses.slice(0, 60).every((status) => status !== 429));
+      assert.equal(statuses[60], 429);
+    });
+  });
 });

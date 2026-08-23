@@ -125,6 +125,7 @@ function Checkout() {
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let currentDelay = 3000;
     let isRequestInFlight = false;
+    let shouldStop = false;
 
     const poll = async () => {
       if (!isMounted || !pendingOrder || isRequestInFlight) return;
@@ -139,6 +140,7 @@ function Checkout() {
         if (!isMounted) return;
 
         if (res.order?.payment_status === "paid") {
+          shouldStop = true;
           clear();
           sessionStorage.removeItem("teaplus_pending_payment");
           toast.success("Thanh toán thành công!", {
@@ -149,6 +151,7 @@ function Checkout() {
         }
 
         if (res.order?.payment_status === "expired") {
+          shouldStop = true;
           return;
         }
 
@@ -157,7 +160,7 @@ function Checkout() {
         currentDelay = Math.min(currentDelay * 1.5, 15000);
       } finally {
         isRequestInFlight = false;
-        if (isMounted && pendingOrder && countdownSec > 0) {
+        if (isMounted && !shouldStop && pendingOrder && countdownSec > 0) {
           timerId = setTimeout(poll, currentDelay);
         }
       }
@@ -166,7 +169,7 @@ function Checkout() {
     timerId = setTimeout(poll, 3000);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isMounted && pendingOrder && countdownSec > 0) {
+      if (document.visibilityState === "visible" && isMounted && !shouldStop && pendingOrder && countdownSec > 0) {
         if (timerId) clearTimeout(timerId);
         poll();
       }

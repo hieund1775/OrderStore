@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bike,
   Check,
@@ -133,11 +133,9 @@ function Tracking() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
-  const timerRef = useRef<number | null>(null);
-
   const load = useCallback(
-    async (c: string, silent = false) => {
-      if (!c.trim()) return;
+    async (c: string, silent = false): Promise<{ ok: boolean; status?: number }> => {
+      if (!c.trim()) return { ok: false };
       if (!silent) {
         setLoading(true);
         setError("");
@@ -148,9 +146,14 @@ function Tracking() {
         );
         setOrder(res.order);
         setError("");
+        return { ok: true };
       } catch (err) {
         setError(err instanceof Error ? err.message : "Không tìm thấy đơn hàng");
         if (!silent) setOrder(null);
+        const status = typeof err === "object" && err !== null && "status" in err
+          ? Number((err as { status?: unknown }).status)
+          : undefined;
+        return { ok: false, status };
       } finally {
         if (!silent) setLoading(false);
       }
@@ -174,6 +177,7 @@ function Tracking() {
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let currentDelay = 5000;
     let isRequestInFlight = false;
+    let shouldStop = false;
 
     const poll = async () => {
       if (!isMounted || !order || isRequestInFlight) return;
@@ -181,14 +185,18 @@ function Tracking() {
 
       isRequestInFlight = true;
       try {
-        await load(order.order_code, true);
-        currentDelay = 5000;
-      } catch (err: unknown) {
-        // Exponential backoff on errors (capped at 20s)
-        currentDelay = Math.min(currentDelay * 1.5, 20000);
+        const result = await load(order.order_code, true);
+        if (!result.ok && (result.status === 403 || result.status === 404)) {
+          shouldStop = true;
+        } else if (!result.ok) {
+          // Exponential backoff on 429/5xx/network errors (capped at 20s)
+          currentDelay = Math.min(currentDelay * 1.5, 20000);
+        } else {
+          currentDelay = 5000;
+        }
       } finally {
         isRequestInFlight = false;
-        if (isMounted && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+        if (isMounted && !shouldStop && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
           timerId = setTimeout(poll, currentDelay);
         }
       }
@@ -197,7 +205,7 @@ function Tracking() {
     timerId = setTimeout(poll, 5000);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isMounted && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+      if (document.visibilityState === "visible" && isMounted && !shouldStop && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
         if (timerId) clearTimeout(timerId);
         poll();
       }
