@@ -162,16 +162,55 @@ function Tracking() {
     if (resolvedSearchCode) load(resolvedSearchCode);
   }, [resolvedSearchCode, load]);
 
-  // Polling real-time mỗi 5 giây
+  // Smart Chained Timeout Polling real-time (mỗi 5 giây, dừng khi terminal state)
   useEffect(() => {
     if (!order) return;
-    timerRef.current = window.setInterval(() => {
-      load(order.order_code, true);
-    }, 5000);
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
+
+    // Terminal states: stop polling completely
+    const isTerminal = order.current_status === "Hoàn thành" || order.current_status === "Đã hủy";
+    if (isTerminal) return;
+
+    let isMounted = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let currentDelay = 5000;
+    let isRequestInFlight = false;
+
+    const poll = async () => {
+      if (!isMounted || !order || isRequestInFlight) return;
+      if (document.visibilityState === "hidden") return;
+
+      isRequestInFlight = true;
+      try {
+        await load(order.order_code, true);
+        currentDelay = 5000;
+      } catch (err: unknown) {
+        // Exponential backoff on errors (capped at 20s)
+        currentDelay = Math.min(currentDelay * 1.5, 20000);
+      } finally {
+        isRequestInFlight = false;
+        if (isMounted && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+          timerId = setTimeout(poll, currentDelay);
+        }
+      }
     };
-  }, [order?.order_code, load]);
+
+    timerId = setTimeout(poll, 5000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && isMounted && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+        if (timerId) clearTimeout(timerId);
+        poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [order?.order_code, order?.current_status, load]);
 
   async function handleCancel() {
     if (!order) return;

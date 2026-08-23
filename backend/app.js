@@ -73,28 +73,78 @@ export function createApp() {
   app.post('/api/payments/payos/webhook', handlePayOSWebhook);
 
   // ─────────────────────────────────────────────
-  // 2) Rate Limiters
+  // 2) Rate Limiters (Phân Tầng Rành Mạch)
   // ─────────────────────────────────────────────
+  // 2a. Polling Limiter: Tra cứu trạng thái đơn hàng (GET /api/orders/lookup, /track, /payments/payos/status)
+  // Ngân sách 1200 request / 15 phút (cho phép poll liên tục mỗi 3s trong suốt 60 phút)
+  const pollingLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
+    keyGenerator: (req) => {
+      const code = String(req.query.code || '').trim().toUpperCase();
+      const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown-ip';
+      return `${ip}:${code}`;
+    },
+    message: { error: 'Quá nhiều yêu cầu tra cứu đơn hàng, vui lòng đợi trong giây lát' },
+  });
+
+  // 2b. Order Mutation Limiter: Tạo đơn, hủy đơn, áp mã ưu đãi (POST)
+  const orderMutationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Quá nhiều thao tác đơn hàng, vui lòng thử lại sau 15 phút' },
+  });
+
+  // 2c. Auth Limiter: Đăng nhập, đăng ký, gửi OTP
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Quá nhiều yêu cầu xác thực, vui lòng thử lại sau 15 phút' },
+  });
+
+  // 2d. General Limiter: Áp dụng cho các route duyệt web thông thường (Catalog, Stores...)
+  // Tự động bỏ qua các route đã có limiter chuyên biệt để chống double-limiting
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+      const p = req.originalUrl || req.url || '';
+      return (
+        p.includes('/api/payments/payos/webhook') ||
+        p.includes('/api/orders/lookup') ||
+        p.includes('/api/orders/track') ||
+        p.includes('/api/payments/payos/status') ||
+        p.includes('/api/auth') ||
+        p.includes('/admin/login') ||
+        (req.method === 'POST' && (p.includes('/api/orders') || p.includes('/api/vouchers/apply')))
+      );
+    },
     message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
   });
 
-  const sensitiveLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 15 phút' },
-  });
+  // Gắn limiter chuyên biệt cho từng nhóm endpoint
+  app.get('/api/orders/lookup', pollingLimiter);
+  app.get('/api/orders/track', pollingLimiter);
+  app.get('/api/payments/payos/status', pollingLimiter);
 
-  app.use('/api/orders', sensitiveLimiter);
-  app.use('/api/vouchers/apply', sensitiveLimiter);
-  app.use('/admin/login', sensitiveLimiter);
-  app.use('/api/auth', sensitiveLimiter);
+  app.post('/api/orders', orderMutationLimiter);
+  app.post('/api/orders/cancel', orderMutationLimiter);
+  app.post('/api/orders/:id/cancel', orderMutationLimiter);
+  app.post('/api/vouchers/apply', orderMutationLimiter);
 
-  // General limiter applies to all remaining /api routes (including /api/payments/payos/status)
+  app.use('/admin/login', authLimiter);
+  app.use('/api/auth', authLimiter);
+
+  // General limiter cho toàn bộ /api còn lại
   app.use('/api', generalLimiter);
 
   // ─────────────────────────────────────────────

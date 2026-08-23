@@ -117,29 +117,69 @@ function Checkout() {
       (typeof window !== "undefined" ? sessionStorage.getItem("teaplus_table_id") : null),
   );
 
-  // Poll status when PayOS pending order is active
+  // Smart Chained Timeout Polling when PayOS pending order is active
   useEffect(() => {
-    if (!pendingOrder) return;
+    if (!pendingOrder || countdownSec <= 0) return;
 
-    const interval = setInterval(async () => {
+    let isMounted = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let currentDelay = 3000;
+    let isRequestInFlight = false;
+
+    const poll = async () => {
+      if (!isMounted || !pendingOrder || isRequestInFlight) return;
+      if (document.visibilityState === "hidden") return;
+
+      isRequestInFlight = true;
       try {
         const res = await apiGet<{ order: { payment_status: string } }>(
           `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
         );
+
+        if (!isMounted) return;
+
         if (res.order?.payment_status === "paid") {
-          clearInterval(interval);
           clear();
           sessionStorage.removeItem("teaplus_pending_payment");
           toast.success("Thanh toán thành công!", {
             description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
           });
           navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+          return;
         }
-      } catch {}
-    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [pendingOrder, navigate, clear]);
+        if (res.order?.payment_status === "expired") {
+          return;
+        }
+
+        currentDelay = 3000;
+      } catch (err: unknown) {
+        currentDelay = Math.min(currentDelay * 1.5, 15000);
+      } finally {
+        isRequestInFlight = false;
+        if (isMounted && pendingOrder && countdownSec > 0) {
+          timerId = setTimeout(poll, currentDelay);
+        }
+      }
+    };
+
+    timerId = setTimeout(poll, 3000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && isMounted && pendingOrder && countdownSec > 0) {
+        if (timerId) clearTimeout(timerId);
+        poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [pendingOrder?.order_code, countdownSec <= 0, navigate, clear]);
 
   // Countdown timer
   useEffect(() => {
