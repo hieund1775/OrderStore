@@ -47,11 +47,6 @@ import {
   setCustomerToken,
   setCustomerUser,
   clearCustomerToken,
-  getToken,
-  getUser,
-  setToken,
-  setUser,
-  clearToken,
 } from '@/lib/api';
 import { brand, notifications, products, searchSuggestions, stores, vnd } from '@/lib/data';
 
@@ -309,7 +304,6 @@ function ProfileButton() {
   // localStorage in a state initializer makes Render hydration disagree with
   // the server whenever a user already has a session.
   const [loggedIn, setLoggedIn] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [userName, setUserName] = useState('');
@@ -324,10 +318,8 @@ function ProfileButton() {
 
   useEffect(() => {
     const customerUser = getCustomerUser();
-    const adminUser = getUser();
-    setLoggedIn(Boolean(getCustomerToken() || adminUser?.role));
-    setIsAdmin(Boolean(customerUser?.is_admin || adminUser?.role));
-    setUserName(customerUser?.fullname || adminUser?.fullname || '');
+    setLoggedIn(Boolean(getCustomerToken()));
+    setUserName(customerUser?.fullname || '');
     setUserTier(customerUser?.tier || 'Đồng');
   }, []);
 
@@ -418,23 +410,8 @@ function ProfileButton() {
       });
       setUserName(data.user.fullname);
       setUserTier(data.user.tier);
-      if (data.user.is_admin) {
-        clearCustomerToken();
-        setToken(data.token);
-        setUser({
-          id: data.user.id,
-          fullname: data.user.fullname,
-          phone: data.user.phone,
-          role: data.user.admin_role || 'super',
-          branch_id: data.user.admin_branch_id ?? null,
-        });
-        setIsAdmin(true);
-      } else {
-        clearToken();
-        setCustomerToken(data.token);
-        setCustomerUser(data.user);
-        setIsAdmin(false);
-      }
+      setCustomerToken(data.token);
+      setCustomerUser(data.user);
       setLoggedIn(true);
       setOpen(false);
     } catch (e) {
@@ -446,8 +423,6 @@ function ProfileButton() {
 
   function resetLogin() {
     clearCustomerToken();
-    clearToken();
-    setIsAdmin(false);
     setLoggedIn(false);
     setPhone('');
     setPassword('');
@@ -537,19 +512,11 @@ function ProfileButton() {
           <div className="flex flex-col">
             <span className="font-bold">{userName}</span>
             <span className="text-muted-foreground text-xs font-normal">
-              {isAdmin ? '👑 Quản trị viên' : `Hạng ${userTier}`}
+              Hạng {userTier}
             </span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {isAdmin && (
-          <>
-            <DropdownMenuItem asChild className="bg-primary/10 text-primary font-bold focus:bg-primary/20 focus:text-primary cursor-pointer">
-              <Link to="/admin">👑 Trang Quản Trị (Admin)</Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>

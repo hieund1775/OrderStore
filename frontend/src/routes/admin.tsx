@@ -3,13 +3,17 @@ import { useState } from "react";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminTopbar } from "@/components/admin/AdminTopbar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { getToken } from "@/lib/api";
+import { getToken, getUser } from "@/lib/api";
+
+const ADMIN_ROLES = ["super", "manager", "kitchen", "cashier"];
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: ({ location }) => {
     if (typeof window === "undefined") return;
     const token = getToken();
-    if (!token && location.pathname !== "/admin/login") {
+    const user = getUser();
+    const isValidAdmin = Boolean(token && user?.role && ADMIN_ROLES.includes(user.role));
+    if (!isValidAdmin && location.pathname !== "/admin/login") {
       throw redirect({ to: "/admin/login" });
     }
   },

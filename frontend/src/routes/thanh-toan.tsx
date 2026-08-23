@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Bike, MapPin, Store, Ticket } from "lucide-react";
+import { Bike, MapPin, QrCode, Store, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -840,21 +841,25 @@ function Checkout() {
             </div>
           </section>
 
-          {/* Payment */}
+          {/* Payment Method */}
           <section className="bg-card rounded-2xl border p-5">
-            <h2 className="font-display mb-4 text-lg font-bold">Phương thức thanh toán</h2>
-            <RadioGroup value={pay} onValueChange={setPay} className="grid gap-2 sm:grid-cols-2">
-              {payMethods.map((m) => (
-                <label
-                  key={m.id}
-                  htmlFor={`pay-${m.id}`}
-                  className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-sm ${pay === m.id ? "border-primary bg-accent/40" : ""}`}
-                >
-                  <RadioGroupItem value={m.id} id={`pay-${m.id}`} />
-                  {m.label}
-                </label>
-              ))}
-            </RadioGroup>
+            <h2 className="font-display mb-3 text-lg font-bold">Phương thức thanh toán</h2>
+            <div className="flex items-center gap-3.5 rounded-xl border border-primary/30 bg-primary/5 p-4 transition-all">
+              <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm">
+                <QrCode className="size-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm">Chuyển khoản VietQR qua PayOS</p>
+                  <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/20 text-[10px] px-1.5 py-0 font-bold">
+                    Tự động
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  Quét mã QR qua mọi ứng dụng Ngân hàng / MoMo / VNPAY để kích hoạt đơn ngay tức thì.
+                </p>
+              </div>
+            </div>
           </section>
         </div>
 

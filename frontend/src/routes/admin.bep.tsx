@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
-import { apiGet, apiPatch, getUser } from "@/lib/api";
+import { apiGet, apiPatch, clearToken, getUser } from "@/lib/api";
 import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
@@ -163,6 +163,7 @@ function KdsPage() {
     if (user?.role === "super") return "all";
     return user?.branch_id ? String(user.branch_id) : "all";
   });
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const prevIds = useRef<Set<number>>(new Set());
 
   const handleStoreFilterChange = (newFilter: string) => {
@@ -182,6 +183,7 @@ function KdsPage() {
     try {
       const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
       const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, signal ? { signal } : undefined);
+      setFetchError(null);
       setOrders(rows);
       const ids = new Set(rows.map((o) => o.id));
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
@@ -210,8 +212,15 @@ function KdsPage() {
         }, 6000);
       }
       prevIds.current = ids;
-    } catch {
-      /* server tạm ngắt hoặc abort — giữ trạng thái cũ */
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      if (err?.status === 401 || err?.status === 403) {
+        clearToken();
+        if (typeof window !== "undefined" && window.location.pathname !== "/admin/login") {
+          window.location.href = "/admin/login";
+        }
+      }
+      setFetchError(err instanceof Error ? err.message : "Mất kết nối máy chủ");
     }
   }, [soundEnabled, storeFilter]);
 
@@ -330,6 +339,15 @@ function KdsPage() {
         title="Màn hình bếp (KDS)"
         desc="Đơn quá 15 phút sẽ chuyển đỏ — đơn hoàn thành tự ẩn sau 5 phút"
       />
+
+      {fetchError && (
+        <div className="mb-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs py-2.5 px-4 rounded-xl flex items-center justify-between shadow-sm animate-pulse">
+          <span>⚠️ {fetchError} — Hệ thống đang tự động kết nối lại...</span>
+          <Button variant="ghost" size="sm" className="h-6 text-xs hover:bg-destructive/20" onClick={() => fetchOrders()}>
+            Thử lại ngay
+          </Button>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {isSuperAdmin ? (
