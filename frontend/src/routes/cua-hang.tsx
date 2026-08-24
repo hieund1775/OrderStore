@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet } from "@/lib/api";
+import { useBranch } from "@/lib/branch";
 import { formatFullAddress } from "@/lib/data";
 import cuahangBannerImg from "@/assets/cuahang.jpg";
 
@@ -88,6 +89,7 @@ function mapQuery(s: Store) {
 
 function StoresPage() {
   const navigate = useNavigate();
+  const { status: branchStatus, selectStore: selectBranchStore } = useBranch();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [city, setCity] = useState("all");
@@ -221,9 +223,11 @@ function StoresPage() {
     if (!s.is_active) {
       return toast.error(`${s.name} đang tạm đóng cửa — hãy chọn chi nhánh khác`);
     }
-    sessionStorage.setItem("teaplus_store_id", String(s.id));
+    if (branchStatus !== "ready" || !selectBranchStore(s.id)) {
+      return toast.error("Danh sách chi nhánh chưa sẵn sàng — vui lòng thử lại");
+    }
     toast.success(`Đã chọn chi nhánh ${s.name} — thêm món và thanh toán nhé!`);
-    void navigate({ to: "/menu" });
+    void navigate({ to: "/menu", search: { store_id: String(s.id) } });
   }
 
   const mapIframeUrl = useMemo(() => {

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Bell,
   Heart,
   MapPin,
   Menu as MenuIcon,
-  Search,
   ShoppingBag,
   User,
   ChevronRight,
@@ -40,6 +39,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
+import { useBranch } from '@/lib/branch';
 import {
   apiPost,
   getCustomerToken,
@@ -48,7 +48,7 @@ import {
   setCustomerUser,
   clearCustomerToken,
 } from '@/lib/api';
-import { brand, notifications, products, searchSuggestions, stores, vnd } from '@/lib/data';
+import { brand, notifications, products, vnd } from '@/lib/data';
 
 const navItems = [
   { to: '/', label: 'Trang chủ' },
@@ -71,73 +71,42 @@ function Logo() {
   );
 }
 
-function SearchBar({ className }: { className?: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={className}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <div className="relative">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input
-              onFocus={() => setOpen(true)}
-              placeholder="Tìm món, trà nền, trái cây hoặc topping…"
-              className="bg-secondary/60 h-10 rounded-full border-transparent pl-9"
-            />
-          </div>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-[--radix-popover-trigger-width] min-w-72 p-2">
-          <p className="text-muted-foreground px-2 py-1 text-xs font-semibold tracking-wide uppercase">
-            Từ khóa hot
-          </p>
-          <div className="flex flex-wrap gap-1.5 px-2 pb-2">
-            {searchSuggestions.map((s) => (
-              <Badge
-                key={s}
-                variant="secondary"
-                className="cursor-pointer rounded-full font-normal"
-              >
-                {s}
-              </Badge>
-            ))}
-          </div>
-          <Separator />
-          <p className="text-muted-foreground px-2 pt-2 pb-1 text-xs font-semibold tracking-wide uppercase">
-            Bán chạy
-          </p>
-          {products.slice(0, 3).map((p) => (
-            <Link
-              key={p.id}
-              to="/menu"
-              onClick={() => setOpen(false)}
-              className="hover:bg-accent flex items-center gap-3 rounded-lg p-2"
-            >
-              <img
-                src={p.image}
-                alt={p.name}
-                loading="lazy"
-                className="size-9 rounded-md object-cover"
-              />
-              <span className="flex-1 text-sm">{p.name}</span>
-              <span className="text-primary text-sm font-semibold">{vnd(p.price)}</span>
-            </Link>
-          ))}
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
-
 function BranchSelector() {
+  const { stores, selectedStoreId, status, selectStore } = useBranch();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  const placeholder =
+    status === 'loading'
+      ? 'Đang tải chi nhánh...'
+      : status === 'error'
+        ? 'Không tải được chi nhánh'
+        : status === 'empty'
+          ? 'Chưa có chi nhánh'
+          : 'Chọn chi nhánh';
+
+  const handleSelectStore = (value: string) => {
+    if (!selectStore(value)) return;
+    if (pathname === '/menu') {
+      void navigate({ to: '/menu', search: { store_id: value }, replace: true });
+    } else if (pathname === '/thanh-toan') {
+      void navigate({ to: '/thanh-toan', search: {}, replace: true });
+    }
+  };
+
   return (
-    <Select defaultValue={stores[0].id}>
+    <Select
+      value={selectedStoreId == null ? undefined : String(selectedStoreId)}
+      onValueChange={handleSelectStore}
+      disabled={status !== 'ready' || stores.length === 0}
+    >
       <SelectTrigger className="h-9 w-full max-w-56 rounded-full border-dashed text-xs">
-        <MapPin className="text-primary size-3.5" />
-        <SelectValue placeholder="Chọn chi nhánh" />
+        <MapPin className="text-primary size-3.5 shrink-0" />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {stores.map((s) => (
-          <SelectItem key={s.id} value={s.id}>
+          <SelectItem key={s.id} value={String(s.id)}>
             {s.name}
           </SelectItem>
         ))}
@@ -607,9 +576,8 @@ export function Header() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1">
-          <SearchBar className="hidden w-64 xl:block" />
-          <div className="hidden md:block">
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden sm:block">
             <BranchSelector />
           </div>
           <NotificationButton />
@@ -617,9 +585,6 @@ export function Header() {
           <QuickCart />
           <ProfileButton />
         </div>
-      </div>
-      <div className="container-page pb-3 xl:hidden">
-        <SearchBar />
       </div>
     </header>
   );

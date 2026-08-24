@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bike, Clock, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
+import { Bike, Clock, EyeOff, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
 import { apiGet, apiPatch, clearToken, getUser } from "@/lib/api";
-import { fmtDateTime, fmtTime, parseLocalDate } from "@/lib/data";
+import { elapsedDurationMs, fmtClockTimer, fmtDate, fmtDateTime, fmtTime } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
 import { PollingController } from "@/lib/polling-controller";
@@ -124,12 +124,6 @@ function isValidPhone(phone: string): boolean {
   return isVn || isE164;
 }
 
-function fmtMinutes(ms: number) {
-  const m = Math.max(0, Math.floor(ms / 60000));
-  const s = Math.max(0, Math.floor((ms % 60000) / 1000));
-  return `${m}′${String(s).padStart(2, "0")}″`;
-}
-
 let audioCtx: AudioContext | null = null;
 
 function playDingDong() {
@@ -164,6 +158,7 @@ function KdsPage() {
   const [doneAt, setDoneAt] = useState<Record<number, number>>({});
   const [newIds, setNewIds] = useState<Record<number, boolean>>({});
   const [selected, setSelected] = useState<KitchenOrder | null>(null);
+  const [dismissConfirmOrder, setDismissConfirmOrder] = useState<KitchenOrder | null>(null);
   const [billOpen, setBillOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -183,6 +178,7 @@ function KdsPage() {
     setStoreFilter(newFilter);
     setDoneOrders([]);
     setDoneAt({});
+    setDismissConfirmOrder(null);
     prevIds.current = new Set();
   };
 
@@ -264,20 +260,56 @@ function KdsPage() {
     };
   }, [fetchOrders]);
 
-  // Tick 1 giây: đồng hồ phút + tự ẩn đơn hoàn thành sau 5 phút
+  // Repair an anomalous local done card once; normal completion always writes doneAt atomically.
+  useEffect(() => {
+    const missingIds = doneOrders.filter((order) => doneAt[order.id] == null).map((order) => order.id);
+    if (missingIds.length === 0) return;
+    const completedAt = Date.now();
+    setDoneAt((previous) => ({
+      ...previous,
+      ...Object.fromEntries(missingIds.map((id) => [id, completedAt])),
+    }));
+  }, [doneAt, doneOrders]);
+
+  // Tick 1 giây: cập nhật đồng hồ và tự ẩn đơn hoàn thành sau 5 phút.
   useEffect(() => {
     const t = setInterval(() => {
       const ts = Date.now();
       setNow(ts);
-      setDoneOrders((prev) => prev.filter((o) => ts - (doneAt[o.id] || ts) < DONE_AFTER_MS));
+      const expiredIds = new Set(
+        doneOrders
+          .filter((order) => ts - (doneAt[order.id] ?? ts) >= DONE_AFTER_MS)
+          .map((order) => order.id),
+      );
+      if (expiredIds.size === 0) return;
+      setDoneOrders((previous) => previous.filter((order) => !expiredIds.has(order.id)));
+      setDoneAt((previous) => {
+        const next = { ...previous };
+        expiredIds.forEach((id) => delete next[id]);
+        return next;
+      });
+      if (dismissConfirmOrder && expiredIds.has(dismissConfirmOrder.id)) {
+        setDismissConfirmOrder(null);
+      }
     }, 1000);
     return () => clearInterval(t);
-  }, [doneAt]);
+  }, [dismissConfirmOrder, doneAt, doneOrders]);
 
   const [handoverOrder, setHandoverOrder] = useState<KitchenOrder | null>(null);
   const [handoverDriverName, setHandoverDriverName] = useState("");
   const [handoverDriverPhone, setHandoverDriverPhone] = useState("");
   const [handoverLoading, setHandoverLoading] = useState(false);
+
+  function handleDismissOrder(o: KitchenOrder) {
+    setDoneOrders((prev) => prev.filter((x) => x.id !== o.id));
+    setDoneAt((previous) => {
+      const next = { ...previous };
+      delete next[o.id];
+      return next;
+    });
+    setDismissConfirmOrder(null);
+    toast.success(`Đã ẩn đơn ${o.order_code} khỏi KDS`);
+  }
 
   async function completePreparation(o: KitchenOrder) {
     if (o.order_type === "Delivery") {
@@ -344,11 +376,7 @@ function KdsPage() {
 
   const orderInLane = (lane: Lane): KitchenOrder[] => {
     if (lane === "done") {
-      const activeDone = orders.filter((o) => o.current_status === "Hoàn thành");
-      const doneMap = new Map<number, KitchenOrder>();
-      activeDone.forEach((o) => doneMap.set(o.id, o));
-      doneOrders.forEach((o) => doneMap.set(o.id, o));
-      return Array.from(doneMap.values());
+      return doneOrders;
     }
     return orders.filter((o) => laneOf(o.current_status) === lane);
   };
@@ -458,7 +486,8 @@ function KdsPage() {
               </p>
               <div className="space-y-4">
                 {laneOrders.map((o) => {
-                  const age = now - parseLocalDate(o.created_at).getTime();
+                  const endAt = lane.id === "done" ? (doneAt[o.id] ?? now) : now;
+                  const age = elapsedDurationMs(o.created_at, endAt);
                   const late = lane.id === "prep" && age > LATE_AFTER_MINUTES * 60000;
                   const isNew = !!newIds[o.id];
                   return (
@@ -473,32 +502,44 @@ function KdsPage() {
                             : "border-transparent hover:border-border"
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <p className="font-display text-lg font-extrabold">{o.order_code}</p>
-                        <span
-                          className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
-                            late
-                              ? "bg-berry text-berry-foreground"
-                              : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {late ? <Flame className="size-3" /> : <Clock className="size-3" />}
-                          Đặt lúc {fmtTime(o.created_at)} {late ? `(Trễ ${Math.floor(age / 60000)}p)` : `(${fmtMinutes(age)})`}
-                        </span>
-                      </div>
-                      <p className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
-                        {o.location_name && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="size-3" /> {o.location_name}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-display text-lg font-extrabold">{o.order_code}</p>
+                          <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                            {o.location_name && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="size-3" /> {o.location_name}
+                              </span>
+                            )}
+                            <span>{o.store_name}</span>
+                            {o.order_type && (
+                              <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+                                {o.order_type === "Delivery" ? "🚚 Giao hàng" : o.order_type === "POS" ? "Quầy POS" : o.order_type}
+                              </Badge>
+                            )}
+                          </p>
+                        </div>
+                        <div className="text-right flex flex-col items-end shrink-0">
+                          <div className="text-[11px] font-medium text-muted-foreground leading-tight">
+                            {fmtDate(o.created_at)}
+                          </div>
+                          <div className="text-xs font-bold text-foreground leading-tight mt-0.5">
+                            {fmtTime(o.created_at)}
+                          </div>
+                          <span
+                            className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-mono font-bold ${
+                              late
+                                ? "bg-berry text-berry-foreground animate-pulse"
+                                : lane.id === "done"
+                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                  : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {late ? <Flame className="size-3" /> : <Clock className="size-3" />}
+                            {fmtClockTimer(age)} {late ? "(Trễ)" : ""}
                           </span>
-                        )}
-                        <span>{o.store_name}</span>
-                        {o.order_type && (
-                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
-                            {o.order_type === "Delivery" ? "🚚 Giao hàng" : o.order_type === "POS" ? "Quầy POS" : o.order_type}
-                          </Badge>
-                        )}
-                      </p>
+                        </div>
+                      </div>
                       <ul className="mt-3 space-y-2">
                         {o.items.map((it) => (
                           <li key={it.id} className="border-l-4 border-primary/40 pl-3">
@@ -586,7 +627,22 @@ function KdsPage() {
                               completeDelivery(o);
                             }}
                           >
-                            ✅ Đã giao tận nơi
+                            ✅ Đã giao tận nơi (Hoàn thành)
+                          </Button>
+                        )}
+
+                        {lane.id === "done" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDismissConfirmOrder(o);
+                            }}
+                          >
+                            <EyeOff className="size-3.5 mr-1" />
+                            Ẩn khỏi KDS
                           </Button>
                         )}
                       </div>
@@ -740,6 +796,33 @@ function KdsPage() {
               onClick={() => handoverOrder && submitHandover(handoverOrder)}
             >
               {handoverLoading ? "Đang xử lý..." : "Xác nhận Giao Shipper"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog xác nhận chỉ ẩn thẻ cục bộ, không xóa dữ liệu đơn hàng. */}
+      <Dialog open={!!dismissConfirmOrder} onOpenChange={(open) => !open && setDismissConfirmOrder(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <EyeOff className="size-5" />
+              Ẩn đơn khỏi KDS
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm text-muted-foreground">
+            Đơn <strong className="text-foreground">{dismissConfirmOrder?.order_code}</strong> sẽ chỉ bị ẩn khỏi màn hình bếp và vẫn được lưu trong hệ thống.
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <Button variant="outline" size="sm" onClick={() => setDismissConfirmOrder(null)}>
+              Hủy
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => dismissConfirmOrder && handleDismissOrder(dismissConfirmOrder)}
+            >
+              Xác nhận ẩn
             </Button>
           </div>
         </DialogContent>

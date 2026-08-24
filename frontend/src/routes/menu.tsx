@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { useCart } from "@/lib/cart";
+import { useBranch } from "@/lib/branch";
 import { mapApiProduct, products, vnd, type ApiCatalogProduct } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 import menuBannerImg from "@/assets/menu.jpg";
@@ -50,11 +51,11 @@ function MenuPage() {
   const [dbCategories, setDbCategories] = useState<{ id: number; name: string }[]>([]);
   const [dbBases, setDbBases] = useState<{ id: number; name: string }[]>([]);
   const { items, subtotal, count } = useCart();
+  const { selectedStore: storeInfo, status: branchStatus, selectStore, bindTable, clearTable } = useBranch();
   const { table_id, store_id } = useSearch({ from: "/menu" });
   const [tableInfo, setTableInfo] = useState<{
     table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
   } | null>(null);
-  const [storeInfo, setStoreInfo] = useState<{ id: number; name: string; address?: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,17 +84,8 @@ function MenuPage() {
   }, []);
 
   useEffect(() => {
-    if (table_id) {
-      // Giữ table_id qua các trang (link "Thanh toán" không mang search params)
-      sessionStorage.setItem("teaplus_table_id", table_id);
-    }
-  }, [table_id]);
-
-  useEffect(() => {
-    if (store_id) {
-      sessionStorage.setItem("teaplus_store_id", store_id);
-    }
-  }, [store_id]);
+    if (!table_id && store_id && branchStatus === "ready") selectStore(store_id);
+  }, [branchStatus, selectStore, store_id, table_id]);
 
   useEffect(() => {
     if (!table_id) {
@@ -105,33 +97,21 @@ function MenuPage() {
       `/api/table/resolve?table_id=${encodeURIComponent(table_id)}`,
     )
       .then((res) => {
-        if (!cancelled) setTableInfo(res);
+        if (!cancelled) {
+          if (bindTable(res.table.id, res.table.store_id)) setTableInfo(res);
+          else setTableInfo(null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setTableInfo(null);
+        if (!cancelled) {
+          setTableInfo(null);
+          clearTable();
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [table_id]);
-
-  useEffect(() => {
-    if (!store_id) {
-      setStoreInfo(null);
-      return;
-    }
-    let cancelled = false;
-    apiGet<{ id: number; name: string; address?: string }[]>("/api/stores")
-      .then((rows) => {
-        if (cancelled) return;
-        const found = rows.find((s) => String(s.id) === String(store_id));
-        if (found) setStoreInfo(found);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [store_id]);
+  }, [bindTable, clearTable, table_id]);
 
   const categoryList = useMemo(() => {
     if (dbCategories.length > 0) {

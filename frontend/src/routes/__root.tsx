@@ -13,6 +13,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CartProvider } from "@/lib/cart";
+import { BranchProvider } from "@/lib/branch";
 import { Header } from "@/components/site/Header";
 import { Footer } from "@/components/site/Footer";
 import { FloatingWidgets, MobileCartBar } from "@/components/site/FloatingWidgets";
@@ -129,7 +130,7 @@ function RootComponent() {
         {isAdmin ? (
           <Outlet />
         ) : (
-          <>
+          <BranchProvider>
             <div className="flex min-h-screen flex-col">
               <Header />
               <main className="flex-1 pb-20 md:pb-0">
@@ -140,7 +141,7 @@ function RootComponent() {
             </div>
             <FloatingWidgets />
             <MobileCartBar />
-          </>
+          </BranchProvider>
         )}
         <Toaster position="top-center" richColors />
       </CartProvider>

@@ -17,6 +17,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
+import { useBranch } from "@/lib/branch";
 import { vnd } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
 
@@ -62,6 +63,15 @@ type PendingPayOSOrder = {
 
 function Checkout() {
   const { items, subtotal, clear } = useCart();
+  const {
+    stores: storeOptions,
+    selectedStoreId,
+    activeTableId,
+    status: branchStatus,
+    selectStore,
+    bindTable,
+    clearTable,
+  } = useBranch();
   const navigate = useNavigate();
   const { table_id: searchTableId } = useSearch({ from: "/thanh-toan" });
 
@@ -70,8 +80,6 @@ function Checkout() {
   const [phone, setPhone] = useState("");
   const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const [addr, setAddr] = useState("");
-  const [branch, setBranch] = useState<string | null>(null);
-  const [storeOptions, setStoreOptions] = useState<{ id: number; name: string }[]>([]);
   const [note, setNote] = useState("");
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherDiscount, setVoucherDiscount] = useState(0);
@@ -108,10 +116,26 @@ function Checkout() {
     } catch {}
   }, [items.length]);
   const [countdownSec, setCountdownSec] = useState<number>(900);
-  const [tableId, setTableId] = useState<string | null>(
-    searchTableId ||
-      (typeof window !== "undefined" ? sessionStorage.getItem("teaplus_table_id") : null),
-  );
+  const tableId = searchTableId || activeTableId;
+  const boundTableInfo =
+    tableId != null && tableInfo != null && String(tableInfo.table.id) === String(tableId)
+      ? tableInfo
+      : null;
+  const effectiveStoreId = boundTableInfo?.table.store_id ??
+    (branchStatus === "ready" ? selectedStoreId : null);
+  const effectiveStoreIdRef = useRef<number | null>(effectiveStoreId);
+  const previousStoreIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    effectiveStoreIdRef.current = effectiveStoreId;
+    const previousStoreId = previousStoreIdRef.current;
+    if (effectiveStoreId != null && previousStoreId != null && effectiveStoreId !== previousStoreId) {
+      setVoucherDiscount(0);
+      setAppliedCode("");
+      orderRequestRef.current = null;
+    }
+    if (effectiveStoreId != null) previousStoreIdRef.current = effectiveStoreId;
+  }, [effectiveStoreId]);
 
   // Smart Chained Timeout Polling when PayOS pending order is active
   useEffect(() => {
@@ -306,29 +330,39 @@ function Checkout() {
 
   // Quét QR bàn → tự nhận diện bàn, mặc định "Tại bàn"
   useEffect(() => {
-    if (!tableId) return;
+    if (!tableId) {
+      setTableInfo(null);
+      return;
+    }
     let cancelled = false;
-    sessionStorage.setItem("teaplus_table_id", tableId);
     apiGet<TableInfo>(`/api/table/resolve?table_id=${encodeURIComponent(tableId)}`)
       .then((res) => {
         if (cancelled) return;
-        setTableInfo(res);
-        setMethod("takeaway");
-        setBranch(String(res.table.store_id));
+        if (bindTable(res.table.id, res.table.store_id)) {
+          setTableInfo(res);
+          setMethod("takeaway");
+        } else {
+          setTableInfo(null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setTableInfo(null);
+        if (!cancelled) {
+          setTableInfo(null);
+          clearTable();
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [tableId]);
+  }, [bindTable, clearTable, tableId]);
 
   const discount = Math.min(voucherDiscount, subtotal);
   const total = Math.max(0, subtotal - discount);
 
   async function applyVoucher() {
     if (!voucherCode.trim()) return toast.error("Nhập mã ưu đãi trước");
+    const storeAtRequest = effectiveStoreId;
+    if (storeAtRequest == null) return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     try {
       const res = await apiPost<{ valid: boolean; discount_amount: number; message: string }>(
         "/api/vouchers/apply",
@@ -336,40 +370,19 @@ function Checkout() {
           code: voucherCode.trim(),
           subtotal,
           customer_phone: phone || "khach",
-          store_id: tableInfo ? tableInfo.table.store_id : Number(branch),
+          store_id: storeAtRequest,
         },
       );
+      if (effectiveStoreIdRef.current !== storeAtRequest) return;
       if (!res.valid) return toast.error(res.message);
       setVoucherDiscount(res.discount_amount);
       setAppliedCode(voucherCode.trim());
       toast.success(res.message);
     } catch (err) {
+      if (effectiveStoreIdRef.current !== storeAtRequest) return;
       toast.error(err instanceof Error ? err.message : "Không áp dụng được mã");
     }
   }
-
-  // Chi nhánh thật từ API — ưu tiên chi nhánh đã chọn từ trang cửa hàng (teaplus_store_id)
-  useEffect(() => {
-    let cancelled = false;
-    apiGet<{ id: number; name: string }[]>("/api/stores")
-      .then((rows) => {
-        if (cancelled || rows.length === 0) return;
-        setStoreOptions(rows);
-        const savedId = Number(sessionStorage.getItem("teaplus_store_id"));
-        const tableStoreId = Number(tableId);
-        const initial =
-          rows.find((s) => s.id === savedId)?.id ??
-          rows.find((s) => s.id === tableStoreId)?.id ??
-          rows[0].id;
-        setBranch((prev) => prev ?? String(initial));
-      })
-      .catch(() => {
-        if (!cancelled) toast.error("Không tải được danh sách chi nhánh");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function submitOrder() {
     if (items.length === 0) return;
@@ -394,7 +407,7 @@ function Checkout() {
     if (!cleanPhone || (!isVnPhone && !isIntlPhone)) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
     }
-    if (!branch && !tableInfo) {
+    if (effectiveStoreId == null) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     }
     setSubmitting(true);
@@ -414,8 +427,8 @@ function Checkout() {
       const toppingIdByName = new Map(toppings.map((t) => [t.name.toLowerCase(), t.id]));
 
       const payload = {
-        store_id: tableInfo ? tableInfo.table.store_id : Number(branch),
-        table_id: tableId ? Number(tableId) : null,
+        store_id: effectiveStoreId,
+        table_id: boundTableInfo ? boundTableInfo.table.id : null,
         order_type: method === "delivery" ? "Delivery" : "Take-away",
         payment_method: "VietQR",
         customer_name: name.trim(),
@@ -657,7 +670,7 @@ function Checkout() {
     <>
       <PageHeader eyebrow="Checkout" title="Giỏ hàng & Thanh toán" />
 
-      {tableInfo && (
+      {boundTableInfo && (
         <div className="container-page">
           <div className="gradient-warm text-primary-foreground flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 px-5 py-4 shadow-glow">
             <div className="flex items-center gap-3">
@@ -666,10 +679,10 @@ function Checkout() {
               </span>
               <div>
                 <p className="font-display text-base font-bold">
-                  Đặt món tại: {tableInfo.table.name}
+                  Đặt món tại: {boundTableInfo.table.name}
                 </p>
                 <p className="text-sm opacity-90">
-                  {tableInfo.table.store_name} · {tableInfo.table.store_address}
+                  {boundTableInfo.table.store_name} · {boundTableInfo.table.store_address}
                 </p>
               </div>
             </div>
@@ -745,7 +758,7 @@ function Checkout() {
                 <Store className="text-primary size-5" />
                 <div>
                   <p className="text-sm font-semibold">
-                    {tableInfo ? "Đến lấy / Tại bàn" : "Đến lấy tại cửa hàng"}
+                    {boundTableInfo ? "Đến lấy / Tại bàn" : "Đến lấy tại cửa hàng"}
                   </p>
                   <p className="text-muted-foreground text-xs">Sẵn sàng sau 15 phút</p>
                 </div>
@@ -786,12 +799,20 @@ function Checkout() {
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Chi nhánh nhận hàng</Label>
                   <Select
-                    value={branch ?? undefined}
-                    onValueChange={setBranch}
-                    disabled={!!tableInfo || storeOptions.length === 0}
+                    value={effectiveStoreId == null ? undefined : String(effectiveStoreId)}
+                    onValueChange={(value) => selectStore(value)}
+                    disabled={!!boundTableInfo || branchStatus !== "ready" || storeOptions.length === 0}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue
+                        placeholder={
+                          branchStatus === "loading"
+                            ? "Đang tải chi nhánh..."
+                            : branchStatus === "error"
+                              ? "Không tải được chi nhánh"
+                              : "Chọn chi nhánh"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {storeOptions.map((s) => (
@@ -801,9 +822,9 @@ function Checkout() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {tableInfo && (
+                  {boundTableInfo && (
                     <p className="text-muted-foreground text-xs">
-                      Bàn {tableInfo.table.name} — {tableInfo.table.store_name}
+                      Bàn {boundTableInfo.table.name} — {boundTableInfo.table.store_name}
                     </p>
                   )}
                 </div>

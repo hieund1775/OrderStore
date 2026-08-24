@@ -48,6 +48,17 @@ export function fmtTimeFull(dateInput: string | Date): string {
 }
 
 /**
+ * Format Vietnam date only: DD/MM/YYYY (e.g. 24/08/2026)
+ */
+export function fmtDate(dateInput: string | Date): string {
+  const d = parseLocalDate(dateInput);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+/**
  * Format full Vietnam date-time: HH:mm - DD/MM/YYYY
  */
 export function fmtDateTime(dateInput: string | Date): string {
@@ -58,6 +69,23 @@ export function fmtDateTime(dateInput: string | Date): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${hh}:${mm} - ${day}/${month}/${year}`;
+}
+
+/** Format elapsed duration as a stable digital clock: HH:mm:ss. */
+export function fmtClockTimer(ms: number): string {
+  const safeMs = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** Calculate a non-negative elapsed duration between a local date and an epoch timestamp. */
+export function elapsedDurationMs(start: string | Date, endAt: number): number {
+  const startAt = parseLocalDate(start).getTime();
+  if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return 0;
+  return Math.max(0, endAt - startAt);
 }
 
 /**
