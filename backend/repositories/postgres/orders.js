@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
 import promotionsRepository from './promotions.js';
+import defaultNotificationsRepository from './notifications.js';
 import { claimOrderIdempotency, completeOrderIdempotency } from '../../services/order-idempotency.js';
 import { OrderDomainError } from '../../services/orders/order-errors.js';
 
@@ -25,7 +26,11 @@ function idempotencyScope(userId, input) {
   return `online-order:guest:${guestFingerprint}`;
 }
 
-export function createOrdersRepository(database = postgresDb, promotions = promotionsRepository) {
+export function createOrdersRepository(
+  database = postgresDb,
+  promotions = promotionsRepository,
+  notifications = defaultNotificationsRepository,
+) {
   return {
     async createPublicOrder({ input, userId = null, cancelTokenHash = null, cancelToken = null, idempotencyKey, requestHash, paymentProvider = 'cod' }) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
@@ -110,6 +115,23 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
           }
         }
         await tx.query("INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')", [order.id]);
+
+        if (userId) {
+          await notifications.insertForUser({
+            userId,
+            type: 'order',
+            title: `Đặt hàng thành công — #${order.order_code}`,
+            body: `Đơn hàng #${order.order_code} đã được tiếp nhận và chuyển đến quầy chuẩn bị.`,
+            link: `/theo-doi-don?code=${order.order_code}`,
+          }, { tx });
+        }
+        await notifications.fanOutToOrderAdmins(input.store_id, {
+          type: 'order',
+          title: `Đơn hàng mới — #${order.order_code}`,
+          body: `Đơn #${order.order_code} (${input.order_type || 'Take-away'}) đã sẵn sàng cho bếp chuẩn bị.`,
+          link: '/admin/bep',
+        }, { tx });
+
         const response = { ...order };
         if (cancelToken) response.cancel_token = cancelToken;
         await completeOrderIdempotency(tx, { key: idempotencyKey, responseStatus: 201, response });
@@ -146,7 +168,7 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
       }
       params.push(limit + 1);
       const [rows] = await database.query(
-        `SELECT o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
+        `SELECT o.id, o.order_code, o.store_id, o.table_id, o.location_name,
                 o.order_type, o.payment_method, o.payment_status, o.payment_provider,
                 o.customer_name, o.customer_phone, o.delivery_addr, o.voucher_code,
                 o.discount_amount, o.subtotal, o.total, o.note, o.created_at, o.updated_at,
@@ -226,6 +248,17 @@ export function createOrdersRepository(database = postgresDb, promotions = promo
         const cancelReason = reason || 'Khách yêu cầu hủy đơn';
         await tx.query("INSERT INTO order_status_history (order_id, status, note) VALUES ($1, 'Đã hủy', $2)", [order.id, cancelReason]);
         await tx.query('UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, cancelReason]);
+
+        if (order.user_id) {
+          await notifications.insertForUser({
+            userId: order.user_id,
+            type: 'order',
+            title: `Đơn hàng #${order.order_code} đã bị hủy`,
+            body: `Đơn hàng #${order.order_code} đã được hủy thành công.${cancelReason ? ' Lý do: ' + cancelReason : ''}`,
+            link: `/theo-doi-don?code=${order.order_code}`,
+          }, { tx });
+        }
+
         return { order_id: Number(order.id), order_code: order.order_code, status: 'Đã hủy' };
       });
     },

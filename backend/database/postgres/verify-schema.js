@@ -54,6 +54,7 @@ export const REQUIRED_POSTGRES_COLUMNS = {
   order_items: ['id', 'order_id', 'product_id', 'size_label', 'base_tea', 'sugar_level', 'ice_level', 'unit_price', 'line_total'],
   order_status_history: ['id', 'order_id', 'status', 'changed_by'],
   voucher_usage_history: ['id', 'promotion_id', 'user_phone', 'order_id'],
+  promotions: ['id', 'code', 'is_active', 'deleted_at'],
 };
 
 export const REQUIRED_POSTGRES_INDEXES = [

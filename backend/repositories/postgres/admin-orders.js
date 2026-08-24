@@ -2,6 +2,7 @@ import postgresDb from '../../config/db-postgres.js';
 import { OrderDomainError } from '../../services/orders/order-errors.js';
 import { createOrderReadRepository } from '../orders.js';
 import { normalizeAndValidatePhone } from '../../validation/customer-schemas.js';
+import defaultNotificationsRepository from './notifications.js';
 
 export class AdminOrderError extends OrderDomainError {
   constructor(message, status = 400, code = 'ADMIN_ORDER_BUSINESS_RULE') {
@@ -18,7 +19,10 @@ function appendScope(sql, params, scopedStoreId, column = 'o.store_id') {
   return sql;
 }
 
-export function createAdminOrdersRepository(database = postgresDb) {
+export function createAdminOrdersRepository(
+  database = postgresDb,
+  notifications = defaultNotificationsRepository,
+) {
   const readRepository = createOrderReadRepository(database);
   return {
     async list({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
@@ -34,7 +38,7 @@ export function createAdminOrdersRepository(database = postgresDb) {
         const params = [orderId];
         let filter = 'WHERE id = $1';
         filter = appendScope(filter, params, scopedStoreId, 'store_id');
-        const [orders] = await tx.query(`SELECT id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
+        const [orders] = await tx.query(`SELECT id, order_code, user_id, store_id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
         const order = orders[0];
         if (!order) throw new AdminOrderError('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
         const [current] = await tx.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE', [order.id]);
@@ -77,6 +81,35 @@ export function createAdminOrdersRepository(database = postgresDb) {
         if (targetStatus === 'Đang giao') {
           await tx.query('UPDATE orders SET shipping_driver_name = $2, shipping_driver_phone = $3, shipping_tracking_url = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, normalizedDriverName || null, normalizedDriverPhone || null, trackingUrl || null]);
         }
+
+        if (order.user_id) {
+          if (targetStatus === 'Đang giao') {
+            await notifications.insertForUser({
+              userId: order.user_id,
+              type: 'order',
+              title: `Đơn hàng #${order.order_code} đang được giao`,
+              body: `Tài xế ${normalizedDriverName || 'giao hàng'} (SĐT: ${normalizedDriverPhone || ''}) đang vận chuyển đơn hàng tới bạn.`,
+              link: `/theo-doi-don?code=${order.order_code}`,
+            }, { tx });
+          } else if (targetStatus === 'Hoàn thành') {
+            await notifications.insertForUser({
+              userId: order.user_id,
+              type: 'order',
+              title: `Đơn hàng #${order.order_code} đã hoàn thành`,
+              body: `Đơn hàng #${order.order_code} đã được hoàn tất thành công. Chúc bạn ngon miệng!`,
+              link: `/theo-doi-don?code=${order.order_code}`,
+            }, { tx });
+          } else if (targetStatus === 'Đã hủy') {
+            await notifications.insertForUser({
+              userId: order.user_id,
+              type: 'order',
+              title: `Đơn hàng #${order.order_code} đã bị hủy`,
+              body: `Đơn hàng #${order.order_code} đã bị hủy.${cancelReason || note ? ' Lý do: ' + (cancelReason || note) : ''}`,
+              link: `/theo-doi-don?code=${order.order_code}`,
+            }, { tx });
+          }
+        }
+
         return { order_id: Number(order.id), status: targetStatus };
       });
     },

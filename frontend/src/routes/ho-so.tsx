@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { apiGet, getCustomerToken, getCustomerUser } from "@/lib/api";
-import { fmtDateTime, notifications, products, vnd } from "@/lib/data";
+import { fmtDateTime, products, vnd } from "@/lib/data";
+import {
+  fetchCustomerNotifications,
+  markCustomerNotificationRead,
+  markAllCustomerNotificationsRead,
+  clearAllCustomerNotifications,
+  isSafeInternalLink,
+  type AppNotification,
+} from "@/lib/notifications";
 
 const tiers = [
   { name: "Đồng", min: 0, color: "from-stone-400 to-stone-500" },
@@ -29,6 +37,9 @@ function getNextTier(points: number) {
 }
 
 export const Route = createFileRoute("/ho-so")({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Hồ sơ cá nhân & lịch sử đơn hàng — Trà Trái Cây Tô" },
@@ -45,11 +56,14 @@ export const Route = createFileRoute("/ho-so")({
 });
 
 function Profile() {
+  const navigate = useNavigate();
+  const search = Route.useSearch();
   const { wishlist, toggleWishlist } = useCart();
   const saved = products.filter((p) => wishlist.includes(p.id));
   const user = getCustomerUser();
   const isLoggedIn = !!getCustomerToken();
 
+  const [activeTab, setActiveTab] = useState(search?.tab || "orders");
   const [userOrders, setUserOrders] = useState<{
     id: number;
     order_code: string;
@@ -62,6 +76,18 @@ function Profile() {
     items: { product_name: string; qty: number; size_label: string }[];
   }[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [notifsLoading, setNotifsLoading] = useState(false);
+
+  const loadNotifications = () => {
+    if (!user?.id) return;
+    setNotifsLoading(true);
+    fetchCustomerNotifications(user.id, 50)
+      .then((res) => setNotificationsList(res.notifications))
+      .catch(() => setNotificationsList([]))
+      .finally(() => setNotifsLoading(false));
+  };
 
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
@@ -88,10 +114,18 @@ function Profile() {
       .finally(() => {
         if (!cancelled) setOrdersLoading(false);
       });
+
+    loadNotifications();
     return () => {
       cancelled = true;
     };
   }, [isLoggedIn, user?.id]);
+
+  useEffect(() => {
+    if (search?.tab) {
+      setActiveTab(search.tab);
+    }
+  }, [search?.tab]);
 
   if (!isLoggedIn || !user) {
     return (
@@ -120,6 +154,39 @@ function Profile() {
   const nextTierMin = nextTier ? nextTier.min : userPoints;
   const progressPct = nextTier ? Math.min(100, Math.round(((userPoints - currentTierMin) / (nextTierMin - currentTierMin)) * 100)) : 100;
 
+  async function handleNotificationClick(n: AppNotification) {
+    if (user?.id && !n.is_read) {
+      markCustomerNotificationRead(user.id, n.id).catch(() => {});
+      setNotificationsList((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+    }
+    if (isSafeInternalLink(n.link)) {
+      navigate({ to: n.link as any });
+    }
+  }
+
+  async function handleReadAllNotifications() {
+    if (!user?.id) return;
+    try {
+      await markAllCustomerNotificationsRead(user.id);
+      setNotificationsList((prev) => prev.map((x) => ({ ...x, is_read: true })));
+      toast.success("Đã đánh dấu tất cả thông báo là đã đọc");
+    } catch {
+      toast.error("Không thể cập nhật trạng thái");
+    }
+  }
+
+  async function handleClearAllNotifications() {
+    if (!user?.id) return;
+    if (!window.confirm("Bạn có chắc chắn muốn xóa tất cả thông báo không?")) return;
+    try {
+      await clearAllCustomerNotifications(user.id);
+      setNotificationsList([]);
+      toast.success("Đã xóa tất cả thông báo");
+    } catch {
+      toast.error("Không thể xóa thông báo");
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -145,15 +212,53 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
+
           <div className="bg-card rounded-2xl border p-5">
-            <p className="mb-3 text-sm font-semibold">Thông báo</p>
-            <p className="text-muted-foreground text-xs">Chưa có thông báo mới.</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold flex items-center gap-1.5">
+                <Bell className="size-4 text-primary" /> Thông báo gần đây
+              </p>
+              {notificationsList.filter((n) => !n.is_read).length > 0 && (
+                <Badge variant="default" className="text-[10px] h-4 px-1.5">
+                  {notificationsList.filter((n) => !n.is_read).length} mới
+                </Badge>
+              )}
+            </div>
+            {notificationsList.length === 0 ? (
+              <p className="text-muted-foreground text-xs">Chưa có thông báo mới.</p>
+            ) : (
+              <div className="space-y-2">
+                {notificationsList.slice(0, 3).map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => handleNotificationClick(n)}
+                    className="cursor-pointer border-b last:border-0 pb-2 text-xs hover:text-primary transition-colors"
+                  >
+                    <p className={`font-medium ${!n.is_read ? "text-foreground font-bold" : "text-muted-foreground"}`}>
+                      {n.title}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/70">{fmtDateTime(n.created_at)}</p>
+                  </div>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs text-primary h-7 mt-1"
+                  onClick={() => setActiveTab("notifications")}
+                >
+                  Xem tất cả thông báo
+                </Button>
+              </div>
+            )}
           </div>
         </aside>
 
-        <Tabs defaultValue="orders">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4 flex-wrap">
             <TabsTrigger value="orders">Lịch sử đơn hàng ({userOrders.length})</TabsTrigger>
+            <TabsTrigger value="notifications">
+              Thông báo ({notificationsList.length})
+            </TabsTrigger>
             <TabsTrigger value="wishlist">Yêu thích</TabsTrigger>
             <TabsTrigger value="info">Thông tin</TabsTrigger>
           </TabsList>
@@ -223,6 +328,77 @@ function Profile() {
                   </div>
                 </div>
               ))
+            )}
+          </TabsContent>
+
+          <TabsContent value="notifications" className="space-y-4">
+            <div className="flex items-center justify-between pb-2">
+              <p className="text-sm font-bold">
+                Tất cả thông báo ({notificationsList.length})
+              </p>
+              {notificationsList.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-8"
+                    onClick={handleReadAllNotifications}
+                  >
+                    <CheckCheck className="size-3.5 mr-1" /> Đọc tất cả
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-8 text-destructive hover:bg-destructive/10"
+                    onClick={handleClearAllNotifications}
+                  >
+                    <Trash2 className="size-3.5 mr-1" /> Xóa tất cả
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {notifsLoading ? (
+              <div className="bg-card rounded-2xl border p-8 text-center text-muted-foreground text-sm">
+                Đang tải thông báo…
+              </div>
+            ) : notificationsList.length === 0 ? (
+              <div className="bg-card rounded-2xl border p-12 text-center">
+                <Bell className="size-10 mx-auto text-muted-foreground/30 mb-2" />
+                <p className="text-muted-foreground text-sm">Bạn chưa có thông báo nào.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notificationsList.map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => handleNotificationClick(n)}
+                    className={`bg-card rounded-2xl border p-4 transition-colors cursor-pointer ${
+                      !n.is_read ? "border-primary/40 bg-primary/[0.02]" : "hover:border-border"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          {n.type === "order" ? <ShoppingBag className="size-3.5" /> : <Tag className="size-3.5" />}
+                        </span>
+                        <div>
+                          <p className={`text-sm ${!n.is_read ? "font-bold text-foreground" : "font-medium text-foreground/80"}`}>
+                            {n.title}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">{fmtDateTime(n.created_at)}</p>
+                        </div>
+                      </div>
+                      {!n.is_read && (
+                        <Badge variant="default" className="text-[10px] h-4">
+                          Mới
+                        </Badge>
+                      )}
+                    </div>
+                    {n.body && <p className="text-xs text-muted-foreground mt-2 pl-9">{n.body}</p>}
+                  </div>
+                ))}
+              </div>
             )}
           </TabsContent>
 

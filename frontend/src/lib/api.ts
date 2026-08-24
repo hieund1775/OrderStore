@@ -146,11 +146,17 @@ export function getCustomerToken() {
 
 export function setCustomerToken(token: string) {
   window.localStorage.setItem(CUSTOMER_TOKEN_KEY, token);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('teaplus:customer-auth-changed'));
+  }
 }
 
 export function clearCustomerToken() {
   window.localStorage.removeItem(CUSTOMER_TOKEN_KEY);
   window.localStorage.removeItem(CUSTOMER_USER_KEY);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('teaplus:customer-auth-changed'));
+  }
 }
 
 export function getCustomerUser() {
@@ -167,5 +173,8 @@ export function setCustomerUser(u: { id: number; fullname: string; phone: string
     window.localStorage.setItem(CUSTOMER_USER_KEY, JSON.stringify(u));
   } else {
     window.localStorage.removeItem(CUSTOMER_USER_KEY);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('teaplus:customer-auth-changed'));
   }
 }

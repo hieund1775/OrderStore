@@ -19,7 +19,7 @@ export function createAdminPromotionsRepository(database = postgresDb) {
   return {
     async listPromotions({ scopedStoreId } = {}) {
       const params = [];
-      let where = 'WHERE TRUE';
+      let where = 'WHERE p.deleted_at IS NULL';
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND (ps.store_id = $${params.length} OR p.scope = 'all')`;
@@ -112,10 +112,11 @@ export function createAdminPromotionsRepository(database = postgresDb) {
 
         if (sets.length > 0) {
           params.push(id);
-          await tx.query(
-            `UPDATE promotions SET ${sets.join(', ')} WHERE id = $${params.length}`,
+          const [, affected] = await tx.query(
+            `UPDATE promotions SET ${sets.join(', ')} WHERE id = $${params.length} AND deleted_at IS NULL`,
             params,
           );
+          if (!affected) return null;
         }
 
         if (Array.isArray(fields.store_ids)) {
@@ -130,35 +131,20 @@ export function createAdminPromotionsRepository(database = postgresDb) {
           }
         }
 
-        const [rows] = await tx.query('SELECT * FROM promotions WHERE id = $1', [id]);
+        const [rows] = await tx.query('SELECT * FROM promotions WHERE id = $1 AND deleted_at IS NULL', [id]);
         return rows[0] || null;
       });
     },
 
     async deletePromotion(id) {
-      return database.transaction(async (tx) => {
-        const [historyRows] = await tx.query(
-          `SELECT EXISTS (
-             SELECT 1 FROM orders WHERE promotion_id = $1
-             UNION ALL
-             SELECT 1 FROM voucher_usage_history WHERE promotion_id = $1
-             UNION ALL
-             SELECT 1 FROM user_vouchers WHERE promotion_id = $1
-           ) AS has_history`,
-          [id],
-        );
-        if (historyRows[0]?.has_history === true || historyRows[0]?.has_history === 'true') {
-          const [, affected] = await tx.query(
-            'UPDATE promotions SET is_active = FALSE WHERE id = $1',
-            [id],
-          );
-          return Boolean(affected);
-        }
-
-        await tx.query('DELETE FROM promotion_stores WHERE promotion_id = $1', [id]);
-        const [, affected] = await tx.query('DELETE FROM promotions WHERE id = $1', [id]);
-        return Boolean(affected);
-      });
+      const [rows] = await database.query(
+        `UPDATE promotions
+         SET deleted_at = NOW(), is_active = FALSE
+         WHERE id = $1 AND deleted_at IS NULL
+         RETURNING id, code, title`,
+        [id],
+      );
+      return rows.length > 0;
     },
   };
 }

@@ -38,6 +38,7 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
      JOIN promotion_stores ps ON ps.promotion_id = p.id
      WHERE p.code = $1
        AND p.is_active = TRUE
+       AND p.deleted_at IS NULL
        AND ps.store_id = $2
        AND p.start_date <= CURRENT_DATE
        AND p.end_date >= CURRENT_DATE
@@ -65,7 +66,7 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
 export function createPromotionsRepository(database = postgresDb) {
   return {
     async listActivePromotions({ status } = {}) {
-      let sql = 'SELECT * FROM promotions WHERE is_active = TRUE';
+      let sql = 'SELECT * FROM promotions WHERE is_active = TRUE AND deleted_at IS NULL';
       const params = [];
       if (status) {
         params.push(status);

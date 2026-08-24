@@ -48,7 +48,14 @@ import {
   setCustomerUser,
   clearCustomerToken,
 } from '@/lib/api';
-import { brand, notifications, products, vnd } from '@/lib/data';
+import { brand, products, vnd } from '@/lib/data';
+import {
+  fetchCustomerNotifications,
+  markCustomerNotificationRead,
+  markAllCustomerNotificationsRead,
+  isSafeInternalLink,
+  type AppNotification,
+} from '@/lib/notifications';
 
 const navItems = [
   { to: '/', label: 'Trang chủ' },
@@ -239,8 +246,70 @@ function WishlistButton() {
 }
 
 function NotificationButton() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [user, setUser] = useState(() => getCustomerUser());
+
+  useEffect(() => {
+    function onAuthChange() {
+      setUser(getCustomerUser());
+    }
+    window.addEventListener('teaplus:customer-auth-changed', onAuthChange);
+    return () => window.removeEventListener('teaplus:customer-auth-changed', onAuthChange);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setItems([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    function loadNotifications() {
+      if (!user?.id) return;
+      fetchCustomerNotifications(user.id, 5)
+        .then((res) => {
+          if (cancelled) return;
+          setItems(res.notifications);
+          setUnreadCount(res.unread_count);
+        })
+        .catch(() => {});
+    }
+
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user?.id]);
+
+  async function handleItemClick(n: AppNotification) {
+    if (user?.id && !n.is_read) {
+      markCustomerNotificationRead(user.id, n.id).catch(() => {});
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+    setOpen(false);
+    if (isSafeInternalLink(n.link)) {
+      navigate({ to: n.link as any });
+    }
+  }
+
+  async function handleReadAll() {
+    if (!user?.id) return;
+    try {
+      await markAllCustomerNotificationsRead(user.id);
+      setItems((prev) => prev.map((x) => ({ ...x, is_read: true })));
+      setUnreadCount(0);
+    } catch {}
+  }
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -249,17 +318,68 @@ function NotificationButton() {
           aria-label="Thông báo"
         >
           <Bell className="size-5" />
-          <span className="bg-berry absolute top-1.5 right-2 size-2 rounded-full" />
+          {unreadCount > 0 && (
+            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 min-w-4 items-center justify-center rounded-full text-[10px] font-bold">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-2">
-        <p className="px-2 py-1 text-sm font-semibold">Thông báo</p>
-        {notifications.map((n) => (
-          <div key={n.id} className="hover:bg-accent rounded-lg px-2 py-2">
-            <p className="text-sm">{n.title}</p>
-            <p className="text-muted-foreground text-xs">{n.time}</p>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b mb-1">
+          <p className="text-sm font-bold">Thông báo</p>
+          {user && unreadCount > 0 && (
+            <button
+              onClick={handleReadAll}
+              className="text-[11px] text-primary hover:underline font-medium"
+            >
+              Đọc tất cả
+            </button>
+          )}
+        </div>
+        {!user ? (
+          <div className="py-6 text-center text-xs text-muted-foreground px-3">
+            <Bell className="size-8 mx-auto mb-2 opacity-30" />
+            <p className="font-medium text-foreground">Chưa đăng nhập</p>
+            <p className="mt-1">Đăng nhập tài khoản để theo dõi thông báo đơn hàng và ưu đãi.</p>
           </div>
-        ))}
+        ) : items.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            <Bell className="size-8 mx-auto mb-2 opacity-30" />
+            <p>Bạn không có thông báo nào mới</p>
+          </div>
+        ) : (
+          <div className="space-y-1 max-h-80 overflow-y-auto">
+            {items.map((n) => (
+              <div
+                key={n.id}
+                onClick={() => handleItemClick(n)}
+                className={`cursor-pointer rounded-lg p-2 transition-colors ${
+                  !n.is_read ? 'bg-primary/5 hover:bg-primary/10 font-semibold' : 'hover:bg-accent text-muted-foreground'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-1">
+                  <p className="text-xs text-foreground font-medium">{n.title}</p>
+                  {!n.is_read && <span className="size-2 rounded-full bg-primary shrink-0 mt-1" />}
+                </div>
+                {n.body && <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{n.body}</p>}
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  {new Date(n.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · {new Date(n.created_at).toLocaleDateString('vi-VN')}
+                </p>
+              </div>
+            ))}
+            <div className="pt-2 border-t text-center">
+              <Link
+                to="/ho-so"
+                search={{ tab: 'notifications' } as any}
+                onClick={() => setOpen(false)}
+                className="text-xs text-primary hover:underline font-medium block py-1"
+              >
+                Xem tất cả thông báo ➔
+              </Link>
+            </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

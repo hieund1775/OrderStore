@@ -1,4 +1,5 @@
 import postgresDb from '../../config/db-postgres.js';
+import defaultNotificationsRepository from './notifications.js';
 
 export class RecruitmentRepositoryError extends Error {
   constructor(message, status = 400) {
@@ -7,7 +8,10 @@ export class RecruitmentRepositoryError extends Error {
   }
 }
 
-export function createRecruitmentRepository(database = postgresDb) {
+export function createRecruitmentRepository(
+  database = postgresDb,
+  notifications = defaultNotificationsRepository,
+) {
   return {
     async listJobs({ includeInactive = false, storeId } = {}) {
       const params = [];
@@ -199,13 +203,24 @@ export function createRecruitmentRepository(database = postgresDb) {
     },
 
     async createApplication({ jobId, storeId, fullname, phone, email, cvUrl }) {
-      const [rows] = await database.query(
-        `INSERT INTO job_applications (job_id, store_id, fullname, phone, email, cv_url, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'Mới')
-         RETURNING *`,
-        [jobId, storeId || null, fullname, phone, email, cvUrl || null],
-      );
-      return rows[0];
+      return database.transaction(async (tx) => {
+        const [rows] = await tx.query(
+          `INSERT INTO job_applications (job_id, store_id, fullname, phone, email, cv_url, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'Mới')
+           RETURNING *`,
+          [jobId, storeId || null, fullname, phone, email, cvUrl || null],
+        );
+        const app = rows[0];
+        const [jobs] = await tx.query('SELECT title FROM jobs WHERE id = $1', [jobId]);
+        const jobTitle = jobs[0]?.title || 'vị trí tuyển dụng';
+        await notifications.fanOutToRecruitmentAdmins(storeId, {
+          type: 'staff',
+          title: `Hồ sơ ứng tuyển mới — ${fullname}`,
+          body: `Ứng viên ${fullname} (SĐT: ${phone}) vừa nộp hồ sơ ứng tuyển vị trí ${jobTitle}.`,
+          link: '/admin/tuyen-dung',
+        }, { tx });
+        return app;
+      });
     },
   };
 }

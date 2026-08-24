@@ -394,5 +394,72 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     return Promise.resolve(orders as T);
   }
 
+  // 13. Promotions Mock
+  if (path.startsWith('/admin/promotions') || path.startsWith('/api/promotions')) {
+    const rawPromos = typeof window !== 'undefined' ? window.localStorage.getItem('teaplus_mock_promotions') : null;
+    let promoList = rawPromos ? JSON.parse(rawPromos) : [
+      { id: 1, title: 'Giảm 20% Đơn Đầu Tiên', code: 'CHAOBANMOI', discount_value: 20, discount_type: 'percent', max_discount: 30000, min_order: 50000, voucher_type: 'time_bounded', start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
+      { id: 2, title: 'Freeship Giờ Vàng', code: 'FREESHIP', discount_value: 15000, discount_type: 'fixed', max_discount: 15000, min_order: 99000, voucher_type: 'time_bounded', start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
+    ];
+
+    if (method === 'DELETE') {
+      const parts = path.split('/');
+      const id = Number(parts[parts.length - 1]);
+      promoList = promoList.map((p: any) => (p.id === id ? { ...p, deleted_at: new Date().toISOString(), is_active: false } : p));
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_promotions', JSON.stringify(promoList));
+      return Promise.resolve({ message: 'Đã xóa khuyến mãi thành công' } as T);
+    }
+    if (method === 'PUT') {
+      const parts = path.split('/');
+      const id = Number(parts[parts.length - 1]);
+      const body = options?.body ? JSON.parse(String(options.body)) : {};
+      promoList = promoList.map((p: any) => (p.id === id ? { ...p, ...body } : p));
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_promotions', JSON.stringify(promoList));
+      return Promise.resolve({ message: 'Đã cập nhật khuyến mãi' } as T);
+    }
+    if (method === 'POST') {
+      const body = options?.body ? JSON.parse(String(options.body)) : {};
+      const newPromo = { id: Date.now(), ...body, is_active: true, deleted_at: null };
+      promoList = [newPromo, ...promoList];
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_promotions', JSON.stringify(promoList));
+      return Promise.resolve(newPromo as T);
+    }
+    const activePromos = promoList.filter((p: any) => !p.deleted_at);
+    return Promise.resolve(activePromos as T);
+  }
+
+  // 14. Notifications Mock
+  if (path.includes('/notifications')) {
+    const rawNotifs = typeof window !== 'undefined' ? window.localStorage.getItem('teaplus_mock_notifications') : null;
+    let notifList = rawNotifs ? JSON.parse(rawNotifs) : [
+      { id: 1, type: 'order', title: 'Đặt hàng thành công — #TP260824001', body: 'Đơn hàng của bạn đang được quán chuẩn bị.', is_read: false, link: '/theo-doi-don?code=TP260824001', created_at: new Date().toISOString() },
+      { id: 2, type: 'voucher', title: 'Mã ưu đãi 20% sắp hết hạn', body: 'Sử dụng mã CHAOBANMOI để được giảm giá ngay hôm nay!', is_read: true, link: '/menu', created_at: new Date(Date.now() - 3600000).toISOString() },
+    ];
+
+    if (method === 'DELETE') {
+      notifList = [];
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      return Promise.resolve({ ok: true, count: 0 } as T);
+    }
+    if (path.endsWith('/read-all')) {
+      notifList = notifList.map((n: any) => ({ ...n, is_read: true }));
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      return Promise.resolve({ ok: true, count: notifList.length } as T);
+    }
+    if (path.endsWith('/read')) {
+      const parts = path.split('/');
+      const readIdx = parts.indexOf('read');
+      const targetId = Number(parts[readIdx - 1]);
+      notifList = notifList.map((n: any) => (n.id === targetId ? { ...n, is_read: true } : n));
+      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (path.startsWith('/api/users/')) {
+      const unreadCount = notifList.filter((n: any) => !n.is_read).length;
+      return Promise.resolve({ notifications: notifList, unread_count: unreadCount } as T);
+    }
+    return Promise.resolve(notifList as T);
+  }
+
   return Promise.resolve({} as T);
 }

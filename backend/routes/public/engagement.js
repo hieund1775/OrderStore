@@ -4,9 +4,10 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateReviewInput, validateJobApplyInput } from '../../validation/engagement-schemas.js';
 import { validateCustomerId } from '../../validation/customer-schemas.js';
 import { toReviewDto, toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
-import { toCustomerDto } from '../../dto/customer-dto.js';
+import { toCustomerDto, toNotificationDto } from '../../dto/customer-dto.js';
 import engagementService from '../../services/engagement/engagement-service.js';
 import recruitmentService from '../../services/recruitment/recruitment-service.js';
+import notificationService from '../../services/notifications/notification-service.js';
 
 const router = Router();
 
@@ -113,8 +114,44 @@ router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf,
 router.get('/users/:id/notifications', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.params.id);
-    const rows = await engagementService.listUserNotifications(id);
-    res.json(rows);
+    const { notifications, unread_count } = await notificationService.listForUser(id, req.query.limit);
+    res.json({
+      notifications: notifications.map(toNotificationDto),
+      unread_count,
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.patch('/users/:id/notifications/:notificationId/read', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+  try {
+    const id = validateCustomerId(req.params.id);
+    const result = await notificationService.markOneRead(id, req.params.notificationId);
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.post('/users/:id/notifications/read-all', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+  try {
+    const id = validateCustomerId(req.params.id);
+    const result = await notificationService.markAllRead(id);
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.delete('/users/:id/notifications', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+  try {
+    const id = validateCustomerId(req.params.id);
+    const result = await notificationService.clearAll(id);
+    res.json(result);
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
