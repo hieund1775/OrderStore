@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, Tag, Loader2, RefreshCw } from "lucide-react";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -226,55 +226,51 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
-
-          <div className="bg-card rounded-2xl border p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold flex items-center gap-1.5">
-                <Bell className="size-4 text-primary" /> Thông báo gần đây
-              </p>
-              {notificationsList.filter((n) => !n.is_read).length > 0 && (
-                <Badge variant="default" className="text-[10px] h-4 px-1.5">
-                  {notificationsList.filter((n) => !n.is_read).length} mới
-                </Badge>
-              )}
-            </div>
-            {notificationsList.length === 0 ? (
-              <p className="text-muted-foreground text-xs">Chưa có thông báo mới.</p>
-            ) : (
-              <div className="space-y-2">
-                {notificationsList.slice(0, 3).map((n) => (
-                  <div
-                    key={n.id}
-                    onClick={() => handleNotificationClick(n)}
-                    className="cursor-pointer border-b last:border-0 pb-2 text-xs hover:text-primary transition-colors"
-                  >
-                    <p className={`font-medium ${!n.is_read ? "text-foreground font-bold" : "text-muted-foreground"}`}>
-                      {n.title}
-                    </p>
-                    <CustomerDateTime value={n.created_at} className="text-[10px] text-muted-foreground/70" />
-                  </div>
-                ))}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full text-xs text-primary h-7 mt-1"
-                  onClick={() => setActiveTab("notifications")}
-                >
-                  Xem tất cả thông báo
-                </Button>
-              </div>
-            )}
-          </div>
         </aside>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="orders">Lịch sử đơn hàng ({userOrders.length})</TabsTrigger>
-            <TabsTrigger value="notifications">
-              Thông báo ({notificationsList.length})
+          <TabsList className="mb-4 grid grid-cols-2 sm:grid-cols-4 h-auto p-1.5 gap-1.5 w-full bg-muted/80 rounded-2xl">
+            <TabsTrigger
+              value="orders"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <ShoppingCart className="size-3.5 sm:size-4 shrink-0 text-primary" />
+              <span className="truncate">
+                <span className="sm:hidden">Đơn hàng ({userOrders.length})</span>
+                <span className="hidden sm:inline">Lịch sử đơn ({userOrders.length})</span>
+              </span>
             </TabsTrigger>
-            <TabsTrigger value="wishlist">Yêu thích ({wishlistCount})</TabsTrigger>
-            <TabsTrigger value="info">Thông tin</TabsTrigger>
+
+            <TabsTrigger
+              value="notifications"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <Bell className="size-3.5 sm:size-4 shrink-0 text-primary" />
+              <span className="truncate">
+                Thông báo ({notificationsList.length})
+              </span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="wishlist"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <Heart className="size-3.5 sm:size-4 shrink-0 text-berry" />
+              <span className="truncate">
+                Yêu thích ({wishlistCount})
+              </span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="info"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <UserIcon className="size-3.5 sm:size-4 shrink-0 text-primary" />
+              <span className="truncate">
+                <span className="sm:hidden">Thông tin</span>
+                <span className="hidden sm:inline">Thông tin cá nhân</span>
+              </span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="orders" className="space-y-4">

@@ -267,100 +267,196 @@ function PromotionsAdminPage() {
             <p className="text-muted-foreground text-sm">Bấm "Tạo mã giảm giá" để bắt đầu.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Chương trình</TableHead>
-                  <TableHead>Giảm</TableHead>
-                  <TableHead>Loại mã</TableHead>
-                  <TableHead className="hidden md:table-cell">Điều kiện</TableHead>
-                  <TableHead className="hidden lg:table-cell">Hạn dùng</TableHead>
-                  <TableHead className="hidden lg:table-cell">Lượt dùng</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  {canManage && <TableHead className="text-right">Thao tác</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {promos.map((p) => {
-                  const statusInfo = getPromotionStatus(p);
-                  return (
-                    <TableRow key={p.id} className={p.is_active ? "" : "opacity-60"}>
-                      <TableCell>
-                        <p className="font-semibold">{p.title}</p>
-                        <p className="text-primary font-mono text-xs font-bold">{p.code}</p>
-                      </TableCell>
-                      <TableCell>
-                        {p.discount_type === "percent" ? (
-                          <span className="font-bold">
-                            {p.discount_value}%
-                            {p.max_discount ? ` (max ${vnd(p.max_discount)})` : ""}
-                          </span>
-                        ) : (
-                          vnd(p.discount_value || 0)
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {p.voucher_type === "single_use" ? (
-                          <Badge variant="secondary" className="bg-berry/10 text-berry">
-                            🎟️ Mã 1 lần / SĐT
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="bg-primary/10 text-primary">
-                            👥 Dùng chung
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
-                        {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn đơn"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                        {formatVoucherDate(p.start_date)} → {statusInfo.dateDisplay}
-                      </TableCell>
-                      <TableCell className="hidden text-xs lg:table-cell">
+          <div>
+            {/* MOBILE VOUCHER CARDS (< 768px) */}
+            <div className="md:hidden space-y-3 p-3">
+              {promos.map((p) => {
+                const statusInfo = getPromotionStatus(p);
+                return (
+                  <div
+                    key={p.id}
+                    className={`bg-card rounded-2xl border p-4 shadow-sm space-y-3 transition-opacity ${
+                      p.is_active ? "" : "opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground">{p.title}</p>
+                        <span className="text-primary font-mono text-xs font-extrabold bg-primary/10 px-2 py-0.5 rounded-md inline-block mt-1">
+                          {p.code}
+                        </span>
+                      </div>
+                      <div className="shrink-0">{renderVoucherBadge(p)}</div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs bg-muted/20 p-2.5 rounded-xl border border-muted/50">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Mức giảm</span>
+                        <span className="font-bold text-leaf">
+                          {p.discount_type === "percent"
+                            ? `${p.discount_value}% ${p.max_discount ? `(max ${vnd(p.max_discount)})` : ""}`
+                            : vnd(p.discount_value || 0)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Loại voucher</span>
+                        <span className="font-medium">
+                          {p.voucher_type === "single_use" ? "🎟️ 1 lần / SĐT" : "👥 Dùng chung"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Đơn tối thiểu</span>
+                        <span className="text-muted-foreground">
+                          {p.min_order ? vnd(p.min_order) : "Không giới hạn"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Lượt dùng</span>
                         <span className="font-medium">{statusInfo.usageDisplay}</span>
-                      </TableCell>
-                      <TableCell>
-                        {renderVoucherBadge(p)}
-                      </TableCell>
-                      {canManage && <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      </div>
+                      <div className="col-span-2 text-[11px] text-muted-foreground pt-1 border-t border-muted/60">
+                        <span>Hạn dùng: </span>
+                        <span className="font-medium text-foreground">
+                          {formatVoucherDate(p.start_date)} → {statusInfo.dateDisplay}
+                        </span>
+                      </div>
+                    </div>
+
+                    {canManage && (
+                      <div className="flex items-center justify-between pt-2 border-t border-dashed gap-2">
+                        <div className="flex items-center gap-2">
                           <Switch
                             checked={p.is_active}
                             onCheckedChange={(v) => toggleActive(p, v)}
                             aria-label={`Bật/tắt mã ${p.code}`}
                           />
+                          <span className="text-xs text-muted-foreground font-medium">
+                            {p.is_active ? "Đang bật" : "Đang tắt"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="h-8 px-2.5 text-xs font-semibold"
                             onClick={() => openEdit(p)}
                             aria-label={`Sửa mã ${p.code}`}
                           >
-                            <Pencil className="size-4" />
+                            <Pencil className="size-3.5 mr-1" /> Sửa
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            className="h-8 px-2.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => openDelete(p)}
                             aria-label={`Xóa mã ${p.code}`}
                           >
-                            <Trash2 className="size-4" />
+                            <Trash2 className="size-3.5 mr-1" /> Xóa
                           </Button>
                         </div>
-                      </TableCell>}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* DESKTOP & TABLET TABLE (>= 768px) */}
+            <div className="hidden md:block overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Chương trình</TableHead>
+                    <TableHead>Giảm</TableHead>
+                    <TableHead>Loại mã</TableHead>
+                    <TableHead className="hidden md:table-cell">Điều kiện</TableHead>
+                    <TableHead className="hidden lg:table-cell">Hạn dùng</TableHead>
+                    <TableHead className="hidden lg:table-cell">Lượt dùng</TableHead>
+                    <TableHead>Trạng thái</TableHead>
+                    {canManage && <TableHead className="text-right">Thao tác</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {promos.map((p) => {
+                    const statusInfo = getPromotionStatus(p);
+                    return (
+                      <TableRow key={p.id} className={p.is_active ? "" : "opacity-60"}>
+                        <TableCell>
+                          <p className="font-semibold">{p.title}</p>
+                          <p className="text-primary font-mono text-xs font-bold">{p.code}</p>
+                        </TableCell>
+                        <TableCell>
+                          {p.discount_type === "percent" ? (
+                            <span className="font-bold">
+                              {p.discount_value}%
+                              {p.max_discount ? ` (max ${vnd(p.max_discount)})` : ""}
+                            </span>
+                          ) : (
+                            vnd(p.discount_value || 0)
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {p.voucher_type === "single_use" ? (
+                            <Badge variant="secondary" className="bg-berry/10 text-berry">
+                              🎟️ Mã 1 lần / SĐT
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-primary/10 text-primary">
+                              👥 Dùng chung
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
+                          {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn đơn"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
+                          {formatVoucherDate(p.start_date)} → {statusInfo.dateDisplay}
+                        </TableCell>
+                        <TableCell className="hidden text-xs lg:table-cell">
+                          <span className="font-medium">{statusInfo.usageDisplay}</span>
+                        </TableCell>
+                        <TableCell>{renderVoucherBadge(p)}</TableCell>
+                        {canManage && (
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Switch
+                                checked={p.is_active}
+                                onCheckedChange={(v) => toggleActive(p, v)}
+                                aria-label={`Bật/tắt mã ${p.code}`}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEdit(p)}
+                                aria-label={`Sửa mã ${p.code}`}
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => openDelete(p)}
+                                aria-label={`Xóa mã ${p.code}`}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
       </Card>
 
       {/* Dialog Tạo / Sửa mã */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{editing ? "Sửa mã giảm giá" : "Tạo mã giảm giá mới"}</DialogTitle>
           </DialogHeader>

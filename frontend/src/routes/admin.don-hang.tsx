@@ -216,12 +216,13 @@ function OrdersPage() {
       />
 
       <Card className="shadow-soft mb-5">
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-          <div className="xl:col-span-1">
+        <CardContent className="grid gap-2.5 sm:gap-3 p-3 sm:p-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="sm:col-span-2 lg:col-span-1">
             <Input
               placeholder="Tìm mã đơn / khách hàng"
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              className="h-9 sm:h-10 text-xs sm:text-sm"
             />
           </div>
           <FilterSelect
@@ -259,81 +260,150 @@ function OrdersPage() {
           <Loader2 className="size-5 animate-spin" />
         </div>
       ) : view === "list" ? (
-        <Card className="shadow-soft overflow-hidden">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Mã đơn</TableHead>
-                  <TableHead>Khách hàng</TableHead>
-                  <TableHead className="hidden md:table-cell">Chi nhánh</TableHead>
-                  <TableHead>Loại</TableHead>
-                  <TableHead className="hidden lg:table-cell">PTTT</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead className="text-right">Tổng tiền</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="font-medium">{o.order_code}</TableCell>
-                    <TableCell>
-                      <p className="text-sm">{o.customer_name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {fmtDateTime(o.created_at)}
-                      </p>
-                    </TableCell>
-                    <TableCell className="hidden text-sm md:table-cell">{o.store_name}</TableCell>
-                    <TableCell className="text-sm">{o.order_type}</TableCell>
-                    <TableCell className="hidden text-sm lg:table-cell">
-                      <div>
-                        <p>{o.payment_method}</p>
-                        {o.payment_status === "paid" ? (
-                          <span className="text-[11px] font-semibold text-leaf block">✓ Đã TT</span>
-                        ) : o.payment_status === "expired" ? (
-                          <span className="text-[11px] font-semibold text-berry block">✕ Hết hạn</span>
-                        ) : (
-                          <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">⏳ Chưa TT</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[o.current_status]}`}
-                      >
-                        {o.current_status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">{vnd(o.total)}</TableCell>
-                    <TableCell className="text-right">
-                      <OrderDetail
-                        orderId={o.id}
-                        onChanged={load}
-                        actionLoading={actionLoading}
-                        setActionLoading={setActionLoading}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {orders.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-muted-foreground py-10 text-center text-sm"
-                    >
-                      <Filter className="mx-auto mb-2 size-5" /> Không có đơn nào khớp bộ lọc.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+        <div className="space-y-4">
+          {/* MOBILE ORDER CARDS (< 768px) */}
+          <div className="md:hidden space-y-3">
+            {orders.map((o) => (
+              <Card key={o.id} className="p-4 shadow-sm space-y-3 bg-card border rounded-2xl">
+                <div className="flex items-start justify-between gap-2 border-b pb-2.5">
+                  <div>
+                    <p className="font-mono font-bold text-base text-foreground">#{o.order_code}</p>
+                    <p className="text-muted-foreground text-xs">{fmtDateTime(o.created_at)}</p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold shrink-0 ${statusTone[o.current_status]}`}
+                  >
+                    {o.current_status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Khách hàng</span>
+                    <span className="font-medium text-foreground">{o.customer_name}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Chi nhánh</span>
+                    <span className="font-medium text-foreground truncate block">{o.store_name}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Loại đơn</span>
+                    <span className="font-medium text-foreground">{o.order_type}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Thanh toán</span>
+                    <div className="font-medium">
+                      <span>{o.payment_method}</span>
+                      {o.payment_status === "paid" ? (
+                        <span className="text-[10px] font-bold text-leaf ml-1">✓ Đã TT</span>
+                      ) : o.payment_status === "expired" ? (
+                        <span className="text-[10px] font-bold text-berry ml-1">✕ Hết hạn</span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 ml-1">⏳ Chưa TT</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                  <div>
+                    <span className="text-[11px] text-muted-foreground block">Tổng tiền</span>
+                    <span className="text-primary font-bold text-base">{vnd(o.total)}</span>
+                  </div>
+                  <OrderDetail
+                    orderId={o.id}
+                    onChanged={load}
+                    actionLoading={actionLoading}
+                    setActionLoading={setActionLoading}
+                  />
+                </div>
+              </Card>
+            ))}
+
+            {orders.length === 0 && (
+              <Card className="p-8 text-center text-muted-foreground text-sm">
+                <Filter className="mx-auto mb-2 size-5" /> Không có đơn nào khớp bộ lọc.
+              </Card>
+            )}
           </div>
-        </Card>
+
+          {/* DESKTOP & TABLET TABLE (>= 768px) */}
+          <Card className="shadow-soft overflow-hidden hidden md:block">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Mã đơn</TableHead>
+                    <TableHead>Khách hàng</TableHead>
+                    <TableHead className="hidden md:table-cell">Chi nhánh</TableHead>
+                    <TableHead>Loại</TableHead>
+                    <TableHead className="hidden lg:table-cell">PTTT</TableHead>
+                    <TableHead>Trạng thái</TableHead>
+                    <TableHead className="text-right">Tổng tiền</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell className="font-medium font-mono">{o.order_code}</TableCell>
+                      <TableCell>
+                        <p className="text-sm">{o.customer_name}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {fmtDateTime(o.created_at)}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden text-sm md:table-cell">{o.store_name}</TableCell>
+                      <TableCell className="text-sm">{o.order_type}</TableCell>
+                      <TableCell className="hidden text-sm lg:table-cell">
+                        <div>
+                          <p>{o.payment_method}</p>
+                          {o.payment_status === "paid" ? (
+                            <span className="text-[11px] font-semibold text-leaf block">✓ Đã TT</span>
+                          ) : o.payment_status === "expired" ? (
+                            <span className="text-[11px] font-semibold text-berry block">✕ Hết hạn</span>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 block">⏳ Chưa TT</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[o.current_status]}`}
+                        >
+                          {o.current_status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">{vnd(o.total)}</TableCell>
+                      <TableCell className="text-right">
+                        <OrderDetail
+                          orderId={o.id}
+                          onChanged={load}
+                          actionLoading={actionLoading}
+                          setActionLoading={setActionLoading}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {orders.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="text-muted-foreground py-10 text-center text-sm"
+                      >
+                        <Filter className="mx-auto mb-2 size-5" /> Không có đơn nào khớp bộ lọc.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {["Chờ xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành"].map((col) => (
-            <div key={col} className="bg-card rounded-2xl border p-3">
+            <div key={col} className="bg-card rounded-2xl border p-3.5 shadow-sm">
               <p className="mb-3 flex items-center justify-between text-sm font-semibold">
                 {col}
                 <Badge variant="secondary">{orders.filter((o) => o.current_status === col).length}</Badge>
@@ -342,13 +412,13 @@ function OrdersPage() {
                 {orders
                   .filter((o) => o.current_status === col)
                   .map((o) => (
-                    <div key={o.id} className="bg-background rounded-xl border p-3">
-                      <p className="text-sm font-semibold">{o.order_code}</p>
-                      <p className="text-muted-foreground text-xs">
+                    <div key={o.id} className="bg-background rounded-xl border p-3 shadow-xs">
+                      <p className="text-sm font-semibold font-mono">{o.order_code}</p>
+                      <p className="text-muted-foreground text-xs mt-0.5">
                         {o.customer_name} · {o.order_type}
                       </p>
-                      <p className="text-primary mt-1 text-sm font-bold">{vnd(o.total)}</p>
-                      <div className="mt-2">
+                      <p className="text-primary mt-1.5 text-sm font-bold">{vnd(o.total)}</p>
+                      <div className="mt-2.5">
                         <OrderDetail
                           orderId={o.id}
                           onChanged={load}

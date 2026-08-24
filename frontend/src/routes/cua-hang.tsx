@@ -254,7 +254,7 @@ function StoresPage() {
         bannerImg={cuahangBannerImg}
       />
 
-      <div className="container-page w-full max-w-full overflow-x-hidden py-4 sm:py-6 md:py-10">
+      <div className="container-page py-6 md:py-10">
         <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[380px_1fr]">
           <div className="w-full min-w-0 space-y-4">
             <div className="bg-card w-full min-w-0 space-y-3 rounded-2xl border p-3.5 sm:p-4 shadow-sm">

@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -257,38 +258,185 @@ function PosPage() {
     return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-muted-foreground" /></div>;
   }
 
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  const cartContent = (
+    <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <div className="p-4 sm:p-5 border-b font-display bg-background flex justify-between items-center z-10 shrink-0">
+        <span className="font-bold text-base sm:text-lg">Giỏ hàng ({cart.reduce((a, c) => a + c.qty, 0)})</span>
+        {cart.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-berry hover:bg-berry/10 hover:text-berry rounded-lg font-semibold transition-colors text-xs"
+            onClick={() => setCart([])}
+          >
+            <Trash2 className="size-3.5 mr-1.5" /> Xóa hết
+          </Button>
+        )}
+      </div>
+
+      <ScrollArea className="flex-1 p-3 sm:p-4 bg-muted/5">
+        {cart.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm py-20 sm:py-24 opacity-60">
+            <ShoppingCart className="size-12 mb-3 text-muted-foreground/50" />
+            <p className="font-medium">Chưa có món nào trong giỏ</p>
+            <p className="text-xs mt-1">Chọn món ở menu để bắt đầu</p>
+          </div>
+        ) : (
+          <div className="space-y-3 sm:space-y-4">
+            {cart.map((item) => (
+              <div
+                key={item.uid}
+                className="bg-background border rounded-2xl p-3 sm:p-4 relative shadow-sm group hover:border-primary/50 transition-colors flex gap-3 sm:gap-4"
+              >
+                <button
+                  className="absolute top-2 right-2 text-muted-foreground hover:bg-berry/10 hover:text-berry rounded-full p-1.5 transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                  onClick={() => removeFromCart(item.uid)}
+                  aria-label="Xóa món"
+                >
+                  <X className="size-4" />
+                </button>
+
+                <div
+                  className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-muted/20 mt-1 cursor-pointer"
+                  onClick={() => {
+                    setEditingItem(item);
+                    setIsDialogOpen(true);
+                  }}
+                >
+                  <img
+                    src={
+                      products.find((p) => String(p.id) === String(item.product_id))?.image ||
+                      (products.find((p) => String(p.id) === String(item.product_id)) as any)?.image_url ||
+                      "/images/products/tra-xoai.jpg"
+                    }
+                    alt={item.product_name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                  <div
+                    className="pr-6 cursor-pointer"
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsDialogOpen(true);
+                    }}
+                  >
+                    <p className="font-bold text-sm leading-tight truncate">{item.product_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed line-clamp-2">
+                      {item.size_label} · {item.base_tea} · {item.sugar_level} đường · {item.ice_level} đá
+                      {item.toppings.length > 0 && (
+                        <span className="block text-primary/80 font-medium mt-0.5">
+                          + {item.toppings.map((t) => `${t.qty}x ${t.name}`).join(", ")}
+                        </span>
+                      )}
+                      {item.note && <span className="block italic mt-0.5 opacity-80">Ghi chú: {item.note}</span>}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-dashed gap-2">
+                    <div className="flex items-center bg-muted/30 rounded-xl border p-0.5 sm:p-1">
+                      <button
+                        className="p-1 hover:bg-background hover:shadow-sm rounded-lg text-muted-foreground transition-all"
+                        onClick={() => adjustCartQty(item.uid, -1)}
+                        aria-label="Giảm số lượng"
+                      >
+                        <Minus className="size-3.5" />
+                      </button>
+                      <span className="w-7 sm:w-8 text-center text-xs sm:text-sm font-bold">{item.qty}</span>
+                      <button
+                        className="p-1 hover:bg-background hover:shadow-sm rounded-lg text-muted-foreground transition-all"
+                        onClick={() => adjustCartQty(item.uid, 1)}
+                        aria-label="Tăng số lượng"
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    </div>
+                    <span className="font-extrabold text-primary text-sm sm:text-base whitespace-nowrap">
+                      {vnd(
+                        (item.price + item.toppings.reduce((s, t) => s + t.price * t.qty, 0)) * item.qty,
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="h-6"></div>
+      </ScrollArea>
+
+      <div className="p-4 sm:p-5 border-t bg-background space-y-3 sm:space-y-4 shrink-0 z-10">
+        <div className="flex justify-between items-end bg-gradient-to-r from-muted/50 to-muted/20 p-3 sm:p-4 rounded-2xl border border-muted">
+          <span className="text-muted-foreground font-bold text-xs sm:text-sm">Tổng thanh toán</span>
+          <span className="text-2xl sm:text-3xl font-extrabold text-leaf font-display tracking-tight drop-shadow-sm">
+            {vnd(cartTotal)}
+          </span>
+        </div>
+
+        <Button
+          variant="hero"
+          className="w-full h-12 sm:h-14 text-base sm:text-lg rounded-2xl shadow-glow font-bold tracking-wide"
+          disabled={cart.length === 0 || submitting}
+          onClick={() => {
+            setMobileCartOpen(false);
+            checkout();
+          }}
+        >
+          {submitting ? <Loader2 className="animate-spin size-5" /> : "Xác nhận & Thu tiền ngay"}
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col bg-muted/10">
+    <div className="h-[calc(100vh-64px)] flex flex-col bg-muted/10 relative">
       {/* Top POS Header */}
-      <div className="flex items-center gap-4 bg-background border-b px-5 py-4 shrink-0 shadow-sm z-10">
-        <ShoppingCart className="text-leaf size-6" />
-        <h1 className="font-bold font-display text-xl mr-4 tracking-tight">POS Gọi Món</h1>
-        
-        <Select value={String(selectedStoreId || "")} onValueChange={(v) => setSelectedStoreId(Number(v))}>
-          <SelectTrigger className="w-[220px] h-10 rounded-xl bg-muted/20 border-transparent hover:bg-muted/40 transition-colors font-medium">
-            <SelectValue placeholder="Chọn chi nhánh" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl">
-            {stores.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-background border-b px-4 py-3 sm:px-5 sm:py-4 shrink-0 shadow-sm z-10">
+        <div className="flex items-center gap-3">
+          <ShoppingCart className="text-leaf size-5 sm:size-6 shrink-0" />
+          <h1 className="font-bold font-display text-lg sm:text-xl tracking-tight whitespace-nowrap">
+            POS Gọi Món
+          </h1>
 
-        <div className="h-6 w-px bg-border mx-3"></div>
+          <Select value={String(selectedStoreId || "")} onValueChange={(v) => setSelectedStoreId(Number(v))}>
+            <SelectTrigger className="w-[180px] sm:w-[220px] h-9 sm:h-10 rounded-xl bg-muted/20 border-transparent hover:bg-muted/40 transition-colors font-medium text-xs sm:text-sm">
+              <SelectValue placeholder="Chọn chi nhánh" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              {stores.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        <div className="flex-1 overflow-x-auto whitespace-nowrap no-scrollbar">
-          <div className="flex gap-2 items-center">
-            <Badge 
-              variant={selectedTableId === null ? "default" : "outline"} 
-              className={`cursor-pointer px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${selectedTableId === null ? "bg-leaf hover:bg-leaf/90 shadow-glow text-primary-foreground border-transparent" : "hover:bg-muted/50"}`}
+        <div className="flex-1 overflow-x-auto whitespace-nowrap no-scrollbar pb-0.5 sm:pb-0">
+          <div className="flex gap-1.5 sm:gap-2 items-center">
+            <Badge
+              variant={selectedTableId === null ? "default" : "outline"}
+              className={`cursor-pointer px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
+                selectedTableId === null
+                  ? "bg-leaf hover:bg-leaf/90 shadow-glow text-primary-foreground border-transparent"
+                  : "hover:bg-muted/50"
+              }`}
               onClick={() => setSelectedTableId(null)}
             >
               Mang đi
             </Badge>
-            {tables.map(t => (
-              <Badge 
+            {tables.map((t) => (
+              <Badge
                 key={t.id}
-                variant={selectedTableId === t.id ? "default" : "outline"} 
-                className={`cursor-pointer px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${selectedTableId === t.id ? "bg-primary hover:bg-primary/90 shadow-glow text-primary-foreground border-transparent" : "hover:bg-muted/50"}`}
+                variant={selectedTableId === t.id ? "default" : "outline"}
+                className={`cursor-pointer px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
+                  selectedTableId === t.id
+                    ? "bg-primary hover:bg-primary/90 shadow-glow text-primary-foreground border-transparent"
+                    : "hover:bg-muted/50"
+                }`}
                 onClick={() => setSelectedTableId(t.id)}
               >
                 {t.name}
@@ -300,36 +448,47 @@ function PosPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: MENU */}
-        <div className="w-[65%] flex flex-col bg-slate-50/50 border-r">
-          <div className="p-4 border-b bg-background/95 backdrop-blur z-10 flex items-center justify-between">
-            <span className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Danh mục món</span>
+        <div className="w-full md:w-[55%] lg:w-[65%] flex flex-col bg-slate-50/50 border-r pb-20 md:pb-0">
+          <div className="p-3 sm:p-4 border-b bg-background/95 backdrop-blur z-10 flex items-center justify-between gap-2">
+            <span className="font-semibold text-xs sm:text-sm text-muted-foreground uppercase tracking-wider">
+              Danh mục món
+            </span>
             <Select value={activeTab} onValueChange={setActiveTab}>
-              <SelectTrigger className="w-[200px] bg-background font-semibold shadow-sm rounded-xl">
+              <SelectTrigger className="w-[160px] sm:w-[200px] h-9 bg-background font-semibold shadow-sm rounded-xl text-xs sm:text-sm">
                 <SelectValue placeholder="Chọn dòng trà" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
                 <SelectItem value="Tất cả">Tất cả món</SelectItem>
-                {teaLines.map(t => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                {teaLines.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          
-          <ScrollArea className="flex-1 p-5">
-            <div className="grid grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-              {filteredProducts.map(p => (
-                <Card 
-                  key={p.id} 
-                  className="group cursor-pointer hover:border-leaf transition-all duration-300 hover:-translate-y-1 hover:shadow-glow overflow-hidden flex flex-col rounded-2xl bg-card border-transparent shadow-card-soft" 
+
+          <ScrollArea className="flex-1 p-3 sm:p-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+              {filteredProducts.map((p) => (
+                <Card
+                  key={p.id}
+                  className="group cursor-pointer hover:border-leaf transition-all duration-300 hover:-translate-y-1 hover:shadow-glow overflow-hidden flex flex-col rounded-2xl bg-card border-transparent shadow-card-soft"
                   onClick={() => handleProductClick(p)}
                 >
                   <div className="aspect-[4/3] overflow-hidden bg-muted/10 relative">
-                    <img src={p.image || (p as any).image_url || '/images/products/tra-xoai.jpg'} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img
+                      src={p.image || (p as any).image_url || "/images/products/tra-xoai.jpg"}
+                      alt={p.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
                   </div>
-                  <div className="p-3 flex flex-col flex-1 justify-between gap-2">
-                    <p className="font-semibold text-sm leading-snug line-clamp-2" title={p.name}>{p.name}</p>
-                    <p className="text-leaf font-extrabold">{vnd(p.price)}</p>
+                  <div className="p-2.5 sm:p-3 flex flex-col flex-1 justify-between gap-1.5 sm:gap-2">
+                    <p className="font-semibold text-xs sm:text-sm leading-snug line-clamp-2" title={p.name}>
+                      {p.name}
+                    </p>
+                    <p className="text-leaf font-extrabold text-xs sm:text-base">{vnd(p.price)}</p>
                   </div>
                 </Card>
               ))}
@@ -338,88 +497,48 @@ function PosPage() {
           </ScrollArea>
         </div>
 
-        {/* RIGHT: CART */}
-        <div className="w-[35%] flex flex-col bg-background relative shadow-[-8px_0_32px_-12px_rgba(0,0,0,0.08)] z-20">
-          <div className="p-5 border-b font-display bg-background flex justify-between items-center z-10 shrink-0">
-            <span className="font-bold text-lg">Giỏ hàng ({cart.reduce((a,c) => a + c.qty, 0)})</span>
-            {cart.length > 0 && (
-              <Button variant="ghost" size="sm" className="h-8 text-berry hover:bg-berry/10 hover:text-berry rounded-lg font-semibold transition-colors" onClick={() => setCart([])}>
-                <Trash2 className="size-4 mr-1.5"/> Xóa hết
-              </Button>
-            )}
-          </div>
-
-          <ScrollArea className="flex-1 p-4 bg-muted/5">
-            {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm py-24 opacity-60">
-                <ShoppingCart className="size-12 mb-4 text-muted-foreground/50" />
-                <p>Chưa có món nào trong giỏ</p>
-                <p className="text-xs mt-1">Chọn món ở menu bên trái để bắt đầu</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {cart.map(item => (
-                  <div key={item.uid} className="bg-background border rounded-2xl p-4 relative shadow-sm group hover:border-primary/50 transition-colors flex gap-4">
-                    <button 
-                      className="absolute top-2 right-2 text-muted-foreground hover:bg-berry/10 hover:text-berry rounded-full p-1.5 transition-all opacity-0 group-hover:opacity-100 scale-95 group-hover:scale-100 z-10"
-                      onClick={() => removeFromCart(item.uid)}
-                    >
-                      <X className="size-4" />
-                    </button>
-                    
-                    <div className="shrink-0 w-16 h-16 rounded-xl overflow-hidden bg-muted/20 mt-1 cursor-pointer" onClick={() => { setEditingItem(item); setIsDialogOpen(true); }}>
-                      <img 
-                        src={products.find(p => String(p.id) === String(item.product_id))?.image || (products.find(p => String(p.id) === String(item.product_id)) as any)?.image_url || '/images/products/tra-xoai.jpg'} 
-                        alt={item.product_name} 
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-
-                    <div className="flex-1 flex flex-col justify-between">
-                      <div className="pr-6 cursor-pointer" onClick={() => { setEditingItem(item); setIsDialogOpen(true); }}>
-                        <p className="font-bold text-sm leading-tight">{item.product_name}</p>
-                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                          {item.size_label} · {item.base_tea} · {item.sugar_level} đường · {item.ice_level} đá
-                          {item.toppings.length > 0 && <span className="block text-primary/80 font-medium mt-0.5">+ {item.toppings.map(t => `${t.qty}x ${t.name}`).join(', ')}</span>}
-                          {item.note && <span className="block italic mt-0.5 opacity-80">Ghi chú: {item.note}</span>}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-dashed">
-                        <div className="flex items-center bg-muted/30 rounded-xl border p-1">
-                          <button className="p-1 hover:bg-background hover:shadow-sm rounded-lg text-muted-foreground transition-all" onClick={() => adjustCartQty(item.uid, -1)}><Minus className="size-3.5"/></button>
-                          <span className="w-8 text-center text-sm font-bold">{item.qty}</span>
-                          <button className="p-1 hover:bg-background hover:shadow-sm rounded-lg text-muted-foreground transition-all" onClick={() => adjustCartQty(item.uid, 1)}><Plus className="size-3.5"/></button>
-                        </div>
-                        <span className="font-extrabold text-primary text-base">
-                          {vnd((item.price + item.toppings.reduce((s,t) => s + t.price*t.qty, 0)) * item.qty)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="h-8"></div>
-          </ScrollArea>
-
-          <div className="p-5 border-t bg-background space-y-4 shrink-0 z-10">
-            <div className="flex justify-between items-end bg-gradient-to-r from-muted/50 to-muted/20 p-4 rounded-2xl border border-muted">
-              <span className="text-muted-foreground font-bold text-sm">Tổng thanh toán</span>
-              <span className="text-3xl font-extrabold text-leaf font-display tracking-tight drop-shadow-sm">{vnd(cartTotal)}</span>
-            </div>
-
-            <Button 
-              variant="hero" 
-              className="w-full h-14 text-lg rounded-2xl shadow-glow font-bold tracking-wide" 
-              disabled={cart.length === 0 || submitting}
-              onClick={checkout}
-            >
-              {submitting ? <Loader2 className="animate-spin size-5" /> : "Xác nhận & Thu tiền ngay"}
-            </Button>
-          </div>
+        {/* RIGHT: DESKTOP & TABLET CART SIDEBAR */}
+        <div className="hidden md:flex md:w-[45%] lg:w-[35%] flex-col bg-background relative shadow-[-8px_0_32px_-12px_rgba(0,0,0,0.08)] z-20">
+          {cartContent}
         </div>
       </div>
+
+      {/* MOBILE BOTTOM FLOATING CART BAR */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t p-3 shadow-lg z-30 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="relative">
+            <ShoppingCart className="text-leaf size-6" />
+            {cart.length > 0 && (
+              <span className="bg-primary text-primary-foreground absolute -top-1.5 -right-1.5 flex size-4.5 min-w-4.5 items-center justify-center rounded-full text-[10px] font-bold">
+                {cart.reduce((a, c) => a + c.qty, 0)}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] text-muted-foreground font-medium uppercase">Tổng tiền</p>
+            <p className="text-base font-extrabold text-leaf leading-tight">{vnd(cartTotal)}</p>
+          </div>
+        </div>
+
+        <Button
+          variant="hero"
+          size="sm"
+          className="rounded-xl font-bold px-4 h-10 shadow-glow"
+          onClick={() => setMobileCartOpen(true)}
+        >
+          Xem giỏ ({cart.reduce((a, c) => a + c.qty, 0)})
+        </Button>
+      </div>
+
+      {/* MOBILE CART SHEET DRAWER */}
+      <Sheet open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
+        <SheetContent side="bottom" className="h-[85vh] p-0 flex flex-col rounded-t-3xl overflow-hidden">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Giỏ hàng POS</SheetTitle>
+          </SheetHeader>
+          {cartContent}
+        </SheetContent>
+      </Sheet>
 
       {/* OPTIONS DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

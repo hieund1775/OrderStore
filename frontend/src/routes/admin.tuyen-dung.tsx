@@ -358,41 +358,26 @@ function RecruitmentAdminPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vị trí công việc</TableHead>
-                      <TableHead>Hình thức</TableHead>
-                      <TableHead>Mức lương</TableHead>
-                      <TableHead className="hidden lg:table-cell">Yêu cầu chính</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs.map((j) => (
-                      <TableRow key={j.id} className={j.is_active ? "" : "opacity-60"}>
-                        <TableCell>
-                          <p className="font-semibold text-sm sm:text-base">{j.title}</p>
-                          <p className="text-muted-foreground text-xs line-clamp-1">{j.description}</p>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal text-xs">
-                            {j.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium text-primary text-xs sm:text-sm">
-                          {j.salary}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground hidden text-xs lg:table-cell max-w-xs truncate">
-                          {j.requirements}
-                        </TableCell>
-                        <TableCell>
+              <div>
+                {/* MOBILE JOB CARDS (< 768px) */}
+                <div className="md:hidden space-y-3 p-3">
+                  {jobs.map((j) => (
+                    <div
+                      key={j.id}
+                      className={`bg-card rounded-2xl border p-4 shadow-sm space-y-3 transition-opacity ${
+                        j.is_active ? "" : "opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 border-b pb-2.5">
+                        <div>
+                          <p className="font-bold text-base text-foreground">{j.title}</p>
+                          <p className="text-primary font-bold text-xs mt-0.5">{j.salary}</p>
+                        </div>
+                        <div className="shrink-0">
                           {j.is_active ? (
                             <Badge
                               variant="outline"
-                              className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs"
+                              className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold"
                             >
                               🟢 Đang mở tuyển
                             </Badge>
@@ -401,37 +386,133 @@ function RecruitmentAdminPage() {
                               ⚪ Tạm đóng
                             </Badge>
                           )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Switch
-                              checked={j.is_active}
-                              onCheckedChange={(v) => toggleJobActive(j, v)}
-                              aria-label={`Bật/tắt tuyển ${j.title}`}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEditJob(j)}
-                              aria-label={`Sửa tin ${j.title}`}
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => openDeleteJob(j)}
-                              aria-label={`Xóa tin ${j.title}`}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Hình thức:</span>
+                          <Badge variant="secondary" className="text-[11px] h-5 px-2">
+                            {j.type}
+                          </Badge>
+                        </div>
+                        {j.description && (
+                          <p className="text-muted-foreground line-clamp-2">{j.description}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-dashed gap-2">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={j.is_active}
+                            onCheckedChange={(v) => toggleJobActive(j, v)}
+                            aria-label={`Bật/tắt tuyển ${j.title}`}
+                          />
+                          <span className="text-xs text-muted-foreground font-medium">
+                            {j.is_active ? "Đang mở" : "Đã đóng"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs font-semibold"
+                            onClick={() => openEditJob(j)}
+                            aria-label={`Sửa tin ${j.title}`}
+                          >
+                            <Pencil className="size-3.5 mr-1" /> Sửa
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => openDeleteJob(j)}
+                            aria-label={`Xóa tin ${j.title}`}
+                          >
+                            <Trash2 className="size-3.5 mr-1" /> Xóa
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Vị trí công việc</TableHead>
+                        <TableHead>Hình thức</TableHead>
+                        <TableHead>Mức lương</TableHead>
+                        <TableHead className="hidden lg:table-cell">Yêu cầu chính</TableHead>
+                        <TableHead>Trạng thái</TableHead>
+                        <TableHead className="text-right">Thao tác</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {jobs.map((j) => (
+                        <TableRow key={j.id} className={j.is_active ? "" : "opacity-60"}>
+                          <TableCell>
+                            <p className="font-semibold text-sm sm:text-base">{j.title}</p>
+                            <p className="text-muted-foreground text-xs line-clamp-1">{j.description}</p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="font-normal text-xs">
+                              {j.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium text-primary text-xs sm:text-sm">
+                            {j.salary}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground hidden text-xs lg:table-cell max-w-xs truncate">
+                            {j.requirements}
+                          </TableCell>
+                          <TableCell>
+                            {j.is_active ? (
+                              <Badge
+                                variant="outline"
+                                className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs"
+                              >
+                                🟢 Đang mở tuyển
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="bg-muted text-muted-foreground text-xs">
+                                ⚪ Tạm đóng
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Switch
+                                checked={j.is_active}
+                                onCheckedChange={(v) => toggleJobActive(j, v)}
+                                aria-label={`Bật/tắt tuyển ${j.title}`}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditJob(j)}
+                                aria-label={`Sửa tin ${j.title}`}
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => openDeleteJob(j)}
+                                aria-label={`Xóa tin ${j.title}`}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             )}
           </Card>
@@ -451,78 +532,152 @@ function RecruitmentAdminPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ứng viên</TableHead>
-                      <TableHead>Vị trí ứng tuyển</TableHead>
-                      <TableHead className="hidden md:table-cell">Chi nhánh</TableHead>
-                      <TableHead className="hidden lg:table-cell">Hồ sơ / CV</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="hidden sm:table-cell">Ngày nộp</TableHead>
-                      <TableHead className="text-right">Chi tiết</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {applications.map((app) => (
-                      <TableRow key={app.id}>
-                        <TableCell>
-                          <p className="font-semibold text-sm">{app.fullname}</p>
-                          <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
-                            <span className="flex items-center gap-1">
-                              <Phone className="size-3" /> {app.phone}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Mail className="size-3" /> {app.email}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <p className="font-medium text-sm">{app.job_title}</p>
-                          {app.job_type && (
-                            <span className="text-muted-foreground text-xs">{app.job_type}</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
-                          {app.store_name}
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell text-xs">
-                          {app.cv_url ? (
+              <div>
+                {/* MOBILE CANDIDATE CARDS (< 768px) */}
+                <div className="md:hidden space-y-3 p-3">
+                  {applications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="bg-card rounded-2xl border p-4 shadow-sm space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-2 border-b pb-2.5">
+                        <div>
+                          <p className="font-bold text-base text-foreground">{app.fullname}</p>
+                          <p className="text-xs font-semibold text-primary">{app.job_title}</p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`border text-xs font-semibold shrink-0 ${
+                            appStatusBadgeTone[app.status] || "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {app.status}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground block text-[11px]">Số điện thoại</span>
+                          <a
+                            href={`tel:${app.phone}`}
+                            className="font-medium text-foreground underline hover:text-primary"
+                          >
+                            {app.phone}
+                          </a>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block text-[11px]">Chi nhánh</span>
+                          <span className="font-medium text-foreground truncate block">{app.store_name}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground block text-[11px]">Email</span>
+                          <span className="font-medium text-foreground truncate block">{app.email}</span>
+                        </div>
+                        {app.cv_url && (
+                          <div className="col-span-2 pt-1">
                             <a
                               href={app.cv_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-primary hover:underline flex items-center gap-1 font-medium"
+                              className="text-primary hover:underline flex items-center gap-1 font-semibold text-xs"
                             >
-                              <FileText className="size-3.5" /> Xem CV <ExternalLink className="size-3" />
+                              <FileText className="size-3.5" /> Xem File CV đính kèm ➔
                             </a>
-                          ) : (
-                            <span className="text-muted-foreground italic">Không đính kèm</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={`border text-xs font-semibold ${
-                              appStatusBadgeTone[app.status] || "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {app.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground hidden text-xs sm:table-cell">
-                          {app.created_at ? new Date(app.created_at).toLocaleDateString("vi-VN") : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="outline" size="sm" onClick={() => openAppDetail(app)}>
-                            <Eye className="size-3.5 mr-1" /> Xem & Duyệt
-                          </Button>
-                        </TableCell>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                        <span className="text-[11px] text-muted-foreground">
+                          Nộp: {app.created_at ? new Date(app.created_at).toLocaleDateString("vi-VN") : "—"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs font-semibold"
+                          onClick={() => openAppDetail(app)}
+                        >
+                          <Eye className="size-3.5 mr-1" /> Xem & Duyệt
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP & TABLET TABLE (>= 768px) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Ứng viên</TableHead>
+                        <TableHead>Vị trí ứng tuyển</TableHead>
+                        <TableHead className="hidden md:table-cell">Chi nhánh</TableHead>
+                        <TableHead className="hidden lg:table-cell">Hồ sơ / CV</TableHead>
+                        <TableHead>Trạng thái</TableHead>
+                        <TableHead className="hidden sm:table-cell">Ngày nộp</TableHead>
+                        <TableHead className="text-right">Chi tiết</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {applications.map((app) => (
+                        <TableRow key={app.id}>
+                          <TableCell>
+                            <p className="font-semibold text-sm">{app.fullname}</p>
+                            <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
+                              <span className="flex items-center gap-1">
+                                <Phone className="size-3" /> {app.phone}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Mail className="size-3" /> {app.email}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <p className="font-medium text-sm">{app.job_title}</p>
+                            {app.job_type && (
+                              <span className="text-muted-foreground text-xs">{app.job_type}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
+                            {app.store_name}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-xs">
+                            {app.cv_url ? (
+                              <a
+                                href={app.cv_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline flex items-center gap-1 font-medium"
+                              >
+                                <FileText className="size-3.5" /> Xem CV <ExternalLink className="size-3" />
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground italic">Không đính kèm</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`border text-xs font-semibold ${
+                                appStatusBadgeTone[app.status] || "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {app.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground hidden text-xs sm:table-cell">
+                            {app.created_at ? new Date(app.created_at).toLocaleDateString("vi-VN") : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="outline" size="sm" onClick={() => openAppDetail(app)}>
+                              <Eye className="size-3.5 mr-1" /> Xem & Duyệt
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             )}
           </Card>

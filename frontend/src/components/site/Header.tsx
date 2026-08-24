@@ -335,7 +335,7 @@ function NotificationButton() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative hidden rounded-full sm:inline-flex"
+          className="relative inline-flex rounded-full"
           aria-label="Thông báo"
         >
           <Bell className="size-5" />

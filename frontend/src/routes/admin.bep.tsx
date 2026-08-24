@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
 import { apiGet, apiPatch, clearToken, getUser } from "@/lib/api";
@@ -442,6 +443,208 @@ function KdsPage() {
     return orders.filter((o) => laneOf(o.current_status) === lane);
   };
 
+  const [activeLaneTab, setActiveLaneTab] = useState<Lane>("prep");
+
+  const renderLaneSection = (lane: (typeof lanes)[0]) => {
+    const laneOrders = orderInLane(lane.id);
+    return (
+      <section key={lane.id} className={`rounded-2xl border p-3.5 sm:p-4 ${lane.ring}`}>
+        <p className="mb-3 sm:mb-4 flex items-center justify-between text-sm font-bold">
+          <span>{lane.label}</span>
+          <span className="bg-background rounded-full px-2 py-0.5 text-xs font-extrabold shadow-xs">
+            {laneOrders.length}
+          </span>
+        </p>
+        <div className="space-y-3 sm:space-y-4">
+          {laneOrders.map((o) => {
+            const endAt = lane.id === "done" ? doneAt[o.id] ?? now : now;
+            const age = elapsedDurationMs(o.created_at, endAt);
+            const late = lane.id === "prep" && age > LATE_AFTER_MINUTES * 60000;
+            const isNew = !!newIds[o.id];
+            return (
+              <article
+                key={o.id}
+                onClick={() => setSelected(o)}
+                className={`bg-card cursor-pointer rounded-2xl border-2 p-3.5 sm:p-4 transition-colors ${
+                  late
+                    ? "border-berry animate-pulse shadow-[0_0_0_1px_theme(colors.berry/40)]"
+                    : isNew
+                      ? "border-primary animate-pulse"
+                      : "border-transparent hover:border-border"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-display text-base sm:text-lg font-extrabold">{o.order_code}</p>
+                    <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      {o.location_name && (
+                        <span className="flex items-center gap-1">
+                          <MapPin className="size-3" /> {o.location_name}
+                        </span>
+                      )}
+                      <span className="truncate">{o.store_name}</span>
+                      {o.order_type && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+                          {o.order_type === "Delivery"
+                            ? "🚚 Giao hàng"
+                            : o.order_type === "POS"
+                              ? "Quầy POS"
+                              : o.order_type}
+                        </Badge>
+                      )}
+                    </p>
+                  </div>
+                  <div className="text-right flex flex-col items-end shrink-0">
+                    <div className="text-[11px] font-medium text-muted-foreground leading-tight">
+                      {fmtDate(o.created_at)}
+                    </div>
+                    <div className="text-xs font-bold text-foreground leading-tight mt-0.5">
+                      {fmtTime(o.created_at)}
+                    </div>
+                    <span
+                      className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-mono font-bold ${
+                        late
+                          ? "bg-berry text-berry-foreground animate-pulse"
+                          : lane.id === "done"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {late ? <Flame className="size-3" /> : <Clock className="size-3" />}
+                      {fmtClockTimer(age)} {late ? "(Trễ)" : ""}
+                    </span>
+                  </div>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {o.items.map((it) => (
+                    <li key={it.id} className="border-l-4 border-primary/40 pl-3">
+                      <p className="text-sm sm:text-base font-semibold">
+                        {it.qty}× {it.product_name}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {it.size_label} · {it.base_tea} · {it.sugar_level} đường · {it.ice_level} đá
+                        {it.toppings.length > 0 &&
+                          ` · ${it.toppings.map((t) => t.name).join(", ")}`}
+                      </p>
+                      {it.note && <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>}
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Khối Shipper hiển thị ở cột Đang giao */}
+                {lane.id === "delivering" && (
+                  <div className="mt-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-950 dark:text-amber-300 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <Bike className="size-3.5 text-amber-600 dark:text-amber-400" />
+                      Shipper: {o.shipping_driver_name || "Chưa có tên"}
+                    </p>
+                    {o.shipping_driver_phone && (
+                      <p className="flex items-center gap-1.5 font-medium">
+                        <Phone className="size-3 text-amber-600 dark:text-amber-400" />
+                        <a
+                          href={`tel:${o.shipping_driver_phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="underline hover:text-amber-700 dark:hover:text-amber-200 font-bold"
+                        >
+                          {o.shipping_driver_phone}
+                        </a>
+                      </p>
+                    )}
+                    {o.delivery_addr && (
+                      <p className="text-[11px] opacity-90 truncate">📍 {o.delivery_addr}</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-4 flex gap-2">
+                  {lane.id === "prep" && (
+                    <>
+                      {o.order_type === "Delivery" ? (
+                        <Button
+                          variant="hero"
+                          size="sm"
+                          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            completePreparation(o);
+                          }}
+                        >
+                          🚚 Pha xong ➔ Giao Shipper
+                        </Button>
+                      ) : (
+                        <Button
+                          variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
+                          size="sm"
+                          className={`flex-1 font-bold text-xs ${
+                            armedCompletion?.orderId === o.id
+                              ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
+                              : ""
+                          }`}
+                          disabled={completionLoadingId === o.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCompleteOrderClick(o, "prep_nondelivery");
+                          }}
+                        >
+                          {completionLoadingId === o.id
+                            ? "Đang hoàn thành..."
+                            : armedCompletion?.orderId === o.id
+                              ? "⚠️ Bấm lại để xác nhận"
+                              : "✅ Hoàn thành"}
+                        </Button>
+                      )}
+                    </>
+                  )}
+
+                  {lane.id === "delivering" && (
+                    <Button
+                      variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
+                      size="sm"
+                      className={`flex-1 font-bold text-xs ${
+                        armedCompletion?.orderId === o.id
+                          ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
+                          : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                      }`}
+                      disabled={completionLoadingId === o.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCompleteOrderClick(o, "delivering");
+                      }}
+                    >
+                      {completionLoadingId === o.id
+                        ? "Đang hoàn thành..."
+                        : armedCompletion?.orderId === o.id
+                          ? "⚠️ Bấm lại để xác nhận"
+                          : "✅ Đã giao tận nơi (Hoàn thành)"}
+                    </Button>
+                  )}
+
+                  {lane.id === "done" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDismissConfirmOrder(o);
+                      }}
+                    >
+                      <EyeOff className="size-3.5 mr-1" />
+                      Ẩn khỏi KDS
+                    </Button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+          {laneOrders.length === 0 && (
+            <p className="text-muted-foreground py-8 text-center text-sm">Chưa có đơn nào.</p>
+          )}
+        </div>
+      </section>
+    );
+  };
+
   return (
     <>
       <AdminPageHeader
@@ -484,7 +687,7 @@ function KdsPage() {
             </span>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           {/* Printer Recognition Status Badge Button */}
           <Button
             variant="outline"
@@ -529,212 +732,42 @@ function KdsPage() {
             aria-pressed={soundEnabled}
           >
             <Volume2 className="size-4" />
-            {soundEnabled ? "Chuông báo: BẬT" : "Chuông báo: TẮT"}
+            {soundEnabled ? "Chuông: BẬT" : "Chuông: TẮT"}
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-        {lanes.map((lane) => {
-          const laneOrders = orderInLane(lane.id);
-          return (
-            <section key={lane.id} className={`rounded-2xl border p-4 ${lane.ring}`}>
-              <p className="mb-4 flex items-center justify-between text-sm font-bold">
-                {lane.label}
-                <span className="bg-background rounded-full px-2 py-0.5 text-xs font-extrabold shadow-xs">
-                  {laneOrders.length}
-                </span>
-              </p>
-              <div className="space-y-4">
-                {laneOrders.map((o) => {
-                  const endAt = lane.id === "done" ? (doneAt[o.id] ?? now) : now;
-                  const age = elapsedDurationMs(o.created_at, endAt);
-                  const late = lane.id === "prep" && age > LATE_AFTER_MINUTES * 60000;
-                  const isNew = !!newIds[o.id];
-                  return (
-                    <article
-                      key={o.id}
-                      onClick={() => setSelected(o)}
-                      className={`bg-card cursor-pointer rounded-2xl border-2 p-4 transition-colors ${
-                        late
-                          ? "border-berry animate-pulse shadow-[0_0_0_1px_theme(colors.berry/40)]"
-                          : isNew
-                            ? "border-primary animate-pulse"
-                            : "border-transparent hover:border-border"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-display text-lg font-extrabold">{o.order_code}</p>
-                          <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-                            {o.location_name && (
-                              <span className="flex items-center gap-1">
-                                <MapPin className="size-3" /> {o.location_name}
-                              </span>
-                            )}
-                            <span>{o.store_name}</span>
-                            {o.order_type && (
-                              <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
-                                {o.order_type === "Delivery" ? "🚚 Giao hàng" : o.order_type === "POS" ? "Quầy POS" : o.order_type}
-                              </Badge>
-                            )}
-                          </p>
-                        </div>
-                        <div className="text-right flex flex-col items-end shrink-0">
-                          <div className="text-[11px] font-medium text-muted-foreground leading-tight">
-                            {fmtDate(o.created_at)}
-                          </div>
-                          <div className="text-xs font-bold text-foreground leading-tight mt-0.5">
-                            {fmtTime(o.created_at)}
-                          </div>
-                          <span
-                            className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-mono font-bold ${
-                              late
-                                ? "bg-berry text-berry-foreground animate-pulse"
-                                : lane.id === "done"
-                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                  : "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {late ? <Flame className="size-3" /> : <Clock className="size-3" />}
-                            {fmtClockTimer(age)} {late ? "(Trễ)" : ""}
-                          </span>
-                        </div>
-                      </div>
-                      <ul className="mt-3 space-y-2">
-                        {o.items.map((it) => (
-                          <li key={it.id} className="border-l-4 border-primary/40 pl-3">
-                            <p className="text-base font-semibold">
-                              {it.qty}× {it.product_name}
-                            </p>
-                            <p className="text-muted-foreground text-xs">
-                              {it.size_label} · {it.base_tea} · {it.sugar_level} đường ·{" "}
-                              {it.ice_level} đá
-                              {it.toppings.length > 0 &&
-                                ` · ${it.toppings.map((t) => t.name).join(", ")}`}
-                            </p>
-                            {it.note && (
-                              <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+      {/* MOBILE & TABLET PORTRAIT LANE SELECTOR TABS (< 1024px) */}
+      <div className="lg:hidden mb-4">
+        <Tabs value={activeLaneTab} onValueChange={(v) => setActiveLaneTab(v as Lane)} className="w-full">
+          <TabsList className="grid grid-cols-3 w-full h-auto p-1.5 gap-1.5 rounded-2xl bg-muted/80">
+            {lanes.map((lane) => {
+              const count = orderInLane(lane.id).length;
+              return (
+                <TabsTrigger
+                  key={lane.id}
+                  value={lane.id}
+                  className="flex items-center justify-center gap-1.5 py-2 px-1 text-xs font-bold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+                >
+                  <span className="truncate">
+                    {lane.id === "prep" ? "🔴 Pha chế" : lane.id === "delivering" ? "🚚 Giao hàng" : "🟢 Xong"}
+                  </span>
+                  <span className="bg-background rounded-full px-1.5 py-0.5 text-[10px] font-extrabold shadow-xs">
+                    {count}
+                  </span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
+        <div className="mt-4">
+          {lanes.filter((l) => l.id === activeLaneTab).map((lane) => renderLaneSection(lane))}
+        </div>
+      </div>
 
-                      {/* Khối Shipper hiển thị ở cột Đang giao */}
-                      {lane.id === "delivering" && (
-                        <div className="mt-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-950 dark:text-amber-300 space-y-1">
-                          <p className="font-bold flex items-center gap-1.5">
-                            <Bike className="size-3.5 text-amber-600 dark:text-amber-400" />
-                            Shipper: {o.shipping_driver_name || "Chưa có tên"}
-                          </p>
-                          {o.shipping_driver_phone && (
-                            <p className="flex items-center gap-1.5 font-medium">
-                              <Phone className="size-3 text-amber-600 dark:text-amber-400" />
-                              <a
-                                href={`tel:${o.shipping_driver_phone}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="underline hover:text-amber-700 dark:hover:text-amber-200 font-bold"
-                              >
-                                {o.shipping_driver_phone}
-                              </a>
-                            </p>
-                          )}
-                          {o.delivery_addr && (
-                            <p className="text-[11px] opacity-90 truncate">
-                              📍 {o.delivery_addr}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="mt-4 flex gap-2">
-                        {lane.id === "prep" && (
-                          <>
-                            {o.order_type === "Delivery" ? (
-                              <Button
-                                variant="hero"
-                                size="sm"
-                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  completePreparation(o);
-                                }}
-                              >
-                                🚚 Pha xong ➔ Giao Shipper
-                              </Button>
-                            ) : (
-                              <Button
-                                variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
-                                size="sm"
-                                className={`flex-1 font-bold text-xs ${
-                                  armedCompletion?.orderId === o.id
-                                    ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
-                                    : ""
-                                }`}
-                                disabled={completionLoadingId === o.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCompleteOrderClick(o, "prep_nondelivery");
-                                }}
-                              >
-                                {completionLoadingId === o.id
-                                  ? "Đang hoàn thành..."
-                                  : armedCompletion?.orderId === o.id
-                                    ? "⚠️ Bấm lại để xác nhận"
-                                    : "✅ Hoàn thành"}
-                              </Button>
-                            )}
-                          </>
-                        )}
-
-                        {lane.id === "delivering" && (
-                          <Button
-                            variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
-                            size="sm"
-                            className={`flex-1 font-bold text-xs ${
-                              armedCompletion?.orderId === o.id
-                                ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
-                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                            }`}
-                            disabled={completionLoadingId === o.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCompleteOrderClick(o, "delivering");
-                            }}
-                          >
-                            {completionLoadingId === o.id
-                              ? "Đang hoàn thành..."
-                              : armedCompletion?.orderId === o.id
-                                ? "⚠️ Bấm lại để xác nhận"
-                                : "✅ Đã giao tận nơi (Hoàn thành)"}
-                          </Button>
-                        )}
-
-                        {lane.id === "done" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDismissConfirmOrder(o);
-                            }}
-                          >
-                            <EyeOff className="size-3.5 mr-1" />
-                            Ẩn khỏi KDS
-                          </Button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-                {laneOrders.length === 0 && (
-                  <p className="text-muted-foreground py-8 text-center text-sm">Chưa có đơn nào.</p>
-                )}
-              </div>
-            </section>
-          );
-        })}
+      {/* DESKTOP & TABLET LANDSCAPE 3-COLUMN BOARD (>= 1024px) */}
+      <div className="hidden lg:grid lg:grid-cols-3 gap-4">
+        {lanes.map((lane) => renderLaneSection(lane))}
       </div>
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
