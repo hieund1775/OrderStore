@@ -312,8 +312,17 @@ function StoresPage() {
                 {list.map((s) => (
                   <article
                     key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-selected={selectedId === s.id}
                     onClick={() => handleSelectStore(s)}
-                    className={`bg-card w-full min-w-0 overflow-hidden cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelectStore(s);
+                      }
+                    }}
+                    className={`bg-card w-full min-w-0 overflow-hidden cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ${
                       selectedId === s.id
                         ? "border-primary ring-2 ring-primary/20 shadow-md"
                         : "border-border hover:border-primary/50"
