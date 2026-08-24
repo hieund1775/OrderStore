@@ -60,31 +60,36 @@ export function ProductCard({ product }: { product: Product }) {
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col p-3 sm:p-3.5 pt-2.5 sm:pt-3">
-          {/* Row 1: Product Name */}
-          <h3 className="font-display line-clamp-2 min-h-[2.5rem] sm:min-h-[2.75rem] text-sm sm:text-base font-bold leading-snug break-words">
-            {product.name}
-          </h3>
+        <div className="flex flex-1 flex-col justify-between p-3 sm:p-3.5 pt-2 sm:pt-2.5">
+          <div className="space-y-1">
+            {/* Row 1: Product Name */}
+            <h3
+              title={product.name}
+              className="font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words"
+            >
+              {product.name}
+            </h3>
 
-          {/* Row 2: Base tea */}
-          <p className="text-muted-foreground text-xs mt-1">
-            {product.base}
-          </p>
+            {/* Row 2: Base tea */}
+            <p className="text-muted-foreground text-xs truncate">
+              {product.base}
+            </p>
 
-          {/* Row 3: Rating & Reviews */}
-          <div className="text-muted-foreground flex items-center gap-1 text-xs mt-1">
-            <Star className="fill-primary text-primary size-3.5" />
-            <span className="text-foreground font-semibold">{product.rating}</span>
-            <span className="truncate">· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
+            {/* Row 3: Rating & Reviews */}
+            <div className="text-muted-foreground flex items-center gap-1 text-xs">
+              <Star className="fill-primary text-primary size-3.5 shrink-0" />
+              <span className="text-foreground font-semibold">{product.rating}</span>
+              <span className="truncate">· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
+            </div>
+
+            {/* Row 4: Price */}
+            <p className="text-primary text-base sm:text-lg font-bold">
+              {vnd(product.price)}
+            </p>
           </div>
 
-          {/* Row 4: Price */}
-          <p className="text-primary text-base sm:text-lg font-bold mt-1.5">
-            {vnd(product.price)}
-          </p>
-
           {/* Action Buttons */}
-          <div className="mt-auto pt-2.5 sm:pt-3 flex items-center gap-1.5 sm:gap-2">
+          <div className="mt-3 flex items-center gap-1.5 sm:gap-2">
             <Button
               variant="soft"
               size="sm"
@@ -114,11 +119,11 @@ export function ProductCard({ product }: { product: Product }) {
             <Button
               variant="hero"
               size="sm"
-              className="h-9 flex-1 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
+              className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
               onClick={() => setOpen(true)}
             >
               <Settings2 className="size-3.5 sm:size-4 shrink-0" />
-              <span>Tùy chọn</span>
+              <span className="truncate">Tùy chọn</span>
             </Button>
           </div>
         </div>
