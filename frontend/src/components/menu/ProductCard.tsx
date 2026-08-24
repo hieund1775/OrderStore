@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Heart, Plus, Settings2, Star } from 'lucide-react';
+import { Heart, Settings2, ShoppingCart, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -60,20 +60,36 @@ export function ProductCard({ product }: { product: Product }) {
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col gap-1.5 p-4">
-          <h3 className="font-display line-clamp-1 text-base font-bold">{product.name}</h3>
-          <p className="text-muted-foreground text-xs">{product.base}</p>
-          <div className="text-muted-foreground flex items-center gap-1 text-xs">
+        <div className="flex flex-1 flex-col p-3 sm:p-3.5 pt-2.5 sm:pt-3">
+          {/* Row 1: Product Name */}
+          <h3 className="font-display line-clamp-2 min-h-[2.5rem] sm:min-h-[2.75rem] text-sm sm:text-base font-bold leading-snug break-words">
+            {product.name}
+          </h3>
+
+          {/* Row 2: Base tea */}
+          <p className="text-muted-foreground text-xs mt-1">
+            {product.base}
+          </p>
+
+          {/* Row 3: Rating & Reviews */}
+          <div className="text-muted-foreground flex items-center gap-1 text-xs mt-1">
             <Star className="fill-primary text-primary size-3.5" />
             <span className="text-foreground font-semibold">{product.rating}</span>
-            <span>· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
+            <span className="truncate">· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
           </div>
-          <p className="text-primary mt-1 text-lg font-bold">{vnd(product.price)}</p>
-          <div className="mt-3 flex gap-2">
+
+          {/* Row 4: Price */}
+          <p className="text-primary text-base sm:text-lg font-bold mt-1.5">
+            {vnd(product.price)}
+          </p>
+
+          {/* Action Buttons */}
+          <div className="mt-auto pt-2.5 sm:pt-3 flex items-center gap-1.5 sm:gap-2">
             <Button
               variant="soft"
               size="sm"
-              className="flex-1"
+              aria-label="Thêm nhanh vào giỏ"
+              className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
               onClick={() => {
                 const added = addItem({
                   productId: product.id,
@@ -92,10 +108,17 @@ export function ProductCard({ product }: { product: Product }) {
                 }
               }}
             >
-              <Plus className="size-4" /> Thêm nhanh
+              <ShoppingCart className="size-4 shrink-0" />
+              <span className="hidden sm:inline text-xs sm:text-sm">Thêm nhanh</span>
             </Button>
-            <Button variant="hero" size="sm" className="flex-1" onClick={() => setOpen(true)}>
-              <Settings2 className="size-4" /> Tùy chọn
+            <Button
+              variant="hero"
+              size="sm"
+              className="h-9 flex-1 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
+              onClick={() => setOpen(true)}
+            >
+              <Settings2 className="size-3.5 sm:size-4 shrink-0" />
+              <span>Tùy chọn</span>
             </Button>
           </div>
         </div>

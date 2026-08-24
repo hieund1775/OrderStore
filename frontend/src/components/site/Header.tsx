@@ -5,7 +5,7 @@ import {
   Heart,
   MapPin,
   Menu as MenuIcon,
-  ShoppingBag,
+  ShoppingCart,
   User,
   ChevronRight,
   Trash2,
@@ -130,7 +130,7 @@ function QuickCart() {
     <Sheet>
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Giỏ hàng">
-          <ShoppingBag className="size-5" />
+          <ShoppingCart className="size-5" />
           {count > 0 && (
             <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4.5 min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] font-bold">
               {count}

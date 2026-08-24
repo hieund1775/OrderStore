@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowUp, MessageCircle, Phone, ShoppingBag } from 'lucide-react';
+import { ArrowUp, MessageCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/lib/cart';
 import { vnd } from '@/lib/data';
@@ -48,7 +48,7 @@ export function MobileCartBar() {
     <div className="bg-card/95 fixed inset-x-0 bottom-0 z-50 border-t p-3 backdrop-blur md:hidden">
       <div className="flex items-center gap-3">
         <div className="relative">
-          <ShoppingBag className="text-primary size-6" />
+          <ShoppingCart className="text-primary size-6" />
           <span className="bg-primary text-primary-foreground absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-bold">
             {count}
           </span>

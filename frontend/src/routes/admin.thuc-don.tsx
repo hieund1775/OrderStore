@@ -326,7 +326,7 @@ function MenuAdminPage() {
                       <div>
                         <p className="font-display font-bold">{p.name}</p>
                         <p className="text-muted-foreground text-xs">
-                          {p.category_name || `Danh mục #${p.category_id}`} · /{p.slug}
+                          {p.category_name || `Danh mục #${p.category_id}`}
                         </p>
                       </div>
                       <Badge variant="secondary">{p.base_tea}</Badge>
