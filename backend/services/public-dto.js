@@ -94,6 +94,14 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
         ? (order.shipping_driver_name.slice(0, 1) + '***' + (order.shipping_driver_name.length > 2 ? order.shipping_driver_name.slice(-1) : ''))
         : null);
 
+  const canResumePayment = Boolean(
+    isCustomerOwner
+    && order.payment_provider === 'payos'
+    && order.payment_status === 'unpaid'
+    && order.current_status !== 'Đã hủy'
+    && order.current_status !== 'Hoàn thành'
+  );
+
   return {
     order_code: order.order_code,
     order_type: order.order_type,
@@ -106,8 +114,13 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     discount_amount: order.discount_amount,
     total: order.total,
     payment_method: order.payment_method,
+    payment_provider: order.payment_provider || null,
     payment_status: order.payment_status,
     payment_expires_at: order.payment_expires_at,
+    can_resume_payment: canResumePayment,
+    payment_checkout_url: canResumePayment
+      ? (order.payment_checkout_url || null)
+      : null,
     created_at: order.created_at,
     current_status: order.current_status,
     shipping_driver_name: maskedDriverName,

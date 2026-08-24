@@ -31,6 +31,30 @@ function boundedText(value, field, maxLength = 255, { required = true } = {}) {
   return value.trim();
 }
 
+function dateOnly(value, field, { required = false, nullable = false } = {}) {
+  if (value === undefined) {
+    if (required) throw new PromotionValidationError(`${field} không được để trống`, 'PROMOTION_REQUIRED_FIELD');
+    return undefined;
+  }
+  if (value === null || value === '') {
+    if (nullable) return null;
+    throw new PromotionValidationError(`${field} không hợp lệ`, 'PROMOTION_INVALID_DATES');
+  }
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new PromotionValidationError(`${field} không hợp lệ`, 'PROMOTION_INVALID_DATES');
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    throw new PromotionValidationError(`${field} không hợp lệ`, 'PROMOTION_INVALID_DATES');
+  }
+  return value;
+}
+
 export function validatePromotionId(value) {
   return positiveInteger(value, 'ID khuyến mãi');
 }
@@ -48,16 +72,22 @@ export function validatePromotionInput(body = {}, { isUpdate = false } = {}) {
     throw new PromotionValidationError('Loại giảm giá phải là percent hoặc fixed');
   }
 
-  if (voucher_type !== undefined && !['single_use', 'time_bounded'].includes(voucher_type)) {
-    throw new PromotionValidationError('Loại voucher phải là single_use hoặc time_bounded');
+  if (voucher_type !== undefined && !['single_use', 'shared'].includes(voucher_type)) {
+    throw new PromotionValidationError('Loại voucher phải là single_use hoặc shared');
   }
 
-  if (start_date && end_date) {
-    const start = new Date(start_date);
-    const end = new Date(end_date);
-    if (end < start) {
-      throw new PromotionValidationError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu', 'PROMOTION_INVALID_DATES');
-    }
+  const finalStartDate = dateOnly(start_date, 'Ngày bắt đầu', { required: !isUpdate });
+  const finalEndDate = dateOnly(end_date, 'Ngày kết thúc', { nullable: true });
+  if (finalStartDate && finalEndDate && finalEndDate < finalStartDate) {
+    throw new PromotionValidationError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu', 'PROMOTION_INVALID_DATES');
+  }
+
+  let finalUsageLimit = usage_limit !== undefined && usage_limit !== '' && usage_limit !== null
+    ? positiveInteger(usage_limit, 'Giới hạn lượt dùng', { required: false })
+    : (usage_limit === null || usage_limit === '' ? null : undefined);
+
+  if (voucher_type === 'single_use') {
+    finalUsageLimit = null;
   }
 
   return {
@@ -69,9 +99,9 @@ export function validatePromotionInput(body = {}, { isUpdate = false } = {}) {
     min_order: min_order !== undefined && min_order !== '' ? Number(min_order) : undefined,
     max_discount: max_discount !== undefined && max_discount !== '' ? Number(max_discount) : undefined,
     voucher_type: voucher_type || undefined,
-    usage_limit: usage_limit !== undefined && usage_limit !== '' ? Number(usage_limit) : undefined,
-    start_date: start_date || undefined,
-    end_date: end_date || undefined,
+    usage_limit: finalUsageLimit,
+    start_date: finalStartDate,
+    end_date: finalEndDate,
     is_active: is_active !== undefined ? Boolean(is_active) : undefined,
     store_id: store_id != null ? Number(store_id) : undefined,
     store_ids: Array.isArray(store_ids) ? store_ids.map(Number) : undefined,

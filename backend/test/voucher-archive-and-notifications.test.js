@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAdminPromotionsRepository } from '../repositories/postgres/admin-promotions.js';
+import { AdminPromotionError, createAdminPromotionsRepository } from '../repositories/postgres/admin-promotions.js';
 import { createPromotionsRepository, PromotionError } from '../repositories/postgres/promotions.js';
 import { createNotificationsRepository } from '../repositories/postgres/notifications.js';
 import { createOrdersRepository } from '../repositories/postgres/orders.js';
@@ -53,6 +53,25 @@ describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () =
       assert.ok(listQuery.sql.includes('WHERE p.deleted_at IS NULL'));
     });
 
+    it('uses the same global-or-exact-store scope rule for manager lists', async () => {
+      const executed = [];
+      const mockDb = {
+        async query(sql, params) {
+          executed.push({ sql, params });
+          return [[], 0];
+        },
+      };
+
+      const repo = createAdminPromotionsRepository(mockDb);
+      await repo.listPromotions({ scopedStoreId: 7 });
+      const listQuery = executed[0];
+      assert.ok(listQuery.sql.includes('NOT EXISTS (SELECT 1 FROM promotion_stores'));
+      assert.ok(listQuery.sql.includes('EXISTS (SELECT 1 FROM promotion_stores'));
+      assert.ok(listQuery.sql.includes('ps2.store_id = $1'));
+      assert.equal(listQuery.sql.includes("p.scope = 'all'"), false);
+      assert.deepEqual(listQuery.params, [7]);
+    });
+
     it('prevents archived vouchers from being previewed or applied publicly', async () => {
       const executed = [];
       const mockDb = {
@@ -72,6 +91,54 @@ describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () =
       const checkQuery = executed.find((q) => q.sql.includes('SELECT p.*'));
       assert.ok(checkQuery);
       assert.ok(checkQuery.sql.includes('p.deleted_at IS NULL'));
+      assert.ok(checkQuery.sql.includes('NOT EXISTS (SELECT 1 FROM promotion_stores'));
+      assert.ok(checkQuery.sql.includes('EXISTS (SELECT 1 FROM promotion_stores'));
+      assert.ok(checkQuery.sql.includes('(p.end_date IS NULL OR p.end_date >= CURRENT_DATE)'));
+    });
+
+    it('normalizes single-use create data and rejects invalid merged update limits', async () => {
+      const inserted = [];
+      const createDb = {
+        async transaction(callback) {
+          return callback({
+            async query(sql, params) {
+              if (sql.includes('INSERT INTO promotions')) {
+                inserted.push(params);
+                return [[{ id: 1, voucher_type: params[15], usage_limit: params[16] }], 1];
+              }
+              return [[], 0];
+            },
+          });
+        },
+      };
+      const createRepo = createAdminPromotionsRepository(createDb);
+      const created = await createRepo.createPromotion({
+        title: 'Một lần', code: 'ONCE', start_date: '2026-08-24', end_date: null,
+        voucher_type: 'single_use', usage_limit: 99,
+      });
+      assert.equal(created.voucher_type, 'single_use');
+      assert.equal(created.usage_limit, null);
+
+      const updateDb = {
+        async transaction(callback) {
+          return callback({
+            async query(sql) {
+              if (sql.includes('SELECT id, voucher_type')) {
+                return [[{
+                  id: 1, voucher_type: 'shared', usage_limit: 10, used_count: 5,
+                  start_date: '2026-08-01', end_date: null,
+                }], 1];
+              }
+              throw new Error('UPDATE must not run for an invalid merged candidate');
+            },
+          });
+        },
+      };
+      const updateRepo = createAdminPromotionsRepository(updateDb);
+      await assert.rejects(
+        () => updateRepo.updatePromotion(1, { usage_limit: 4 }),
+        (err) => err instanceof AdminPromotionError && err.status === 400,
+      );
     });
   });
 

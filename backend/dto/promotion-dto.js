@@ -18,7 +18,7 @@ export function toPromotionDto(promo) {
     discount_value: Number(promo.discount_value || 0),
     min_order: promo.min_order == null ? null : Number(promo.min_order),
     max_discount: promo.max_discount == null ? null : Number(promo.max_discount),
-    voucher_type: promo.voucher_type || 'time_bounded',
+    voucher_type: promo.voucher_type || 'shared',
     usage_limit: promo.usage_limit == null ? null : Number(promo.usage_limit),
     used_count: Number(promo.used_count || 0),
     status: promo.status || 'Đang diễn ra',

@@ -35,13 +35,15 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
   const [rows] = await tx.query(
     `SELECT p.*
      FROM promotions p
-     JOIN promotion_stores ps ON ps.promotion_id = p.id
      WHERE p.code = $1
        AND p.is_active = TRUE
        AND p.deleted_at IS NULL
-       AND ps.store_id = $2
+       AND (
+         NOT EXISTS (SELECT 1 FROM promotion_stores ps WHERE ps.promotion_id = p.id)
+         OR EXISTS (SELECT 1 FROM promotion_stores ps WHERE ps.promotion_id = p.id AND ps.store_id = $2)
+       )
        AND p.start_date <= CURRENT_DATE
-       AND p.end_date >= CURRENT_DATE
+       AND (p.end_date IS NULL OR p.end_date >= CURRENT_DATE)
      ${lock ? 'FOR UPDATE OF p' : ''}`,
     [normalizedCode, Number(storeId)],
   );

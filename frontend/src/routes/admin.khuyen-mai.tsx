@@ -34,6 +34,8 @@ import {
 import { apiDelete, apiGet, apiPost, apiPut, getUser } from "@/lib/api";
 import { vnd } from "@/lib/data";
 
+import { formatLocalDateKey, formatVoucherDate, getPromotionStatus, type PromotionStatusInput } from "@/lib/promotion-status";
+
 export const Route = createFileRoute("/admin/khuyen-mai")({
   head: () => ({
     meta: [
@@ -41,7 +43,7 @@ export const Route = createFileRoute("/admin/khuyen-mai")({
       {
         name: "description",
         content:
-          "Cấu hình voucher giảm giá %: mã dùng 1 lần hoặc mã theo thời hạn giới hạn lượt dùng.",
+          "Cấu hình voucher giảm giá %: mã dùng 1 lần cho mỗi SĐT hoặc mã dùng chung theo thời hạn & lượt dùng.",
       },
       { name: "robots", content: "noindex" },
     ],
@@ -57,11 +59,11 @@ type Promotion = {
   discount_type: string | null;
   max_discount: number | null;
   min_order: number | null;
-  voucher_type: "single_use" | "time_bounded";
+  voucher_type: "single_use" | "shared";
   usage_limit: number | null;
   used_count: number;
   start_date: string;
-  end_date: string;
+  end_date: string | null;
   status: string;
   is_active: boolean;
 };
@@ -72,27 +74,28 @@ const emptyForm = {
   discount_value: "",
   max_discount: "",
   min_order: "",
-  voucher_type: "time_bounded" as "single_use" | "time_bounded",
+  voucher_type: "shared" as "single_use" | "shared",
+  is_unlimited_usage: true,
   usage_limit: "",
-  start_date: new Date().toISOString().slice(0, 10),
-  end_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  start_date: formatLocalDateKey(),
+  is_unlimited_date: false,
+  end_date: formatLocalDateKey(new Date(Date.now() + 30 * 86400000)),
 };
 
-function getVoucherStatusBadge(p: Promotion) {
-  const today = new Date().toISOString().slice(0, 10);
-  const isExpiredByDate = p.end_date && p.end_date.slice(0, 10) < today;
-  const isExpiredByUsage = p.usage_limit != null && p.used_count >= p.usage_limit;
-
-  if (!p.is_active) {
-    return <Badge variant="secondary" className="bg-muted text-muted-foreground">Tạm tắt</Badge>;
+function renderVoucherBadge(p: Promotion) {
+  const status = getPromotionStatus(p);
+  switch (status.variant) {
+    case "inactive":
+      return <Badge variant="secondary" className="bg-muted text-muted-foreground">Tạm tắt</Badge>;
+    case "expired":
+      return <Badge variant="destructive">Hết hạn</Badge>;
+    case "exhausted":
+      return <Badge variant="destructive">Hết lượt</Badge>;
+    case "pending":
+      return <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Sắp diễn ra</Badge>;
+    case "active":
+      return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">Đang diễn ra</Badge>;
   }
-  if (isExpiredByDate || isExpiredByUsage) {
-    return <Badge variant="destructive">Hết hạn</Badge>;
-  }
-  if (p.voucher_type === "single_use" && (!p.end_date || p.end_date.startsWith("2099") || p.end_date.startsWith("9999"))) {
-    return <Badge variant="secondary" className="bg-purple-100 text-purple-700">Vô hạn</Badge>;
-  }
-  return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 font-medium">Còn hạn</Badge>;
 }
 
 function PromotionsAdminPage() {
@@ -134,16 +137,19 @@ function PromotionsAdminPage() {
   function openEdit(p: Promotion) {
     if (!canManage) return;
     setEditing(p);
+    const isSingleUse = p.voucher_type === "single_use";
     setForm({
       title: p.title,
       code: p.code || "",
       discount_value: p.discount_value != null ? String(p.discount_value) : "",
       max_discount: p.max_discount != null ? String(p.max_discount) : "",
       min_order: p.min_order != null ? String(p.min_order) : "",
-      voucher_type: p.voucher_type,
+      voucher_type: isSingleUse ? "single_use" : "shared",
+      is_unlimited_usage: isSingleUse || p.usage_limit == null,
       usage_limit: p.usage_limit != null ? String(p.usage_limit) : "",
-      start_date: p.start_date?.slice(0, 10) || "",
-      end_date: p.end_date?.slice(0, 10) || "",
+      start_date: p.start_date?.slice(0, 10) || formatLocalDateKey(),
+      is_unlimited_date: !p.end_date,
+      end_date: p.end_date?.slice(0, 10) || formatLocalDateKey(new Date(Date.now() + 30 * 86400000)),
     });
     setDialogOpen(true);
   }
@@ -174,12 +180,24 @@ function PromotionsAdminPage() {
     if (!canManage) return;
     if (!form.title.trim()) return toast.error("Nhập tên chương trình");
     if (!form.code.trim()) return toast.error("Nhập mã giảm giá");
+    if (!form.start_date) return toast.error("Chọn ngày bắt đầu");
     const discount = Number(form.discount_value);
     if (!discount || discount <= 0 || discount > 100) {
       return toast.error("Phần trăm giảm phải từ 1 đến 100");
     }
-    if (form.start_date && form.end_date && form.end_date < form.start_date) {
+    if (!form.is_unlimited_date && !form.end_date) {
+      return toast.error("Chọn ngày kết thúc hoặc bật Không hạn ngày");
+    }
+    if (!form.is_unlimited_date && form.end_date < form.start_date) {
       return toast.error("Ngày kết thúc không được trước ngày bắt đầu");
+    }
+    const usageLimit = Number(form.usage_limit);
+    if (
+      form.voucher_type === "shared"
+      && !form.is_unlimited_usage
+      && (!Number.isInteger(usageLimit) || usageLimit <= 0)
+    ) {
+      return toast.error("Giới hạn lượt dùng phải là số nguyên dương");
     }
 
     setSaving(true);
@@ -194,11 +212,11 @@ function PromotionsAdminPage() {
         min_order: form.min_order ? Number(form.min_order) : null,
         voucher_type: form.voucher_type,
         usage_limit:
-          form.voucher_type === "time_bounded" && form.usage_limit
+          form.voucher_type === "shared" && !form.is_unlimited_usage && form.usage_limit
             ? Number(form.usage_limit)
             : null,
         start_date: form.start_date,
-        end_date: form.end_date,
+        end_date: form.is_unlimited_date ? null : form.end_date,
       };
       if (editing) {
         await apiPut(`/admin/promotions/${editing.id}`, payload);
@@ -231,7 +249,7 @@ function PromotionsAdminPage() {
     <>
       <AdminPageHeader
         title="Khuyến mãi & Voucher"
-        desc="Quản lý mã giảm giá — dùng 1 lần theo SĐT hoặc theo thời hạn & lượt dùng"
+        desc="Quản lý mã giảm giá — dùng 1 lần theo SĐT hoặc mã dùng chung theo thời hạn & lượt dùng"
         actions={canManage ? (
           <Button onClick={openCreate}>
             <Plus className="size-4" /> Tạo mã giảm giá
@@ -264,79 +282,76 @@ function PromotionsAdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {promos.map((p) => (
-                  <TableRow key={p.id} className={p.is_active ? "" : "opacity-60"}>
-                    <TableCell>
-                      <p className="font-semibold">{p.title}</p>
-                      <p className="text-primary font-mono text-xs font-bold">{p.code}</p>
-                    </TableCell>
-                    <TableCell>
-                      {p.discount_type === "percent" ? (
-                        <span className="font-bold">
-                          {p.discount_value}%
-                          {p.max_discount ? ` (max ${vnd(p.max_discount)})` : ""}
-                        </span>
-                      ) : (
-                        vnd(p.discount_value || 0)
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {p.voucher_type === "single_use" ? (
-                        <Badge variant="secondary" className="bg-berry/10 text-berry">
-                          🎟️ Mã 1 lần / SĐT
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="bg-primary/10 text-primary">
-                          📅 Theo thời hạn
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
-                      {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn đơn"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                      {p.start_date?.slice(0, 10)} → {p.end_date?.slice(0, 10)}
-                    </TableCell>
-                    <TableCell className="hidden text-xs lg:table-cell">
-                      {p.voucher_type === "single_use" ? (
-                        <span className="text-muted-foreground italic">Không áp dụng</span>
-                      ) : (
-                        <span className="font-medium">
-                          {p.used_count} / {p.usage_limit != null ? p.usage_limit : "Không giới hạn"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {getVoucherStatusBadge(p)}
-                    </TableCell>
-                    {canManage && <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Switch
-                          checked={p.is_active}
-                          onCheckedChange={(v) => toggleActive(p, v)}
-                          aria-label={`Bật/tắt mã ${p.code}`}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEdit(p)}
-                          aria-label={`Sửa mã ${p.code}`}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => openDelete(p)}
-                          aria-label={`Xóa mã ${p.code}`}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </TableCell>}
-                  </TableRow>
-                ))}
+                {promos.map((p) => {
+                  const statusInfo = getPromotionStatus(p);
+                  return (
+                    <TableRow key={p.id} className={p.is_active ? "" : "opacity-60"}>
+                      <TableCell>
+                        <p className="font-semibold">{p.title}</p>
+                        <p className="text-primary font-mono text-xs font-bold">{p.code}</p>
+                      </TableCell>
+                      <TableCell>
+                        {p.discount_type === "percent" ? (
+                          <span className="font-bold">
+                            {p.discount_value}%
+                            {p.max_discount ? ` (max ${vnd(p.max_discount)})` : ""}
+                          </span>
+                        ) : (
+                          vnd(p.discount_value || 0)
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {p.voucher_type === "single_use" ? (
+                          <Badge variant="secondary" className="bg-berry/10 text-berry">
+                            🎟️ Mã 1 lần / SĐT
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-primary/10 text-primary">
+                            👥 Dùng chung
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
+                        {p.min_order ? `Đơn từ ${vnd(p.min_order)}` : "Không giới hạn đơn"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
+                        {formatVoucherDate(p.start_date)} → {statusInfo.dateDisplay}
+                      </TableCell>
+                      <TableCell className="hidden text-xs lg:table-cell">
+                        <span className="font-medium">{statusInfo.usageDisplay}</span>
+                      </TableCell>
+                      <TableCell>
+                        {renderVoucherBadge(p)}
+                      </TableCell>
+                      {canManage && <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Switch
+                            checked={p.is_active}
+                            onCheckedChange={(v) => toggleActive(p, v)}
+                            aria-label={`Bật/tắt mã ${p.code}`}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(p)}
+                            aria-label={`Sửa mã ${p.code}`}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => openDelete(p)}
+                            aria-label={`Xóa mã ${p.code}`}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -402,34 +417,48 @@ function PromotionsAdminPage() {
                 onChange={(e) => setForm({ ...form, min_order: e.target.value })}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Loại mã</Label>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Kiểu sử dụng</Label>
               <Select
                 value={form.voucher_type}
                 onValueChange={(v) =>
-                  setForm({ ...form, voucher_type: v as "single_use" | "time_bounded" })
+                  setForm({ ...form, voucher_type: v as "single_use" | "shared" })
                 }
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="single_use">🎟️ Mã 1 lần (mỗi SĐT 1 lần)</SelectItem>
-                  <SelectItem value="time_bounded">📅 Theo thời hạn & lượt dùng</SelectItem>
+                  <SelectItem value="single_use">🎟️ Một lần cho mỗi số điện thoại (Single-use)</SelectItem>
+                  <SelectItem value="shared">👥 Dùng chung (Shared)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {form.voucher_type === "time_bounded" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="promo-limit">Giới hạn lượt dùng</Label>
-                <Input
-                  id="promo-limit"
-                  type="number"
-                  min={1}
-                  placeholder="VD: 500 (để trống nếu không giới hạn)"
-                  value={form.usage_limit}
-                  onChange={(e) => setForm({ ...form, usage_limit: e.target.value })}
-                />
+            {form.voucher_type === "shared" && (
+              <div className="space-y-2 sm:col-span-2 rounded-xl border p-3 bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="promo-unlimited-usage" className="cursor-pointer text-xs font-semibold">
+                    Không giới hạn tổng lượt dùng
+                  </Label>
+                  <Switch
+                    id="promo-unlimited-usage"
+                    checked={form.is_unlimited_usage}
+                    onCheckedChange={(checked) => setForm({ ...form, is_unlimited_usage: checked })}
+                  />
+                </div>
+                {!form.is_unlimited_usage && (
+                  <div className="space-y-1 pt-1">
+                    <Label htmlFor="promo-limit" className="text-xs">Giới hạn tổng lượt dùng</Label>
+                    <Input
+                      id="promo-limit"
+                      type="number"
+                      min={1}
+                      placeholder="VD: 500"
+                      value={form.usage_limit}
+                      onChange={(e) => setForm({ ...form, usage_limit: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-1.5">
@@ -443,18 +472,29 @@ function PromotionsAdminPage() {
                   setForm({
                     ...form,
                     start_date: newStart,
-                    end_date: form.end_date < newStart ? newStart : form.end_date,
+                    end_date: form.end_date && form.end_date < newStart ? newStart : form.end_date,
                   });
                 }}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="promo-end">Ngày kết thúc</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="promo-end">Ngày kết thúc</Label>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, is_unlimited_date: !form.is_unlimited_date })}
+                  className="text-xs text-primary underline hover:opacity-80"
+                >
+                  {form.is_unlimited_date ? "Có ngày kết thúc" : "Không hạn ngày"}
+                </button>
+              </div>
               <Input
                 id="promo-end"
                 type="date"
                 min={form.start_date}
-                value={form.end_date}
+                disabled={form.is_unlimited_date}
+                value={form.is_unlimited_date ? "" : form.end_date}
+                placeholder={form.is_unlimited_date ? "Không giới hạn ngày" : undefined}
                 onChange={(e) => setForm({ ...form, end_date: e.target.value })}
               />
             </div>

@@ -34,14 +34,32 @@ test('Promotions Lifecycle Suite', async (t) => {
       discount_value: 20,
       start_date: '2026-08-20',
       end_date: '2026-08-25',
-      voucher_type: 'time_bounded',
+      voucher_type: 'shared',
       usage_limit: 100,
     });
     assert.equal(validated.code, 'SUMMER20');
     assert.equal(validated.start_date, '2026-08-20');
     assert.equal(validated.end_date, '2026-08-25');
-    assert.equal(validated.voucher_type, 'time_bounded');
+    assert.equal(validated.voucher_type, 'shared');
     assert.equal(validated.usage_limit, 100);
+  });
+
+  await t.test('accepts single_use voucher with nullable end_date and forces usage_limit null', () => {
+    const validated = validatePromotionInput({
+      title: 'Giảm giá VIP 1 lần',
+      code: 'VIP1LAN',
+      discount_type: 'fixed',
+      discount_value: 20000,
+      start_date: '2026-08-20',
+      end_date: null,
+      voucher_type: 'single_use',
+      usage_limit: 999,
+    });
+    assert.equal(validated.code, 'VIP1LAN');
+    assert.equal(validated.start_date, '2026-08-20');
+    assert.equal(validated.end_date, null);
+    assert.equal(validated.voucher_type, 'single_use');
+    assert.equal(validated.usage_limit, null);
   });
 
   await t.test('rejects invalid voucher_type', () => {
@@ -53,6 +71,37 @@ test('Promotions Lifecycle Suite', async (t) => {
           voucher_type: 'invalid_type',
         });
       },
+      (err) => err instanceof PromotionValidationError,
+    );
+  });
+
+  await t.test('rejects the legacy time_bounded API value after migration', () => {
+    assert.throws(
+      () => validatePromotionInput({
+        title: 'Legacy',
+        code: 'LEGACY',
+        start_date: '2026-08-24',
+        voucher_type: 'time_bounded',
+      }),
+      (err) => err instanceof PromotionValidationError,
+    );
+  });
+
+  await t.test('rejects missing or invalid start_date and non-integer usage limits', () => {
+    assert.throws(
+      () => validatePromotionInput({ title: 'No date', code: 'NODATE' }),
+      (err) => err instanceof PromotionValidationError && err.code === 'PROMOTION_REQUIRED_FIELD',
+    );
+    assert.throws(
+      () => validatePromotionInput({
+        title: 'Bad date', code: 'BADDATE', start_date: '2026-02-30', voucher_type: 'shared',
+      }),
+      (err) => err instanceof PromotionValidationError && err.code === 'PROMOTION_INVALID_DATES',
+    );
+    assert.throws(
+      () => validatePromotionInput({
+        title: 'Bad limit', code: 'BADLIMIT', start_date: '2026-08-24', voucher_type: 'shared', usage_limit: 1.5,
+      }),
       (err) => err instanceof PromotionValidationError,
     );
   });

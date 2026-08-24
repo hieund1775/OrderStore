@@ -10,8 +10,8 @@ export class AdminPromotionError extends Error {
 function calculatePromotionStatus(startDate, endDate) {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  if (endDate < today) return 'Đã kết thúc';
-  if (startDate > today) return 'Sắp diễn ra';
+  if (endDate && endDate < today) return 'Đã kết thúc';
+  if (startDate && startDate > today) return 'Sắp diễn ra';
   return 'Đang diễn ra';
 }
 
@@ -22,7 +22,10 @@ export function createAdminPromotionsRepository(database = postgresDb) {
       let where = 'WHERE p.deleted_at IS NULL';
       if (scopedStoreId) {
         params.push(scopedStoreId);
-        where += ` AND (ps.store_id = $${params.length} OR p.scope = 'all')`;
+        where += ` AND (
+          NOT EXISTS (SELECT 1 FROM promotion_stores ps2 WHERE ps2.promotion_id = p.id)
+          OR EXISTS (SELECT 1 FROM promotion_stores ps2 WHERE ps2.promotion_id = p.id AND ps2.store_id = $${params.length})
+        )`;
       }
       const [rows] = await database.query(
         `SELECT p.*,
@@ -44,8 +47,22 @@ export function createAdminPromotionsRepository(database = postgresDb) {
     async createPromotion({
       title, type, code, description, rule, emoji, discount_value,
       discount_type, max_discount, min_order, start_date, end_date,
-      status, audience, scope, voucher_type = 'time_bounded', usage_limit, store_ids = [],
+      status, audience, scope, voucher_type = 'shared', usage_limit, store_ids = [],
     }) {
+      const normalizedVoucherType = voucher_type;
+      const finalUsageLimit = normalizedVoucherType === 'single_use' ? null : (usage_limit != null ? Number(usage_limit) : null);
+      if (!['single_use', 'shared'].includes(normalizedVoucherType)) {
+        throw new AdminPromotionError('Loại voucher phải là single_use hoặc shared');
+      }
+      if (!start_date) {
+        throw new AdminPromotionError('Ngày bắt đầu không được để trống');
+      }
+      if (end_date != null && String(end_date).slice(0, 10) < String(start_date).slice(0, 10)) {
+        throw new AdminPromotionError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu');
+      }
+      if (finalUsageLimit != null && (!Number.isInteger(finalUsageLimit) || finalUsageLimit <= 0)) {
+        throw new AdminPromotionError('Giới hạn lượt dùng phải là số nguyên dương');
+      }
       const computedStatus = status || calculatePromotionStatus(start_date, end_date);
       return database.transaction(async (tx) => {
         const [rows] = await tx.query(
@@ -72,8 +89,8 @@ export function createAdminPromotionsRepository(database = postgresDb) {
             computedStatus,
             audience || null,
             scope || null,
-            voucher_type,
-            usage_limit != null ? Number(usage_limit) : null,
+            normalizedVoucherType,
+            finalUsageLimit,
           ],
         );
         const promotion = rows[0];
@@ -96,10 +113,54 @@ export function createAdminPromotionsRepository(database = postgresDb) {
     async updatePromotion(id, fields) {
       return database.transaction(async (tx) => {
         const [existing] = await tx.query(
-          'SELECT id FROM promotions WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+          `SELECT id, voucher_type, usage_limit, used_count, start_date, end_date
+           FROM promotions
+           WHERE id = $1 AND deleted_at IS NULL
+           FOR UPDATE`,
           [id],
         );
         if (!existing[0]) return null;
+
+        const current = existing[0];
+        const normalizedFields = { ...fields };
+        const nextVoucherType = normalizedFields.voucher_type ?? current.voucher_type;
+        if (!['single_use', 'shared'].includes(nextVoucherType)) {
+          throw new AdminPromotionError('Loại voucher phải là single_use hoặc shared');
+        }
+        if (nextVoucherType === 'single_use') {
+          normalizedFields.usage_limit = null;
+        }
+
+        const nextUsageLimit = normalizedFields.usage_limit !== undefined
+          ? normalizedFields.usage_limit
+          : current.usage_limit;
+        if (nextUsageLimit != null) {
+          const numericLimit = Number(nextUsageLimit);
+          if (!Number.isInteger(numericLimit) || numericLimit <= 0) {
+            throw new AdminPromotionError('Giới hạn lượt dùng phải là số nguyên dương');
+          }
+          if (Number(current.used_count) > numericLimit) {
+            throw new AdminPromotionError('Giới hạn lượt dùng không được nhỏ hơn số lượt đã sử dụng');
+          }
+          normalizedFields.usage_limit = numericLimit;
+        }
+
+        const dateKey = (value) => value instanceof Date
+          ? value.toISOString().slice(0, 10)
+          : String(value).slice(0, 10);
+        const nextStartDate = normalizedFields.start_date ?? current.start_date;
+        const nextEndDate = normalizedFields.end_date !== undefined
+          ? normalizedFields.end_date
+          : current.end_date;
+        if (nextEndDate != null && dateKey(nextEndDate) < dateKey(nextStartDate)) {
+          throw new AdminPromotionError('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu');
+        }
+        if (
+          normalizedFields.status === undefined
+          && (normalizedFields.start_date !== undefined || normalizedFields.end_date !== undefined)
+        ) {
+          normalizedFields.status = calculatePromotionStatus(dateKey(nextStartDate), nextEndDate == null ? null : dateKey(nextEndDate));
+        }
 
         const sets = [];
         const params = [];
@@ -110,8 +171,8 @@ export function createAdminPromotionsRepository(database = postgresDb) {
         ];
 
         for (const k of allowed) {
-          if (fields[k] !== undefined) {
-            params.push(fields[k]);
+          if (normalizedFields[k] !== undefined) {
+            params.push(normalizedFields[k]);
             sets.push(`${k} = $${params.length}`);
           }
         }
@@ -125,9 +186,9 @@ export function createAdminPromotionsRepository(database = postgresDb) {
           if (!affected) return null;
         }
 
-        if (Array.isArray(fields.store_ids)) {
+        if (Array.isArray(normalizedFields.store_ids)) {
           await tx.query('DELETE FROM promotion_stores WHERE promotion_id = $1', [id]);
-          for (const sId of fields.store_ids) {
+          for (const sId of normalizedFields.store_ids) {
             await tx.query(
               `INSERT INTO promotion_stores (promotion_id, store_id)
                VALUES ($1, $2)

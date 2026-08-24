@@ -30,6 +30,7 @@ import {
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet, apiPost } from "@/lib/api";
 import { fmtDateTime, vnd } from "@/lib/data";
+import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
 
 export const Route = createFileRoute("/theo-doi-don")({
   validateSearch: (search: Record<string, unknown>): { code?: string; order_code?: string } => ({
@@ -95,6 +96,8 @@ type LookupOrder = {
   payment_provider?: string;
   paid_at?: string | null;
   payment_expires_at?: string | null;
+  payment_checkout_url?: string | null;
+  can_resume_payment?: boolean;
   customer_name: string;
   delivery_addr: string | null;
   voucher_code: string | null;
@@ -137,14 +140,23 @@ function Tracking() {
 
   async function handleRepayPayOS() {
     if (!order) return;
+    if (
+      order.payment_checkout_url
+      && isPayOSLinkActive(order)
+      && isSafePayOSCheckoutUrl(order.payment_checkout_url)
+    ) {
+      window.location.assign(order.payment_checkout_url);
+      return;
+    }
     setRepaying(true);
     try {
-      const res = await apiPost<{ ok: boolean; order: { checkout_url: string; qr_code?: string } }>(
+      const res = await apiPost<{ ok: boolean; order: { checkout_url: string } }>(
         "/api/payments/payos/regenerate-qr",
         { order_code: order.order_code },
+        { headers: getOrderRequestHeaders(order.order_code) }
       );
-      if (res.order?.checkout_url) {
-        window.location.href = res.order.checkout_url;
+      if (res.order?.checkout_url && isSafePayOSCheckoutUrl(res.order.checkout_url)) {
+        window.location.assign(res.order.checkout_url);
       } else {
         toast.error("Không thể mở lại trang thanh toán lúc này");
       }
@@ -164,6 +176,7 @@ function Tracking() {
       try {
         const res = await apiGet<{ order: LookupOrder }>(
           `/api/orders/lookup?code=${encodeURIComponent(c.trim())}`,
+          { headers: getOrderRequestHeaders(c.trim()) }
         );
         setOrder(res.order);
         setError("");
@@ -320,6 +333,19 @@ function Tracking() {
   const cancelled = order.current_status === "Đã hủy";
   const currentStep = getStepIndex(order.current_status);
   const completed = order.current_status === "Hoàn thành";
+  const canResumePayOS = Boolean(
+    order.can_resume_payment
+    && order.payment_status === "unpaid"
+    && order.payment_provider === "payos"
+    && !cancelled
+    && !completed
+  );
+  const hasActivePayOSLink = Boolean(
+    canResumePayOS
+    && order.payment_checkout_url
+    && isPayOSLinkActive(order)
+    && isSafePayOSCheckoutUrl(order.payment_checkout_url)
+  );
 
   return (
     <>
@@ -348,7 +374,7 @@ function Tracking() {
           </div>
 
           {/* Payment Status Banner - Chỉ hiện khi đơn chưa thanh toán */}
-          {order.payment_status === "unpaid" && order.payment_provider === "payos" && !cancelled && (
+          {canResumePayOS && (
             <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 mt-4 rounded-xl border p-4">
               <div className="flex items-center gap-2 font-bold text-sm">
                 <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(order.total)})
@@ -356,15 +382,15 @@ function Tracking() {
               <p className="mt-1 text-xs opacity-90">
                 Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công.
               </p>
-              <Button variant="hero" size="sm" className="mt-3" disabled={repaying} onClick={handleRepayPayOS}>
+              <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayPayOS}>
                 {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
-                Mở cổng thanh toán PayOS / Quét mã QR
+                {hasActivePayOSLink ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới"}
               </Button>
             </div>
           )}
 
           {/* Timeline 3 bước */}
-          {!(order.payment_status === "unpaid" && order.payment_provider === "payos" && !cancelled) && (
+          {!canResumePayOS && (
             <ol className="mt-8 space-y-0">
               {steps.map((s, i) => {
                 const done = !cancelled && (currentStep > i || completed);

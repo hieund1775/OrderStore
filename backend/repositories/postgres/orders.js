@@ -143,7 +143,7 @@ export function createOrdersRepository(
       const [rows] = await database.query(
         `SELECT o.id, o.order_code, o.user_id, o.store_id, o.location_name, o.order_type,
                 o.payment_method, o.payment_status, o.payment_provider, o.paid_at,
-                o.payment_link_id, o.payos_order_code, o.customer_name, o.customer_phone, o.delivery_addr,
+                o.payment_link_id, o.payos_order_code, o.payment_checkout_url, o.customer_name, o.customer_phone, o.delivery_addr,
                 o.discount_amount, o.subtotal, o.total, o.payment_expires_at, o.created_at,
                 o.shipping_driver_name, o.shipping_driver_phone, o.shipping_tracking_url, o.cancel_token_hash,
                 s.name AS store_name, latest.status AS current_status

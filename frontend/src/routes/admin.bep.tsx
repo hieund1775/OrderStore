@@ -15,6 +15,11 @@ import { elapsedDurationMs, fmtClockTimer, fmtDate, fmtDateTime, fmtTime } from 
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
 import { PollingController } from "@/lib/polling-controller";
+import {
+  evaluateCompletionClick,
+  COMPLETION_CONFIRM_WINDOW_MS,
+  type ArmedCompletionState,
+} from "@/lib/kds-completion-confirmation";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -172,6 +177,10 @@ function KdsPage() {
     return user?.branch_id ? String(user.branch_id) : "all";
   });
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [armedCompletion, setArmedCompletion] = useState<ArmedCompletionState>(null);
+  const [completionLoadingId, setCompletionLoadingId] = useState<number | null>(null);
+  const armedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completionInFlightRef = useRef<number | null>(null);
   const prevIds = useRef<Set<number>>(new Set());
 
   const handleStoreFilterChange = (newFilter: string) => {
@@ -179,8 +188,18 @@ function KdsPage() {
     setDoneOrders([]);
     setDoneAt({});
     setDismissConfirmOrder(null);
+    setArmedCompletion(null);
+    if (armedTimerRef.current) clearTimeout(armedTimerRef.current);
+    armedTimerRef.current = null;
     prevIds.current = new Set();
   };
+
+  useEffect(() => {
+    return () => {
+      if (armedTimerRef.current) clearTimeout(armedTimerRef.current);
+      armedTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
@@ -260,6 +279,22 @@ function KdsPage() {
     };
   }, [fetchOrders]);
 
+  useEffect(() => {
+    if (!armedCompletion) return;
+    const currentOrder = orders.find((order) => order.id === armedCompletion.orderId);
+    const canStillComplete = Boolean(
+      currentOrder
+      && (
+        currentOrder.current_status === "Đang giao"
+        || (currentOrder.current_status === "Đang chuẩn bị" && currentOrder.order_type !== "Delivery")
+      )
+    );
+    if (canStillComplete) return;
+    if (armedTimerRef.current) clearTimeout(armedTimerRef.current);
+    armedTimerRef.current = null;
+    setArmedCompletion(null);
+  }, [armedCompletion, orders]);
+
   // Repair an anomalous local done card once; normal completion always writes doneAt atomically.
   useEffect(() => {
     const missingIds = doneOrders.filter((order) => doneAt[order.id] == null).map((order) => order.id);
@@ -309,6 +344,32 @@ function KdsPage() {
     });
     setDismissConfirmOrder(null);
     toast.success(`Đã ẩn đơn ${o.order_code} khỏi KDS`);
+  }
+
+  function handleCompleteOrderClick(o: KitchenOrder, type: 'prep_nondelivery' | 'delivering') {
+    if (completionInFlightRef.current !== null || completionLoadingId === o.id) return;
+    const evalResult = evaluateCompletionClick(armedCompletion, o.id);
+    if (evalResult.action === 'arm') {
+      if (armedTimerRef.current) clearTimeout(armedTimerRef.current);
+      setArmedCompletion(evalResult.nextState);
+      armedTimerRef.current = setTimeout(() => {
+        setArmedCompletion((prev) => (prev?.orderId === o.id ? null : prev));
+        armedTimerRef.current = null;
+      }, COMPLETION_CONFIRM_WINDOW_MS);
+      return;
+    }
+
+    // Confirmed
+    if (armedTimerRef.current) clearTimeout(armedTimerRef.current);
+    armedTimerRef.current = null;
+    setArmedCompletion(null);
+    completionInFlightRef.current = o.id;
+    setCompletionLoadingId(o.id);
+    const actionPromise = type === 'prep_nondelivery' ? completeNonDelivery(o) : completeDelivery(o);
+    actionPromise.finally(() => {
+      if (completionInFlightRef.current === o.id) completionInFlightRef.current = null;
+      setCompletionLoadingId((prev) => (prev === o.id ? null : prev));
+    });
   }
 
   async function completePreparation(o: KitchenOrder) {
@@ -603,15 +664,24 @@ function KdsPage() {
                               </Button>
                             ) : (
                               <Button
-                                variant="hero"
+                                variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
                                 size="sm"
-                                className="flex-1 font-bold text-xs"
+                                className={`flex-1 font-bold text-xs ${
+                                  armedCompletion?.orderId === o.id
+                                    ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
+                                    : ""
+                                }`}
+                                disabled={completionLoadingId === o.id}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  completePreparation(o);
+                                  handleCompleteOrderClick(o, "prep_nondelivery");
                                 }}
                               >
-                                ✅ Hoàn thành
+                                {completionLoadingId === o.id
+                                  ? "Đang hoàn thành..."
+                                  : armedCompletion?.orderId === o.id
+                                    ? "⚠️ Bấm lại để xác nhận"
+                                    : "✅ Hoàn thành"}
                               </Button>
                             )}
                           </>
@@ -619,15 +689,24 @@ function KdsPage() {
 
                         {lane.id === "delivering" && (
                           <Button
-                            variant="hero"
+                            variant={armedCompletion?.orderId === o.id ? "destructive" : "hero"}
                             size="sm"
-                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                            className={`flex-1 font-bold text-xs ${
+                              armedCompletion?.orderId === o.id
+                                ? "animate-pulse bg-red-600 hover:bg-red-700 text-white"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            }`}
+                            disabled={completionLoadingId === o.id}
                             onClick={(e) => {
                               e.stopPropagation();
-                              completeDelivery(o);
+                              handleCompleteOrderClick(o, "delivering");
                             }}
                           >
-                            ✅ Đã giao tận nơi (Hoàn thành)
+                            {completionLoadingId === o.id
+                              ? "Đang hoàn thành..."
+                              : armedCompletion?.orderId === o.id
+                                ? "⚠️ Bấm lại để xác nhận"
+                                : "✅ Đã giao tận nơi (Hoàn thành)"}
                           </Button>
                         )}
 

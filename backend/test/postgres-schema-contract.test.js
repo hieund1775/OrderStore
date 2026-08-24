@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const coreMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0001_core.sql');
+const voucherMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0009_voucher_usage_and_validity.sql');
 
 test('PostgreSQL baseline preserves the active backend column and enum contract', async () => {
   const sql = await readFile(coreMigrationPath, 'utf8');
@@ -29,4 +30,23 @@ test('PostgreSQL baseline preserves the active backend column and enum contract'
   }
   assert.equal(sql.includes('table_number VARCHAR'), false, 'legacy routes use table_id, not table_number');
   assert.equal(sql.includes('product_price BIGINT'), false, 'legacy routes use unit_price, not product_price');
+});
+
+test('voucher migration enforces nullable validity and strict usage counters', async () => {
+  const sql = await readFile(voucherMigrationPath, 'utf8');
+  const requiredFragments = [
+    "SET voucher_type = 'shared'",
+    "ALTER COLUMN voucher_type SET DEFAULT 'shared'",
+    'ALTER COLUMN end_date DROP NOT NULL',
+    "voucher_type IN ('single_use', 'shared')",
+    'end_date IS NULL OR end_date >= start_date',
+    'usage_limit IS NULL OR usage_limit > 0',
+    'used_count >= 0',
+    'usage_limit IS NULL OR used_count <= usage_limit',
+    "voucher_type <> 'single_use' OR usage_limit IS NULL",
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing voucher migration contract: ${fragment}`);
+  }
 });

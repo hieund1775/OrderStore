@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import {
   validateOrderCreationInput,
   buildPublicLookupDto,
@@ -59,5 +60,53 @@ describe('Public DTO & Input Validation Policy (Production Module)', () => {
     assert.equal(ownerDto.customer_phone, '0987654321');
     assert.equal(ownerDto.customer_name, 'Nguyễn Văn A');
     assert.equal(ownerDto.delivery_addr, '123 Đường Lê Lợi, Q.1');
+  });
+
+  it('exposes payment_checkout_url only to customer owner or guest with valid cancel_token, never exposes QR', () => {
+    const rawToken = 'secret-cancel-token-123';
+    const hash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const payosOrder = {
+      id: 100,
+      order_code: 'TPPAYOS1',
+      user_id: 15,
+      customer_name: 'Trần B',
+      customer_phone: '0901234567',
+      payment_method: 'VietQR',
+      payment_provider: 'payos',
+      payment_status: 'unpaid',
+      payment_checkout_url: 'https://pay.payos.vn/web/123456',
+      payment_qr_code: '00020101021238540010A0000007270124000697045401100901234567',
+      payment_expires_at: '2026-08-25T12:00:00.000Z',
+      cancel_token_hash: hash,
+      current_status: 'Chờ xác nhận',
+    };
+
+    // Anonymous: gets payment_provider and expiry, but NO checkout_url or qr_code
+    const anon = buildPublicLookupDto(payosOrder, null);
+    assert.equal(anon.payment_provider, 'payos');
+    assert.equal(anon.can_resume_payment, false);
+    assert.equal(anon.payment_checkout_url, null);
+    assert.equal(anon.payment_qr_code, undefined);
+
+    // Wrong token: NO checkout_url
+    const wrongToken = buildPublicLookupDto(payosOrder, null, [], [], 'wrong-token');
+    assert.equal(wrongToken.payment_checkout_url, null);
+
+    // Logged in owner: gets payment_checkout_url, but never qr_code in lookup DTO
+    const owner = buildPublicLookupDto(payosOrder, { sub: 15, role: 'customer' });
+    assert.equal(owner.can_resume_payment, true);
+    assert.equal(owner.payment_checkout_url, 'https://pay.payos.vn/web/123456');
+    assert.equal(owner.payment_qr_code, undefined);
+
+    // Guest with valid cancel_token: gets payment_checkout_url
+    const guestWithToken = buildPublicLookupDto(payosOrder, null, [], [], rawToken);
+    assert.equal(guestWithToken.can_resume_payment, true);
+    assert.equal(guestWithToken.payment_checkout_url, 'https://pay.payos.vn/web/123456');
+    assert.equal(guestWithToken.payment_qr_code, undefined);
+
+    const completed = buildPublicLookupDto({ ...payosOrder, current_status: 'Hoàn thành' }, { sub: 15, role: 'customer' });
+    assert.equal(completed.can_resume_payment, false);
+    assert.equal(completed.payment_checkout_url, null);
   });
 });

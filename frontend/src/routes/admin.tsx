@@ -39,8 +39,6 @@ export const Route = createFileRoute("/admin")({
 function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [branch, setBranch] = useState("all");
-  const [role, setRole] = useState("super");
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   // Trang đăng nhập hiển thị toàn màn hình, không sidebar
@@ -65,13 +63,7 @@ function AdminLayout() {
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar
-          branch={branch}
-          onBranchChange={setBranch}
-          role={role}
-          onRoleChange={setRole}
-          onOpenMobileNav={() => setMobileOpen(true)}
-        />
+        <AdminTopbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6 md:py-8">
           <Outlet />
         </main>

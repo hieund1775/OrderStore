@@ -88,6 +88,8 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       payment_status,
       payment_provider,
       payment_expires_at,
+      payment_checkout_url: checkout_url,
+      can_resume_payment: isPayOS,
       store_id: Number(storeId),
       store_name: store.name,
       location_name: null,
@@ -146,7 +148,8 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
           ...o,
           payment_status: 'unpaid',
           payment_expires_at: expiresAt,
-          checkout_url: `https://payos.vn/demo-pay?code=${code}&renew=1`,
+          payment_checkout_url: `https://payos.vn/demo-pay?code=${code}&renew=1`,
+          can_resume_payment: true,
           qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=VIETQR-DEMO-${code}-RENEW`,
         };
       }
@@ -398,8 +401,8 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
   if (path.startsWith('/admin/promotions') || path.startsWith('/api/promotions')) {
     const rawPromos = typeof window !== 'undefined' ? window.localStorage.getItem('teaplus_mock_promotions') : null;
     let promoList = rawPromos ? JSON.parse(rawPromos) : [
-      { id: 1, title: 'Giảm 20% Đơn Đầu Tiên', code: 'CHAOBANMOI', discount_value: 20, discount_type: 'percent', max_discount: 30000, min_order: 50000, voucher_type: 'time_bounded', start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
-      { id: 2, title: 'Freeship Giờ Vàng', code: 'FREESHIP', discount_value: 15000, discount_type: 'fixed', max_discount: 15000, min_order: 99000, voucher_type: 'time_bounded', start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
+      { id: 1, title: 'Giảm 20% Đơn Đầu Tiên', code: 'CHAOBANMOI', discount_value: 20, discount_type: 'percent', max_discount: 30000, min_order: 50000, voucher_type: 'shared', usage_limit: null, used_count: 0, start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
+      { id: 2, title: 'Freeship Giờ Vàng', code: 'FREESHIP', discount_value: 15000, discount_type: 'fixed', max_discount: 15000, min_order: 99000, voucher_type: 'shared', usage_limit: 500, used_count: 0, start_date: '2026-01-01', end_date: '2026-12-31', status: 'Đang diễn ra', is_active: true, deleted_at: null },
     ];
 
     if (method === 'DELETE') {
