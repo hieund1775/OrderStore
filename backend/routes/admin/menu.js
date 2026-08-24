@@ -11,6 +11,7 @@ import {
   validateToppingInput,
   validateBaseOptionInput,
   validateCatalogFilters,
+  validateProductAvailabilityInput,
 } from '../../validation/catalog-schemas.js';
 import { toCategoryDto, toProductDto } from '../../dto/catalog-dto.js';
 import adminMenuService from '../../services/catalog/admin-menu-service.js';
@@ -106,13 +107,25 @@ router.put('/products/:id', requireRole('super'), asyncHandler(async (req, res) 
   }
 }));
 
-router.put('/products/:id/toggle', requireRole('super'), asyncHandler(async (req, res) => {
+router.put('/products/:id/availability', requireRole('super'), asyncHandler(async (req, res) => {
   try {
     const id = validateProductId(req.params.id);
-    const result = await adminMenuService.toggleProduct(id);
-    if (!result) return res.status(404).json({ error: 'Không tìm thấy món' });
-    await logAudit(req.user.sub, `Bật/tắt món #${id}`, `is_available: ${result.is_available}`, req);
-    res.json({ is_available: result.is_available, message: `Món đã ${result.is_available ? 'bật' : 'tắt'}` });
+    const is_available = validateProductAvailabilityInput(req.body);
+    const result = await adminMenuService.setProductAvailability(id, is_available);
+    await logAudit(
+      req.user.sub,
+      `Cập nhật khả dụng món #${id}`,
+      `is_available: ${result.is_available}, removed_wishlists: ${result.removed_wishlist_count}, notified: ${result.notification_count}`,
+      req,
+    );
+    res.json({
+      id: result.id,
+      is_available: result.is_available,
+      changed: result.changed,
+      removed_wishlist_count: result.removed_wishlist_count,
+      notification_count: result.notification_count,
+      message: `Món đã ${result.is_available ? 'bật phục vụ' : 'tạm ngưng phục vụ'}`,
+    });
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });

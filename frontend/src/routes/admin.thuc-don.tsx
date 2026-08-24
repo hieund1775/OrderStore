@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Loader2, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
+import { beginProductAvailabilityRequest, finishProductAvailabilityRequest } from "@/lib/product-availability";
 import { AdminPageHeader, SectionCard } from "@/components/admin/AdminUI";
 import {
   AlertDialog,
@@ -150,16 +151,26 @@ function MenuAdminPage() {
     load();
   }, [load, reloadKey]);
 
-  async function toggleProduct(p: Product) {
+  const availabilityInFlightRef = useRef(new Set<number>());
+  const [pendingAvailabilityIds, setPendingAvailabilityIds] = useState<Set<number>>(new Set());
+
+  async function handleSetProductAvailability(p: Product, desiredState: boolean) {
+    if (!beginProductAvailabilityRequest(availabilityInFlightRef.current, p.id)) return;
+    setPendingAvailabilityIds(new Set(availabilityInFlightRef.current));
     try {
-      const res = await apiPut<{ is_available: boolean; message: string }>(
-        `/admin/menu/products/${p.id}/toggle`,
-        {},
+      const res = await apiPut<{ id: number; is_available: boolean; message: string; removed_wishlist_count?: number }>(
+        `/admin/menu/products/${p.id}/availability`,
+        { is_available: desiredState },
       );
-      toast.success(res.message);
+      toast.success(res.message, {
+        description: res.removed_wishlist_count ? `Đã dọn dẹp ${res.removed_wishlist_count} mục yêu thích của khách hàng.` : undefined,
+      });
       setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, is_available: res.is_available } : x)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+      toast.error(err instanceof Error ? err.message : "Cập nhật trạng thái thất bại");
+    } finally {
+      finishProductAvailabilityRequest(availabilityInFlightRef.current, p.id);
+      setPendingAvailabilityIds(new Set(availabilityInFlightRef.current));
     }
   }
 
@@ -323,7 +334,11 @@ function MenuAdminPage() {
                     <p className="text-primary mt-2 font-bold">{vnd(p.price)}</p>
                     <div className="mt-3 flex items-center justify-between border-t pt-3">
                       <label className="flex items-center gap-2 text-xs">
-                        <Switch checked={p.is_available} onCheckedChange={() => toggleProduct(p)} />
+                        <Switch
+                          checked={p.is_available}
+                          disabled={pendingAvailabilityIds.has(p.id)}
+                          onCheckedChange={(checked) => handleSetProductAvailability(p, checked)}
+                        />
                         {p.is_available ? "Đang bán" : "Tạm ngưng"}
                       </label>
                       <div className="flex gap-1">

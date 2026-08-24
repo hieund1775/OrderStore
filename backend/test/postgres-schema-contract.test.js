@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const coreMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0001_core.sql');
 const voucherMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0009_voucher_usage_and_validity.sql');
+const wishlistCleanupMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0010_wishlist_inactive_product_cleanup.sql');
 
 test('PostgreSQL baseline preserves the active backend column and enum contract', async () => {
   const sql = await readFile(coreMigrationPath, 'utf8');
@@ -48,5 +49,21 @@ test('voucher migration enforces nullable validity and strict usage counters', a
 
   for (const fragment of requiredFragments) {
     assert.ok(sql.includes(fragment), `missing voucher migration contract: ${fragment}`);
+  }
+});
+
+test('wishlist cleanup migration 0010 notifies customers and removes inactive products from wishlists', async () => {
+  const sql = await readFile(wishlistCleanupMigrationPath, 'utf8');
+  const requiredFragments = [
+    'INSERT INTO notifications (user_id, type, title, body, link, is_read, created_at)',
+    'Món yêu thích tạm ngưng phục vụ',
+    'p.is_available = FALSE',
+    'u.is_admin = FALSE',
+    'DELETE FROM wishlists',
+    'SELECT id FROM products WHERE is_available = FALSE',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing wishlist cleanup migration contract: ${fragment}`);
   }
 });

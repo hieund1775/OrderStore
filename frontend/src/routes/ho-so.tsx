@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, Tag } from "lucide-react";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, Tag, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
+import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
 import { apiGet } from "@/lib/api";
-import { fmtDateTime, products, vnd } from "@/lib/data";
+import { fmtDateTime, vnd } from "@/lib/data";
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -67,8 +68,16 @@ export const Route = createFileRoute("/ho-so")({
 function Profile() {
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const { wishlist, toggleWishlist } = useCart();
-  const saved = products.filter((p) => wishlist.includes(p.id));
+  const { addItem } = useCart();
+  const {
+    items: wishlistItems,
+    count: wishlistCount,
+    isLoading: wishlistLoading,
+    isError: wishlistError,
+    refetch: refetchWishlist,
+    removeFavorite,
+    isPending: isWishlistPending,
+  } = useWishlist();
   const {
     user,
     token,
@@ -263,7 +272,7 @@ function Profile() {
             <TabsTrigger value="notifications">
               Thông báo ({notificationsList.length})
             </TabsTrigger>
-            <TabsTrigger value="wishlist">Yêu thích</TabsTrigger>
+            <TabsTrigger value="wishlist">Yêu thích ({wishlistCount})</TabsTrigger>
             <TabsTrigger value="info">Thông tin</TabsTrigger>
           </TabsList>
 
@@ -414,23 +423,85 @@ function Profile() {
           </TabsContent>
 
           <TabsContent value="wishlist">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {saved.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-4">Chưa có món yêu thích nào.</p>
-              ) : (
-                saved.map((p) => (
-                  <div key={p.id} className="bg-card flex items-center justify-between rounded-2xl border p-4">
-                    <div>
-                      <p className="font-semibold text-sm">{p.name}</p>
-                      <p className="text-primary font-bold text-xs">{vnd(p.price)}</p>
+            {wishlistLoading && (
+              <div className="bg-card flex flex-col items-center justify-center rounded-2xl border p-12 text-muted-foreground gap-2">
+                <Loader2 className="size-6 animate-spin text-primary" />
+                <p className="text-sm">Đang tải danh sách yêu thích...</p>
+              </div>
+            )}
+
+            {!wishlistLoading && wishlistError && (
+              <div className="bg-card flex flex-col items-center justify-center rounded-2xl border p-12 text-center gap-2">
+                <p className="text-destructive text-sm">Không thể tải danh sách yêu thích.</p>
+                <Button variant="outline" size="sm" onClick={() => refetchWishlist()}>
+                  <RefreshCw className="mr-1.5 size-3.5" /> Thử lại
+                </Button>
+              </div>
+            )}
+
+            {!wishlistLoading && !wishlistError && wishlistItems.length === 0 && (
+              <div className="bg-card flex flex-col items-center justify-center rounded-2xl border p-12 text-center text-muted-foreground">
+                <Heart className="mb-2 size-10 stroke-1 text-muted-foreground/40" />
+                <p className="text-sm font-medium">Chưa có món yêu thích nào.</p>
+                <p className="text-xs text-muted-foreground/80 mt-1">Hãy bấm thả tim các món bạn yêu thích trên thực đơn nhé!</p>
+                <Button asChild variant="hero" size="sm" className="mt-4">
+                  <Link to="/menu">Khám phá thực đơn</Link>
+                </Button>
+              </div>
+            )}
+
+            {!wishlistLoading && !wishlistError && wishlistItems.length > 0 && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {wishlistItems.map((p) => {
+                  const pending = isWishlistPending(p.product_id);
+                  return (
+                    <div key={p.id} className="bg-card flex items-center justify-between rounded-2xl border p-4 shadow-sm gap-3">
+                      <img
+                        src={p.image_url || "/placeholder.png"}
+                        alt={p.product_name || "Món"}
+                        loading="lazy"
+                        className="size-16 rounded-xl object-cover bg-muted shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{p.product_name}</p>
+                        <p className="text-xs text-muted-foreground">{p.base_tea || "Thiếu dữ liệu cốt trà"}</p>
+                        <p className="text-primary font-bold text-sm mt-1">{vnd(p.price)}</p>
+                      </div>
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        <Button
+                          variant="soft"
+                          size="sm"
+                          className="text-xs h-7 px-2.5"
+                          onClick={() => {
+                            const cartItem = buildWishlistQuickCartItem(p);
+                            if (!cartItem) {
+                              toast.error("Thông tin món chưa đầy đủ, vui lòng chọn lại từ thực đơn");
+                              return;
+                            }
+                            const added = addItem(cartItem);
+                            if (added) {
+                              toast.success(`Đã thêm "${p.product_name}" vào giỏ hàng`);
+                            }
+                          }}
+                        >
+                          + Giỏ
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={pending}
+                          className="text-xs h-7 px-2 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeFavorite(p.product_id)}
+                          aria-label={`Xóa ${p.product_name} khỏi yêu thích`}
+                        >
+                          <Trash2 className="size-3.5 mr-1" /> Xóa
+                        </Button>
+                      </div>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => toggleWishlist(p.id)}>
-                      <Heart className="size-4 fill-berry text-berry" />
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="info">

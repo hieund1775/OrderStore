@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateReviewInput, validateJobApplyInput } from '../../validation/engagement-schemas.js';
-import { validateCustomerId } from '../../validation/customer-schemas.js';
+import { validateCustomerId, validateWishlistProductId } from '../../validation/customer-schemas.js';
 import { toReviewDto, toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
 import { toCustomerDto, toNotificationDto } from '../../dto/customer-dto.js';
 import engagementService from '../../services/engagement/engagement-service.js';
@@ -19,6 +19,21 @@ function requireCustomerSelf(req, res, next) {
   }
   if (requestedId !== authUserId && req.user?.role !== 'super') {
     return res.status(403).json({ error: 'Không có quyền truy cập dữ liệu của người dùng khác' });
+  }
+  next();
+}
+
+function requireCustomerWishlistOwner(req, res, next) {
+  let requestedId;
+  try {
+    requestedId = validateCustomerId(req.params.id);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+  const authUserId = Number(req.user?.id || req.user?.sub);
+  if (!authUserId) return res.status(401).json({ error: 'Chưa xác thực người dùng' });
+  if (req.user?.role !== 'customer' || requestedId !== authUserId) {
+    return res.status(403).json({ error: 'Không có quyền truy cập danh sách yêu thích của người dùng khác' });
   }
   next();
 }
@@ -97,27 +112,48 @@ router.get('/users/:id', authenticate, requireCustomerSelf, asyncHandler(async (
   }
 }));
 
-router.get('/users/:id/wishlist', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.get('/users/:id/wishlist', authenticate, requireCustomerWishlistOwner, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.params.id);
     const rows = await engagementService.listUserWishlist(id);
     res.json(rows.map(toWishlistDto));
   } catch (err) {
-    console.error('Public wishlist read failed:', err.message);
-    res.status(500).json({ error: 'Không thể tải danh sách yêu thích lúc này' });
+    const status = err.status || 500;
+    res.status(status).json({ error: err.expose ? err.message : 'Không thể tải danh sách yêu thích lúc này' });
   }
 }));
 
-router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.put('/users/:id/wishlist/:productId', authenticate, requireCustomerWishlistOwner, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.params.id);
-    const result = await engagementService.toggleUserWishlist(id, req.params.productId);
-    const status = result.added ? 201 : 200;
-    const message = result.added ? 'Đã thêm vào wishlist' : 'Đã xóa khỏi wishlist';
-    res.status(status).json({ added: result.added, message });
+    const productId = validateWishlistProductId(req.params.productId);
+    const result = await engagementService.ensureUserWishlistItem(id, productId);
+    const status = result.created ? 201 : 200;
+    res.status(status).json({
+      present: true,
+      created: result.created,
+      item: toWishlistDto(result.item),
+      message: result.created ? 'Đã thêm vào danh sách yêu thích' : 'Món đã có trong danh sách yêu thích',
+    });
   } catch (err) {
     const status = err.status || 500;
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.expose ? err.message : 'Không thể thêm món vào danh sách yêu thích lúc này' });
+  }
+}));
+
+router.delete('/users/:id/wishlist/:productId', authenticate, requireCustomerWishlistOwner, asyncHandler(async (req, res) => {
+  try {
+    const id = validateCustomerId(req.params.id);
+    const productId = validateWishlistProductId(req.params.productId);
+    const result = await engagementService.removeUserWishlistItem(id, productId);
+    res.status(200).json({
+      present: false,
+      removed: result.removed,
+      message: result.removed ? 'Đã xóa khỏi danh sách yêu thích' : 'Món không có trong danh sách yêu thích',
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.expose ? err.message : 'Không thể xóa món khỏi danh sách yêu thích lúc này' });
   }
 }));
 

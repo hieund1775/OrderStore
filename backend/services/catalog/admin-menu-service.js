@@ -32,8 +32,8 @@ export function createAdminMenuService(repository = defaultAdminCatalogRepositor
       return repository.updateProduct(id, data);
     },
 
-    async toggleProduct(id) {
-      return repository.toggleProductAvailability(id);
+    async setProductAvailability(id, desiredState) {
+      return repository.setProductAvailability(id, desiredState);
     },
 
     async deleteProduct(id) {

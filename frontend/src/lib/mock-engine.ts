@@ -25,6 +25,67 @@ function getStoredCustomerUser() {
   }
 }
 
+const MOCK_PRODUCT_AVAILABILITY_KEY = 'teaplus_mock_product_availability';
+
+function getMockProductAvailability(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(MOCK_PRODUCT_AVAILABILITY_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setMockProductAvailability(value: Record<string, boolean>) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(MOCK_PRODUCT_AVAILABILITY_KEY, JSON.stringify(value));
+  }
+}
+
+function getMockCatalogProducts() {
+  const availability = getMockProductAvailability();
+  return products.map((product, index) => ({
+    id: Number(product.id),
+    category_id: index + 1,
+    category_name: product.line,
+    name: product.name,
+    slug: product.slug,
+    base_tea: product.base,
+    description: product.desc,
+    price: product.price,
+    image_url: product.image || null,
+    calories: product.calories,
+    is_available: availability[product.id] ?? true,
+    sort_order: index + 1,
+    rating: product.rating,
+    review_count: product.reviews,
+    is_bestseller: product.tags.includes('best-seller'),
+    is_seasonal: product.tags.includes('seasonal'),
+  }));
+}
+
+function appendMockUnavailableProductNotification(userId: number, productName: string) {
+  if (typeof window === 'undefined') return;
+  const storageKey = `teaplus_mock_notifications_customer_${userId}`;
+  let notifications: any[] = [];
+  try {
+    notifications = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  } catch {
+    notifications = [];
+  }
+  notifications.unshift({
+    id: Date.now() + userId,
+    user_id: userId,
+    type: 'system',
+    title: 'Món yêu thích tạm ngưng phục vụ',
+    body: `Món "${productName}" trong danh sách yêu thích của bạn hiện đã tạm ngưng phục vụ và được tự động xóa khỏi danh sách.`,
+    link: '/menu',
+    is_read: false,
+    created_at: new Date().toISOString(),
+  });
+  localStorage.setItem(storageKey, JSON.stringify(notifications));
+}
+
 export function handleLocalMock<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase();
   let body: any = {};
@@ -278,6 +339,127 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     return Promise.resolve(orders as T);
   }
 
+  // 7b. Wishlist API (GET / PUT / DELETE /api/users/:id/wishlist)
+  if (path.includes('/api/users/') && path.includes('/wishlist')) {
+    const match = path.match(/^\/api\/users\/(\d+)\/wishlist(?:\/(\d+))?$/);
+    if (!match) return Promise.reject(new Error('Đường dẫn wishlist không hợp lệ'));
+    const uId = match[1];
+    const pId = match && match[2] ? Number(match[2]) : null;
+    const customerUser = getStoredCustomerUser();
+    const customerToken = typeof window !== 'undefined' ? localStorage.getItem('teaplus_customer_token') : null;
+    if (!customerToken) return Promise.reject(new Error('Thiếu token xác thực'));
+    if (Number(customerUser?.id) !== Number(uId)) {
+      return Promise.reject(new Error('Không có quyền truy cập danh sách yêu thích của người dùng khác'));
+    }
+    const storageKey = `teaplus_wishlist_user_${uId}`;
+    let savedList: any[] = [];
+    try {
+      savedList = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    } catch {
+      savedList = [];
+    }
+
+    if (method === 'GET') {
+      return Promise.resolve(savedList as T);
+    }
+
+    if (method === 'PUT' && pId) {
+      const prod = products.find((p) => Number(p.id) === pId);
+      if (!prod) return Promise.reject(new Error('Không tìm thấy sản phẩm'));
+      const availability = getMockProductAvailability();
+      if (availability[String(pId)] === false) {
+        return Promise.reject(new Error('Sản phẩm hiện đang tạm ngưng phục vụ'));
+      }
+      const existing = savedList.find((item) => Number(item.product_id) === pId);
+      if (existing) {
+        return Promise.resolve({ present: true, created: false, item: existing, message: 'Món đã có trong danh sách yêu thích' } as T);
+      }
+      const newItem = {
+        id: Date.now(),
+        user_id: Number(uId),
+        product_id: pId,
+        product_name: prod.name,
+        product_slug: prod.slug,
+        base_tea: prod.base,
+        price: prod.price,
+        image_url: prod.image || null,
+        created_at: new Date().toISOString(),
+      };
+      savedList.unshift(newItem);
+      localStorage.setItem(storageKey, JSON.stringify(savedList));
+      return Promise.resolve({ present: true, created: true, item: newItem, message: 'Đã thêm vào danh sách yêu thích' } as T);
+    }
+
+    if (method === 'DELETE' && pId) {
+      const filtered = savedList.filter((item) => Number(item.product_id) !== pId);
+      const removed = filtered.length !== savedList.length;
+      localStorage.setItem(storageKey, JSON.stringify(filtered));
+      return Promise.resolve({ present: false, removed, message: removed ? 'Đã xóa khỏi danh sách yêu thích' : 'Món không có trong danh sách yêu thích' } as T);
+    }
+
+    return Promise.reject(new Error('Phương thức wishlist không được hỗ trợ'));
+  }
+
+  // 7c. PUT /admin/menu/products/:id/availability
+  if (path.includes('/admin/menu/products/') && path.endsWith('/availability') && method === 'PUT') {
+    const match = path.match(/\/admin\/menu\/products\/(\d+)\/availability/);
+    const pId = match ? Number(match[1]) : 0;
+    if (!pId || typeof body.is_available !== 'boolean') {
+      return Promise.reject(new Error('Trạng thái is_available phải là giá trị boolean (true/false)'));
+    }
+    const product = products.find((item) => Number(item.id) === pId);
+    if (!product) return Promise.reject(new Error('Không tìm thấy món'));
+    const availability = getMockProductAvailability();
+    const currentState = availability[String(pId)] ?? true;
+    const isAvailable = body.is_available;
+    if (currentState === isAvailable) {
+      return Promise.resolve({
+        id: pId,
+        is_available: isAvailable,
+        changed: false,
+        removed_wishlist_count: 0,
+        notification_count: 0,
+        message: `Món đã ${isAvailable ? 'bật phục vụ' : 'tạm ngưng phục vụ'}`,
+      } as T);
+    }
+
+    let removedWishlistCount = 0;
+    let notificationCount = 0;
+    if (!isAvailable && typeof window !== 'undefined') {
+      const wishlistKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+        .filter((key): key is string => Boolean(key?.startsWith('teaplus_wishlist_user_')));
+      for (const key of wishlistKeys) {
+        let list: any[] = [];
+        try {
+          list = JSON.parse(localStorage.getItem(key) || '[]');
+        } catch {
+          list = [];
+        }
+        const filtered = list.filter((item) => Number(item.product_id) !== pId);
+        const removedForUser = list.length - filtered.length;
+        removedWishlistCount += removedForUser;
+        localStorage.setItem(key, JSON.stringify(filtered));
+        if (removedForUser > 0) {
+          const userId = Number(key.slice('teaplus_wishlist_user_'.length));
+          if (Number.isInteger(userId) && userId > 0) {
+            appendMockUnavailableProductNotification(userId, product.name);
+            notificationCount += 1;
+          }
+        }
+      }
+    }
+    availability[String(pId)] = isAvailable;
+    setMockProductAvailability(availability);
+    return Promise.resolve({
+      id: pId,
+      is_available: isAvailable,
+      changed: true,
+      removed_wishlist_count: removedWishlistCount,
+      notification_count: notificationCount,
+      message: `Món đã ${isAvailable ? 'bật phục vụ' : 'tạm ngưng phục vụ'}`,
+    } as T);
+  }
+
   // 8. GET /admin/kitchen/orders
   if (path.startsWith('/admin/kitchen/orders')) {
     const storeId = new URLSearchParams(path.split('?')[1] || '').get('store_id');
@@ -349,8 +531,11 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     ];
     return Promise.resolve(mockTables as T);
   }
-  if (path.startsWith('/admin/products') || path.startsWith('/api/products')) {
-    return Promise.resolve(products as T);
+  if (path.startsWith('/admin/menu/products') || path.startsWith('/admin/products')) {
+    return Promise.resolve(getMockCatalogProducts() as T);
+  }
+  if (path.startsWith('/api/products')) {
+    return Promise.resolve(getMockCatalogProducts().filter((product) => product.is_available) as T);
   }
   if (path.startsWith('/api/options/sizes')) {
     return Promise.resolve([{ id: 1, label: 'M', base_price_multiplier: 1.0 }, { id: 2, label: 'L', base_price_multiplier: 1.2 }] as T);

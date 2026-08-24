@@ -42,6 +42,8 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
 import { useBranch } from '@/lib/branch';
+import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
+import { toast } from 'sonner';
 import {
   apiPost,
   getCustomerToken,
@@ -50,7 +52,7 @@ import {
   setCustomerUser,
   clearCustomerToken,
 } from '@/lib/api';
-import { brand, products, vnd } from '@/lib/data';
+import { brand, vnd } from '@/lib/data';
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -202,43 +204,105 @@ function QuickCart() {
 }
 
 function WishlistButton() {
-  const { wishlist } = useCart();
-  const saved = products.filter((p) => wishlist.includes(p.id));
+  const { addItem } = useCart();
+  const { items, count, isLoading, isError, refetch, removeFavorite, isPending } = useWishlist();
+
+  const handleQuickAdd = (item: WishlistItem) => {
+    const cartItem = buildWishlistQuickCartItem(item);
+    if (!cartItem) {
+      toast.error('Thông tin món chưa đầy đủ, vui lòng chọn lại từ thực đơn');
+      return;
+    }
+    const success = addItem(cartItem);
+    if (success) {
+      toast.success(`Đã thêm "${item.product_name}" vào giỏ hàng`);
+    }
+  };
+
   return (
     <Sheet>
       <SheetTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className="hidden rounded-full sm:inline-flex"
-          aria-label="Yêu thích"
+          className="relative hidden rounded-full sm:inline-flex"
+          aria-label={`Yêu thích (${count})`}
         >
           <Heart className="size-5" />
+          {count > 0 && (
+            <span className="bg-berry text-white absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold">
+              {count > 99 ? '99+' : count}
+            </span>
+          )}
         </Button>
       </SheetTrigger>
       <SheetContent className="w-full sm:max-w-md">
         <SheetHeader>
-          <SheetTitle className="font-display">Món yêu thích</SheetTitle>
+          <SheetTitle className="font-display">Món yêu thích ({count})</SheetTitle>
         </SheetHeader>
-        <div className="space-y-3 px-4">
-          {saved.length === 0 && (
-            <p className="text-muted-foreground text-sm">Chưa có món nào được thả tim.</p>
-          )}
-          {saved.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3">
-              <img
-                src={p.image}
-                alt={p.name}
-                loading="lazy"
-                className="size-14 rounded-lg object-cover"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-semibold">{p.name}</p>
-                <p className="text-primary text-sm">{vnd(p.price)}</p>
-              </div>
-              <Heart className="fill-berry text-berry size-4" />
+        <div className="mt-4 space-y-3 px-4">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+              <Loader2 className="size-6 animate-spin text-primary" />
+              <p className="text-sm">Đang tải danh sách yêu thích...</p>
             </div>
-          ))}
+          )}
+
+          {!isLoading && isError && (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+              <p className="text-destructive text-sm">Không thể tải danh sách yêu thích.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="mr-1.5 size-3.5" /> Thử lại
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && !isError && items.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+              <Heart className="mb-2 size-10 stroke-1 text-muted-foreground/40" />
+              <p className="text-sm font-medium">Chưa có món nào trong danh sách yêu thích</p>
+              <p className="text-xs text-muted-foreground/80 mt-1">Hãy bấm thả tim các món bạn yêu thích trên thực đơn nhé!</p>
+            </div>
+          )}
+
+          {!isLoading && !isError && items.map((p) => {
+            const pending = isPending(p.product_id);
+            return (
+              <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3 bg-card shadow-sm">
+                <img
+                  src={p.image_url || '/placeholder.png'}
+                  alt={p.product_name || 'Món'}
+                  loading="lazy"
+                  className="size-14 rounded-lg object-cover bg-muted"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{p.product_name}</p>
+                  <p className="text-xs text-muted-foreground">{p.base_tea || 'Thiếu dữ liệu cốt trà'}</p>
+                  <p className="text-primary text-sm font-bold mt-0.5">{vnd(p.price)}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="soft"
+                    size="sm"
+                    className="text-xs h-8 px-2.5"
+                    onClick={() => handleQuickAdd(p)}
+                  >
+                    + Giỏ
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={pending}
+                    className="size-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeFavorite(p.product_id)}
+                    aria-label={`Xóa ${p.product_name} khỏi yêu thích`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </SheetContent>
     </Sheet>

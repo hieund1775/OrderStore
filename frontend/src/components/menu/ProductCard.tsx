@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart';
+import { useWishlist } from '@/lib/wishlist';
 import {
   baseOptions,
   iceOptions,
@@ -22,9 +23,11 @@ import {
 } from '@/lib/data';
 
 export function ProductCard({ product }: { product: Product }) {
-  const { addItem, wishlist, toggleWishlist } = useCart();
+  const { addItem } = useCart();
+  const { isFavorite, isPending, setFavorite } = useWishlist();
   const [open, setOpen] = useState(false);
-  const liked = wishlist.includes(product.id);
+  const liked = isFavorite(product.id);
+  const pending = isPending(product.id);
 
   return (
     <>
@@ -46,9 +49,10 @@ export function ProductCard({ product }: { product: Product }) {
             ))}
           </div>
           <button
-            onClick={() => toggleWishlist(product.id)}
-            aria-label="Yêu thích"
-            className="bg-card/90 absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-full shadow-sm"
+            onClick={() => setFavorite(product, !liked)}
+            disabled={pending}
+            aria-label={liked ? `Bỏ ${product.name} khỏi yêu thích` : `Thêm ${product.name} vào yêu thích`}
+            className="bg-card/90 disabled:opacity-50 absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-full shadow-sm transition-transform active:scale-95"
           >
             <Heart
               className={`size-4 ${liked ? 'fill-berry text-berry' : 'text-muted-foreground'}`}

@@ -25,15 +25,12 @@ type CartContextValue = {
   clear: () => void;
   count: number;
   subtotal: number;
-  wishlist: string[];
-  toggleWishlist: (id: string) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [wishlist, setWishlist] = useState<string[]>([]);
 
   const value = useMemo<CartContextValue>(() => {
     const count = items.reduce((s, i) => s + i.qty, 0);
@@ -42,7 +39,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       items,
       count,
       subtotal,
-      wishlist,
       addItem: (item) => {
         const token = getCustomerToken();
         if (!token) {
@@ -74,16 +70,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
             : prev.map((p) => (p.key === key ? { ...p, qty } : p)),
         ),
       clear: () => setItems([]),
-      toggleWishlist: (id) => {
-        const token = getCustomerToken();
-        if (!token) {
-          toast.error('Vui lòng đăng nhập tài khoản để lưu món yêu thích');
-          return;
-        }
-        setWishlist((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
-      },
     };
-  }, [items, wishlist]);
+  }, [items]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

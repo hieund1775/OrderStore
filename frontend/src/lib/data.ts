@@ -123,6 +123,7 @@ export type ProductTag = 'best-seller' | 'new' | 'seasonal';
 export type Product = {
   id: string;
   name: string;
+  slug: string;
   base: string;
   desc: string;
   price: number;
@@ -160,6 +161,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
   return {
     id: String(product.id),
     name: product.name || 'Sản phẩm TeaPlus',
+    slug: product.slug || '',
     base: product.base_tea || 'Trà đậm vị',
     desc: product.description || '',
     price: Number(product.price || 0),
@@ -191,7 +193,8 @@ export const fruitGroups = [
 
 export const products: Product[] = [
   {
-    id: 'tra-cam-sa',
+    id: '1',
+    slug: 'tra-cam-sa',
     name: 'Trà Cam Sả Mật Ong',
     base: 'Cốt Lục Trà Lài',
     desc: 'Vị chua dịu của cam vàng hòa cùng sả thơm và mật ong rừng, hậu trà thanh mát.',
@@ -205,7 +208,8 @@ export const products: Product[] = [
     tags: ['best-seller', 'seasonal'],
   },
   {
-    id: 'tra-dau-tay',
+    id: '2',
+    slug: 'tra-dau-tay',
     name: 'Trà Dâu Tây Lài Thơm',
     base: 'Cốt Lục Trà Lài',
     desc: 'Dâu tây Đà Lạt dầm tươi quyện lục trà nhài thơm ngát, chua ngọt cân bằng.',
@@ -219,7 +223,8 @@ export const products: Product[] = [
     tags: ['best-seller'],
   },
   {
-    id: 'tra-xoai-chanh-day',
+    id: '3',
+    slug: 'tra-xoai-chanh-day',
     name: 'Trà Xoài Chanh Dây',
     base: 'Trà Đen Đậm Vị',
     desc: 'Xoài chín cắt khúc, chanh dây nguyên hạt, vị nhiệt đới rực rỡ.',
@@ -233,7 +238,8 @@ export const products: Product[] = [
     tags: ['new'],
   },
   {
-    id: 'tra-dao-vai',
+    id: '4',
+    slug: 'tra-dao-vai',
     name: 'Ô Long Đào Vải',
     base: 'Trà Ô Long',
     desc: 'Đào ngâm giòn ngọt cùng vải thiều, nền ô long nướng nhẹ thơm sữa.',
@@ -247,7 +253,8 @@ export const products: Product[] = [
     tags: ['seasonal'],
   },
   {
-    id: 'tuyet-dua-hau',
+    id: '5',
+    slug: 'tuyet-dua-hau',
     name: 'Trà Tuyết Dưa Hấu Táo',
     base: 'Lục Trà',
     desc: 'Dưa hấu xay tuyết mát lạnh, thêm táo giòn – giải nhiệt tức thì.',
@@ -261,7 +268,8 @@ export const products: Product[] = [
     tags: ['new', 'seasonal'],
   },
   {
-    id: 'detox-nho-nha-dam',
+    id: '6',
+    slug: 'detox-nho-nha-dam',
     name: 'Hi-Tea Nho Nha Đam',
     base: 'Lục Trà Không Đường',
     desc: 'Nho mọng cùng nha đam giòn, ít đường, thanh lọc nhẹ nhàng.',

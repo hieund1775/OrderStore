@@ -51,7 +51,7 @@ describe('Phase 3 Catalog & Admin Menu Service Unit Tests', () => {
       async listProducts() { return []; },
       async createProduct(data) { return { id: 1, ...data }; },
       async updateProduct(id, data) { return { id, ...data }; },
-      async toggleProductAvailability(id) { toggledProductId = id; return { id, is_available: false }; },
+      async setProductAvailability(id, desiredState) { toggledProductId = id; return { id, is_available: desiredState }; },
       async deleteProduct(id) { return true; },
       async listOptions() { return []; },
       async createTopping(data) { return { id: 1, ...data }; },
@@ -66,7 +66,7 @@ describe('Phase 3 Catalog & Admin Menu Service Unit Tests', () => {
     assert.equal(createdCategory.name, 'Cà phê');
     assert.equal(cat.id, 1);
 
-    const toggled = await adminMenuService.toggleProduct(5);
+    const toggled = await adminMenuService.setProductAvailability(5, false);
     assert.equal(toggledProductId, 5);
     assert.equal(toggled.is_available, false);
   });

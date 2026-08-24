@@ -6,11 +6,14 @@ import app from '../app.js';
 import { JWT_SECRET } from '../config/env.js';
 import adminReportsRepository from '../repositories/postgres/admin-reports.js';
 import adminManagementRepository from '../repositories/postgres/admin-management.js';
+import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
 import engagementRepository from '../repositories/postgres/engagement.js';
 import notificationService from '../services/notifications/notification-service.js';
 
 const superToken = jwt.sign({ sub: 1, role: 'super' }, JWT_SECRET);
+const managerToken = jwt.sign({ sub: 2, role: 'manager', branch_id: 1 }, JWT_SECRET);
 const user1Token = jwt.sign({ sub: 10, id: 10, role: 'customer' }, JWT_SECRET);
+const user2Token = jwt.sign({ sub: 11, id: 11, role: 'customer' }, JWT_SECRET);
 
 describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests', () => {
   let server;
@@ -26,10 +29,13 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       getCustomerDetail: adminManagementRepository.getCustomerDetail,
       listAccounts: adminManagementRepository.listAccounts,
       listNotifications: adminManagementRepository.listNotifications,
+      setProductAvailability: adminCatalogRepository.setProductAvailability,
       listJobs: engagementRepository.listJobs,
       listTiers: engagementRepository.listTiers,
       getUserProfile: engagementRepository.getUserProfile,
       listUserWishlist: engagementRepository.listUserWishlist,
+      ensureUserWishlistItem: engagementRepository.ensureUserWishlistItem,
+      removeUserWishlistItem: engagementRepository.removeUserWishlistItem,
       listNotificationsForUser: notificationService.listForUser,
     };
 
@@ -55,7 +61,10 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       listTiers: originals.listTiers,
       getUserProfile: originals.getUserProfile,
       listUserWishlist: originals.listUserWishlist,
+      ensureUserWishlistItem: originals.ensureUserWishlistItem,
+      removeUserWishlistItem: originals.removeUserWishlistItem,
     });
+    adminCatalogRepository.setProductAvailability = originals.setProductAvailability;
     notificationService.listForUser = originals.listNotificationsForUser;
     await new Promise((resolve) => server.close(resolve));
   });
@@ -70,6 +79,13 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
     notificationService.listForUser = async () => ({
       notifications: [{ id: 1, user_id: 1, type: 'system', title: 'Notice', is_read: false }],
       unread_count: 1,
+    });
+    adminCatalogRepository.setProductAvailability = async (id, desiredState) => ({
+      id: Number(id),
+      is_available: desiredState,
+      changed: true,
+      removed_wishlist_count: desiredState ? 0 : 2,
+      notification_count: desiredState ? 0 : 2,
     });
 
     const kpiRes = await fetch(`${baseUrl}/admin/dashboard/kpi`, {
@@ -99,13 +115,74 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       headers: { authorization: `Bearer ${superToken}` },
     });
     assert.equal(notifRes.status, 200);
+
+    const managerAvailabilityRes = await fetch(`${baseUrl}/admin/menu/products/1/availability`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ is_available: false }),
+    });
+    assert.equal(managerAvailabilityRes.status, 403);
+
+    const invalidAvailabilityRes = await fetch(`${baseUrl}/admin/menu/products/1/availability`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${superToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ is_available: 0 }),
+    });
+    assert.equal(invalidAvailabilityRes.status, 400);
+
+    const availabilityRes = await fetch(`${baseUrl}/admin/menu/products/1/availability`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${superToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ is_available: false }),
+    });
+    assert.equal(availabilityRes.status, 200);
+    assert.deepEqual(await availabilityRes.json(), {
+      id: 1,
+      is_available: false,
+      changed: true,
+      removed_wishlist_count: 2,
+      notification_count: 2,
+      message: 'Món đã tạm ngưng phục vụ',
+    });
+
+    const removedToggleRoute = await fetch(`${baseUrl}/admin/menu/products/1/toggle`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${superToken}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(removedToggleRoute.status, 404);
   });
 
   it('serves public engagement endpoints (jobs, tiers, profile, wishlist)', async () => {
     engagementRepository.listJobs = async () => [{ id: 1, title: 'Barista' }];
     engagementRepository.listTiers = async () => [{ id: 1, name: 'Gold' }];
     engagementRepository.getUserProfile = async (id) => ({ id: Number(id), fullname: 'Nguyen Van A', phone: '0901234567' });
-    engagementRepository.listUserWishlist = async () => [{ id: 1, product_id: 2, product_name: 'Tra dao' }];
+    engagementRepository.listUserWishlist = async (id) => [{
+      id: 1,
+      user_id: Number(id),
+      product_id: 2,
+      product_name: 'Tra dao',
+      product_slug: 'tra-dao',
+      base_tea: 'Tra den',
+      price: 45000,
+      image_url: null,
+      created_at: '2026-08-24T00:00:00.000Z',
+    }];
+    engagementRepository.ensureUserWishlistItem = async (id, productId) => ({
+      created: true,
+      item: {
+        id: 2,
+        user_id: Number(id),
+        product_id: Number(productId),
+        product_name: 'Tra dao',
+        product_slug: 'tra-dao',
+        base_tea: 'Tra den',
+        price: 45000,
+        image_url: null,
+        created_at: '2026-08-24T00:00:00.000Z',
+      },
+    });
+    engagementRepository.removeUserWishlistItem = async () => ({ removed: true });
 
     const jobsRes = await fetch(`${baseUrl}/api/jobs`);
     assert.equal(jobsRes.status, 200);
@@ -141,5 +218,50 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
     });
     assert.equal(wishlistRes.status, 200);
     assert.equal((await wishlistRes.json())[0].product_name, 'Tra dao');
+
+    const wishlistWithoutToken = await fetch(`${baseUrl}/api/users/10/wishlist`);
+    assert.equal(wishlistWithoutToken.status, 401);
+
+    const otherCustomerWishlist = await fetch(`${baseUrl}/api/users/10/wishlist`, {
+      headers: { authorization: `Bearer ${user2Token}` },
+    });
+    assert.equal(otherCustomerWishlist.status, 403);
+
+    const superWishlist = await fetch(`${baseUrl}/api/users/10/wishlist`, {
+      headers: { authorization: `Bearer ${superToken}` },
+    });
+    assert.equal(superWishlist.status, 403);
+
+    const invalidWishlistOwner = await fetch(`${baseUrl}/api/users/not-a-number/wishlist`, {
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(invalidWishlistOwner.status, 400);
+
+    const invalidWishlistProduct = await fetch(`${baseUrl}/api/users/10/wishlist/not-a-number`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(invalidWishlistProduct.status, 400);
+
+    const addWishlist = await fetch(`${baseUrl}/api/users/10/wishlist/2`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(addWishlist.status, 201);
+    const addWishlistBody = await addWishlist.json();
+    assert.equal(addWishlistBody.present, true);
+    assert.equal(addWishlistBody.created, true);
+    assert.equal(addWishlistBody.item.base_tea, 'Tra den');
+
+    const removeWishlist = await fetch(`${baseUrl}/api/users/10/wishlist/2`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(removeWishlist.status, 200);
+    assert.deepEqual(await removeWishlist.json(), {
+      present: false,
+      removed: true,
+      message: 'Đã xóa khỏi danh sách yêu thích',
+    });
   });
 });

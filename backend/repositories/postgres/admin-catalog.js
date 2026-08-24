@@ -152,7 +152,7 @@ export function createAdminCatalogRepository(database = postgresDb) {
     async updateProduct(id, fields) {
       const sets = [];
       const params = [];
-      const allowed = ['category_id', 'name', 'slug', 'base_tea', 'description', 'price', 'image_url', 'calories', 'fruit_group', 'tags', 'is_available'];
+      const allowed = ['category_id', 'name', 'slug', 'base_tea', 'description', 'price', 'image_url', 'calories', 'fruit_group', 'tags'];
       for (const k of allowed) {
         if (fields[k] !== undefined) {
           params.push(k === 'tags' && typeof fields[k] !== 'string' ? JSON.stringify(fields[k]) : fields[k]);
@@ -173,14 +173,82 @@ export function createAdminCatalogRepository(database = postgresDb) {
       }
     },
 
-    async toggleProductAvailability(id) {
-      const [rows] = await database.query(
-        `UPDATE products SET is_available = NOT is_available, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING is_available`,
-        [id],
-      );
-      return rows[0] || null;
+    async setProductAvailability(id, desiredState) {
+      if (typeof desiredState !== 'boolean') {
+        throw new AdminCatalogError('Trạng thái is_available phải là giá trị boolean (true/false)');
+      }
+      return await database.transaction(async (tx) => {
+        const [rows] = await tx.query(
+          'SELECT id, name, is_available FROM products WHERE id = $1 FOR UPDATE',
+          [id],
+        );
+        if (!rows || !rows.length) {
+          throw new AdminCatalogError('Không tìm thấy món', 404);
+        }
+        const current = rows[0];
+        const targetState = desiredState;
+        if (current.is_available === targetState) {
+          return {
+            id: current.id,
+            name: current.name,
+            is_available: current.is_available,
+            changed: false,
+            removed_wishlist_count: 0,
+            notification_count: 0,
+          };
+        }
+
+        if (targetState === true) {
+          await tx.query(
+            'UPDATE products SET is_available = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [id],
+          );
+          return {
+            id: current.id,
+            name: current.name,
+            is_available: true,
+            changed: true,
+            removed_wishlist_count: 0,
+            notification_count: 0,
+          };
+        }
+
+        // targetState is false -> fan-out notification, delete wishlist rows, update product
+        const [, notifAffected] = await tx.query(
+          `INSERT INTO notifications (user_id, type, title, body, link, is_read, created_at)
+           SELECT DISTINCT
+             w.user_id,
+             'system',
+             'Món yêu thích tạm ngưng phục vụ',
+             'Món "' || $2 || '" trong danh sách yêu thích của bạn hiện đã tạm ngưng phục vụ và được tự động xóa khỏi danh sách.',
+             '/menu',
+             FALSE,
+             NOW()
+           FROM wishlists w
+           JOIN users u ON u.id = w.user_id
+           WHERE w.product_id = $1 AND u.is_admin = FALSE`,
+          [id, current.name],
+        );
+
+        const [, wishlistAffected] = await tx.query(
+          'DELETE FROM wishlists WHERE product_id = $1',
+          [id],
+        );
+
+        await tx.query(
+          'UPDATE products SET is_available = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+          [id],
+        );
+
+        return {
+          id: current.id,
+          name: current.name,
+          is_available: false,
+          changed: true,
+          removed_wishlist_count: Number(wishlistAffected) || 0,
+          notification_count: Number(notifAffected) || 0,
+        };
+      });
     },
 
     async deleteProduct(id) {

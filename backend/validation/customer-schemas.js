@@ -74,6 +74,10 @@ export function validateCustomerId(value) {
   return positiveInteger(value, 'ID khách hàng');
 }
 
+export function validateWishlistProductId(value) {
+  return positiveInteger(value, 'ID sản phẩm');
+}
+
 export function validateCustomerNotificationInput(body = {}) {
   if (typeof body !== 'object' || body === null) {
     throw new CustomerValidationError('Dữ liệu thông báo không hợp lệ');

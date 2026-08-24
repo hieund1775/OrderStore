@@ -46,7 +46,8 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Service Unit Tests', (
     const engService = createEngagementService({
       async getUserProfile(id) { return { id: Number(id) }; },
       async listUserWishlist(id) { return []; },
-      async toggleUserWishlist(id, pId) { return { added: true }; },
+      async ensureUserWishlistItem(id, pId) { return { created: true }; },
+      async removeUserWishlistItem(id, pId) { return { removed: true }; },
       async listUserNotifications(id) { return []; },
       async listUserVouchers(id) { return []; },
       async listProductReviews(pId) { return []; },
@@ -58,7 +59,8 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Service Unit Tests', (
     });
 
     assert.equal((await engService.getUserProfile('7')).id, 7);
-    assert.equal((await engService.toggleUserWishlist(1, 2)).added, true);
+    assert.equal((await engService.ensureUserWishlistItem(1, 2)).created, true);
+    assert.equal((await engService.removeUserWishlistItem(1, 2)).removed, true);
     await engService.createProductReview(10, { productId: 1, rating: 5, comment: 'Ngon' });
     assert.equal(reviewData.rating, 5);
     await engService.applyJob({ jobId: 1, fullname: 'Nguyen Van B' });

@@ -10,8 +10,12 @@ export function createEngagementService(repository = defaultEngagementRepository
       return repository.listUserWishlist(userId);
     },
 
-    async toggleUserWishlist(userId, productId) {
-      return repository.toggleUserWishlist(userId, productId);
+    async ensureUserWishlistItem(userId, productId) {
+      return repository.ensureUserWishlistItem(userId, productId);
+    },
+
+    async removeUserWishlistItem(userId, productId) {
+      return repository.removeUserWishlistItem(userId, productId);
     },
 
     async listUserNotifications(userId) {

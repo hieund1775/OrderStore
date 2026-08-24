@@ -8,6 +8,7 @@ import { seedDemoData } from '../database/postgres/seed-demo.js';
 import postgresDb from '../config/db-postgres.js';
 import publicRoutes from '../routes/public.js';
 import { createCatalogRepository } from '../repositories/postgres/catalog.js';
+import { createEngagementRepository } from '../repositories/postgres/engagement.js';
 
 const isPostgresIntegration = process.env.POSTGRES_INTEGRATION === '1';
 const testDbUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
@@ -31,9 +32,9 @@ describe('PostgreSQL Public Read Integration Suite', () => {
     await runMigrations();
     await seedDemoData();
 
-    const catalog = createCatalogRepository(postgresDb);
+    const engagement = createEngagementRepository(postgresDb);
     await postgresDb.query('INSERT INTO wishlists (user_id, product_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [5, 1]);
-    assert.equal((await catalog.listWishlist(5))[0]?.product_name, 'Trà Đào Cam Sả');
+    assert.equal((await engagement.listUserWishlist(5))[0]?.product_name, 'Trà Đào Cam Sả');
 
     const app = express();
     app.use(publicRoutes);

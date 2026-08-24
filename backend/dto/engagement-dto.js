@@ -35,8 +35,9 @@ export function toWishlistDto(item) {
     product_id: Number(item.product_id),
     product_name: item.product_name || item.name || undefined,
     product_slug: item.product_slug || item.slug || undefined,
+    base_tea: item.base_tea || null,
     price: item.price == null ? undefined : Number(item.price),
-    image_url: item.image_url || undefined,
+    image_url: item.image_url || null,
     created_at: item.created_at,
   };
 }

@@ -92,16 +92,6 @@ export function createCatalogRepository(database = postgresDb) {
       );
       return { products: products.map((product) => product.name), toppings: toppings.map((topping) => topping.name) };
     },
-
-    async listWishlist(userId) {
-      const [rows] = await database.query(
-        `SELECT w.*, p.name AS product_name, p.slug, p.price, p.image_url, p.rating
-         FROM wishlists w JOIN products p ON w.product_id = p.id
-         WHERE w.user_id = $1`,
-        [userId],
-      );
-      return rows;
-    },
   };
 }
 

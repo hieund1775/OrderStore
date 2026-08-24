@@ -12,27 +12,78 @@ export function createEngagementRepository(database = postgresDb) {
 
     async listUserWishlist(userId) {
       const [rows] = await database.query(
-        `SELECT w.id, w.user_id, w.product_id, p.name AS product_name, p.slug AS product_slug, p.price, p.image_url, w.created_at
+        `SELECT w.id, w.user_id, w.product_id, p.name AS product_name, p.slug AS product_slug, p.base_tea, p.price, p.image_url, w.created_at
          FROM wishlists w
          JOIN products p ON p.id = w.product_id
-         WHERE w.user_id = $1
-         ORDER BY w.created_at DESC`,
+         WHERE w.user_id = $1 AND p.is_available = TRUE
+         ORDER BY w.created_at DESC, w.id DESC`,
         [userId],
       );
       return rows;
     },
 
-    async toggleUserWishlist(userId, productId) {
-      const [existing] = await database.query(
-        'SELECT id FROM wishlists WHERE user_id = $1 AND product_id = $2',
+    async ensureUserWishlistItem(userId, productId) {
+      return await database.transaction(async (tx) => {
+        const [productRows] = await tx.query(
+          'SELECT id, name, slug, base_tea, price, image_url, is_available FROM products WHERE id = $1 FOR SHARE',
+          [productId],
+        );
+        if (!productRows || !productRows.length) {
+          const err = new Error('Không tìm thấy sản phẩm');
+          err.status = 404;
+          err.expose = true;
+          throw err;
+        }
+        const product = productRows[0];
+        if (!product.is_available) {
+          const err = new Error('Sản phẩm hiện đang tạm ngưng phục vụ');
+          err.status = 409;
+          err.expose = true;
+          throw err;
+        }
+
+        const [inserted] = await tx.query(
+          `INSERT INTO wishlists (user_id, product_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id, product_id) DO NOTHING
+           RETURNING id, user_id, product_id, created_at`,
+          [userId, productId],
+        );
+        const created = inserted.length > 0;
+        let row = inserted[0];
+        if (!row) {
+          const [existing] = await tx.query(
+            'SELECT id, user_id, product_id, created_at FROM wishlists WHERE user_id = $1 AND product_id = $2',
+            [userId, productId],
+          );
+          row = existing[0];
+        }
+        if (!row) {
+          throw new Error('Wishlist insert completed without a persisted row');
+        }
+        return {
+          created,
+          item: {
+            id: row.id,
+            user_id: row.user_id,
+            product_id: row.product_id,
+            product_name: product.name,
+            product_slug: product.slug,
+            base_tea: product.base_tea,
+            price: product.price,
+            image_url: product.image_url,
+            created_at: row.created_at,
+          },
+        };
+      });
+    },
+
+    async removeUserWishlistItem(userId, productId) {
+      const [result] = await database.query(
+        'DELETE FROM wishlists WHERE user_id = $1 AND product_id = $2 RETURNING id',
         [userId, productId],
       );
-      if (existing.length) {
-        await database.query('DELETE FROM wishlists WHERE id = $1', [existing[0].id]);
-        return { added: false };
-      }
-      await database.query('INSERT INTO wishlists (user_id, product_id) VALUES ($1, $2)', [userId, productId]);
-      return { added: true };
+      return { removed: Boolean(result && result.length > 0) };
     },
 
     async listUserNotifications(userId) {

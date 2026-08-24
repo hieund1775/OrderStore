@@ -91,6 +91,13 @@ export function validateProductInput(body = {}, { isUpdate = false } = {}) {
   };
 }
 
+export function validateProductAvailabilityInput(body = {}) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body) || body.is_available === undefined || typeof body.is_available !== 'boolean') {
+    throw new CatalogValidationError('Trạng thái is_available phải là giá trị boolean (true/false)', 'CATALOG_INVALID_AVAILABILITY');
+  }
+  return body.is_available;
+}
+
 export function validateToppingInput(body = {}, { isUpdate = false } = {}) {
   if (typeof body !== 'object' || body === null) {
     throw new CatalogValidationError('Dữ liệu topping không hợp lệ');
