@@ -23,7 +23,8 @@ import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
 import { apiGet } from "@/lib/api";
-import { fmtDateTime, vnd } from "@/lib/data";
+import { vnd } from "@/lib/data";
+import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -250,7 +251,7 @@ function Profile() {
                     <p className={`font-medium ${!n.is_read ? "text-foreground font-bold" : "text-muted-foreground"}`}>
                       {n.title}
                     </p>
-                    <p className="text-[10px] text-muted-foreground/70">{fmtDateTime(n.created_at)}</p>
+                    <CustomerDateTime value={n.created_at} className="text-[10px] text-muted-foreground/70" />
                   </div>
                 ))}
                 <Button
@@ -295,7 +296,7 @@ function Profile() {
                     <div>
                       <p className="font-display font-bold text-base">Đơn hàng #{o.order_code}</p>
                       <p className="text-muted-foreground text-xs">
-                        {fmtDateTime(o.created_at)} · {o.store_name}
+                        <CustomerDateTime value={o.created_at} /> · {o.store_name}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -406,7 +407,7 @@ function Profile() {
                           <p className={`text-sm ${!n.is_read ? "font-bold text-foreground" : "font-medium text-foreground/80"}`}>
                             {n.title}
                           </p>
-                          <p className="text-[11px] text-muted-foreground">{fmtDateTime(n.created_at)}</p>
+                          <CustomerDateTime value={n.created_at} className="text-[11px] text-muted-foreground" />
                         </div>
                       </div>
                       {!n.is_read && (

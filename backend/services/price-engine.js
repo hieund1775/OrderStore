@@ -113,15 +113,3 @@ export async function consumeVoucher(promoId, q = postgresDb.query) {
   );
   return affected > 0;
 }
-
-/** Sinh order_code duy nhất: TP + YYMMDD + 4 số ngẫu nhiên (kiểm tra trùng). */
-export async function generateOrderCode(q = postgresDb.query) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const yymmdd = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    const rand = String(Math.floor(1000 + Math.random() * 9000));
-    const code = `TP${yymmdd}${rand}`;
-    const [rows] = await q('SELECT 1 AS x FROM orders WHERE order_code = $1', [code]);
-    if (rows.length === 0) return code;
-  }
-  throw new Error('Không sinh được mã đơn duy nhất, thử lại');
-}

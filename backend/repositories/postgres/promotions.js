@@ -1,4 +1,5 @@
 import postgresDb from '../../config/db-postgres.js';
+import { formatVietnamBusinessDate } from '../../services/business-time.js';
 
 export class PromotionError extends Error {
   constructor(message) {
@@ -25,12 +26,13 @@ function calculateDiscount(promotion, subtotal) {
   return Math.max(0, Math.min(discount, subtotal));
 }
 
-async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock = false }) {
+async function findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock = false }) {
   const normalizedCode = String(code || '').trim();
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedCode) return null;
   if (!Number.isFinite(Number(subtotal)) || Number(subtotal) < 0) throw new PromotionError('Giá trị đơn hàng không hợp lệ');
   if (!Number.isInteger(Number(storeId))) throw new PromotionError('Thiếu chi nhánh áp dụng voucher');
+  const targetDate = businessDate;
 
   const [rows] = await tx.query(
     `SELECT p.*
@@ -42,10 +44,10 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
          NOT EXISTS (SELECT 1 FROM promotion_stores ps WHERE ps.promotion_id = p.id)
          OR EXISTS (SELECT 1 FROM promotion_stores ps WHERE ps.promotion_id = p.id AND ps.store_id = $2)
        )
-       AND p.start_date <= CURRENT_DATE
-       AND (p.end_date IS NULL OR p.end_date >= CURRENT_DATE)
+       AND p.start_date <= $3
+       AND (p.end_date IS NULL OR p.end_date >= $3)
      ${lock ? 'FOR UPDATE OF p' : ''}`,
-    [normalizedCode, Number(storeId)],
+    [normalizedCode, Number(storeId), targetDate],
   );
   const promotion = rows[0];
   if (!promotion) throw new PromotionError('Mã giảm giá không tồn tại, đã hết hạn hoặc không áp dụng cho chi nhánh này');
@@ -65,7 +67,7 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock 
   return { promotion, phone: normalizedPhone, discount_amount: calculateDiscount(promotion, Number(subtotal)) };
 }
 
-export function createPromotionsRepository(database = postgresDb) {
+export function createPromotionsRepository(database = postgresDb, { clock = () => new Date() } = {}) {
   return {
     async listActivePromotions({ status } = {}) {
       let sql = 'SELECT * FROM promotions WHERE is_active = TRUE AND deleted_at IS NULL';
@@ -80,12 +82,14 @@ export function createPromotionsRepository(database = postgresDb) {
     },
 
     async preview({ code, subtotal, phone, storeId }) {
-      return findEligiblePromotion({ code, subtotal, phone, storeId, tx: database });
+      const businessDate = formatVietnamBusinessDate(clock());
+      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx: database });
     },
 
     async validateForOrder({ code, subtotal, phone, storeId, tx }) {
       if (!code || !String(code).trim()) return null;
-      return findEligiblePromotion({ code, subtotal, phone, storeId, tx, lock: true });
+      const businessDate = formatVietnamBusinessDate(clock());
+      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock: true });
     },
 
     async consumeForOrder({ voucher, orderId, tx }) {

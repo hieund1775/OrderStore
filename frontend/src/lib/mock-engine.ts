@@ -1,4 +1,5 @@
 import { products, stores } from './data';
+import { formatVietnamOrderDatePrefix } from './time';
 
 export function getLocalOrders(): any[] {
   if (typeof window === 'undefined') return [];
@@ -127,7 +128,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const storeId = body.store_id || 1;
     const store = stores.find((s) => String(s.id) === String(storeId)) || stores[0];
 
-    const orderCode = 'TP' + Math.floor(100000 + Math.random() * 900000);
+    const orderCode = 'TP' + formatVietnamOrderDatePrefix() + Math.floor(1000 + Math.random() * 9000);
     const user = getStoredCustomerUser();
     if (!user) return Promise.reject(new Error('Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng'));
     const isPayOS = body.payment_method === 'VietQR';

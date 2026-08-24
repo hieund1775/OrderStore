@@ -1,6 +1,7 @@
 import postgresDb from '../../config/db-postgres.js';
+import { formatVietnamBusinessDate } from '../../services/business-time.js';
 
-export function createEngagementRepository(database = postgresDb) {
+export function createEngagementRepository(database = postgresDb, { clock = () => new Date() } = {}) {
   return {
     async getUserProfile(userId) {
       const [rows] = await database.query(
@@ -95,13 +96,14 @@ export function createEngagementRepository(database = postgresDb) {
     },
 
     async listUserVouchers(userId) {
+      const businessDate = formatVietnamBusinessDate(clock());
       const [rows] = await database.query(
         `SELECT uv.*, p.title AS promotion_title, p.rule, p.discount_value, p.discount_type, p.max_discount, p.min_order
          FROM user_vouchers uv
          LEFT JOIN promotions p ON uv.promotion_id = p.id
-         WHERE uv.user_id = $1 AND uv.used_at IS NULL AND (uv.expires_at IS NULL OR uv.expires_at >= CURRENT_DATE)
+         WHERE uv.user_id = $1 AND uv.used_at IS NULL AND (uv.expires_at IS NULL OR uv.expires_at >= $2)
          ORDER BY uv.created_at DESC`,
-        [userId],
+        [userId, businessDate],
       );
       return rows;
     },

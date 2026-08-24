@@ -1,63 +1,79 @@
 import postgresDb from '../../config/db-postgres.js';
+import {
+  getTodayBoundaries,
+  parseVietnamSingleDateBoundary,
+  formatVietnamBusinessDate,
+} from '../../services/business-time.js';
 
-export function createAdminReportsRepository(database = postgresDb) {
+export function createAdminReportsRepository(database = postgresDb, { clock = () => new Date() } = {}) {
   return {
     async getKPI({ scopedStoreId } = {}) {
-      const params = [];
-      let storeCond = '';
+      const today = getTodayBoundaries(clock());
+      const yesterdayDate = formatVietnamBusinessDate(new Date(today.startDate.getTime() - 1));
+      const yesterday = parseVietnamSingleDateBoundary(yesterdayDate);
+
+      const todayParams = [today.start, today.end];
+      let todayStoreCond = '';
       if (scopedStoreId) {
-        params.push(scopedStoreId);
-        storeCond = ` AND store_id = $${params.length}`;
+        todayParams.push(scopedStoreId);
+        todayStoreCond = ` AND store_id = $${todayParams.length}`;
+      }
+
+      const yestParams = [yesterday.start, yesterday.end];
+      let yestStoreCond = '';
+      if (scopedStoreId) {
+        yestParams.push(scopedStoreId);
+        yestStoreCond = ` AND store_id = $${yestParams.length}`;
       }
 
       const [todayRev] = await database.query(
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
-         WHERE created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day'
+         WHERE created_at >= $1 AND created_at < $2
            AND payment_status = 'paid'
            AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
-           ${storeCond}`,
-        params,
+           ${todayStoreCond}`,
+        todayParams,
       );
 
       const [yesterdayRev] = await database.query(
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
-         WHERE created_at >= CURRENT_DATE - INTERVAL '1 day' AND created_at < CURRENT_DATE
+         WHERE created_at >= $1 AND created_at < $2
            AND payment_status = 'paid'
            AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
-           ${storeCond}`,
-        params,
+           ${yestStoreCond}`,
+        yestParams,
       );
 
       const [todayOrders] = await database.query(
         `SELECT COUNT(*)::int AS total, COALESCE(AVG(total), 0)::int AS avg
          FROM orders
-         WHERE created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day'
+         WHERE created_at >= $1 AND created_at < $2
            AND payment_status = 'paid'
            AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
-           ${storeCond}`,
-        params,
+           ${todayStoreCond}`,
+        todayParams,
       );
 
       const [todayCancel] = await database.query(
         `SELECT COUNT(*)::int AS v
          FROM orders o
-         WHERE o.created_at >= CURRENT_DATE AND o.created_at < CURRENT_DATE + INTERVAL '1 day'
+         WHERE o.created_at >= $1 AND o.created_at < $2
            AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status = 'Đã hủy')
-           ${scopedStoreId ? ' AND o.store_id = $1' : ''}`,
-        scopedStoreId ? [scopedStoreId] : [],
+           ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
+        todayParams,
       );
 
       const [todayCups] = await database.query(
         `SELECT COALESCE(SUM(oi.qty), 0)::int AS v
          FROM order_items oi
          JOIN orders o ON oi.order_id = o.id
-         WHERE o.created_at >= CURRENT_DATE AND o.created_at < CURRENT_DATE + INTERVAL '1 day'
+         WHERE o.created_at >= $1 AND o.created_at < $2
            AND o.payment_status = 'paid'
            AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
-           ${scopedStoreId ? ' AND o.store_id = $1' : ''}`,
-        scopedStoreId ? [scopedStoreId] : [],
+           ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
+        todayParams,
       );
 
       const revToday = Number(todayRev[0]?.v || 0);
@@ -111,8 +127,10 @@ export function createAdminReportsRepository(database = postgresDb) {
     },
 
     async getRevenueByHour({ scopedStoreId, date } = {}) {
-      const params = [];
-      let where = `WHERE o.created_at >= CURRENT_DATE AND o.created_at < CURRENT_DATE + INTERVAL '1 day'
+      const targetDate = date || formatVietnamBusinessDate(clock());
+      const boundary = parseVietnamSingleDateBoundary(targetDate);
+      const params = [boundary.start, boundary.end];
+      let where = `WHERE o.created_at >= $1 AND o.created_at < $2
                      AND o.payment_status = 'paid'
                      AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
       if (scopedStoreId) {
@@ -121,12 +139,12 @@ export function createAdminReportsRepository(database = postgresDb) {
       }
 
       const [rows] = await database.query(
-        `SELECT EXTRACT(HOUR FROM o.created_at)::int AS hour,
+        `SELECT EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS hour,
                 COALESCE(SUM(o.total), 0)::bigint AS revenue,
                 COUNT(*)::int AS orders
          FROM orders o
          ${where}
-         GROUP BY EXTRACT(HOUR FROM o.created_at)
+         GROUP BY EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
          ORDER BY hour`,
         params,
       );
@@ -168,15 +186,16 @@ export function createAdminReportsRepository(database = postgresDb) {
 
     async getRevenueByBranch({ dateFrom, dateTo } = {}) {
       const params = [];
-      let where = `WHERE o.payment_status = 'paid'
-                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
+      let orderJoin = `o.store_id = s.id
+                         AND o.payment_status = 'paid'
+                         AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
       if (dateFrom) {
         params.push(dateFrom);
-        where += ` AND o.created_at >= $${params.length}`;
+        orderJoin += ` AND o.created_at >= $${params.length}`;
       }
       if (dateTo) {
         params.push(dateTo);
-        where += ` AND o.created_at < $${params.length}`;
+        orderJoin += ` AND o.created_at < $${params.length}`;
       }
 
       const [rows] = await database.query(
@@ -184,8 +203,7 @@ export function createAdminReportsRepository(database = postgresDb) {
                 COALESCE(SUM(o.total), 0)::bigint AS revenue,
                 COUNT(o.id)::int AS orders
          FROM stores s
-         LEFT JOIN orders o ON o.store_id = s.id AND o.payment_status = 'paid'
-           AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+         LEFT JOIN orders o ON ${orderJoin}
          GROUP BY s.id, s.name, s.city
          ORDER BY revenue DESC`,
         params,

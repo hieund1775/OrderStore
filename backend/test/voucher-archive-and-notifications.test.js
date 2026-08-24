@@ -92,8 +92,8 @@ describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () =
       assert.ok(checkQuery);
       assert.ok(checkQuery.sql.includes('p.deleted_at IS NULL'));
       assert.ok(checkQuery.sql.includes('NOT EXISTS (SELECT 1 FROM promotion_stores'));
-      assert.ok(checkQuery.sql.includes('EXISTS (SELECT 1 FROM promotion_stores'));
-      assert.ok(checkQuery.sql.includes('(p.end_date IS NULL OR p.end_date >= CURRENT_DATE)'));
+      assert.ok(checkQuery.sql.includes('(p.end_date IS NULL OR p.end_date >= $3)'));
+      assert.ok(checkQuery.params[2]); // business date parameter
     });
 
     it('normalizes single-use create data and rejects invalid merged update limits', async () => {

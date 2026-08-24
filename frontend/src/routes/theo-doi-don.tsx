@@ -29,7 +29,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet, apiPost } from "@/lib/api";
-import { fmtDateTime, vnd } from "@/lib/data";
+import { vnd } from "@/lib/data";
+import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
 
 export const Route = createFileRoute("/theo-doi-don")({
@@ -540,7 +541,7 @@ function Tracking() {
               </p>
               <p className="text-muted-foreground text-xs">
                 {order.customer_name} · {order.payment_method} ·{" "}
-                {fmtDateTime(order.created_at)}
+                <CustomerDateTime value={order.created_at} />
               </p>
             </CardContent>
           </Card>

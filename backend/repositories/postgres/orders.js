@@ -4,6 +4,7 @@ import promotionsRepository from './promotions.js';
 import defaultNotificationsRepository from './notifications.js';
 import { claimOrderIdempotency, completeOrderIdempotency } from '../../services/order-idempotency.js';
 import { OrderDomainError } from '../../services/orders/order-errors.js';
+import { formatVietnamOrderDatePrefix } from '../../services/business-time.js';
 
 export class OrderError extends OrderDomainError {
   constructor(message, status = 400, code = 'ORDER_BUSINESS_RULE') {
@@ -12,8 +13,10 @@ export class OrderError extends OrderDomainError {
   }
 }
 
-function orderCode() {
-  return `TP${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${crypto.randomInt(1000, 10000)}`;
+function generateCandidateOrderCode(instant, randomInt = crypto.randomInt) {
+  const prefix = formatVietnamOrderDatePrefix(instant);
+  const rand = randomInt(1000, 10000);
+  return `TP${prefix}${rand}`;
 }
 
 function normalizeRows(rows) {
@@ -30,6 +33,7 @@ export function createOrdersRepository(
   database = postgresDb,
   promotions = promotionsRepository,
   notifications = defaultNotificationsRepository,
+  { clock = () => new Date(), randomInt = crypto.randomInt } = {},
 ) {
   return {
     async createPublicOrder({ input, userId = null, cancelTokenHash = null, cancelToken = null, idempotencyKey, requestHash, paymentProvider = 'cod' }) {
@@ -89,18 +93,43 @@ export function createOrdersRepository(
         });
         const discountAmount = Number(voucher?.discount_amount || 0);
         const total = subtotal - discountAmount;
-        const [orders] = await tx.query(
-          `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
-             payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
-             delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-           RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
-          [orderCode(), userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
-            input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
-            (input.order_type === 'POS' || input.source === 'pos') ? new Date() : null, cancelTokenHash, input.customer_name, input.customer_phone,
-            input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null],
-        );
-        const order = orders[0];
+        const orderInstant = clock();
+
+        let order = null;
+        const MAX_CODE_ATTEMPTS = 5;
+        for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+          const candidateCode = generateCandidateOrderCode(orderInstant, randomInt);
+          await tx.query('SAVEPOINT order_code_attempt');
+          try {
+            const [orders] = await tx.query(
+              `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
+                 payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
+                 delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+               RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
+              [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
+                input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
+                (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
+                input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null],
+            );
+            order = orders[0];
+            await tx.query('RELEASE SAVEPOINT order_code_attempt');
+            break;
+          } catch (err) {
+            await tx.query('ROLLBACK TO SAVEPOINT order_code_attempt');
+            await tx.query('RELEASE SAVEPOINT order_code_attempt');
+            if (err.code === '23505' && err.constraint === 'orders_order_code_key') {
+              if (attempt === MAX_CODE_ATTEMPTS - 1) {
+                throw new OrderError('Không thể tạo mã đơn hàng duy nhất lúc này, vui lòng thử lại sau giây lát', 500, 'ORDER_CODE_COLLISION');
+              }
+              continue;
+            }
+            throw err;
+          }
+        }
+        if (!order) {
+          throw new OrderError('Không thể tạo đơn hàng lúc này, vui lòng thử lại sau giây lát', 500, 'ORDER_CREATE_FAILED');
+        }
         await promotions.consumeForOrder({ voucher, orderId: order.id, tx });
         for (const line of lines) {
           const [items] = await tx.query(

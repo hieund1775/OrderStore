@@ -20,22 +20,24 @@ describe('Date Range & Sargable Query Service (Production Module)', () => {
     assert.equal(isValidDateString(''), false);
   });
 
-  it('converts single date into half-open interval [startInclusive, endExclusive)', () => {
+  it('converts single date into Vietnam half-open UTC interval [startInclusive, endExclusive)', () => {
     const b = parseSingleDateBoundary('2026-08-17');
-    assert.equal(b.start.startsWith('2026-08-17 00:00:00'), true);
-    assert.equal(b.end.startsWith('2026-08-18 00:00:00'), true);
+    // Vietnam 2026-08-17 00:00:00+07 = UTC 2026-08-16 17:00:00.000Z
+    assert.equal(b.start, '2026-08-16T17:00:00.000Z');
+    // Vietnam 2026-08-17 24:00:00+07 = UTC 2026-08-17 17:00:00.000Z
+    assert.equal(b.end, '2026-08-17T17:00:00.000Z');
   });
 
-  it('converts year-end boundary correctly into the next year', () => {
+  it('converts year-end boundary correctly into the next year in Vietnam timezone', () => {
     const b = parseSingleDateBoundary('2026-12-31');
-    assert.equal(b.start.startsWith('2026-12-31 00:00:00'), true);
-    assert.equal(b.end.startsWith('2027-01-01 00:00:00'), true);
+    assert.equal(b.start, '2026-12-30T17:00:00.000Z');
+    assert.equal(b.end, '2026-12-31T17:00:00.000Z');
   });
 
-  it('converts date range into correct multi-day boundary [start, endExclusive)', () => {
+  it('converts date range into correct multi-day Vietnam boundary [start, endExclusive)', () => {
     const b = parseDateRangeBoundaries('2026-08-01', '2026-08-15');
-    assert.equal(b.start.startsWith('2026-08-01 00:00:00'), true);
-    assert.equal(b.end.startsWith('2026-08-16 00:00:00'), true);
+    assert.equal(b.start, '2026-07-31T17:00:00.000Z');
+    assert.equal(b.end, '2026-08-15T17:00:00.000Z');
   });
 
   it('rejects date range when from > to', () => {
