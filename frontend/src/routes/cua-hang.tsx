@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Clock, Loader2, LocateFixed, MapPin, Navigation, Phone, ShoppingBag } from "lucide-react";
+import { Clock, Loader2, LocateFixed, MapPin, Navigation, Phone, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -254,45 +254,52 @@ function StoresPage() {
         bannerImg={cuahangBannerImg}
       />
 
-      <div className="container-page py-6 md:py-10">
-        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-          <div className="space-y-4">
-            <div className="bg-card space-y-3 rounded-2xl border p-4 shadow-sm">
-              <Select value={city} onValueChange={handleCityChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Tỉnh / Thành phố" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả tỉnh / thành</SelectItem>
-                  {cities.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      <div className="container-page w-full max-w-full overflow-x-hidden py-4 sm:py-6 md:py-10">
+        <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[380px_1fr]">
+          <div className="w-full min-w-0 space-y-4">
+            <div className="bg-card w-full min-w-0 space-y-3 rounded-2xl border p-3.5 sm:p-4 shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+                <Select value={city} onValueChange={handleCityChange}>
+                  <SelectTrigger className="w-full min-w-0">
+                    <SelectValue placeholder="Tỉnh / Thành phố" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả tỉnh / thành</SelectItem>
+                    {cities.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              <Select value={district} onValueChange={handleDistrictChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Quận / Huyện" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả quận / huyện</SelectItem>
-                  {districts.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Select value={district} onValueChange={handleDistrictChange}>
+                  <SelectTrigger className="w-full min-w-0">
+                    <SelectValue placeholder="Quận / Huyện" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả quận / huyện</SelectItem>
+                    {districts.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <Button variant="leaf" className="w-full font-semibold flex items-center justify-center gap-2" onClick={findNearest} disabled={locating}>
+              <Button
+                variant="leaf"
+                className="w-full min-w-0 font-semibold flex items-center justify-center gap-2 text-xs sm:text-sm px-3"
+                onClick={findNearest}
+                disabled={locating}
+              >
                 {locating ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 shrink-0 animate-spin" />
                 ) : (
-                  <LocateFixed className="size-4" />
+                  <LocateFixed className="size-4 shrink-0" />
                 )}
-                <span>Tìm chi nhánh gần tôi nhất (GPS)</span>
+                <span className="truncate">Tìm chi nhánh gần tôi nhất (GPS)</span>
               </Button>
             </div>
 
@@ -301,21 +308,21 @@ function StoresPage() {
                 <Loader2 className="size-5 animate-spin" />
               </div>
             ) : (
-              <div className="max-h-[480px] md:max-h-[580px] space-y-3 overflow-y-auto pr-1">
+              <div className="max-h-[340px] sm:max-h-[400px] md:max-h-[440px] lg:max-h-[580px] w-full min-w-0 space-y-3 overflow-y-auto pr-1">
                 {list.map((s) => (
                   <article
                     key={s.id}
                     onClick={() => handleSelectStore(s)}
-                    className={`bg-card cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all ${
+                    className={`bg-card w-full min-w-0 overflow-hidden cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all ${
                       selectedId === s.id
                         ? "border-primary ring-2 ring-primary/20 shadow-md"
                         : "border-border hover:border-primary/50"
                     }`}
                   >
-                    <h2 className="font-display font-bold text-base sm:text-lg">{s.name}</h2>
+                    <h2 className="font-display font-bold text-base sm:text-lg break-words">{s.name}</h2>
                     <p className="text-muted-foreground mt-1 flex items-start gap-2 text-xs sm:text-sm">
                       <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
-                      <span className="flex-1 leading-relaxed">{formatFullAddress(s.address, s.district, s.city)}</span>
+                      <span className="min-w-0 flex-1 leading-relaxed break-words">{formatFullAddress(s.address, s.district, s.city)}</span>
                     </p>
                     <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-xs sm:text-sm">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -340,26 +347,28 @@ function StoresPage() {
                     </div>
                     <p className="text-muted-foreground mt-1.5 flex items-center gap-2 text-xs sm:text-sm">
                       <Phone className="text-primary size-4 shrink-0" />
-                      <a href={`tel:${s.phone}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                      <a href={`tel:${s.phone}`} className="hover:underline truncate" onClick={(e) => e.stopPropagation()}>
                         {s.phone}
                       </a>
                     </p>
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                      {parseAmenities(s.amenities).map((a) => (
-                        <Badge
-                          key={a}
-                          variant="secondary"
-                          className="rounded-full text-[11px] font-normal"
-                        >
-                          {a}
-                        </Badge>
-                      ))}
-                    </div>
+                    {parseAmenities(s.amenities).length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5 overflow-hidden">
+                        {parseAmenities(s.amenities).map((a) => (
+                          <Badge
+                            key={a}
+                            variant="secondary"
+                            className="rounded-full text-[11px] font-normal"
+                          >
+                            {a}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                     <div className="mt-3.5 grid grid-cols-2 gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-xs sm:text-sm px-2"
+                        className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
                         onClick={(e) => {
                           e.stopPropagation();
                           window.open(
@@ -374,14 +383,14 @@ function StoresPage() {
                       <Button
                         variant="hero"
                         size="sm"
-                        className="w-full text-xs sm:text-sm px-2"
+                        className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
                         disabled={!s.is_active}
                         onClick={(e) => {
                           e.stopPropagation();
                           orderFrom(s);
                         }}
                       >
-                        <ShoppingBag className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
+                        <ShoppingCart className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
                       </Button>
                     </div>
                   </article>
@@ -396,10 +405,10 @@ function StoresPage() {
           </div>
 
           {/* Khung bản đồ Google Maps Iframe */}
-          <div className="flex flex-col gap-3">
+          <div className="w-full min-w-0 flex flex-col gap-3">
             {selected && (
-              <div className="bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 sm:p-4 shadow-sm">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="bg-card w-full min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 sm:p-4 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <MapPin className="text-primary size-5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="font-display font-bold text-sm sm:text-base truncate">{mapCoords.title || selected.name}</p>
@@ -412,14 +421,14 @@ function StoresPage() {
                   rel="noopener noreferrer"
                   className="shrink-0 w-full sm:w-auto"
                 >
-                  <Button variant="hero" size="sm" className="w-full sm:w-auto">
-                    <Navigation className="size-4" /> Mở Google Maps
+                  <Button variant="hero" size="sm" className="w-full sm:w-auto text-xs sm:text-sm">
+                    <Navigation className="size-4 shrink-0" /> Mở Google Maps
                   </Button>
                 </a>
               </div>
             )}
 
-            <div className="relative h-[320px] sm:h-[400px] md:h-[480px] lg:h-[580px] w-full overflow-hidden rounded-2xl border shadow-md">
+            <div className="relative h-[300px] sm:h-[380px] md:h-[460px] lg:h-[580px] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border shadow-md">
               <iframe
                 key={selected ? `store-${selected.id}` : `coords-${mapCoords.lat}-${mapCoords.lng}`}
                 title={`Bản đồ ${selected?.name || mapCoords.title}`}
