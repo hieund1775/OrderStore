@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -13,13 +13,20 @@ import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { fmtDateTime } from "@/lib/data";
 import {
-  fetchAdminNotifications,
-  markAdminNotificationRead,
-  markAllAdminNotificationsRead,
-  clearAllAdminNotifications,
   isSafeInternalLink,
+  useAdminNotifications,
   type AppNotification,
 } from "@/lib/notifications";
 
@@ -58,37 +65,13 @@ const icons: Record<string, typeof Bell> = {
 function NotificationsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
-  const [rows, setRows] = useState<AppNotification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = () => {
-    let cancelled = false;
-    fetchAdminNotifications(100)
-      .then((data) => {
-        if (!cancelled) setRows(data);
-      })
-      .catch((err) => console.error(err))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  };
-
-  useEffect(() => {
-    const cancel = load();
-    const interval = setInterval(load, 20000);
-    return () => {
-      cancel();
-      clearInterval(interval);
-    };
-  }, []);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications();
+  const rows = data?.notifications ?? [];
 
   async function handleNotificationClick(n: AppNotification) {
     if (!n.is_read) {
-      markAdminNotificationRead(n.id).catch(() => {});
-      setRows((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+      await markRead(n.id).catch(() => undefined);
     }
     if (isSafeInternalLink(n.link)) {
       navigate({ to: n.link as any });
@@ -97,8 +80,7 @@ function NotificationsPage() {
 
   async function handleReadAll() {
     try {
-      await markAllAdminNotificationsRead();
-      setRows((prev) => prev.map((x) => ({ ...x, is_read: true })));
+      await markAllRead();
       toast.success("Đã đánh dấu tất cả thông báo là đã đọc");
     } catch {
       toast.error("Không thể cập nhật trạng thái");
@@ -106,10 +88,9 @@ function NotificationsPage() {
   }
 
   async function handleClearAll() {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa tất cả thông báo không?")) return;
     try {
-      await clearAllAdminNotifications();
-      setRows([]);
+      await clearAll();
+      setClearDialogOpen(false);
       toast.success("Đã xóa tất cả thông báo");
     } catch {
       toast.error("Không thể xóa thông báo");
@@ -136,7 +117,8 @@ function NotificationsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleClearAll}
+              onClick={() => setClearDialogOpen(true)}
+              disabled={isMutating}
               className="text-xs text-destructive hover:bg-destructive/10"
             >
               <Trash2 className="size-3.5 mr-1.5" /> Xóa tất cả
@@ -158,9 +140,16 @@ function NotificationsPage() {
         ))}
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center justify-center py-20 text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : isError ? (
+        <div className="py-20 text-center text-sm text-muted-foreground">
+          <p>Không tải được thông báo.</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => void refetch()}>
+            Thử lại
+          </Button>
         </div>
       ) : shown.length === 0 ? (
         <p className="text-muted-foreground py-20 text-center text-sm">Không có thông báo nào</p>
@@ -196,6 +185,20 @@ function NotificationsPage() {
           })}
         </div>
       )}
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa toàn bộ thông báo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Chỉ inbox của tài khoản admin hiện tại bị xóa. Thao tác này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAll}>Xóa tất cả</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

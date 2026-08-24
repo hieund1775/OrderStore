@@ -9,18 +9,27 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
-import { apiGet, getCustomerToken, getCustomerUser } from "@/lib/api";
+import { apiGet } from "@/lib/api";
 import { fmtDateTime, products, vnd } from "@/lib/data";
 import {
-  fetchCustomerNotifications,
-  markCustomerNotificationRead,
-  markAllCustomerNotificationsRead,
-  clearAllCustomerNotifications,
   isSafeInternalLink,
+  useCustomerNotifications,
   type AppNotification,
 } from "@/lib/notifications";
+
+const PROFILE_TABS = new Set(["orders", "notifications", "wishlist", "info"]);
 
 const tiers = [
   { name: "Đồng", min: 0, color: "from-stone-400 to-stone-500" },
@@ -38,7 +47,7 @@ function getNextTier(points: number) {
 
 export const Route = createFileRoute("/ho-so")({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
-    tab: typeof search.tab === "string" ? search.tab : undefined,
+    tab: typeof search.tab === "string" && PROFILE_TABS.has(search.tab) ? search.tab : undefined,
   }),
   head: () => ({
     meta: [
@@ -60,8 +69,18 @@ function Profile() {
   const search = Route.useSearch();
   const { wishlist, toggleWishlist } = useCart();
   const saved = products.filter((p) => wishlist.includes(p.id));
-  const user = getCustomerUser();
-  const isLoggedIn = !!getCustomerToken();
+  const {
+    user,
+    token,
+    data: notificationData,
+    isLoading: notifsLoading,
+    isError: notifsError,
+    refetch: refetchNotifications,
+    markRead,
+    markAllRead,
+    clearAll,
+  } = useCustomerNotifications();
+  const isLoggedIn = Boolean(token && user);
 
   const [activeTab, setActiveTab] = useState(search?.tab || "orders");
   const [userOrders, setUserOrders] = useState<{
@@ -76,18 +95,8 @@ function Profile() {
     items: { product_name: string; qty: number; size_label: string }[];
   }[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-
-  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
-  const [notifsLoading, setNotifsLoading] = useState(false);
-
-  const loadNotifications = () => {
-    if (!user?.id) return;
-    setNotifsLoading(true);
-    fetchCustomerNotifications(user.id, 50)
-      .then((res) => setNotificationsList(res.notifications))
-      .catch(() => setNotificationsList([]))
-      .finally(() => setNotifsLoading(false));
-  };
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const notificationsList = notificationData?.notifications ?? [];
 
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
@@ -114,8 +123,6 @@ function Profile() {
       .finally(() => {
         if (!cancelled) setOrdersLoading(false);
       });
-
-    loadNotifications();
     return () => {
       cancelled = true;
     };
@@ -156,8 +163,7 @@ function Profile() {
 
   async function handleNotificationClick(n: AppNotification) {
     if (user?.id && !n.is_read) {
-      markCustomerNotificationRead(user.id, n.id).catch(() => {});
-      setNotificationsList((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
+      await markRead(n.id).catch(() => undefined);
     }
     if (isSafeInternalLink(n.link)) {
       navigate({ to: n.link as any });
@@ -167,8 +173,7 @@ function Profile() {
   async function handleReadAllNotifications() {
     if (!user?.id) return;
     try {
-      await markAllCustomerNotificationsRead(user.id);
-      setNotificationsList((prev) => prev.map((x) => ({ ...x, is_read: true })));
+      await markAllRead();
       toast.success("Đã đánh dấu tất cả thông báo là đã đọc");
     } catch {
       toast.error("Không thể cập nhật trạng thái");
@@ -177,10 +182,9 @@ function Profile() {
 
   async function handleClearAllNotifications() {
     if (!user?.id) return;
-    if (!window.confirm("Bạn có chắc chắn muốn xóa tất cả thông báo không?")) return;
     try {
-      await clearAllCustomerNotifications(user.id);
-      setNotificationsList([]);
+      await clearAll();
+      setClearDialogOpen(false);
       toast.success("Đã xóa tất cả thông báo");
     } catch {
       toast.error("Không thể xóa thông báo");
@@ -350,7 +354,7 @@ function Profile() {
                     variant="outline"
                     size="sm"
                     className="text-xs h-8 text-destructive hover:bg-destructive/10"
-                    onClick={handleClearAllNotifications}
+                    onClick={() => setClearDialogOpen(true)}
                   >
                     <Trash2 className="size-3.5 mr-1" /> Xóa tất cả
                   </Button>
@@ -361,6 +365,13 @@ function Profile() {
             {notifsLoading ? (
               <div className="bg-card rounded-2xl border p-8 text-center text-muted-foreground text-sm">
                 Đang tải thông báo…
+              </div>
+            ) : notifsError ? (
+              <div className="bg-card rounded-2xl border p-8 text-center text-muted-foreground text-sm">
+                <p>Không tải được thông báo.</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => void refetchNotifications()}>
+                  Thử lại
+                </Button>
               </div>
             ) : notificationsList.length === 0 ? (
               <div className="bg-card rounded-2xl border p-12 text-center">
@@ -447,6 +458,20 @@ function Profile() {
           </TabsContent>
         </Tabs>
       </div>
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa tất cả thông báo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Toàn bộ thông báo trong tài khoản của bạn sẽ bị xóa và không thể khôi phục.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAllNotifications}>Xóa tất cả</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

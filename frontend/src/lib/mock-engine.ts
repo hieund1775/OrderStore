@@ -430,20 +430,24 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
   // 14. Notifications Mock
   if (path.includes('/notifications')) {
-    const rawNotifs = typeof window !== 'undefined' ? window.localStorage.getItem('teaplus_mock_notifications') : null;
+    const customerId = path.startsWith('/api/users/') ? path.split('/')[3] : null;
+    const notificationStorageKey = customerId
+      ? `teaplus_mock_notifications_customer_${customerId}`
+      : 'teaplus_mock_notifications_admin';
+    const rawNotifs = typeof window !== 'undefined' ? window.localStorage.getItem(notificationStorageKey) : null;
     let notifList = rawNotifs ? JSON.parse(rawNotifs) : [
-      { id: 1, type: 'order', title: 'Đặt hàng thành công — #TP260824001', body: 'Đơn hàng của bạn đang được quán chuẩn bị.', is_read: false, link: '/theo-doi-don?code=TP260824001', created_at: new Date().toISOString() },
-      { id: 2, type: 'voucher', title: 'Mã ưu đãi 20% sắp hết hạn', body: 'Sử dụng mã CHAOBANMOI để được giảm giá ngay hôm nay!', is_read: true, link: '/menu', created_at: new Date(Date.now() - 3600000).toISOString() },
+      { id: 1, user_id: customerId ? Number(customerId) : 1, type: 'order', title: 'Đặt hàng thành công — #TP260824001', body: 'Đơn hàng của bạn đang được quán chuẩn bị.', is_read: false, link: '/theo-doi-don?code=TP260824001', created_at: new Date().toISOString() },
+      { id: 2, user_id: customerId ? Number(customerId) : 1, type: 'voucher', title: 'Mã ưu đãi 20% sắp hết hạn', body: 'Sử dụng mã CHAOBANMOI để được giảm giá ngay hôm nay!', is_read: true, link: '/menu', created_at: new Date(Date.now() - 3600000).toISOString() },
     ];
 
     if (method === 'DELETE') {
       notifList = [];
-      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      if (typeof window !== 'undefined') window.localStorage.setItem(notificationStorageKey, JSON.stringify(notifList));
       return Promise.resolve({ ok: true, count: 0 } as T);
     }
     if (path.endsWith('/read-all')) {
       notifList = notifList.map((n: any) => ({ ...n, is_read: true }));
-      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      if (typeof window !== 'undefined') window.localStorage.setItem(notificationStorageKey, JSON.stringify(notifList));
       return Promise.resolve({ ok: true, count: notifList.length } as T);
     }
     if (path.endsWith('/read')) {
@@ -451,7 +455,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       const readIdx = parts.indexOf('read');
       const targetId = Number(parts[readIdx - 1]);
       notifList = notifList.map((n: any) => (n.id === targetId ? { ...n, is_read: true } : n));
-      if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_notifications', JSON.stringify(notifList));
+      if (typeof window !== 'undefined') window.localStorage.setItem(notificationStorageKey, JSON.stringify(notifList));
       return Promise.resolve({ ok: true } as T);
     }
     if (path.startsWith('/api/users/')) {

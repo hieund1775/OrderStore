@@ -37,7 +37,7 @@ export function createEngagementRepository(database = postgresDb) {
 
     async listUserNotifications(userId) {
       const [rows] = await database.query(
-        'SELECT * FROM notifications WHERE user_id = $1 OR user_id IS NULL ORDER BY created_at DESC LIMIT 30',
+        'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30',
         [userId],
       );
       return rows;

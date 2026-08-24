@@ -9,6 +9,8 @@ import {
   User,
   ChevronRight,
   Trash2,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,10 +52,8 @@ import {
 } from '@/lib/api';
 import { brand, products, vnd } from '@/lib/data';
 import {
-  fetchCustomerNotifications,
-  markCustomerNotificationRead,
-  markAllCustomerNotificationsRead,
   isSafeInternalLink,
+  useCustomerNotifications,
   type AppNotification,
 } from '@/lib/notifications';
 
@@ -247,52 +247,13 @@ function WishlistButton() {
 
 function NotificationButton() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<AppNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState(() => getCustomerUser());
-
-  useEffect(() => {
-    function onAuthChange() {
-      setUser(getCustomerUser());
-    }
-    window.addEventListener('teaplus:customer-auth-changed', onAuthChange);
-    return () => window.removeEventListener('teaplus:customer-auth-changed', onAuthChange);
-  }, []);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setItems([]);
-      setUnreadCount(0);
-      return;
-    }
-
-    let cancelled = false;
-    function loadNotifications() {
-      if (!user?.id) return;
-      fetchCustomerNotifications(user.id, 5)
-        .then((res) => {
-          if (cancelled) return;
-          setItems(res.notifications);
-          setUnreadCount(res.unread_count);
-        })
-        .catch(() => {});
-    }
-
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 30000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [user?.id]);
+  const { user, data, isLoading, isError, refetch, markRead, markAllRead, isMutating } = useCustomerNotifications();
+  const items = (data?.notifications ?? []).slice(0, 5);
+  const unreadCount = data?.unread_count ?? 0;
 
   async function handleItemClick(n: AppNotification) {
-    if (user?.id && !n.is_read) {
-      markCustomerNotificationRead(user.id, n.id).catch(() => {});
-      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    }
+    if (user?.id && !n.is_read) await markRead(n.id).catch(() => undefined);
     setOpen(false);
     if (isSafeInternalLink(n.link)) {
       navigate({ to: n.link as any });
@@ -301,11 +262,7 @@ function NotificationButton() {
 
   async function handleReadAll() {
     if (!user?.id) return;
-    try {
-      await markAllCustomerNotificationsRead(user.id);
-      setItems((prev) => prev.map((x) => ({ ...x, is_read: true })));
-      setUnreadCount(0);
-    } catch {}
+    await markAllRead().catch(() => undefined);
   }
 
   return (
@@ -331,6 +288,7 @@ function NotificationButton() {
           {user && unreadCount > 0 && (
             <button
               onClick={handleReadAll}
+              disabled={isMutating}
               className="text-[11px] text-primary hover:underline font-medium"
             >
               Đọc tất cả
@@ -342,6 +300,17 @@ function NotificationButton() {
             <Bell className="size-8 mx-auto mb-2 opacity-30" />
             <p className="font-medium text-foreground">Chưa đăng nhập</p>
             <p className="mt-1">Đăng nhập tài khoản để theo dõi thông báo đơn hàng và ưu đãi.</p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        ) : isError ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            <p>Không tải được thông báo.</p>
+            <Button variant="ghost" size="sm" className="mt-2 h-7 text-xs" onClick={() => void refetch()}>
+              <RefreshCw className="mr-1 size-3" /> Thử lại
+            </Button>
           </div>
         ) : items.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">

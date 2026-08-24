@@ -79,14 +79,20 @@ export function validateCustomerNotificationInput(body = {}) {
     throw new CustomerValidationError('Dữ liệu thông báo không hợp lệ');
   }
   const { user_id, type, title, body: contentBody, link } = body;
-  if (!title || !String(title).trim()) {
+  const normalizedTitle = title ? String(title).trim() : '';
+  const normalizedBody = contentBody ? String(contentBody).trim() : null;
+  const normalizedLink = link ? String(link).trim() : null;
+  if (!normalizedTitle) {
     throw new CustomerValidationError('Tiêu đề thông báo không được để trống');
   }
+  if (normalizedTitle.length > 300) throw new CustomerValidationError('Tiêu đề thông báo không được vượt quá 300 ký tự');
+  if (normalizedBody && normalizedBody.length > 5000) throw new CustomerValidationError('Nội dung thông báo không được vượt quá 5000 ký tự');
+  if (normalizedLink && normalizedLink.length > 500) throw new CustomerValidationError('Đường dẫn thông báo không được vượt quá 500 ký tự');
   return {
-    user_id: user_id ? positiveInteger(user_id, 'user_id', { required: false }) : null,
-    type: type ? String(type).trim() : 'general',
-    title: String(title).trim(),
-    body: contentBody ? String(contentBody).trim() : null,
-    link: link ? String(link).trim() : null,
+    user_id: positiveInteger(user_id, 'user_id'),
+    type: type ? String(type).trim() : 'system',
+    title: normalizedTitle,
+    body: normalizedBody,
+    link: normalizedLink,
   };
 }

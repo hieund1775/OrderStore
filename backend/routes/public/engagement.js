@@ -23,6 +23,16 @@ function requireCustomerSelf(req, res, next) {
   next();
 }
 
+function requireCustomerNotificationOwner(req, res, next) {
+  const requestedId = Number(req.params.id);
+  const authUserId = Number(req.user?.id || req.user?.sub);
+  if (!authUserId) return res.status(401).json({ error: 'Chưa xác thực người dùng' });
+  if (req.user?.role !== 'customer' || requestedId !== authUserId) {
+    return res.status(403).json({ error: 'Không có quyền truy cập thông báo của tài khoản này' });
+  }
+  next();
+}
+
 // ═══════════ JOBS, TIERS & REWARDS ═══════════
 
 router.get('/jobs', asyncHandler(async (req, res) => {
@@ -111,9 +121,9 @@ router.post('/users/:id/wishlist/:productId', authenticate, requireCustomerSelf,
   }
 }));
 
-router.get('/users/:id/notifications', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.get('/users/:id/notifications', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
-    const id = validateCustomerId(req.params.id);
+    const id = validateCustomerId(req.user.id || req.user.sub);
     const { notifications, unread_count } = await notificationService.listForUser(id, req.query.limit);
     res.json({
       notifications: notifications.map(toNotificationDto),
@@ -125,9 +135,9 @@ router.get('/users/:id/notifications', authenticate, requireCustomerSelf, asyncH
   }
 }));
 
-router.patch('/users/:id/notifications/:notificationId/read', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.patch('/users/:id/notifications/:notificationId/read', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
-    const id = validateCustomerId(req.params.id);
+    const id = validateCustomerId(req.user.id || req.user.sub);
     const result = await notificationService.markOneRead(id, req.params.notificationId);
     res.json(result);
   } catch (err) {
@@ -136,9 +146,9 @@ router.patch('/users/:id/notifications/:notificationId/read', authenticate, requ
   }
 }));
 
-router.post('/users/:id/notifications/read-all', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.post('/users/:id/notifications/read-all', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
-    const id = validateCustomerId(req.params.id);
+    const id = validateCustomerId(req.user.id || req.user.sub);
     const result = await notificationService.markAllRead(id);
     res.json(result);
   } catch (err) {
@@ -147,9 +157,9 @@ router.post('/users/:id/notifications/read-all', authenticate, requireCustomerSe
   }
 }));
 
-router.delete('/users/:id/notifications', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+router.delete('/users/:id/notifications', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
-    const id = validateCustomerId(req.params.id);
+    const id = validateCustomerId(req.user.id || req.user.sub);
     const result = await notificationService.clearAll(id);
     res.json(result);
   } catch (err) {

@@ -95,6 +95,12 @@ export function createAdminPromotionsRepository(database = postgresDb) {
 
     async updatePromotion(id, fields) {
       return database.transaction(async (tx) => {
+        const [existing] = await tx.query(
+          'SELECT id FROM promotions WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+          [id],
+        );
+        if (!existing[0]) return null;
+
         const sets = [];
         const params = [];
         const allowed = [

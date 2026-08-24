@@ -10,7 +10,7 @@ const router = Router();
 
 router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
-    const adminId = Number(req.user?.id || req.user?.sub);
+    const adminId = Number(req.user?.sub);
     const { notifications, unread_count } = await notificationService.listForUser(adminId, req.query.limit);
     if (req.query.envelope === 'true') {
       return res.json({
@@ -28,7 +28,7 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
 
 router.patch('/:id/read', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
-    const adminId = Number(req.user?.id || req.user?.sub);
+    const adminId = Number(req.user?.sub);
     const result = await notificationService.markOneRead(adminId, req.params.id);
     res.json(result);
   } catch (err) {
@@ -39,7 +39,7 @@ router.patch('/:id/read', requireRole('super', 'manager', 'cashier', 'kitchen'),
 
 router.post('/read-all', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
-    const adminId = Number(req.user?.id || req.user?.sub);
+    const adminId = Number(req.user?.sub);
     const result = await notificationService.markAllRead(adminId);
     res.json(result);
   } catch (err) {
@@ -50,7 +50,7 @@ router.post('/read-all', requireRole('super', 'manager', 'cashier', 'kitchen'), 
 
 router.delete('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
-    const adminId = Number(req.user?.id || req.user?.sub);
+    const adminId = Number(req.user?.sub);
     const result = await notificationService.clearAll(adminId);
     res.json(result);
   } catch (err) {

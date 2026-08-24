@@ -7,6 +7,7 @@ import { JWT_SECRET } from '../config/env.js';
 import adminReportsRepository from '../repositories/postgres/admin-reports.js';
 import adminManagementRepository from '../repositories/postgres/admin-management.js';
 import engagementRepository from '../repositories/postgres/engagement.js';
+import notificationService from '../services/notifications/notification-service.js';
 
 const superToken = jwt.sign({ sub: 1, role: 'super' }, JWT_SECRET);
 const user1Token = jwt.sign({ sub: 10, id: 10, role: 'customer' }, JWT_SECRET);
@@ -29,6 +30,7 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       listTiers: engagementRepository.listTiers,
       getUserProfile: engagementRepository.getUserProfile,
       listUserWishlist: engagementRepository.listUserWishlist,
+      listNotificationsForUser: notificationService.listForUser,
     };
 
     server = http.createServer(app);
@@ -54,6 +56,7 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       getUserProfile: originals.getUserProfile,
       listUserWishlist: originals.listUserWishlist,
     });
+    notificationService.listForUser = originals.listNotificationsForUser;
     await new Promise((resolve) => server.close(resolve));
   });
 
@@ -64,6 +67,10 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
     adminManagementRepository.getCustomerDetail = async (id) => ({ id: Number(id), fullname: 'Nguyen Van A' });
     adminManagementRepository.listAccounts = async () => [{ id: 1, username: 'admin' }];
     adminManagementRepository.listNotifications = async () => [{ id: 1, title: 'Notice' }];
+    notificationService.listForUser = async () => ({
+      notifications: [{ id: 1, user_id: 1, type: 'system', title: 'Notice', is_read: false }],
+      unread_count: 1,
+    });
 
     const kpiRes = await fetch(`${baseUrl}/admin/dashboard/kpi`, {
       headers: { authorization: `Bearer ${superToken}` },
@@ -113,6 +120,21 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
     assert.equal(profileRes.status, 200);
     const profile = await profileRes.json();
     assert.equal(profile.fullname, 'Nguyen Van A');
+
+    const ownNotificationsRes = await fetch(`${baseUrl}/api/users/10/notifications`, {
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(ownNotificationsRes.status, 200);
+
+    const otherCustomerNotificationsRes = await fetch(`${baseUrl}/api/users/11/notifications`, {
+      headers: { authorization: `Bearer ${user1Token}` },
+    });
+    assert.equal(otherCustomerNotificationsRes.status, 403);
+
+    const superReadingCustomerNotificationsRes = await fetch(`${baseUrl}/api/users/10/notifications`, {
+      headers: { authorization: `Bearer ${superToken}` },
+    });
+    assert.equal(superReadingCustomerNotificationsRes.status, 403);
 
     const wishlistRes = await fetch(`${baseUrl}/api/users/10/wishlist`, {
       headers: { authorization: `Bearer ${user1Token}` },

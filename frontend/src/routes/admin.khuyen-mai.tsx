@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, getUser } from "@/lib/api";
 import { vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/khuyen-mai")({
@@ -96,6 +96,7 @@ function getVoucherStatusBadge(p: Promotion) {
 }
 
 function PromotionsAdminPage() {
+  const canManage = getUser()?.role === "super";
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -124,12 +125,14 @@ function PromotionsAdminPage() {
   }, [load]);
 
   function openCreate() {
+    if (!canManage) return;
     setEditing(null);
     setForm(emptyForm);
     setDialogOpen(true);
   }
 
   function openEdit(p: Promotion) {
+    if (!canManage) return;
     setEditing(p);
     setForm({
       title: p.title,
@@ -146,12 +149,13 @@ function PromotionsAdminPage() {
   }
 
   function openDelete(p: Promotion) {
+    if (!canManage) return;
     setSelectedToDelete(p);
     setDeleteDialogOpen(true);
   }
 
   async function confirmDelete() {
-    if (!selectedToDelete) return;
+    if (!canManage || !selectedToDelete) return;
     setDeleting(true);
     try {
       await apiDelete(`/admin/promotions/${selectedToDelete.id}`);
@@ -167,6 +171,7 @@ function PromotionsAdminPage() {
   }
 
   async function save() {
+    if (!canManage) return;
     if (!form.title.trim()) return toast.error("Nhập tên chương trình");
     if (!form.code.trim()) return toast.error("Nhập mã giảm giá");
     const discount = Number(form.discount_value);
@@ -212,6 +217,7 @@ function PromotionsAdminPage() {
   }
 
   async function toggleActive(p: Promotion, active: boolean) {
+    if (!canManage) return;
     try {
       await apiPut(`/admin/promotions/${p.id}`, { is_active: active });
       setPromos((prev) => prev.map((x) => (x.id === p.id ? { ...x, is_active: active } : x)));
@@ -226,11 +232,11 @@ function PromotionsAdminPage() {
       <AdminPageHeader
         title="Khuyến mãi & Voucher"
         desc="Quản lý mã giảm giá — dùng 1 lần theo SĐT hoặc theo thời hạn & lượt dùng"
-        actions={
+        actions={canManage ? (
           <Button onClick={openCreate}>
             <Plus className="size-4" /> Tạo mã giảm giá
           </Button>
-        }
+        ) : undefined}
       />
 
       <Card className="shadow-soft overflow-hidden">
@@ -254,7 +260,7 @@ function PromotionsAdminPage() {
                   <TableHead className="hidden lg:table-cell">Hạn dùng</TableHead>
                   <TableHead className="hidden lg:table-cell">Lượt dùng</TableHead>
                   <TableHead>Trạng thái</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
+                  {canManage && <TableHead className="text-right">Thao tác</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -303,7 +309,7 @@ function PromotionsAdminPage() {
                     <TableCell>
                       {getVoucherStatusBadge(p)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    {canManage && <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <Switch
                           checked={p.is_active}
@@ -328,7 +334,7 @@ function PromotionsAdminPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                    </TableCell>
+                    </TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
@@ -473,7 +479,7 @@ function PromotionsAdminPage() {
           <p className="text-sm text-muted-foreground">
             Bạn có chắc chắn muốn xóa voucher{" "}
             <strong className="text-foreground font-mono">{selectedToDelete?.code}</strong>{" "}
-            ({selectedToDelete?.title})? Thao tác này sẽ xóa vĩnh viễn voucher và không thể hoàn tác.
+            ({selectedToDelete?.title})? Voucher sẽ được lưu trữ để bảo toàn lịch sử và không thể sử dụng lại.
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>

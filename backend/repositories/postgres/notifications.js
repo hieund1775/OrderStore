@@ -9,6 +9,18 @@ export class NotificationRepositoryError extends Error {
 
 export function createNotificationsRepository(database = postgresDb) {
   return {
+    async findActiveUserById(userId) {
+      const targetUserId = Number(userId);
+      if (!Number.isInteger(targetUserId) || targetUserId <= 0) return null;
+      const [rows] = await database.query(
+        `SELECT id, is_admin, admin_role
+         FROM users
+         WHERE id = $1 AND is_active = TRUE`,
+        [targetUserId],
+      );
+      return rows[0] || null;
+    },
+
     async insertForUser({ userId, type = 'system', title, body, link }, { tx } = {}) {
       const executor = tx || database;
       const targetUserId = Number(userId);
@@ -34,17 +46,21 @@ export function createNotificationsRepository(database = postgresDb) {
         throw new NotificationRepositoryError('Tiêu đề thông báo không được để trống');
       }
 
-      const normalizedStoreId = storeId ? Number(storeId) : null;
+      const normalizedStoreId = Number(storeId);
+      if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
+        throw new NotificationRepositoryError('ID chi nhánh đơn hàng không hợp lệ');
+      }
       const [rows] = await executor.query(
         `INSERT INTO notifications (user_id, type, title, body, link, is_read)
          SELECT DISTINCT u.id, $1, $2, $3, $4, FALSE
          FROM users u
          WHERE u.is_admin = TRUE
+           AND u.is_active = TRUE
            AND (
              u.admin_role = 'super'
              OR (
                u.admin_role IN ('manager', 'kitchen')
-               AND ($5::bigint IS NULL OR u.admin_branch_id = $5 OR u.admin_branch_id IS NULL)
+               AND u.admin_branch_id = $5
              )
            )
          RETURNING id, user_id`,
@@ -71,12 +87,13 @@ export function createNotificationsRepository(database = postgresDb) {
          SELECT DISTINCT u.id, $1, $2, $3, $4, FALSE
          FROM users u
          WHERE u.is_admin = TRUE
+           AND u.is_active = TRUE
            AND (
              u.admin_role = 'super'
              OR (
                $5::bigint IS NOT NULL
                AND u.admin_role = 'manager'
-               AND (u.admin_branch_id = $5 OR u.admin_branch_id IS NULL)
+               AND u.admin_branch_id = $5
              )
            )
          RETURNING id, user_id`,

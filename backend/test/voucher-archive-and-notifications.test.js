@@ -6,6 +6,8 @@ import { createNotificationsRepository } from '../repositories/postgres/notifica
 import { createOrdersRepository } from '../repositories/postgres/orders.js';
 import { createAdminOrdersRepository } from '../repositories/postgres/admin-orders.js';
 import { createRecruitmentRepository } from '../repositories/postgres/recruitment.js';
+import { createNotificationService, NotificationServiceError } from '../services/notifications/notification-service.js';
+import { validateCustomerNotificationInput } from '../validation/customer-schemas.js';
 
 describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () => {
   describe('Task 2: Voucher Soft-Archive (deleted_at)', () => {
@@ -96,7 +98,55 @@ describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () =
       assert.ok(fanQuery);
       assert.ok(fanQuery.sql.includes('u.admin_role = \'super\''));
       assert.ok(fanQuery.sql.includes('u.admin_role IN (\'manager\', \'kitchen\')'));
+      assert.ok(fanQuery.sql.includes('u.is_active = TRUE'));
+      assert.ok(fanQuery.sql.includes('u.admin_branch_id = $5'));
+      assert.equal(fanQuery.sql.includes('u.admin_branch_id IS NULL'), false);
       assert.equal(fanQuery.params[4], 3); // storeId
+    });
+
+    it('requires an exact active recipient for manual notifications and defaults type to system', async () => {
+      const inserted = [];
+      const mockRepo = {
+        async findActiveUserById(id) {
+          return id === 9 ? { id: 9 } : null;
+        },
+        async insertForUser(payload) {
+          inserted.push(payload);
+          return { id: 88, ...payload };
+        },
+      };
+      const service = createNotificationService(mockRepo);
+      const input = validateCustomerNotificationInput({ user_id: 9, title: 'Bảo trì hệ thống' });
+      const created = await service.createManualNotification({
+        userId: input.user_id,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        link: input.link,
+      });
+      assert.equal(created.type, 'system');
+      assert.equal(inserted.length, 1);
+
+      await assert.rejects(
+        () => service.createManualNotification({ userId: 10, title: 'Không gửi được' }),
+        (err) => err instanceof NotificationServiceError && err.status === 404,
+      );
+      assert.throws(() => validateCustomerNotificationInput({ title: 'Thiếu recipient' }));
+    });
+
+    it('validates notification limits instead of silently accepting malformed values', async () => {
+      const service = createNotificationService({
+        async listForUser(_userId, limit) {
+          assert.equal(limit, 100);
+          return [];
+        },
+        async countUnreadForUser() { return 0; },
+      });
+      await service.listForUser(7, 500);
+      await assert.rejects(
+        () => service.listForUser(7, 'abc'),
+        (err) => err instanceof NotificationServiceError && err.status === 400,
+      );
     });
 
     it('marks one notification read, marks all read, and clears notifications per user', async () => {

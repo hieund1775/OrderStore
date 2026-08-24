@@ -50,7 +50,7 @@ export function toNotificationDto(notification) {
   return {
     id: Number(notification.id),
     user_id: notification.user_id == null ? null : Number(notification.user_id),
-    type: notification.type || 'general',
+    type: notification.type || 'system',
     title: notification.title,
     body: notification.body || null,
     link: notification.link || null,

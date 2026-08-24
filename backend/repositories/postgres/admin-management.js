@@ -125,19 +125,13 @@ export function createAdminManagementRepository(database = postgresDb) {
       return rows;
     },
 
-    async listNotifications({ userId, role, limit = 50 } = {}) {
-      const params = [];
-      let where = 'WHERE TRUE';
-      if (role !== 'super') {
-        params.push(userId);
-        where += ` AND (user_id = $${params.length} OR user_id IS NULL)`;
-      }
-      params.push(limit);
+    async listNotifications({ userId, limit = 50 } = {}) {
+      const params = [userId, limit];
       const [rows] = await database.query(
         `SELECT * FROM notifications
-         ${where}
+         WHERE user_id = $1
          ORDER BY created_at DESC
-         LIMIT $${params.length}`,
+         LIMIT $2`,
         params,
       );
       return rows;
@@ -145,11 +139,15 @@ export function createAdminManagementRepository(database = postgresDb) {
 
     async createNotification({ user_id, type = 'system', title, body, link }) {
       if (!title || !title.trim()) throw new AdminManagementError('Thiếu tiêu đề thông báo');
+      const recipientId = Number(user_id);
+      if (!Number.isInteger(recipientId) || recipientId <= 0) {
+        throw new AdminManagementError('Thiếu người nhận thông báo hợp lệ');
+      }
       const [rows] = await database.query(
         `INSERT INTO notifications (user_id, type, title, body, link)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
-        [user_id || null, type || 'system', title.trim(), body || null, link || null],
+        [recipientId, type || 'system', title.trim(), body || null, link || null],
       );
       return rows[0];
     },
