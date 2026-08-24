@@ -58,9 +58,12 @@ build/
 **/.output/
 .tanstack/
 .lovable/
+.wrangler/
 multi-agent.js
 *.tsbuildinfo
 coverage/
+bun.lock
+bunfig.toml
 
 # ------------------------------------------
 # 5. Environment & Sensitive Configs
