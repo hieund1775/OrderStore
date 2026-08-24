@@ -600,22 +600,27 @@ function OrderDetail({
                     💰 Xác nhận đã nhận tiền (Thủ công)
                   </Button>
                 )}
-                {(st === "Đang chuẩn bị" || st === "Chờ xác nhận" || st === "Đã xác nhận") && (
-                  <>
+                {(st === "Chờ xác nhận" || st === "Đã xác nhận") && (
+                  <Button
+                    variant="hero"
+                    className="flex-1"
+                    disabled={actionLoading}
+                    onClick={() => changeStatus("Đang chuẩn bị")}
+                  >
+                    Bắt đầu chuẩn bị
+                  </Button>
+                )}
+                {st === "Đang chuẩn bị" && (
+                  detail.order_type === "Delivery" ? (
                     <Button
                       variant="hero"
                       className="flex-1"
                       disabled={actionLoading}
-                      onClick={() => {
-                        if (detail.order_type === "Delivery") {
-                          setShipperOpen(true);
-                        } else {
-                          changeStatus("Đang giao");
-                        }
-                      }}
+                      onClick={() => setShipperOpen(true)}
                     >
-                      🚚 Chuyển Đang giao
+                      🚚 Bàn giao Shipper
                     </Button>
+                  ) : (
                     <Button
                       variant="soft"
                       className="flex-1"
@@ -624,7 +629,7 @@ function OrderDetail({
                     >
                       ✅ Hoàn thành
                     </Button>
-                  </>
+                  )
                 )}
                 {st === "Đang giao" && (
                   <Button

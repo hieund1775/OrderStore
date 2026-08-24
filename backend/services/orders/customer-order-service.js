@@ -99,7 +99,7 @@ export function createCustomerOrderService({
       return { ...order, status: 'Đang chuẩn bị' };
     },
 
-    async lookup({ code, tokenUser = null }) {
+    async lookup({ code, tokenUser = null, cancelToken = '' }) {
       if (!code) {
         throw new OrderDomainError('Thiếu mã đơn', { status: 400, code: 'ORDER_LOOKUP_EMPTY', expose: true });
       }
@@ -114,7 +114,7 @@ export function createCustomerOrderService({
         : order;
       const mappedItems = await repository.loadPublicDetails(refreshedOrder.id);
       const history = await repository.loadStatusHistory(order.id);
-      const safeOrder = buildPublicLookupDto(refreshedOrder, tokenUser, mappedItems, history);
+      const safeOrder = buildPublicLookupDto(refreshedOrder, tokenUser, mappedItems, history, cancelToken);
       return { order: safeOrder };
     },
 

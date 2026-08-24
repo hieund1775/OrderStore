@@ -429,12 +429,26 @@ function Tracking() {
               <div className="flex items-center gap-2 text-primary font-bold text-sm">
                 <Bike className="size-5" /> Thông tin giao hàng / Tài xế
               </div>
-              {order.shipping_driver_name && (
-                <p className="text-sm text-foreground">
-                  <span className="font-semibold">Tài xế:</span> {order.shipping_driver_name}{" "}
-                  {order.shipping_driver_phone ? `(${order.shipping_driver_phone})` : ""}
+              <div className="space-y-1 text-sm text-foreground">
+                <p>
+                  <span className="font-semibold">Tài xế:</span> {order.shipping_driver_name || "Đang cập nhật"}
                 </p>
-              )}
+                {order.shipping_driver_phone && (
+                  <p className="flex items-center gap-2">
+                    <span className="font-semibold">Số điện thoại:</span>
+                    {order.shipping_driver_phone.includes("*") ? (
+                      <span className="text-muted-foreground">{order.shipping_driver_phone}</span>
+                    ) : (
+                      <a
+                        href={`tel:${order.shipping_driver_phone}`}
+                        className="text-primary font-bold underline hover:text-primary/80"
+                      >
+                        {order.shipping_driver_phone} (Bấm để gọi)
+                      </a>
+                    )}
+                  </p>
+                )}
+              </div>
               {order.shipping_tracking_url ? (
                 <Button asChild className="w-full mt-2" variant="hero">
                   <a href={order.shipping_tracking_url} target="_blank" rel="noopener noreferrer">
@@ -442,7 +456,7 @@ function Tracking() {
                   </a>
                 </Button>
               ) : (
-                <p className="text-xs text-muted-foreground">Tài xế đang vận chuyển đơn hàng tới bạn.</p>
+                <p className="text-xs text-muted-foreground">Tài xế đang trên đường giao đơn hàng tới bạn.</p>
               )}
             </div>
           )}

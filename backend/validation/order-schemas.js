@@ -62,7 +62,7 @@ export function validateOrderFilters({ status, store_id, table_id, search } = {}
   };
 }
 
-export function validateOrderMutationInput({ status, note, reason } = {}) {
+export function validateOrderMutationInput({ status, note, reason, driver_name, driver_phone, tracking_url } = {}) {
   if (status !== undefined && !VALID_STATUSES.includes(status)) {
     throw new OrderValidationError('Trạng thái không hợp lệ', 'ORDER_INVALID_STATUS');
   }
@@ -70,6 +70,9 @@ export function validateOrderMutationInput({ status, note, reason } = {}) {
     status,
     note: boundedText(note, 'Ghi chú'),
     reason: boundedText(reason, 'Lý do hủy'),
+    driverName: boundedText(driver_name, 'Tên Shipper', 120),
+    driverPhone: driver_phone ? String(driver_phone).trim() : undefined,
+    trackingUrl: boundedText(tracking_url, 'Link theo dõi hành trình', 500),
   };
 }
 

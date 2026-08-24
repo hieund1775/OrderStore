@@ -70,17 +70,17 @@ export const updateOrderStatus = async (req, res) => {
   try {
     validateOrderId(req.params.id);
     validateOrderStatus(status, VALID_STATUSES);
-    validateOrderMutationInput({ note });
+    const validatedInput = validateOrderMutationInput({ note, driver_name, driver_phone, tracking_url });
     const scopedStoreId = resolveStoreScope(req.user);
     const result = await adminOrderService.updateStatus({
       orderId: req.params.id,
       storeId: scopedStoreId,
       status,
-      note,
+      note: validatedInput.note,
       actor: { id: req.user.sub, role: req.user.role },
-      driverName: driver_name,
-      driverPhone: driver_phone,
-      trackingUrl: tracking_url,
+      driverName: validatedInput.driverName,
+      driverPhone: validatedInput.driverPhone,
+      trackingUrl: validatedInput.trackingUrl,
     });
     await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
     res.json({ ...result, message: `Đơn hàng → ${status}` });

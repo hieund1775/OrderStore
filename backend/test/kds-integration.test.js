@@ -169,6 +169,24 @@ describe('KDS & Admin HTTP Integration Suite (Real Express Network Requests)', (
     assert.equal(latest.changed_by, 101); // Sub of kitchenToken
   });
 
+  it('rejects non-Delivery orders transitioning to Đang giao through the real HTTP route', async () => {
+    resetDbState();
+
+    const response = await fetch(`${baseUrl}/admin/orders/1/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${kitchenToken}`,
+      },
+      body: JSON.stringify({ status: 'Đang giao' }),
+    });
+
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.match(body.error, /chỉ đơn giao hàng Delivery/i);
+    assert.equal(testStatusHistory.filter((h) => h.order_id === 1).length, 1);
+  });
+
   it('R5-B01: rejects kitchen token from cancelling order with HTTP 403 Forbidden', async () => {
     resetDbState();
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
+import { Bike, Clock, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,7 @@ export type KitchenOrder = {
   items: (KitchenItem & { line_total?: number })[];
   shipping_driver_name?: string | null;
   shipping_driver_phone?: string | null;
+  shipping_tracking_url?: string | null;
 };
 
 function toBillOrder(o: KitchenOrder): BillOrder {
@@ -95,10 +96,11 @@ function toBillOrder(o: KitchenOrder): BillOrder {
   };
 }
 
-type Lane = "prep" | "done";
+type Lane = "prep" | "delivering" | "done";
 
 const lanes: { id: Lane; label: string; ring: string }[] = [
   { id: "prep", label: "🔴 Đang chuẩn bị (Pha chế)", ring: "border-primary/40 bg-primary/5" },
+  { id: "delivering", label: "🚚 Đang giao hàng (Shipper)", ring: "border-amber-500/40 bg-amber-500/5" },
   { id: "done", label: "🟢 Hoàn thành", ring: "border-leaf/40 bg-leaf/5" },
 ];
 
@@ -107,8 +109,19 @@ const LATE_AFTER_MINUTES = 15;
 const POLL_MS = 10_000;
 
 function laneOf(status: string): Lane {
-  if (status === "Hoàn thành" || status === "Đang giao") return "done";
+  if (status === "Hoàn thành") return "done";
+  if (status === "Đang giao") return "delivering";
   return "prep";
+}
+
+function isValidPhone(phone: string): boolean {
+  if (!phone || typeof phone !== "string") return false;
+  let str = phone.trim().replace(/[\s\(\)\.-]/g, "");
+  if (str.startsWith("+84") && str.length === 12) str = "0" + str.slice(3);
+  else if (str.startsWith("84") && str.length === 11) str = "0" + str.slice(2);
+  const isVn = /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(str);
+  const isE164 = /^\+[1-9][0-9]{7,14}$/.test(str);
+  return isVn || isE164;
 }
 
 function fmtMinutes(ms: number) {
@@ -272,32 +285,32 @@ function KdsPage() {
       setHandoverDriverName("");
       setHandoverDriverPhone("");
     } else {
-      await move(o, "done");
+      await completeNonDelivery(o);
     }
   }
 
-  async function submitHandover(o: KitchenOrder, withDriver = true) {
+  async function submitHandover(o: KitchenOrder) {
+    const trimmedName = handoverDriverName.trim();
+    const trimmedPhone = handoverDriverPhone.trim();
+    if (trimmedName.length < 2) {
+      toast.error("Vui lòng nhập tên Shipper (tối thiểu 2 ký tự)");
+      return;
+    }
+    if (!isValidPhone(trimmedPhone)) {
+      toast.error("Vui lòng nhập số điện thoại Shipper hợp lệ");
+      return;
+    }
+
     setHandoverLoading(true);
     try {
-      const payload: { status: string; driver_name?: string; driver_phone?: string } = {
+      await apiPatch(`/admin/orders/${o.id}/status`, {
         status: "Đang giao",
-      };
-      if (withDriver) {
-        if (handoverDriverName.trim()) payload.driver_name = handoverDriverName.trim();
-        if (handoverDriverPhone.trim()) payload.driver_phone = handoverDriverPhone.trim();
-      }
-      await apiPatch(`/admin/orders/${o.id}/status`, payload);
-      const handedOverOrder = {
-        ...o,
-        current_status: "Đang giao",
-        shipping_driver_name: payload.driver_name || null,
-        shipping_driver_phone: payload.driver_phone || null,
-      };
-      setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
-      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), handedOverOrder]);
+        driver_name: trimmedName,
+        driver_phone: trimmedPhone,
+      });
       toast.success(`Đơn ${o.order_code} → 🚚 Đang giao (Đã bàn giao shipper)`);
       setHandoverOrder(null);
-      fetchOrders();
+      await fetchOrders();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Chuyển trạng thái thất bại");
     } finally {
@@ -305,34 +318,38 @@ function KdsPage() {
     }
   }
 
-  async function move(o: KitchenOrder, target: "prep" | "done") {
-    const status = target === "prep" ? "Đang chuẩn bị" : (o.order_type === "Delivery" ? "Đang giao" : "Hoàn thành");
+  async function completeDelivery(o: KitchenOrder) {
     try {
-      await apiPatch(`/admin/orders/${o.id}/status`, { status });
-      if (target === "done") {
-        setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
-        setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), o]);
-      }
-      toast.success(`Đơn ${o.order_code} → ${target === "prep" ? "🔴 Đang chuẩn bị" : (o.order_type === "Delivery" ? "🚚 Đang giao" : "🟢 Hoàn thành")}`);
-      fetchOrders();
+      await apiPatch(`/admin/orders/${o.id}/status`, { status: "Hoàn thành" });
+      setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
+      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), { ...o, current_status: "Hoàn thành" }]);
+      toast.success(`Đơn ${o.order_code} → 🟢 Đã giao hàng thành công`);
+      await fetchOrders();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Chuyển trạng thái thất bại");
     }
   }
 
-  async function moveBack(o: KitchenOrder) {
+  async function completeNonDelivery(o: KitchenOrder) {
     try {
-      await apiPatch(`/admin/orders/${o.id}/status`, { status: "Đang chuẩn bị" });
-      setDoneOrders((s) => s.filter((x) => x.id !== o.id));
-      toast.success(`Đơn ${o.order_code} → 🟡 Đang chuẩn bị`);
-      fetchOrders();
+      await apiPatch(`/admin/orders/${o.id}/status`, { status: "Hoàn thành" });
+      setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
+      setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), { ...o, current_status: "Hoàn thành" }]);
+      toast.success(`Đơn ${o.order_code} → 🟢 Hoàn thành`);
+      await fetchOrders();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lùi trạng thái thất bại");
+      toast.error(err instanceof Error ? err.message : "Chuyển trạng thái thất bại");
     }
   }
 
   const orderInLane = (lane: Lane): KitchenOrder[] => {
-    if (lane === "done") return doneOrders;
+    if (lane === "done") {
+      const activeDone = orders.filter((o) => o.current_status === "Hoàn thành");
+      const doneMap = new Map<number, KitchenOrder>();
+      activeDone.forEach((o) => doneMap.set(o.id, o));
+      doneOrders.forEach((o) => doneMap.set(o.id, o));
+      return Array.from(doneMap.values());
+    }
     return orders.filter((o) => laneOf(o.current_status) === lane);
   };
 
@@ -428,21 +445,21 @@ function KdsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
         {lanes.map((lane) => {
           const laneOrders = orderInLane(lane.id);
           return (
             <section key={lane.id} className={`rounded-2xl border p-4 ${lane.ring}`}>
               <p className="mb-4 flex items-center justify-between text-sm font-bold">
                 {lane.label}
-                <span className="bg-background rounded-full px-2 py-0.5 text-xs">
+                <span className="bg-background rounded-full px-2 py-0.5 text-xs font-extrabold shadow-xs">
                   {laneOrders.length}
                 </span>
               </p>
               <div className="space-y-4">
                 {laneOrders.map((o) => {
                   const age = now - parseLocalDate(o.created_at).getTime();
-                  const late = lane.id !== "done" && age > LATE_AFTER_MINUTES * 60000;
+                  const late = lane.id === "prep" && age > LATE_AFTER_MINUTES * 60000;
                   const isNew = !!newIds[o.id];
                   return (
                     <article
@@ -476,6 +493,11 @@ function KdsPage() {
                           </span>
                         )}
                         <span>{o.store_name}</span>
+                        {o.order_type && (
+                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+                            {o.order_type === "Delivery" ? "🚚 Giao hàng" : o.order_type === "POS" ? "Quầy POS" : o.order_type}
+                          </Badge>
+                        )}
                       </p>
                       <ul className="mt-3 space-y-2">
                         {o.items.map((it) => (
@@ -495,28 +517,42 @@ function KdsPage() {
                           </li>
                         ))}
                       </ul>
+
+                      {/* Khối Shipper hiển thị ở cột Đang giao */}
+                      {lane.id === "delivering" && (
+                        <div className="mt-3 rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-950 dark:text-amber-300 space-y-1">
+                          <p className="font-bold flex items-center gap-1.5">
+                            <Bike className="size-3.5 text-amber-600 dark:text-amber-400" />
+                            Shipper: {o.shipping_driver_name || "Chưa có tên"}
+                          </p>
+                          {o.shipping_driver_phone && (
+                            <p className="flex items-center gap-1.5 font-medium">
+                              <Phone className="size-3 text-amber-600 dark:text-amber-400" />
+                              <a
+                                href={`tel:${o.shipping_driver_phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="underline hover:text-amber-700 dark:hover:text-amber-200 font-bold"
+                              >
+                                {o.shipping_driver_phone}
+                              </a>
+                            </p>
+                          )}
+                          {o.delivery_addr && (
+                            <p className="text-[11px] opacity-90 truncate">
+                              📍 {o.delivery_addr}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       <div className="mt-4 flex gap-2">
-                        {lane.id === "done" ? (
-                          o.order_type === "Delivery" ? null : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveBack(o);
-                            }}
-                          >
-                            Lùi lại
-                          </Button>
-                          )
-                        ) : (
+                        {lane.id === "prep" && (
                           <>
                             {o.order_type === "Delivery" ? (
                               <Button
                                 variant="hero"
                                 size="sm"
-                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   completePreparation(o);
@@ -528,7 +564,7 @@ function KdsPage() {
                               <Button
                                 variant="hero"
                                 size="sm"
-                                className="flex-1 font-bold"
+                                className="flex-1 font-bold text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   completePreparation(o);
@@ -538,6 +574,20 @@ function KdsPage() {
                               </Button>
                             )}
                           </>
+                        )}
+
+                        {lane.id === "delivering" && (
+                          <Button
+                            variant="hero"
+                            size="sm"
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              completeDelivery(o);
+                            }}
+                          >
+                            ✅ Đã giao tận nơi
+                          </Button>
                         )}
                       </div>
                     </article>
@@ -632,50 +682,64 @@ function KdsPage() {
 
       {/* Dialog Bàn giao Shipper cho đơn Delivery trên KDS */}
       <Dialog open={!!handoverOrder} onOpenChange={(open) => !open && setHandoverOrder(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md w-full">
           <DialogHeader>
-            <DialogTitle>Bàn giao Shipper — Đơn {handoverOrder?.order_code}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Bike className="size-5 text-amber-600" />
+              Bàn giao Shipper — Đơn {handoverOrder?.order_code}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2 text-sm">
             <div className="rounded-xl bg-muted/60 p-3 space-y-1 text-xs">
-              <p><strong>Khách hàng:</strong> {handoverOrder?.customer_name} ({handoverOrder?.customer_phone})</p>
-              <p><strong>Địa chỉ giao:</strong> {handoverOrder?.delivery_addr || "Giao tận nơi"}</p>
+              <p><strong className="text-foreground">Khách hàng:</strong> {handoverOrder?.customer_name} {handoverOrder?.customer_phone ? `(${handoverOrder.customer_phone})` : ""}</p>
+              <p><strong className="text-foreground">Địa chỉ giao:</strong> {handoverOrder?.delivery_addr || "Giao tận nơi"}</p>
             </div>
             <div>
-              <label className="text-xs font-semibold">Tên Shipper / Hãng giao</label>
+              <label className="text-xs font-bold text-foreground">
+                Tên Shipper / Hãng giao <span className="text-destructive">*</span>
+              </label>
               <Input
                 value={handoverDriverName}
                 onChange={(e) => setHandoverDriverName(e.target.value)}
                 placeholder="VD: Nguyễn Văn A (Grab / Ahamove)"
-                className="mt-1"
+                className="mt-1 text-xs"
               />
+              {handoverDriverName.trim().length > 0 && handoverDriverName.trim().length < 2 && (
+                <p className="text-[11px] text-destructive mt-0.5">Tên Shipper tối thiểu 2 ký tự</p>
+              )}
             </div>
             <div>
-              <label className="text-xs font-semibold">Số điện thoại Shipper</label>
+              <label className="text-xs font-bold text-foreground">
+                Số điện thoại Shipper <span className="text-destructive">*</span>
+              </label>
               <Input
                 value={handoverDriverPhone}
                 onChange={(e) => setHandoverDriverPhone(e.target.value)}
-                placeholder="VD: 0901234567"
-                className="mt-1"
+                placeholder="VD: 0901234567 hoặc +84901234567"
+                className="mt-1 text-xs"
               />
+              {handoverDriverPhone.trim().length > 0 && !isValidPhone(handoverDriverPhone) && (
+                <p className="text-[11px] text-destructive mt-0.5">Số điện thoại không đúng định dạng (10 số di động VN hoặc E.164)</p>
+              )}
             </div>
           </div>
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t pt-3">
+          <div className="flex justify-end gap-2 border-t pt-3">
             <Button
               variant="outline"
               size="sm"
               disabled={handoverLoading}
-              onClick={() => handoverOrder && submitHandover(handoverOrder, false)}
+              onClick={() => setHandoverOrder(null)}
             >
-              Chuyển Đang giao (Gán Shipper sau)
+              Hủy
             </Button>
             <Button
               variant="hero"
               size="sm"
-              disabled={handoverLoading}
-              onClick={() => handoverOrder && submitHandover(handoverOrder, true)}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+              disabled={handoverLoading || handoverDriverName.trim().length < 2 || !isValidPhone(handoverDriverPhone)}
+              onClick={() => handoverOrder && submitHandover(handoverOrder)}
             >
-              Xác nhận Bàn giao Shipper
+              {handoverLoading ? "Đang xử lý..." : "Xác nhận Giao Shipper"}
             </Button>
           </div>
         </DialogContent>

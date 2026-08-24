@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 /**
  * Public DTO Builder & Public Input Validation Policy
  * Ensures strict encapsulation and prevents sensitive PII / internal data leakage.
@@ -47,13 +49,26 @@ export function validateOrderCreationInput(body = {}) {
  * @param {Object|null} [decodedToken=null]
  * @param {Array} [items=[]]
  * @param {Array} [history=[]]
+ * @param {string} [cancelToken='']
  * @returns {Object} Safe public order DTO
  */
-export function buildPublicLookupDto(order, decodedToken = null, items = [], history = []) {
+export function buildPublicLookupDto(order, decodedToken = null, items = [], history = [], cancelToken = '') {
+  let isTokenOwner = false;
+  if (cancelToken && typeof cancelToken === 'string' && order.cancel_token_hash) {
+    try {
+      const incomingHash = crypto.createHash('sha256').update(cancelToken).digest();
+      const storedHash = Buffer.from(String(order.cancel_token_hash).trim(), 'hex');
+      if (incomingHash.length === storedHash.length && crypto.timingSafeEqual(incomingHash, storedHash)) {
+        isTokenOwner = true;
+      }
+    } catch {}
+  }
+
   const isCustomerOwner =
-    decodedToken?.role === 'customer' &&
-    Boolean(order.user_id) &&
-    Number(decodedToken.id || decodedToken.sub) === Number(order.user_id);
+    isTokenOwner ||
+    (decodedToken?.role === 'customer' &&
+      Boolean(order.user_id) &&
+      Number(decodedToken.id || decodedToken.sub) === Number(order.user_id));
 
   const maskedPhone = isCustomerOwner
     ? order.customer_phone
@@ -68,6 +83,16 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
   const maskedAddr = isCustomerOwner
     ? order.delivery_addr
     : (order.delivery_addr ? '*** (Đã ẩn địa chỉ)' : null);
+
+  const maskedDriverPhone = isCustomerOwner
+    ? (order.shipping_driver_phone || null)
+    : (order.shipping_driver_phone ? String(order.shipping_driver_phone).replace(/(\d{3})\d+(\d{3,4})/, '$1****$2') : null);
+
+  const maskedDriverName = isCustomerOwner
+    ? (order.shipping_driver_name || null)
+    : (order.shipping_driver_name
+        ? (order.shipping_driver_name.slice(0, 1) + '***' + (order.shipping_driver_name.length > 2 ? order.shipping_driver_name.slice(-1) : ''))
+        : null);
 
   return {
     order_code: order.order_code,
@@ -85,6 +110,9 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     payment_expires_at: order.payment_expires_at,
     created_at: order.created_at,
     current_status: order.current_status,
+    shipping_driver_name: maskedDriverName,
+    shipping_driver_phone: maskedDriverPhone,
+    shipping_tracking_url: isCustomerOwner ? (order.shipping_tracking_url || null) : null,
     items,
     status_history: history,
   };

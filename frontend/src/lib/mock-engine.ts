@@ -281,7 +281,7 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     let orders = getLocalOrders();
     orders = orders.filter((o: any) =>
       (o.payment_status === 'paid' || o.payment_method === 'COD' || o.order_type === 'POS') &&
-      (o.current_status === 'Đang chuẩn bị' || o.current_status === 'Chờ xác nhận')
+      (o.current_status === 'Đang chuẩn bị' || o.current_status === 'Chờ xác nhận' || o.current_status === 'Đang giao')
     );
     if (storeId && storeId !== 'all') {
       orders = orders.filter((o: any) => String(o.store_id) === String(storeId));
@@ -297,7 +297,12 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     const orders = getLocalOrders();
     const updated = orders.map((o: any) => {
       if (String(o.id) === idStr) {
-        return { ...o, current_status: newStatus };
+        return {
+          ...o,
+          current_status: newStatus,
+          shipping_driver_name: body.driver_name !== undefined ? body.driver_name : o.shipping_driver_name,
+          shipping_driver_phone: body.driver_phone !== undefined ? body.driver_phone : o.shipping_driver_phone,
+        };
       }
       return o;
     });

@@ -81,10 +81,10 @@ export function createOrderReadRepository(database = postgresDb) {
 
     async listKitchen({ scopedStoreId }) {
       const params = [];
-      let filter = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS') AND latest.status IN ('Đang chuẩn bị', 'Chờ xác nhận')";
+      let filter = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS') AND latest.status IN ('Đang chuẩn bị', 'Chờ xác nhận', 'Đang giao')";
       filter = appendScope(filter, params, scopedStoreId);
       const [orders] = await database.query(
-        `SELECT o.id, o.order_code, o.order_type, o.customer_name, o.customer_phone, o.delivery_addr, o.table_id, o.store_id, o.location_name, o.note, o.subtotal, o.discount_amount, o.total, o.payment_method, o.payment_status, o.payment_provider, o.paid_at, o.created_at, s.name AS store_name, latest.status AS current_status
+        `SELECT o.id, o.order_code, o.order_type, o.customer_name, o.customer_phone, o.delivery_addr, o.table_id, o.store_id, o.location_name, o.note, o.subtotal, o.discount_amount, o.total, o.payment_method, o.payment_status, o.payment_provider, o.paid_at, o.created_at, o.shipping_driver_name, o.shipping_driver_phone, o.shipping_tracking_url, s.name AS store_name, latest.status AS current_status
          FROM orders o JOIN stores s ON s.id = o.store_id
          JOIN LATERAL (SELECT status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1) latest ON TRUE
          ${filter} ORDER BY o.created_at ASC`,

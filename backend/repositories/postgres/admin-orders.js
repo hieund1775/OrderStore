@@ -1,6 +1,7 @@
 import postgresDb from '../../config/db-postgres.js';
 import { OrderDomainError } from '../../services/orders/order-errors.js';
 import { createOrderReadRepository } from '../orders.js';
+import { normalizeAndValidatePhone } from '../../validation/customer-schemas.js';
 
 export class AdminOrderError extends OrderDomainError {
   constructor(message, status = 400, code = 'ADMIN_ORDER_BUSINESS_RULE') {
@@ -33,18 +34,48 @@ export function createAdminOrdersRepository(database = postgresDb) {
         const params = [orderId];
         let filter = 'WHERE id = $1';
         filter = appendScope(filter, params, scopedStoreId, 'store_id');
-        const [orders] = await tx.query(`SELECT id, payment_status FROM orders ${filter} FOR UPDATE`, params);
+        const [orders] = await tx.query(`SELECT id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
         const order = orders[0];
         if (!order) throw new AdminOrderError('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
         const [current] = await tx.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE', [order.id]);
         const transition = evaluateTransition({ currentStatus: current[0]?.status || 'Chờ xác nhận', targetStatus, role: actorRole, isPaid: order.payment_status === 'paid' });
         if (!transition.allowed) throw new AdminOrderError(transition.error, transition.status || 400);
+        if (targetStatus === 'Đang giao' && order.order_type !== 'Delivery') {
+          throw new AdminOrderError('Chỉ đơn giao hàng Delivery mới được chuyển sang trạng thái Đang giao', 400);
+        }
         if (transition.idempotent) return { order_id: Number(order.id), status: targetStatus, idempotent: true };
+
+        let normalizedDriverPhone = null;
+        let normalizedDriverName = null;
+        if (targetStatus === 'Đang giao' && order.order_type === 'Delivery') {
+          if (!driverName || typeof driverName !== 'string' || driverName.trim().length < 2) {
+            throw new AdminOrderError('Đơn giao hàng yêu cầu đầy đủ tên Shipper (tối thiểu 2 ký tự)', 400);
+          }
+          if (!driverPhone || typeof driverPhone !== 'string' || !driverPhone.trim()) {
+            throw new AdminOrderError('Đơn giao hàng yêu cầu số điện thoại Shipper hợp lệ', 400);
+          }
+          try {
+            normalizedDriverPhone = normalizeAndValidatePhone(driverPhone);
+          } catch (err) {
+            throw new AdminOrderError('Số điện thoại Shipper không hợp lệ (yêu cầu 10 chữ số Việt Nam hoặc chuẩn quốc tế E.164)', 400);
+          }
+          normalizedDriverName = driverName.trim();
+        } else if (driverName || driverPhone) {
+          normalizedDriverName = driverName ? driverName.trim() : null;
+          if (driverPhone) {
+            try {
+              normalizedDriverPhone = normalizeAndValidatePhone(driverPhone, { required: false });
+            } catch {
+              normalizedDriverPhone = driverPhone.trim();
+            }
+          }
+        }
+
         await tx.query('INSERT INTO order_status_history (order_id, status, note, changed_by) VALUES ($1, $2, $3, $4)', [order.id, targetStatus, note || null, actorId]);
         if (targetStatus === 'Đã hủy') await tx.query('UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, cancelReason || note]);
         if (targetStatus === 'Đang chuẩn bị') await tx.query('UPDATE orders SET kitchen_notified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id]);
-        if (targetStatus === 'Đang giao' && (driverName || driverPhone || trackingUrl)) {
-          await tx.query('UPDATE orders SET shipping_driver_name = $2, shipping_driver_phone = $3, shipping_tracking_url = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, driverName || null, driverPhone || null, trackingUrl || null]);
+        if (targetStatus === 'Đang giao') {
+          await tx.query('UPDATE orders SET shipping_driver_name = $2, shipping_driver_phone = $3, shipping_tracking_url = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, normalizedDriverName || null, normalizedDriverPhone || null, trackingUrl || null]);
         }
         return { order_id: Number(order.id), status: targetStatus };
       });

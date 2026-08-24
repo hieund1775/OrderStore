@@ -154,9 +154,9 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
     const managerToken = token('manager', { branch_id: 1 });
     const kitchenToken = token('kitchen', { branch_id: 1 });
     const cashierToken = token('cashier', { branch_id: 1 });
-    const status = await fetch(`${baseUrl}/admin/orders/11/status`, { method: 'PATCH', headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Đang giao' }) });
+    const status = await fetch(`${baseUrl}/admin/orders/11/status`, { method: 'PATCH', headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'Hoàn thành' }) });
     assert.equal(status.status, 200);
-    assert.equal((await status.json()).status, 'Đang giao');
+    assert.equal((await status.json()).status, 'Hoàn thành');
     const invalid = await fetch(`${baseUrl}/admin/orders/11/status`, { method: 'PUT', headers: { authorization: `Bearer ${managerToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'unknown' }) });
     assert.equal(invalid.status, 400);
     const kitchenCancel = await fetch(`${baseUrl}/admin/orders/11/cancel`, { method: 'PUT', headers: { authorization: `Bearer ${kitchenToken}`, 'content-type': 'application/json' }, body: '{}' });

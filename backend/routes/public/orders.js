@@ -42,8 +42,9 @@ router.get('/lookup', noCache, asyncHandler(async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: 'Thiếu mã đơn' });
 
+    const rawCancelToken = (req.headers['x-cancel-token'] || req.query.cancel_token || '').trim();
     const decodedToken = extractCustomerToken(req);
-    const result = await customerOrderService.lookup({ code, tokenUser: decodedToken });
+    const result = await customerOrderService.lookup({ code, tokenUser: decodedToken, cancelToken: rawCancelToken });
     res.json(result);
   } catch (err) {
     const status = orderErrorStatus(err);
