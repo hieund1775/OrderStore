@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, Loader2, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
+import { Image, Loader2, Pencil, Plus, Trash2, Upload, X, Boxes, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { beginProductAvailabilityRequest, finishProductAvailabilityRequest } from "@/lib/product-availability";
 import { AdminPageHeader, SectionCard } from "@/components/admin/AdminUI";
@@ -301,6 +301,27 @@ function MenuAdminPage() {
           />
         }
       />
+
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <Boxes className="size-5" />
+          </span>
+          <div>
+            <p className="text-sm font-bold text-foreground">Hệ Thống Đã Nâng Cấp Catalog V2 Đa Ngành Hàng</p>
+            <p className="text-xs text-muted-foreground">
+              Hỗ trợ cây danh mục 3 cấp, ngành hàng F&B / Quần áo / Đồ ăn và biến thể SKU.
+            </p>
+          </div>
+        </div>
+        <Link
+          to="/admin/catalog"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition-all hover:opacity-90"
+        >
+          <span>Mở Catalog V2</span>
+          <ArrowRight className="size-3.5" />
+        </Link>
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-muted-foreground">

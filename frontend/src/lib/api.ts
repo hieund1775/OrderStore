@@ -178,3 +178,113 @@ export function setCustomerUser(u: { id: number; fullname: string; phone: string
     window.dispatchEvent(new CustomEvent('teaplus:customer-auth-changed'));
   }
 }
+
+// ═══════════ CATALOG V2 ADMIN APIS ═══════════
+
+export async function fetchCatalogCategories(options?: { includeArchived?: boolean }) {
+  const query = options?.includeArchived ? '?include_archived=true' : '';
+  return apiFetch<any[]>(`/admin/catalog/categories${query}`);
+}
+
+export async function createCatalogCategory(data: any) {
+  return apiFetch<any>('/admin/catalog/categories', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCatalogCategory(id: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/categories/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function archiveCatalogCategory(id: number | string) {
+  return apiFetch<any>(`/admin/catalog/categories/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchProductTypes() {
+  return apiFetch<any[]>('/admin/catalog/product-types');
+}
+
+export async function createProductType(data: any) {
+  return apiFetch<any>('/admin/catalog/product-types', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchSchemaDetails(schemaId: number | string) {
+  return apiFetch<any>(`/admin/catalog/product-type-schemas/${schemaId}`);
+}
+
+export async function publishSchema(schemaId: number | string) {
+  return apiFetch<any>(`/admin/catalog/product-type-schemas/${schemaId}/publish`, {
+    method: 'POST',
+  });
+}
+
+export async function addAttributeToSchema(schemaId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/product-type-schemas/${schemaId}/attributes`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function addAttributeValue(attrDefId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/attributes/${attrDefId}/values`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchCatalogProducts(params?: { category_id?: number | string; status?: string; search?: string }) {
+  const q = new URLSearchParams();
+  if (params?.category_id) q.set('category_id', String(params.category_id));
+  if (params?.status) q.set('status', params.status);
+  if (params?.search) q.set('search', params.search);
+  const query = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<any[]>(`/admin/catalog/products${query}`);
+}
+
+export async function fetchCatalogProductDetails(id: number | string) {
+  return apiFetch<any>(`/admin/catalog/products/${id}`);
+}
+
+export async function createCatalogProduct(data: any) {
+  return apiFetch<any>('/admin/catalog/products', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCatalogProduct(id: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/products/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function archiveCatalogProduct(id: number | string) {
+  return apiFetch<any>(`/admin/catalog/products/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function previewVariants(data: { attributes: any[]; product_slug: string }) {
+  return apiFetch<any[]>('/admin/catalog/products/preview-variants', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createVariant(productId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/products/${productId}/variants`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+

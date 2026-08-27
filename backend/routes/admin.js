@@ -12,6 +12,7 @@ import adminCustomersRouter from './admin/customers.js';
 import adminSettingsRouter from './admin/settings.js';
 import adminNotificationsRouter from './admin/notifications.js';
 import adminRecruitmentRouter from './admin/recruitment.js';
+import adminCatalogV2Router from './admin/catalog-v2.js';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use('/reports', reportsRouter);
 router.use('/orders', adminOrdersRouter);
 router.use('/kitchen', adminKitchenRouter);
 router.use('/menu', adminMenuRouter);
+router.use('/catalog', adminCatalogV2Router);
 router.use('/branches', branchesRouter);
 router.use('/tables', tablesRouter);
 router.use('/promotions', adminPromotionsRouter);
