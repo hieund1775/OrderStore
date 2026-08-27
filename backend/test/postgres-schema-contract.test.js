@@ -8,6 +8,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const coreMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0001_core.sql');
 const voucherMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0009_voucher_usage_and_validity.sql');
 const wishlistCleanupMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0010_wishlist_inactive_product_cleanup.sql');
+const catalogV2MigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0011_catalog_v2_foundation.sql');
 
 test('PostgreSQL baseline preserves the active backend column and enum contract', async () => {
   const sql = await readFile(coreMigrationPath, 'utf8');
@@ -65,5 +66,38 @@ test('wishlist cleanup migration 0010 notifies customers and removes inactive pr
 
   for (const fragment of requiredFragments) {
     assert.ok(sql.includes(fragment), `missing wishlist cleanup migration contract: ${fragment}`);
+  }
+});
+
+test('catalog v2 migration 0011 establishes multi-category tree, dynamic attributes, variants, media and packing role', async () => {
+  const sql = await readFile(catalogV2MigrationPath, 'utf8');
+  const requiredFragments = [
+    "admin_role IN ('super', 'manager', 'kitchen', 'cashier', 'packing')",
+    'parent_id BIGINT REFERENCES categories(id) ON DELETE RESTRICT',
+    'depth INTEGER NOT NULL DEFAULT 0',
+    'depth BETWEEN 0 AND 2',
+    'product_type_id BIGINT',
+    'CREATE TABLE IF NOT EXISTS product_types',
+    "default_stock_mode VARCHAR(50) NOT NULL DEFAULT 'made_to_order'",
+    "default_fulfillment_lane VARCHAR(50) NOT NULL DEFAULT 'kitchen'",
+    'CREATE TABLE IF NOT EXISTS product_type_schemas',
+    "status VARCHAR(50) NOT NULL DEFAULT 'draft'",
+    'uq_product_type_version UNIQUE (product_type_id, version)',
+    'CREATE TABLE IF NOT EXISTS attribute_definitions',
+    "role VARCHAR(50) NOT NULL CHECK (role IN ('variant', 'modifier'))",
+    "input_type VARCHAR(50) NOT NULL CHECK (input_type IN ('single_select', 'multi_select', 'text', 'number'))",
+    'CREATE TABLE IF NOT EXISTS attribute_values',
+    'price_adjustment INTEGER NOT NULL DEFAULT 0',
+    'product_type_schema_id BIGINT REFERENCES product_type_schemas(id)',
+    'CREATE TABLE IF NOT EXISTS product_variants',
+    'sku VARCHAR(100) NOT NULL UNIQUE',
+    'variant_signature VARCHAR(255) NOT NULL',
+    'CREATE TABLE IF NOT EXISTS product_variant_values',
+    'CREATE TABLE IF NOT EXISTS product_modifier_values',
+    'CREATE TABLE IF NOT EXISTS product_media',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing catalog v2 migration contract: ${fragment}`);
   }
 });

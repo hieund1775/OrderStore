@@ -34,6 +34,7 @@ export async function seedDemoData({ customUrl = null, pool = null } = {}) {
         (2, 'Quản lý Chi nhánh 1', '0909000002', 'manager1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Vàng', 500, true, 'manager', 1),
         (3, 'Thu ngân Chi nhánh 1', '0909000003', 'cashier1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Bạc', 200, true, 'cashier', 1),
         (4, 'Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'kitchen', 1),
+        (6, 'Nhân viên Soạn hàng Chi nhánh 1', '0909000006', 'packing1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'packing', 1),
         (5, 'Nguyễn Khách Hàng', '0901234567', 'customer@example.com', NULL, 'Vàng', 350, false, NULL, NULL)
       ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, password_hash = EXCLUDED.password_hash, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
     `);

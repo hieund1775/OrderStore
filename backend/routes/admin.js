@@ -16,7 +16,7 @@ import adminRecruitmentRouter from './admin/recruitment.js';
 const router = Router();
 
 // Toàn bộ /admin/* cần JWT + RBAC
-router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier'));
+router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier', 'packing'));
 
 // ═══════════ DOMAIN ROUTERS ═══════════
 router.use('/dashboard', dashboardRouter);

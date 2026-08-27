@@ -55,6 +55,7 @@ const roleLabels: Record<string, string> = {
   manager: "Store Manager",
   kitchen: "Kitchen Staff",
   cashier: "Cashier Staff",
+  packing: "Packing Staff",
 };
 
 function SettingsPage() {

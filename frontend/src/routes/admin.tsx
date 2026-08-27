@@ -5,7 +5,7 @@ import { AdminTopbar } from "@/components/admin/AdminTopbar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { getToken, getUser } from "@/lib/api";
 
-const ADMIN_ROLES = ["super", "manager", "kitchen", "cashier"];
+const ADMIN_ROLES = ["super", "manager", "kitchen", "cashier", "packing"];
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: ({ location }) => {

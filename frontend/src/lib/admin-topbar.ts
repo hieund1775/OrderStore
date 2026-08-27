@@ -8,6 +8,8 @@ export function formatAdminRoleLabel(role?: string | null): string {
       return "Bếp / Pha chế";
     case "cashier":
       return "Thu ngân";
+    case "packing":
+      return "Soạn hàng / Đóng gói";
     default:
       return "Nhân viên";
   }
