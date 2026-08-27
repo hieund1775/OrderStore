@@ -158,6 +158,42 @@ export function createUsersRepository(database = postgresDb) {
         return user;
       });
     },
+
+    async findActiveUserByEmail(email) {
+      if (!email || typeof email !== 'string') return null;
+      const cleanEmail = email.trim().toLowerCase();
+      const [rows] = await database.query(
+        `SELECT ${CUSTOMER_COLUMNS}, password_hash
+         FROM users
+         WHERE LOWER(email) = $1 AND is_active = TRUE
+         LIMIT 1`,
+        [cleanEmail],
+      );
+      return rows[0] || null;
+    },
+
+    async updatePassword(userId, passwordHash) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET password_hash = $2, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING ${CUSTOMER_COLUMNS}`,
+        [userId, passwordHash],
+      );
+      return rows[0] || null;
+    },
+
+    async updateUserEmail(userId, email) {
+      const cleanEmail = email ? email.trim().toLowerCase() : null;
+      const [rows] = await database.query(
+        `UPDATE users
+         SET email = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING ${CUSTOMER_COLUMNS}`,
+        [userId, cleanEmail],
+      );
+      return rows[0] || null;
+    },
   };
 }
 

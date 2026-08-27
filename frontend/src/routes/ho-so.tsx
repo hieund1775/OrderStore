@@ -22,7 +22,7 @@ import {
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, setCustomerUser } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import {
@@ -107,6 +107,69 @@ function Profile() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const notificationsList = notificationData?.notifications ?? [];
+
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailOtp, setEmailOtp] = useState('');
+  const [emailStep, setEmailStep] = useState<'input' | 'otp'>('input');
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailCountdown, setEmailCountdown] = useState(0);
+
+  const handleSendEmailOtp = async () => {
+    if (!newEmail.trim() || !newEmail.includes('@')) {
+      toast.error('Vui lòng nhập địa chỉ email hợp lệ');
+      return;
+    }
+    setEmailLoading(true);
+    try {
+      const res = await apiPost<{ success: boolean; message: string; demo_otp?: string }>(
+        '/api/auth/profile/send-email-otp',
+        { email: newEmail.trim() }
+      );
+      toast.success(res.message);
+      if (res.demo_otp) {
+        toast.info(`[Demo / Staging] Mã OTP của bạn là: ${res.demo_otp}`);
+      }
+      setEmailStep('otp');
+      setEmailCountdown(60);
+      const timer = setInterval(() => {
+        setEmailCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể gửi mã xác thực email');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleVerifyEmail = async () => {
+    if (!emailOtp.trim()) {
+      toast.error('Vui lòng nhập mã OTP 6 số');
+      return;
+    }
+    setEmailLoading(true);
+    try {
+      const res = await apiPost<{ success: boolean; message: string; user: any }>(
+        '/api/auth/profile/verify-email',
+        { email: newEmail.trim(), code: emailOtp.trim() }
+      );
+      toast.success(res.message);
+      setCustomerUser(res.user);
+      setEmailEditing(false);
+      setEmailStep('input');
+      setEmailOtp('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Mã OTP không chính xác');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
@@ -502,26 +565,164 @@ function Profile() {
           </TabsContent>
 
           <TabsContent value="info">
-            <div className="bg-card grid gap-4 rounded-2xl border p-5 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="p-name">Họ tên</Label>
-                <Input id="p-name" defaultValue={userName} />
+            <div className="space-y-6">
+              {/* Account Basic Info */}
+              <div className="bg-card grid gap-4 rounded-2xl border p-5 sm:grid-cols-2 shadow-sm">
+                <div className="space-y-1.5 sm:col-span-2 border-b pb-3">
+                  <h3 className="font-display font-bold text-base">Thông tin cá nhân</h3>
+                  <p className="text-xs text-muted-foreground">Thông tin định danh và tích điểm của bạn</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-name">Họ tên</Label>
+                  <Input id="p-name" defaultValue={userName} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="p-phone">Số điện thoại</Label>
+                  <Input id="p-phone" defaultValue={user.phone || ""} readOnly className="bg-muted font-mono" />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="p-tier">Hạng hội viên & Điểm tích lũy</Label>
+                  <Input id="p-tier" value={`Hạng ${userTier} · ${userPoints} điểm`} readOnly className="bg-muted" />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="p-phone">Số điện thoại</Label>
-                <Input id="p-phone" defaultValue={user.phone || ""} readOnly className="bg-muted" />
+
+              {/* Email & Security Section */}
+              <div className="bg-card space-y-4 rounded-2xl border p-5 shadow-sm">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <h3 className="font-display font-bold text-base flex items-center gap-2">
+                      <span>Email & Khôi Phục Mật Khẩu</span>
+                      {user.email ? (
+                        <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[11px] font-bold">
+                          ✓ Đã xác thực
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-amber-600 border-amber-500/30 text-[11px] font-bold">
+                          Chưa liên kết
+                        </Badge>
+                      )}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Dùng để nhận hóa đơn điện tử, thông báo ưu đãi độc quyền và lấy lại mật khẩu khi quên.
+                    </p>
+                  </div>
+                  {!emailEditing && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmailEditing(true);
+                        setNewEmail(user.email || '');
+                        setEmailStep('input');
+                      }}
+                      className="text-xs font-semibold"
+                    >
+                      {user.email ? 'Đổi Email' : 'Liên kết Email'}
+                    </Button>
+                  )}
+                </div>
+
+                {!emailEditing ? (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border">
+                    <div className="flex items-center gap-3">
+                      <div className="size-9 rounded-lg bg-primary/10 grid place-items-center text-primary font-bold">
+                        @
+                      </div>
+                      <div>
+                        <p className="text-sm font-mono font-semibold text-foreground">
+                          {user.email || 'Chưa có địa chỉ email nào được liên kết'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {user.email
+                            ? 'Email này được bảo vệ và dùng để nhận mã OTP khôi phục mật khẩu.'
+                            : 'Hãy liên kết email để bảo vệ tài khoản của bạn.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 p-4 rounded-xl border bg-muted/20">
+                    {emailStep === 'input' ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-email">Địa chỉ Email mới</Label>
+                          <Input
+                            id="new-email"
+                            type="email"
+                            placeholder="example@email.com"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEmailEditing(false)}
+                          >
+                            Hủy
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="hero"
+                            size="sm"
+                            onClick={handleSendEmailOtp}
+                            disabled={emailLoading}
+                          >
+                            {emailLoading ? 'Đang gửi…' : 'Gửi mã xác thực OTP'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="email-otp">Mã OTP (6 số gửi tới {newEmail})</Label>
+                            <button
+                              type="button"
+                              onClick={handleSendEmailOtp}
+                              disabled={emailCountdown > 0 || emailLoading}
+                              className="text-xs text-primary hover:underline disabled:text-muted-foreground"
+                            >
+                              {emailCountdown > 0 ? `Gửi lại sau ${emailCountdown}s` : 'Gửi lại mã'}
+                            </button>
+                          </div>
+                          <Input
+                            id="email-otp"
+                            placeholder="123456"
+                            maxLength={6}
+                            className="font-mono tracking-widest text-center text-lg font-bold"
+                            value={emailOtp}
+                            onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, ''))}
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEmailStep('input')}
+                          >
+                            Đổi lại Email
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="hero"
+                            size="sm"
+                            onClick={handleVerifyEmail}
+                            disabled={emailLoading}
+                          >
+                            {emailLoading ? 'Đang xác thực…' : 'Xác nhận & Cập nhật Email'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="p-email">Hạng hội viên</Label>
-                <Input id="p-email" value={`Hạng ${userTier} · ${userPoints} điểm`} readOnly className="bg-muted" />
-              </div>
-              <Button
-                variant="hero"
-                className="sm:col-span-2"
-                onClick={() => toast.success("Thông tin tài khoản đã được đồng bộ")}
-              >
-                Cập nhật thông tin
-              </Button>
             </div>
           </TabsContent>
         </Tabs>

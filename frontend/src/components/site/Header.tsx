@@ -42,6 +42,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
 import { SmartCartDrawer } from '@/components/cart/SmartCartDrawer';
+import { ForgotPasswordDialog } from '@/components/site/ForgotPasswordDialog';
 import { useBranch } from '@/lib/branch';
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
 import { toast } from 'sonner';
@@ -361,6 +362,7 @@ function ProfileButton() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [nameInput, setNameInput] = useState('');
   const [open, setOpen] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
   const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
   const [googleBtnNode, setGoogleBtnNode] = useState<HTMLDivElement | null>(null);
 
@@ -482,7 +484,8 @@ function ProfileButton() {
 
   if (!loggedIn) {
     return (
-      <Dialog
+      <>
+        <Dialog
         open={open}
         onOpenChange={(o) => {
           setOpen(o);
@@ -525,6 +528,20 @@ function ProfileButton() {
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError(''); }}
               />
+              {authMode === 'login' && (
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline font-medium"
+                    onClick={() => {
+                      setOpen(false);
+                      setForgotOpen(true);
+                    }}
+                  >
+                    Quên mật khẩu?
+                  </button>
+                </div>
+              )}
               {error && <p className="text-berry text-xs">{error}</p>}
               <Button variant="hero" className="w-full" onClick={handlePasswordAuth} disabled={loading}>
                 {loading ? 'Đang xử lý…' : authMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}
@@ -543,8 +560,14 @@ function ProfileButton() {
           </div>
         </DialogContent>
       </Dialog>
-    );
-  }
+      <ForgotPasswordDialog
+        open={forgotOpen}
+        onOpenChange={setForgotOpen}
+        onBackToLogin={() => setOpen(true)}
+      />
+    </>
+  );
+}
   const initial = userName.charAt(0).toUpperCase();
   return (
     <DropdownMenu>

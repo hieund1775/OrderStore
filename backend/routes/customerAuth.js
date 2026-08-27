@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
-import { signCustomerToken, signToken } from '../middleware/auth.js';
+import { authenticate, signCustomerToken, signToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode } from '../services/otp-service.js';
+import emailService from '../services/email-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
 import {
@@ -20,6 +21,7 @@ function customerPayload(user) {
     id: user.id,
     fullname: user.fullname,
     phone: user.phone,
+    email: user.email || null,
     tier: user.tier || 'Đồng',
     points: user.points || 0,
     is_admin: Boolean(user.is_admin),
@@ -185,18 +187,146 @@ router.post('/google', async (req, res, next) => {
 
     res.json({
       token,
-      user: {
-        id: user.id,
-        fullname: user.fullname || fullname,
-        phone: user.phone,
-        tier: user.tier || 'Đồng',
-        points: user.points || 0,
-      },
+      user: customerPayload(user),
     });
   } catch (err) {
     if (err instanceof IdentityError) {
       return res.status(err.status).json({ error: err.message });
     }
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password/send-otp
+ * Payload: { email: string }
+ */
+router.post('/forgot-password/send-otp', async (req, res, next) => {
+  try {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp địa chỉ email hợp lệ' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await usersRepository.findActiveUserByEmail(cleanEmail);
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản nào liên kết với email này' });
+    }
+
+    const result = await emailService.sendPasswordResetOtp(cleanEmail);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password/reset
+ * Payload: { email: string, code: string, newPassword: string }
+ */
+router.post('/forgot-password/reset', async (req, res, next) => {
+  try {
+    const { email, code, newPassword } = req.body || {};
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin (email, mã OTP, mật khẩu mới)' });
+    }
+
+    if (!validatePassword(newPassword)) {
+      return res.status(400).json({ error: 'Mật khẩu mới phải có độ dài từ 8 đến 128 ký tự' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await usersRepository.findActiveUserByEmail(cleanEmail);
+    if (!user) {
+      return res.status(404).json({ error: 'Tài khoản không tồn tại' });
+    }
+
+    const verifyResult = await emailService.verifyPasswordResetOtp(cleanEmail, code);
+    if (!verifyResult.valid) {
+      return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await usersRepository.updatePassword(user.id, passwordHash);
+
+    res.json({
+      success: true,
+      message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/profile/send-email-otp (Yêu cầu đăng nhập)
+ * Payload: { email: string }
+ */
+router.post('/profile/send-email-otp', authenticate, async (req, res, next) => {
+  try {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Vui lòng nhập địa chỉ email hợp lệ' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = await usersRepository.findActiveUserByEmail(cleanEmail);
+    const currentUserId = Number(req.user?.id || req.user?.sub);
+
+    if (existing && existing.id !== currentUserId) {
+      return res.status(409).json({ error: 'Địa chỉ email này đã được sử dụng bởi một tài khoản khác' });
+    }
+
+    const result = await emailService.sendEmailUpdateOtp(cleanEmail);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/profile/verify-email (Yêu cầu đăng nhập)
+ * Payload: { email: string, code: string }
+ */
+router.post('/profile/verify-email', authenticate, async (req, res, next) => {
+  try {
+    const { email, code } = req.body || {};
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Vui lòng nhập email và mã OTP' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const verifyResult = await emailService.verifyEmailUpdateOtp(cleanEmail, code);
+    if (!verifyResult.valid) {
+      return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
+    }
+
+    const currentUserId = Number(req.user?.id || req.user?.sub);
+    const updated = await usersRepository.updateUserEmail(currentUserId, cleanEmail);
+
+    res.json({
+      success: true,
+      message: 'Xác thực và cập nhật email tài khoản thành công',
+      user: customerPayload(updated),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/auth/me (Yêu cầu đăng nhập)
+ */
+router.get('/me', authenticate, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user?.id || req.user?.sub);
+    const user = await usersRepository.findActiveUserById(currentUserId);
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin tài khoản' });
+    }
+    res.json({ user: customerPayload(user) });
+  } catch (err) {
     next(err);
   }
 });
