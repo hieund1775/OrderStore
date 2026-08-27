@@ -15,6 +15,7 @@ import adminRecruitmentRouter from './admin/recruitment.js';
 import adminCatalogV2Router from './admin/catalog-v2.js';
 import branchOffersRouter from './admin/branch-offers.js';
 import variantInventoryRouter from './admin/variant-inventory.js';
+import adminFulfillmentRouter from './admin/fulfillment.js';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.use('/dashboard', dashboardRouter);
 router.use('/reports', reportsRouter);
 router.use('/orders', adminOrdersRouter);
 router.use('/kitchen', adminKitchenRouter);
+router.use('/fulfillment', adminFulfillmentRouter);
 router.use('/menu', adminMenuRouter);
 router.use('/catalog', adminCatalogV2Router);
 router.use('/branch-offers', branchOffersRouter);

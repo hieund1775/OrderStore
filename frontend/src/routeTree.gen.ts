@@ -25,6 +25,7 @@ import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
 import { Route as AdminChiNhanhRouteImport } from './routes/admin.chi-nhanh'
 import { Route as AdminDonHangRouteImport } from './routes/admin.don-hang'
+import { Route as AdminDongGoiRouteImport } from './routes/admin.dong-goi'
 import { Route as AdminHangDangBanRouteImport } from './routes/admin.hang-dang-ban'
 import { Route as AdminKhuyenMaiRouteImport } from './routes/admin.khuyen-mai'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
@@ -114,6 +115,11 @@ const AdminDonHangRoute = AdminDonHangRouteImport.update({
   path: '/don-hang',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDongGoiRoute = AdminDongGoiRouteImport.update({
+  id: '/dong-goi',
+  path: '/dong-goi',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminHangDangBanRoute = AdminHangDangBanRouteImport.update({
   id: '/hang-dang-ban',
   path: '/hang-dang-ban',
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
@@ -276,6 +286,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
@@ -440,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDonHangRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/dong-goi': {
+      id: '/admin/dong-goi'
+      path: '/dong-goi'
+      fullPath: '/admin/dong-goi'
+      preLoaderRoute: typeof AdminDongGoiRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/hang-dang-ban': {
       id: '/admin/hang-dang-ban'
       path: '/hang-dang-ban'
@@ -505,6 +524,7 @@ interface AdminRouteChildren {
   AdminCatalogRoute: typeof AdminCatalogRoute
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
   AdminDonHangRoute: typeof AdminDonHangRoute
+  AdminDongGoiRoute: typeof AdminDongGoiRoute
   AdminHangDangBanRoute: typeof AdminHangDangBanRoute
   AdminKhuyenMaiRoute: typeof AdminKhuyenMaiRoute
   AdminLoginRoute: typeof AdminLoginRoute
@@ -522,6 +542,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCatalogRoute: AdminCatalogRoute,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
   AdminDonHangRoute: AdminDonHangRoute,
+  AdminDongGoiRoute: AdminDongGoiRoute,
   AdminHangDangBanRoute: AdminHangDangBanRoute,
   AdminKhuyenMaiRoute: AdminKhuyenMaiRoute,
   AdminLoginRoute: AdminLoginRoute,

@@ -47,6 +47,8 @@ describe('Admin Catalog V2 Component Suite', () => {
       default_fulfillment_lane: 'kitchen',
       published_version: 1,
       published_schema_id: 10,
+      draft_version: null,
+      draft_schema_id: null,
       products_count: 15,
     },
     {
@@ -58,6 +60,8 @@ describe('Admin Catalog V2 Component Suite', () => {
       default_fulfillment_lane: 'packing',
       published_version: 1,
       published_schema_id: 11,
+      draft_version: null,
+      draft_schema_id: null,
       products_count: 20,
     },
   ];
