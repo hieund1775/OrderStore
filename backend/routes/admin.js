@@ -13,6 +13,8 @@ import adminSettingsRouter from './admin/settings.js';
 import adminNotificationsRouter from './admin/notifications.js';
 import adminRecruitmentRouter from './admin/recruitment.js';
 import adminCatalogV2Router from './admin/catalog-v2.js';
+import branchOffersRouter from './admin/branch-offers.js';
+import variantInventoryRouter from './admin/variant-inventory.js';
 
 const router = Router();
 
@@ -26,6 +28,8 @@ router.use('/orders', adminOrdersRouter);
 router.use('/kitchen', adminKitchenRouter);
 router.use('/menu', adminMenuRouter);
 router.use('/catalog', adminCatalogV2Router);
+router.use('/branch-offers', branchOffersRouter);
+router.use('/variant-inventory', variantInventoryRouter);
 router.use('/branches', branchesRouter);
 router.use('/tables', tablesRouter);
 router.use('/promotions', adminPromotionsRouter);

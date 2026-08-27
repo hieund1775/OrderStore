@@ -288,3 +288,52 @@ export async function createVariant(productId: number | string, data: any) {
   });
 }
 
+// ═══════════ BRANCH COMMERCE & INVENTORY APIS ═══════════
+
+export async function fetchBranchOffers(params?: { store_id?: number | string; category_id?: number | string; is_available?: boolean; search?: string }) {
+  const q = new URLSearchParams();
+  if (params?.store_id) q.set('store_id', String(params.store_id));
+  if (params?.category_id) q.set('category_id', String(params.category_id));
+  if (params?.is_available !== undefined) q.set('is_available', String(params.is_available));
+  if (params?.search) q.set('search', params.search);
+  const query = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<any[]>(`/admin/branch-offers${query}`);
+}
+
+export async function updateBranchOffer(variantId: number | string, data: { store_id?: number | string; price: number; compare_at_price?: number | null; is_available?: boolean }) {
+  return apiFetch<any>(`/admin/branch-offers/${variantId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function batchSetBranchAvailability(data: { store_id?: number | string; variant_ids: number[]; is_available: boolean }) {
+  return apiFetch<any[]>('/admin/branch-offers/batch-availability', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchVariantInventory(variantId: number | string, storeId?: number | string) {
+  const query = storeId ? `?store_id=${storeId}` : '';
+  return apiFetch<any>(`/admin/variant-inventory/${variantId}${query}`);
+}
+
+export async function adjustVariantStock(data: { store_id?: number | string; variant_id: number | string; movement_type?: string; quantity: number; reason: string; reference_type?: string; reference_id?: string }) {
+  return apiFetch<any>('/admin/variant-inventory/adjust', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchInventoryMovements(params?: { store_id?: number | string; variant_id?: number | string; limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  if (params?.store_id) q.set('store_id', String(params.store_id));
+  if (params?.variant_id) q.set('variant_id', String(params.variant_id));
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.offset) q.set('offset', String(params.offset));
+  const query = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<any[]>(`/admin/variant-inventory/movements${query}`);
+}
+
+

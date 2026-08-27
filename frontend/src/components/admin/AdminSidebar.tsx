@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Briefcase,
   Boxes,
+  PackageCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,7 @@ export const adminNav = [
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat },
   { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode },
   { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes },
+  { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck },
   { to: '/admin/thuc-don', label: 'Thực đơn (Legacy)', icon: UtensilsCrossed },
   { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store },
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone },

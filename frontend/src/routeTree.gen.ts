@@ -25,6 +25,7 @@ import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
 import { Route as AdminChiNhanhRouteImport } from './routes/admin.chi-nhanh'
 import { Route as AdminDonHangRouteImport } from './routes/admin.don-hang'
+import { Route as AdminHangDangBanRouteImport } from './routes/admin.hang-dang-ban'
 import { Route as AdminKhuyenMaiRouteImport } from './routes/admin.khuyen-mai'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminPosRouteImport } from './routes/admin.pos'
@@ -113,6 +114,11 @@ const AdminDonHangRoute = AdminDonHangRouteImport.update({
   path: '/don-hang',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminHangDangBanRoute = AdminHangDangBanRouteImport.update({
+  id: '/hang-dang-ban',
+  path: '/hang-dang-ban',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminKhuyenMaiRoute = AdminKhuyenMaiRouteImport.update({
   id: '/khuyen-mai',
   path: '/khuyen-mai',
@@ -165,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/pos': typeof AdminPosRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/pos': typeof AdminPosRoute
@@ -215,6 +223,7 @@ export interface FileRoutesById {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/don-hang': typeof AdminDonHangRoute
+  '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
   '/admin/khuyen-mai': typeof AdminKhuyenMaiRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/pos': typeof AdminPosRoute
@@ -242,6 +251,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
     | '/admin/pos'
@@ -266,6 +276,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
     | '/admin/pos'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/don-hang'
+    | '/admin/hang-dang-ban'
     | '/admin/khuyen-mai'
     | '/admin/login'
     | '/admin/pos'
@@ -428,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDonHangRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/hang-dang-ban': {
+      id: '/admin/hang-dang-ban'
+      path: '/hang-dang-ban'
+      fullPath: '/admin/hang-dang-ban'
+      preLoaderRoute: typeof AdminHangDangBanRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/khuyen-mai': {
       id: '/admin/khuyen-mai'
       path: '/khuyen-mai'
@@ -486,6 +505,7 @@ interface AdminRouteChildren {
   AdminCatalogRoute: typeof AdminCatalogRoute
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
   AdminDonHangRoute: typeof AdminDonHangRoute
+  AdminHangDangBanRoute: typeof AdminHangDangBanRoute
   AdminKhuyenMaiRoute: typeof AdminKhuyenMaiRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminPosRoute: typeof AdminPosRoute
@@ -502,6 +522,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCatalogRoute: AdminCatalogRoute,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
   AdminDonHangRoute: AdminDonHangRoute,
+  AdminHangDangBanRoute: AdminHangDangBanRoute,
   AdminKhuyenMaiRoute: AdminKhuyenMaiRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminPosRoute: AdminPosRoute,

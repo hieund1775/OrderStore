@@ -9,6 +9,7 @@ const coreMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migr
 const voucherMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0009_voucher_usage_and_validity.sql');
 const wishlistCleanupMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0010_wishlist_inactive_product_cleanup.sql');
 const catalogV2MigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0011_catalog_v2_foundation.sql');
+const branchOffersMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0012_branch_offers_inventory.sql');
 
 test('PostgreSQL baseline preserves the active backend column and enum contract', async () => {
   const sql = await readFile(coreMigrationPath, 'utf8');
@@ -99,5 +100,35 @@ test('catalog v2 migration 0011 establishes multi-category tree, dynamic attribu
 
   for (const fragment of requiredFragments) {
     assert.ok(sql.includes(fragment), `missing catalog v2 migration contract: ${fragment}`);
+  }
+});
+
+test('branch offers & inventory migration 0012 establishes branch pricing, SKU stock, ledger & reservations', async () => {
+  const sql = await readFile(branchOffersMigrationPath, 'utf8');
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS branch_variant_offers',
+    'uq_branch_variant_offer UNIQUE (store_id, variant_id)',
+    'price INTEGER NOT NULL CHECK (price >= 0)',
+    'compare_at_price INTEGER',
+    'CREATE TABLE IF NOT EXISTS branch_variant_inventory',
+    'on_hand INTEGER NOT NULL DEFAULT 0 CHECK (on_hand >= 0)',
+    'reserved INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0)',
+    'uq_branch_variant_inventory UNIQUE (store_id, variant_id)',
+    'chk_inventory_reserved_le_on_hand CHECK (reserved <= on_hand)',
+    'CREATE TABLE IF NOT EXISTS inventory_movements',
+    "movement_type IN ('receive', 'adjust', 'reserve', 'release', 'sale', 'cancel_restock', 'return_restock')",
+    'before_on_hand INTEGER NOT NULL CHECK (before_on_hand >= 0)',
+    'after_on_hand INTEGER NOT NULL CHECK (after_on_hand >= 0)',
+    'CREATE TABLE IF NOT EXISTS inventory_reservations',
+    "status IN ('reserved', 'committed', 'released', 'expired')",
+    'expires_at TIMESTAMPTZ NOT NULL',
+    'idx_branch_offers_store_variant',
+    'idx_branch_inventory_store_variant',
+    'idx_inventory_movements_store_variant',
+    'idx_inventory_reservations_status_expires',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing branch inventory migration contract: ${fragment}`);
   }
 });
