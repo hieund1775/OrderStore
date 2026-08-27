@@ -336,4 +336,39 @@ export async function fetchInventoryMovements(params?: { store_id?: number | str
   return apiFetch<any[]>(`/admin/variant-inventory/movements${query}`);
 }
 
+// ═══════════ PUBLIC CATALOG V2 APIS ═══════════
+
+export async function fetchPublicCategoryTree() {
+  return apiFetch<any[]>('/catalog/categories/tree');
+}
+
+export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  if (params?.store_id) q.set('store_id', String(params.store_id));
+  if (params?.category) q.set('category', params.category);
+  if (params?.search) q.set('search', params.search);
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.offset) q.set('offset', String(params.offset));
+  const query = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<any[]>(`/catalog/products${query}`);
+}
+
+export async function fetchPublicProductDetails(slug: string, storeId?: number | string) {
+  const query = storeId ? `?store_id=${storeId}` : '';
+  return apiFetch<any>(`/catalog/products/${slug}${query}`);
+}
+
+export async function resolveProductConfiguration(data: {
+  store_id?: number | string;
+  product_slug: string;
+  variant_value_ids?: number[];
+  modifier_value_ids?: number[];
+}) {
+  return apiFetch<any>('/catalog/resolve-configuration', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+
 

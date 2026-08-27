@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart';
 import { useWishlist } from '@/lib/wishlist';
+import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 import {
   baseOptions,
   iceOptions,
@@ -129,7 +130,31 @@ export function ProductCard({ product }: { product: Product }) {
         </div>
       </article>
 
-      <CustomizeDialog product={product} open={open} onOpenChange={setOpen} />
+      {product.slug ? (
+        <DynamicProductConfigurator
+          productSlug={product.slug}
+          open={open}
+          onOpenChange={setOpen}
+          onAddToCart={(configured) => {
+            addItem({
+              productId: String(configured.productId),
+              name: configured.productName,
+              image: configured.image || product.image,
+              size: (configured.appliedModifiers.find((m) => m.attribute_code === 'size')?.value_code?.toUpperCase() as any) || 'M',
+              base: configured.appliedModifiers.find((m) => m.attribute_code === 'base')?.value_label || product.base,
+              sugar: configured.appliedModifiers.find((m) => m.attribute_code === 'sugar')?.value_label || '100%',
+              ice: configured.appliedModifiers.find((m) => m.attribute_code === 'ice')?.value_label || '100%',
+              toppings: configured.appliedModifiers
+                .filter((m) => m.attribute_code === 'toppings')
+                .map((m) => m.value_code),
+              unitPrice: configured.unitPrice,
+              qty: configured.quantity,
+            });
+          }}
+        />
+      ) : (
+        <CustomizeDialog product={product} open={open} onOpenChange={setOpen} />
+      )}
     </>
   );
 }

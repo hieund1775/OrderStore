@@ -9,6 +9,7 @@ import { validateOrderId } from '../validation/order-schemas.js';
 
 import publicOrdersRouter, { handleCustomerCancelOrder } from './public/orders.js';
 import publicCatalogRouter from './public/catalog.js';
+import publicCatalogV2Router from './public/catalog-v2.js';
 import publicStoresRouter from './public/stores.js';
 import publicPromotionsRouter from './public/promotions.js';
 import publicEngagementRouter from './public/engagement.js';
@@ -31,6 +32,7 @@ router.get('/health', (req, res) => {
 
 // ═══════════ DOMAIN ROUTERS ═══════════
 router.use('/', publicCatalogRouter);
+router.use('/catalog', publicCatalogV2Router);
 router.use('/', publicStoresRouter);
 router.use('/', publicPromotionsRouter);
 router.use('/', publicEngagementRouter);
