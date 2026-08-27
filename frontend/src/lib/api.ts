@@ -217,6 +217,12 @@ export async function createProductType(data: any) {
   });
 }
 
+export async function createProductTypeSchema(productTypeId: number | string) {
+  return apiFetch<unknown>(`/admin/catalog/product-types/${productTypeId}/schemas`, {
+    method: 'POST',
+  });
+}
+
 export async function fetchSchemaDetails(schemaId: number | string) {
   return apiFetch<any>(`/admin/catalog/product-type-schemas/${schemaId}`);
 }

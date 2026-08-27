@@ -14,6 +14,7 @@
     "db:pg:migrate": "node database/postgres/migrate.js",
     "db:pg:migrate:test": "node database/postgres/migrate.js",
     "db:pg:seed": "node database/postgres/seed-demo.js",
+    "db:pg:catalog-v2:backfill": "node commands/backfill-catalog-v2.js",
     "db:pg:otp:cleanup": "node database/postgres/cleanup-otp.js",
     "payos:expire": "node commands/expire-payos-orders.js",
     "perf:seed": "node perf/seed-performance-data.js",

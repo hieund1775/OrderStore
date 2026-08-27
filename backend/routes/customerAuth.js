@@ -211,7 +211,11 @@ router.post('/forgot-password/send-otp', async (req, res, next) => {
     const cleanEmail = email.trim().toLowerCase();
     const user = await usersRepository.findActiveUserByEmail(cleanEmail);
     if (!user) {
-      return res.status(404).json({ error: 'Không tìm thấy tài khoản nào liên kết với email này' });
+      // Không tiết lộ email nào đã đăng ký trong hệ thống.
+      return res.json({
+        success: true,
+        message: 'Nếu email đã được đăng ký, mã xác thực sẽ được gửi tới hộp thư của bạn',
+      });
     }
 
     const result = await emailService.sendPasswordResetOtp(cleanEmail);

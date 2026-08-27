@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { createProductType } from '@/lib/api';
+import { createProductType, createProductTypeSchema } from '@/lib/api';
 import { toast } from 'sonner';
 
 export type ProductType = {
@@ -29,6 +29,8 @@ export type ProductType = {
   default_fulfillment_lane: 'kitchen' | 'packing';
   published_version: number | null;
   published_schema_id: number | null;
+  draft_version: number | null;
+  draft_schema_id: number | null;
   products_count: number;
 };
 
@@ -56,6 +58,21 @@ export function ProductTypeEditor({
     default_fulfillment_lane: 'kitchen' as 'kitchen' | 'packing',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [creatingSchemaFor, setCreatingSchemaFor] = useState<number | null>(null);
+
+  const handleCreateSchemaVersion = async (event: React.MouseEvent, productType: ProductType) => {
+    event.stopPropagation();
+    setCreatingSchemaFor(productType.id);
+    try {
+      await createProductTypeSchema(productType.id);
+      toast.success(`Đã tạo schema v${Number(productType.published_version || 0) + 1} bản nháp`);
+      onRefresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Không thể tạo phiên bản schema mới');
+    } finally {
+      setCreatingSchemaFor(null);
+    }
+  };
 
   const handleOpenCreate = () => {
     setFormData({
@@ -166,6 +183,20 @@ export function ProductTypeEditor({
                   Cấu hình Schema <ArrowRight className="size-3" />
                 </div>
               </div>
+
+              {isSuperAdmin && pt.published_schema_id && !pt.draft_schema_id && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 w-full"
+                  disabled={creatingSchemaFor === pt.id}
+                  onClick={(event) => handleCreateSchemaVersion(event, pt)}
+                >
+                  <Plus className="mr-1.5 size-3.5" />
+                  {creatingSchemaFor === pt.id ? 'Đang tạo...' : 'Tạo phiên bản schema mới'}
+                </Button>
+              )}
             </div>
           );
         })}

@@ -22,6 +22,8 @@ export type CartItem = {
   variantId?: number | null;
   sku?: string;
   variantName?: string | null;
+  stockMode?: 'tracked' | 'made_to_order';
+  fulfillmentLane?: 'kitchen' | 'packing';
   size?: string;
   base?: string;
   sugar?: string;
@@ -77,6 +79,7 @@ type CartContextValue = {
   addItem: (item: Omit<CartItem, 'key'>) => boolean;
   updateItem: (oldKey: string, newItem: Omit<CartItem, 'key'>) => boolean;
   removeItem: (key: string) => void;
+  removeItems: (keys: string[]) => void;
   setQty: (key: string, qty: number) => void;
   toggleSelect: (key: string, selected?: boolean) => void;
   toggleSelectStore: (storeId: string, selected: boolean) => void;
@@ -227,6 +230,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return true;
       },
       removeItem: (key) => setItems((prev) => prev.filter((p) => p.key !== key)),
+      removeItems: (keys) => {
+        const keySet = new Set(keys);
+        setItems((prev) => prev.filter((item) => !keySet.has(item.key)));
+      },
       setQty: (key, qty) =>
         setItems((prev) =>
           qty <= 0

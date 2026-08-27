@@ -9,7 +9,7 @@ services:
     region: singapore # sin region closest to Vietnam for low latency
     rootDir: backend
     buildCommand: npm install --omit=dev
-    startCommand: npm run db:pg:migrate && npm start
+    startCommand: npm run db:pg:migrate && npm run db:pg:catalog-v2:backfill && npm start
     healthCheckPath: /ready
     autoDeploy: false
     envVars:

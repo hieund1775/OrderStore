@@ -44,4 +44,13 @@ test('Email Authentication & Password Reset Service Suite', async (t) => {
       /Địa chỉ email không hợp lệ/,
     );
   });
+
+  await t.test('fails closed in production when no email transport is configured', async () => {
+    const service = createEmailService({ isProduction: true, transport: null });
+
+    await assert.rejects(
+      service.sendPasswordResetOtp('customer@example.com'),
+      /Dịch vụ gửi email chưa được cấu hình/,
+    );
+  });
 });

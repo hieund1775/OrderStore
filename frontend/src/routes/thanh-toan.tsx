@@ -62,9 +62,9 @@ type PendingPayOSOrder = {
 };
 
 function Checkout() {
-  const { items, subtotal, clear, selectedItems, selectedSubtotal } = useCart();
-  const checkoutItems = selectedItems.length > 0 ? selectedItems : items;
-  const checkoutSubtotal = selectedItems.length > 0 ? selectedSubtotal : subtotal;
+  const { removeItems, selectedItems, selectedSubtotal } = useCart();
+  const checkoutItems = selectedItems;
+  const checkoutSubtotal = selectedSubtotal;
   const {
     stores: storeOptions,
     selectedStoreId,
@@ -101,22 +101,16 @@ function Checkout() {
     }
   }, []);
 
-  // Khôi phục đơn PayOS đang chờ thanh toán nếu không có giỏ hàng mới
+  // Khôi phục đơn PayOS đang chờ thanh toán độc lập với các món chưa chọn còn lại trong giỏ.
   useEffect(() => {
     try {
-      if (items.length > 0) {
-        // Nếu khách có món mới trong giỏ hàng -> xóa sạch pending cũ để thanh toán giỏ mới
-        sessionStorage.removeItem("teaplus_pending_payment");
-        setPendingOrder(null);
-        return;
-      }
       const raw = sessionStorage.getItem("teaplus_pending_payment");
       if (raw) {
         const stored = JSON.parse(raw) as PendingPayOSOrder;
         if (stored?.order_code) setPendingOrder(stored);
       }
     } catch {}
-  }, [items.length]);
+  }, []);
   const [countdownSec, setCountdownSec] = useState<number>(900);
   const tableId = searchTableId || activeTableId;
   const boundTableInfo =
@@ -125,19 +119,28 @@ function Checkout() {
       : null;
   const effectiveStoreId = boundTableInfo?.table.store_id ??
     (branchStatus === "ready" ? selectedStoreId : null);
-  const effectiveStoreIdRef = useRef<number | null>(effectiveStoreId);
+  const checkoutStoreIds = Array.from(
+    new Set(
+      checkoutItems
+        .map((item) => Number(item.storeId))
+        .filter((storeId) => Number.isInteger(storeId) && storeId > 0),
+    ),
+  );
+  const hasMultipleCheckoutStores = checkoutStoreIds.length > 1;
+  const checkoutStoreId = checkoutStoreIds[0] ?? effectiveStoreId;
+  const checkoutStoreIdRef = useRef<number | null>(checkoutStoreId);
   const previousStoreIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    effectiveStoreIdRef.current = effectiveStoreId;
+    checkoutStoreIdRef.current = checkoutStoreId;
     const previousStoreId = previousStoreIdRef.current;
-    if (effectiveStoreId != null && previousStoreId != null && effectiveStoreId !== previousStoreId) {
+    if (checkoutStoreId != null && previousStoreId != null && checkoutStoreId !== previousStoreId) {
       setVoucherDiscount(0);
       setAppliedCode("");
       orderRequestRef.current = null;
     }
-    if (effectiveStoreId != null) previousStoreIdRef.current = effectiveStoreId;
-  }, [effectiveStoreId]);
+    if (checkoutStoreId != null) previousStoreIdRef.current = checkoutStoreId;
+  }, [checkoutStoreId]);
 
   // Smart Chained Timeout Polling when PayOS pending order is active
   useEffect(() => {
@@ -163,7 +166,6 @@ function Checkout() {
 
         if (res.order?.payment_status === "paid") {
           shouldStop = true;
-          clear();
           sessionStorage.removeItem("teaplus_pending_payment");
           toast.success("Thanh toán thành công!", {
             description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
@@ -204,7 +206,7 @@ function Checkout() {
       if (timerId) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [pendingOrder?.order_code, countdownSec <= 0, navigate, clear]);
+  }, [pendingOrder?.order_code, countdownSec <= 0, navigate]);
 
   // Countdown timer
   useEffect(() => {
@@ -236,7 +238,6 @@ function Checkout() {
         `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
       );
       if (res.order?.payment_status === "paid") {
-        clear();
         sessionStorage.removeItem("teaplus_pending_payment");
         toast.success("Thanh toán thành công!", {
           description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
@@ -363,7 +364,10 @@ function Checkout() {
 
   async function applyVoucher() {
     if (!voucherCode.trim()) return toast.error("Nhập mã ưu đãi trước");
-    const storeAtRequest = effectiveStoreId;
+    if (hasMultipleCheckoutStores) {
+      return toast.error("Checkout đa chi nhánh chưa được backend kích hoạt. Vui lòng thanh toán từng chi nhánh.");
+    }
+    const storeAtRequest = checkoutStoreId;
     if (storeAtRequest == null) return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     try {
       const res = await apiPost<{ valid: boolean; discount_amount: number; message: string }>(
@@ -375,13 +379,13 @@ function Checkout() {
           store_id: storeAtRequest,
         },
       );
-      if (effectiveStoreIdRef.current !== storeAtRequest) return;
+      if (checkoutStoreIdRef.current !== storeAtRequest) return;
       if (!res.valid) return toast.error(res.message);
       setVoucherDiscount(res.discount_amount);
       setAppliedCode(voucherCode.trim());
       toast.success(res.message);
     } catch (err) {
-      if (effectiveStoreIdRef.current !== storeAtRequest) return;
+      if (checkoutStoreIdRef.current !== storeAtRequest) return;
       toast.error(err instanceof Error ? err.message : "Không áp dụng được mã");
     }
   }
@@ -390,6 +394,12 @@ function Checkout() {
     if (checkoutItems.length === 0) return;
     if (!getCustomerToken()) {
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
+    }
+    if (hasMultipleCheckoutStores) {
+      return toast.error("Checkout đa chi nhánh chưa được backend kích hoạt. Vui lòng chọn món của một chi nhánh.");
+    }
+    if (checkoutItems.some((item) => item.stockMode === 'tracked' || item.fulfillmentLane === 'packing')) {
+      return toast.error("Thanh toán hàng SKU đang chờ hoàn thiện giữ kho và checkout group ở backend.");
     }
     const cleanName = name.trim().replace(/\s+/g, " ");
     let cleanPhone = phone.trim().replace(/[\s\(\)\.-]/g, "");
@@ -409,8 +419,11 @@ function Checkout() {
     if (!cleanPhone || (!isVnPhone && !isIntlPhone)) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
     }
-    if (effectiveStoreId == null) {
+    if (checkoutStoreId == null) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");
+    }
+    if (boundTableInfo && checkoutStoreId !== boundTableInfo.table.store_id) {
+      return toast.error("Món đã chọn không thuộc chi nhánh của bàn hiện tại");
     }
     setSubmitting(true);
     try {
@@ -429,7 +442,7 @@ function Checkout() {
       const toppingIdByName = new Map(toppings.map((t) => [t.name.toLowerCase(), t.id]));
 
       const payload = {
-        store_id: effectiveStoreId,
+        store_id: checkoutStoreId,
         table_id: boundTableInfo ? boundTableInfo.table.id : null,
         order_type: method === "delivery" ? "Delivery" : "Take-away",
         payment_method: "VietQR",
@@ -486,7 +499,7 @@ function Checkout() {
 
 
       if (res.checkout_url) {
-        clear();
+        removeItems(checkoutItems.map((item) => item.key));
         try {
           sessionStorage.removeItem("teaplus_pending_payment");
         } catch {}
@@ -494,7 +507,7 @@ function Checkout() {
         window.location.href = res.checkout_url;
         return;
       } else if (res.qr_code) {
-        clear();
+        removeItems(checkoutItems.map((item) => item.key));
         const pending = {
           order_code: res.order_code,
           order_id: res.order_id,
@@ -627,7 +640,6 @@ function Checkout() {
                     variant="outline"
                     className="flex-1"
                     onClick={() => {
-                      clear();
                       navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
                     }}
                   >
@@ -699,8 +711,8 @@ function Checkout() {
         <div className="space-y-6">
           {/* Items */}
           <section className="bg-card rounded-2xl border p-5">
-            <h2 className="font-display mb-4 text-lg font-bold">Món đã chọn ({items.length})</h2>
-            {items.length === 0 && (
+            <h2 className="font-display mb-4 text-lg font-bold">Món đã chọn ({checkoutItems.length})</h2>
+            {checkoutItems.length === 0 && (
               <div className="py-8 text-center">
                 <p className="text-muted-foreground text-sm">Giỏ hàng trống.</p>
                 <Button asChild variant="hero" size="sm" className="mt-3">
@@ -709,7 +721,7 @@ function Checkout() {
               </div>
             )}
             <div className="space-y-4">
-              {items.map((i) => (
+              {checkoutItems.map((i) => (
                 <div key={i.key} className="flex gap-3 border-b pb-4 last:border-0 last:pb-0">
                   <img
                     src={i.image}

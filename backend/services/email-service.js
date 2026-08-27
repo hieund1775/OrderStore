@@ -20,6 +20,11 @@ export function createEmailService({
       }
 
       const cleanEmail = email.trim().toLowerCase();
+      if (isProduction && (!transport || typeof transport.sendMail !== 'function')) {
+        const error = new Error('Dịch vụ gửi email chưa được cấu hình');
+        error.status = 503;
+        throw error;
+      }
       const code = generateSecureOtp();
       const ttlMs = 10 * 60 * 1000; // 10 minutes
       const expiresAt = Date.now() + ttlMs;
@@ -45,7 +50,7 @@ export function createEmailService({
             <p>Mã này có hiệu lực trong 10 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
           </div>`,
         });
-      } else {
+      } else if (!isProduction) {
         console.log(`📧 [EmailService] Password Reset OTP for ${cleanEmail}: ${code}`);
       }
 
@@ -98,6 +103,11 @@ export function createEmailService({
       }
 
       const cleanEmail = email.trim().toLowerCase();
+      if (isProduction && (!transport || typeof transport.sendMail !== 'function')) {
+        const error = new Error('Dịch vụ gửi email chưa được cấu hình');
+        error.status = 503;
+        throw error;
+      }
       const code = generateSecureOtp();
       const ttlMs = 10 * 60 * 1000;
       const expiresAt = Date.now() + ttlMs;
@@ -122,7 +132,7 @@ export function createEmailService({
             <p>Mã này có hiệu lực trong 10 phút.</p>
           </div>`,
         });
-      } else {
+      } else if (!isProduction) {
         console.log(`📧 [EmailService] Email Update OTP for ${cleanEmail}: ${code}`);
       }
 

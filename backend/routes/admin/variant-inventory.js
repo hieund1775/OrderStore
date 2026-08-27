@@ -26,11 +26,17 @@ router.get('/:variant_id', requireRole('super', 'manager', 'packing'), asyncHand
 
 router.post('/adjust', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   const storeId = resolveStoreScope(req.user, req.body.store_id || req.query.store_id);
+  const requestedMovementType = req.body.movement_type || 'adjust';
+  if (!['receive', 'adjust', 'cancel_restock', 'return_restock'].includes(requestedMovementType)) {
+    return res.status(403).json({
+      error: 'Reserve, release và sale chỉ được thực hiện bởi luồng checkout nội bộ',
+    });
+  }
   const result = await service.adjustStock(
     storeId,
     {
       variant_id: req.body.variant_id,
-      movement_type: req.body.movement_type || 'adjust',
+      movement_type: requestedMovementType,
       quantity: req.body.quantity,
       reason: req.body.reason,
       reference_type: req.body.reference_type,

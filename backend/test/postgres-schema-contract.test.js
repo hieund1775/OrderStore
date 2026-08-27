@@ -10,6 +10,7 @@ const voucherMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'm
 const wishlistCleanupMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0010_wishlist_inactive_product_cleanup.sql');
 const catalogV2MigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0011_catalog_v2_foundation.sql');
 const branchOffersMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0012_branch_offers_inventory.sql');
+const catalogIntegrityMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0013_catalog_v2_integrity_hardening.sql');
 
 test('PostgreSQL baseline preserves the active backend column and enum contract', async () => {
   const sql = await readFile(coreMigrationPath, 'utf8');
@@ -130,5 +131,21 @@ test('branch offers & inventory migration 0012 establishes branch pricing, SKU s
 
   for (const fragment of requiredFragments) {
     assert.ok(sql.includes(fragment), `missing branch inventory migration contract: ${fragment}`);
+  }
+});
+
+test('catalog integrity migration 0013 prevents multiple published schemas and adds lookup indexes', async () => {
+  const sql = await readFile(catalogIntegrityMigrationPath, 'utf8');
+  const requiredFragments = [
+    'uq_product_type_one_published_schema',
+    "WHERE status = 'published'",
+    'idx_product_modifier_values_product',
+    'idx_product_variant_values_value',
+    'idx_inventory_reservations_checkout_group',
+    'CREATE TABLE IF NOT EXISTS catalog_v2_backfill_runs',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing catalog integrity migration contract: ${fragment}`);
   }
 });

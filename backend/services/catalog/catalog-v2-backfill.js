@@ -9,6 +9,8 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
     productsMigrated: 0,
     variantsCreated: 0,
     offersCreated: 0,
+    modifierMappingsCreated: 0,
+    alreadyApplied: false,
   };
 
   if (dryRun) {
@@ -16,6 +18,16 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
       'SELECT COUNT(*)::int AS count FROM products WHERE product_type_schema_id IS NULL',
     );
     summary.productsMigrated = pRows[0]?.count || 0;
+    return summary;
+  }
+
+  const backfillName = 'legacy-beverage-catalog-v2-v1';
+  const [completedRuns] = await database.query(
+    'SELECT 1 FROM catalog_v2_backfill_runs WHERE name = $1 LIMIT 1',
+    [backfillName],
+  );
+  if (completedRuns[0]) {
+    summary.alreadyApplied = true;
     return summary;
   }
 
@@ -116,44 +128,84 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
 
     // 4. Migrate legacy products
     const [productsToMigrate] = await tx.query(
-      `SELECT * FROM products WHERE product_type_schema_id IS NULL`,
+      `SELECT *
+       FROM products
+       WHERE product_type_schema_id IS NULL OR product_type_schema_id = $1`,
+      [schema.id],
     );
 
     const [activeStores] = await tx.query('SELECT id FROM stores WHERE is_active = TRUE');
+    const [modifierValues] = await tx.query(
+      `SELECT a.id AS attribute_definition_id, v.id AS attribute_value_id
+       FROM attribute_definitions a
+       JOIN attribute_values v ON v.attribute_definition_id = a.id
+       WHERE a.schema_id = $1 AND a.role = 'modifier' AND v.is_active = TRUE`,
+      [schema.id],
+    );
 
     for (const p of productsToMigrate) {
-      await tx.query(
-        `UPDATE products
-         SET product_type_schema_id = $1, fulfillment_lane = 'kitchen', stock_mode = 'made_to_order'
-         WHERE id = $2`,
-        [schema.id, p.id],
-      );
-      summary.productsMigrated++;
+      if (p.product_type_schema_id == null) {
+        await tx.query(
+          `UPDATE products
+           SET product_type_schema_id = $1, fulfillment_lane = 'kitchen', stock_mode = 'made_to_order'
+           WHERE id = $2`,
+          [schema.id, p.id],
+        );
+        summary.productsMigrated++;
+      }
 
       // Ensure default variant
       const defaultSku = `SKU-${p.id}-DEF`;
       const [vRows] = await tx.query(
         `INSERT INTO product_variants (product_id, sku, variant_signature, name_suffix, status)
          VALUES ($1, $2, 'default', 'Tiêu chuẩn', 'active')
-         ON CONFLICT (product_id, variant_signature) DO UPDATE SET sku = EXCLUDED.sku
+         ON CONFLICT (product_id, variant_signature) DO NOTHING
          RETURNING id`,
         [p.id, defaultSku],
       );
-      const variant = vRows[0];
-      summary.variantsCreated++;
+      let variant = vRows[0];
+      if (variant) {
+        summary.variantsCreated++;
+      } else {
+        const [existingVariantRows] = await tx.query(
+          `SELECT id FROM product_variants
+           WHERE product_id = $1 AND variant_signature = 'default'`,
+          [p.id],
+        );
+        variant = existingVariantRows[0];
+      }
+
+      for (const modifier of modifierValues) {
+        const [mappingRows] = await tx.query(
+          `INSERT INTO product_modifier_values (
+             product_id, attribute_definition_id, attribute_value_id
+           ) VALUES ($1, $2, $3)
+           ON CONFLICT (product_id, attribute_definition_id, attribute_value_id) DO NOTHING
+           RETURNING id`,
+          [p.id, modifier.attribute_definition_id, modifier.attribute_value_id],
+        );
+        summary.modifierMappingsCreated += mappingRows.length;
+      }
 
       // Ensure branch offers across all active stores
       for (const store of activeStores) {
-        await tx.query(
+        const [offerRows] = await tx.query(
           `INSERT INTO branch_variant_offers (store_id, variant_id, price, is_available, version)
            VALUES ($1, $2, $3, $4, 1)
-           ON CONFLICT (store_id, variant_id) DO NOTHING`,
+           ON CONFLICT (store_id, variant_id) DO NOTHING
+           RETURNING id`,
           [store.id, variant.id, p.price || 0, p.is_available ?? true],
         );
-        summary.offersCreated++;
+        summary.offersCreated += offerRows.length;
       }
     }
 
+    await tx.query(
+      `INSERT INTO catalog_v2_backfill_runs (name, summary)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (name) DO NOTHING`,
+      [backfillName, JSON.stringify(summary)],
+    );
     return summary;
   });
 }

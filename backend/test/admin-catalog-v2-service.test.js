@@ -94,3 +94,25 @@ test('Admin Catalog V2 Service: createProduct validates input constraints', asyn
   assert.equal(created.fulfillment_lane, 'packing');
   assert.equal(created.stock_mode, 'tracked');
 });
+
+test('Admin Catalog V2 Service: creates the next schema version and rejects invalid product type ids', async () => {
+  const calls = [];
+  const service = createAdminCatalogV2Service({
+    schemaRepository: {
+      async createNextSchemaVersion(productTypeId, context) {
+        calls.push({ productTypeId, context });
+        return { id: 12, product_type_id: productTypeId, version: 2, status: 'draft' };
+      },
+    },
+  });
+
+  const created = await service.createNextSchemaVersion('7', { createdBy: 42 });
+  assert.deepEqual(calls, [{ productTypeId: 7, context: { createdBy: 42 } }]);
+  assert.equal(created.status, 'draft');
+  assert.equal(created.version, 2);
+
+  await assert.rejects(
+    () => service.createNextSchemaVersion('invalid'),
+    (error) => error.status === 400,
+  );
+});

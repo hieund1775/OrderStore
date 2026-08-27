@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart';
 import { useWishlist } from '@/lib/wishlist';
+import { useBranch } from '@/lib/branch';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 import {
   baseOptions,
@@ -26,6 +27,7 @@ import {
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
   const { isFavorite, isPending, setFavorite } = useWishlist();
+  const { selectedStore } = useBranch();
   const [open, setOpen] = useState(false);
   const liked = isFavorite(product.id);
   const pending = isPending(product.id);
@@ -97,7 +99,14 @@ export function ProductCard({ product }: { product: Product }) {
               aria-label="Thêm nhanh vào giỏ"
               className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
               onClick={() => {
+                if (product.slug) {
+                  setOpen(true);
+                  return;
+                }
                 const added = addItem({
+                  storeId: selectedStore?.id,
+                  storeName: selectedStore?.name,
+                  storeDistrict: selectedStore?.district,
                   productId: product.id,
                   name: product.name,
                   image: product.image,
@@ -133,20 +142,31 @@ export function ProductCard({ product }: { product: Product }) {
       {product.slug ? (
         <DynamicProductConfigurator
           productSlug={product.slug}
+          storeId={selectedStore?.id}
           open={open}
           onOpenChange={setOpen}
           onAddToCart={(configured) => {
             addItem({
+              storeId: selectedStore?.id,
+              storeName: selectedStore?.name,
+              storeDistrict: selectedStore?.district,
               productId: String(configured.productId),
+              productSlug: configured.productSlug,
               name: configured.productName,
               image: configured.image || product.image,
-              size: (configured.appliedModifiers.find((m) => m.attribute_code === 'size')?.value_code?.toUpperCase() as any) || 'M',
+              variantId: configured.variantId,
+              sku: configured.sku,
+              variantName: configured.variantName,
+              stockMode: configured.stockMode,
+              fulfillmentLane: configured.fulfillmentLane,
+              size: configured.appliedModifiers.find((m) => m.attribute_code === 'size')?.value_code?.toUpperCase() || 'M',
               base: configured.appliedModifiers.find((m) => m.attribute_code === 'base')?.value_label || product.base,
               sugar: configured.appliedModifiers.find((m) => m.attribute_code === 'sugar')?.value_label || '100%',
               ice: configured.appliedModifiers.find((m) => m.attribute_code === 'ice')?.value_label || '100%',
               toppings: configured.appliedModifiers
                 .filter((m) => m.attribute_code === 'toppings')
-                .map((m) => m.value_code),
+                .map((m) => m.value_label),
+              appliedModifiers: configured.appliedModifiers,
               unitPrice: configured.unitPrice,
               qty: configured.quantity,
             });
@@ -169,6 +189,7 @@ function CustomizeDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const { addItem } = useCart();
+  const { selectedStore } = useBranch();
   const [size, setSize] = useState('M');
   const [base, setBase] = useState(baseOptions[0]);
   const [sugar, setSugar] = useState(sugarOptions[4]);
@@ -313,6 +334,9 @@ function CustomizeDialog({
                 className="flex-1"
                 onClick={() => {
                   const added = addItem({
+                    storeId: selectedStore?.id,
+                    storeName: selectedStore?.name,
+                    storeDistrict: selectedStore?.district,
                     productId: product.id,
                     name: product.name,
                     image: product.image,

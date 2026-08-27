@@ -63,11 +63,11 @@ function AdminCatalogPage() {
           : types[0];
         setSelectedProductType(currentSelected);
 
-        const schemaId = currentSelected.published_schema_id || (await getFirstSchemaId(currentSelected.id));
+        const schemaId = currentSelected.draft_schema_id || currentSelected.published_schema_id;
         if (schemaId) {
           const schema = await fetchSchemaDetails(schemaId);
           setActiveSchema(schema);
-        }
+        } else setActiveSchema(null);
       }
     } catch (err: any) {
       toast.error(err.message || 'Lỗi nạp dữ liệu Catalog V2');
@@ -76,16 +76,15 @@ function AdminCatalogPage() {
     }
   };
 
-  const getFirstSchemaId = async (productTypeId: number) => {
-    return 1; // Fallback
-  };
-
   const handleSelectProductType = async (pt: any) => {
     setSelectedProductType(pt);
     try {
-      const schemaId = pt.published_schema_id || 1;
-      const schema = await fetchSchemaDetails(schemaId);
-      setActiveSchema(schema);
+      const schemaId = pt.draft_schema_id || pt.published_schema_id;
+      if (!schemaId) {
+        setActiveSchema(null);
+        return;
+      }
+      setActiveSchema(await fetchSchemaDetails(schemaId));
     } catch (err: any) {
       toast.error(err.message || 'Lỗi nạp cấu hình schema');
     }

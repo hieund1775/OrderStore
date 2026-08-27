@@ -28,6 +28,8 @@ export interface DynamicProductConfiguratorProps {
     quantity: number;
     unitPrice: number;
     appliedModifiers: any[];
+    stockMode: 'tracked' | 'made_to_order';
+    fulfillmentLane: 'kitchen' | 'packing';
     image?: string;
   }) => void;
 }
@@ -46,12 +48,15 @@ export function DynamicProductConfigurator({
   const [quantity, setQuantity] = useState(1);
   const [resolvedConfig, setResolvedConfig] = useState<any | null>(null);
   const [calculating, setCalculating] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   // 1. Fetch Product details with Schema & Variants
   useEffect(() => {
     if (!open || !productSlug) return;
     let isMounted = true;
     setLoading(true);
+    setLoadError('');
+    setResolvedConfig(null);
 
     fetchPublicProductDetails(productSlug, storeId)
       .then((data) => {
@@ -77,7 +82,11 @@ export function DynamicProductConfigurator({
         setSelectedModifierValueIds(initialModValIds);
       })
       .catch((err) => {
-        toast.error('Không thể tải thông tin tùy chọn món');
+        if (!isMounted) return;
+        const message = err instanceof Error ? err.message : 'Không thể tải thông tin tùy chọn món';
+        setLoadError(message);
+        setProduct(null);
+        toast.error(message);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -93,6 +102,7 @@ export function DynamicProductConfigurator({
     if (!product || !open) return;
     let isMounted = true;
     setCalculating(true);
+    setResolvedConfig(null);
 
     resolveProductConfiguration({
       store_id: storeId,
@@ -103,7 +113,10 @@ export function DynamicProductConfigurator({
       .then((res) => {
         if (isMounted) setResolvedConfig(res);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (!isMounted) return;
+        toast.error(err instanceof Error ? err.message : 'Cấu hình sản phẩm không hợp lệ');
+      })
       .finally(() => {
         if (isMounted) setCalculating(false);
       });
@@ -159,6 +172,8 @@ export function DynamicProductConfigurator({
       quantity,
       unitPrice: resolvedConfig.unit_price,
       appliedModifiers: resolvedConfig.applied_modifiers,
+      stockMode: resolvedConfig.stock_mode,
+      fulfillmentLane: resolvedConfig.fulfillment_lane,
       image: product?.image_url,
     });
 
@@ -170,7 +185,9 @@ export function DynamicProductConfigurator({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-0">
         {loading || !product ? (
-          <div className="p-12 text-center text-sm text-muted-foreground">Đang tải tùy chọn...</div>
+          <div className="p-12 text-center text-sm text-muted-foreground">
+            {loadError || 'Đang tải tùy chọn...'}
+          </div>
         ) : (
           <div>
             {/* Header with image */}
@@ -300,7 +317,7 @@ export function DynamicProductConfigurator({
 
               <Button
                 onClick={handleConfirmAddToCart}
-                disabled={calculating || resolvedConfig?.is_available === false}
+                disabled={calculating || !resolvedConfig || resolvedConfig.is_available === false}
                 className="gap-2 px-6 rounded-2xl"
               >
                 <ShoppingBag className="size-4" />

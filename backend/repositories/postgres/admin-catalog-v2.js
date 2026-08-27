@@ -116,8 +116,8 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         }
 
         let schemaId = data.product_type_schema_id || null;
-        let fulfillmentLane = data.fulfillment_lane || 'kitchen';
-        let stockMode = data.stock_mode || 'made_to_order';
+        let fulfillmentLane;
+        let stockMode;
 
         if (!schemaId && category.product_type_id) {
           const [pubSchemaRows] = await tx.query(
@@ -134,13 +134,19 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
             `SELECT s.*, pt.default_fulfillment_lane, pt.default_stock_mode
              FROM product_type_schemas s
              JOIN product_types pt ON pt.id = s.product_type_id
-             WHERE s.id = $1`,
+             WHERE s.id = $1 AND s.status = 'published'`,
             [schemaId],
           );
-          if (sRows[0]) {
-            fulfillmentLane = data.fulfillment_lane || sRows[0].default_fulfillment_lane;
-            stockMode = data.stock_mode || sRows[0].default_stock_mode;
+          if (!sRows[0]) {
+            throw new CatalogV2Error('Schema sản phẩm không tồn tại hoặc chưa được xuất bản', 400);
           }
+          if (category.product_type_id && Number(category.product_type_id) !== Number(sRows[0].product_type_id)) {
+            throw new CatalogV2Error('Schema sản phẩm không thuộc loại sản phẩm của danh mục', 400);
+          }
+          fulfillmentLane = sRows[0].default_fulfillment_lane;
+          stockMode = sRows[0].default_stock_mode;
+        } else {
+          throw new CatalogV2Error('Sản phẩm Catalog V2 phải gắn với một schema đã xuất bản', 400);
         }
 
         const [pRows] = await tx.query(
@@ -199,7 +205,46 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
     },
 
     async updateProduct(id, data) {
-      const [rows] = await database.query(
+      return await database.transaction(async (tx) => {
+        const [currentRows] = await tx.query(
+          `SELECT p.*, s.product_type_id
+           FROM products p
+           LEFT JOIN product_type_schemas s ON s.id = p.product_type_schema_id
+           WHERE p.id = $1`,
+          [id],
+        );
+        const current = currentRows[0];
+        if (!current) {
+          throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
+        }
+
+        const targetCategoryId = data.category_id ?? current.category_id;
+        const [categoryRows] = await tx.query(
+          `SELECT c.*,
+                  EXISTS(
+                    SELECT 1 FROM categories child
+                    WHERE child.parent_id = c.id AND child.archived_at IS NULL
+                  ) AS has_children
+           FROM categories c
+           WHERE c.id = $1`,
+          [targetCategoryId],
+        );
+        const category = categoryRows[0];
+        if (!category || category.archived_at) {
+          throw new CatalogV2Error('Danh mục không tồn tại hoặc đã được lưu trữ', 400);
+        }
+        if (category.has_children) {
+          throw new CatalogV2Error('Không thể gắn sản phẩm trực tiếp vào danh mục cha', 400);
+        }
+        if (
+          category.product_type_id
+          && current.product_type_id
+          && Number(category.product_type_id) !== Number(current.product_type_id)
+        ) {
+          throw new CatalogV2Error('Danh mục mới không cùng loại sản phẩm với schema hiện tại', 400);
+        }
+
+        const [rows] = await tx.query(
         `UPDATE products
          SET name = COALESCE($1, name),
              slug = COALESCE($2, slug),
@@ -208,12 +253,10 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
              price = COALESCE($5, price),
              image_url = COALESCE($6, image_url),
              status = COALESCE($7, status),
-             fulfillment_lane = COALESCE($8, fulfillment_lane),
-             stock_mode = COALESCE($9, stock_mode),
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $10
+         WHERE id = $8
          RETURNING *`,
-        [
+          [
           data.name,
           data.slug,
           data.category_id,
@@ -221,15 +264,11 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           data.price,
           data.image_url,
           data.status,
-          data.fulfillment_lane,
-          data.stock_mode,
           id,
-        ],
-      );
-      if (!rows[0]) {
-        throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
-      }
-      return rows[0];
+          ],
+        );
+        return rows[0];
+      });
     },
 
     async archiveProduct(id) {
@@ -249,9 +288,42 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
     async createVariant(productId, variantData) {
       return await database.transaction(async (tx) => {
         const [pRows] = await tx.query('SELECT * FROM products WHERE id = $1', [productId]);
-        if (!pRows[0]) throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
+        const product = pRows[0];
+        if (!product) throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
+        if (product.status === 'archived') throw new CatalogV2Error('Sản phẩm đã được lưu trữ', 400);
 
-        const signature = generateCanonicalVariantSignature(variantData.attribute_values || []);
+        const providedValues = Array.isArray(variantData.attribute_values)
+          ? variantData.attribute_values
+          : [];
+        const [allowedRows] = product.product_type_schema_id
+          ? await tx.query(
+              `SELECT a.id AS attribute_definition_id, v.id AS attribute_value_id
+               FROM attribute_definitions a
+               JOIN attribute_values v ON v.attribute_definition_id = a.id AND v.is_active = TRUE
+               WHERE a.schema_id = $1 AND a.role = 'variant'`,
+              [product.product_type_schema_id],
+            )
+          : [[]];
+        const definitionIds = new Set(allowedRows.map((row) => Number(row.attribute_definition_id)));
+        const providedDefinitionIds = providedValues.map((value) => Number(value.attribute_definition_id));
+        if (
+          providedValues.length !== definitionIds.size
+          || new Set(providedDefinitionIds).size !== providedDefinitionIds.length
+        ) {
+          throw new CatalogV2Error('Biến thể phải chọn đúng một giá trị cho mỗi thuộc tính biến thể', 400);
+        }
+        const allowedPairs = new Set(
+          allowedRows.map((row) => `${row.attribute_definition_id}:${row.attribute_value_id}`),
+        );
+        if (
+          providedValues.some(
+            (value) => !allowedPairs.has(`${Number(value.attribute_definition_id)}:${Number(value.attribute_value_id)}`),
+          )
+        ) {
+          throw new CatalogV2Error('Giá trị biến thể không thuộc schema của sản phẩm', 400);
+        }
+
+        const signature = generateCanonicalVariantSignature(providedValues);
 
         const [vRows] = await tx.query(
           `INSERT INTO product_variants (product_id, sku, variant_signature, name_suffix, barcode, status)
@@ -268,8 +340,8 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         );
         const variant = vRows[0];
 
-        if (Array.isArray(variantData.attribute_values) && variantData.attribute_values.length > 0) {
-          for (const av of variantData.attribute_values) {
+        if (providedValues.length > 0) {
+          for (const av of providedValues) {
             await tx.query(
               `INSERT INTO product_variant_values (variant_id, attribute_definition_id, attribute_value_id)
                VALUES ($1, $2, $3)`,

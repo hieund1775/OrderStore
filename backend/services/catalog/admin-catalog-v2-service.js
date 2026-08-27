@@ -1,5 +1,5 @@
 import { createAdminCatalogV2Repository } from '../../repositories/postgres/admin-catalog-v2.js';
-import { createCatalogV2Repository } from '../../repositories/postgres/catalog-v2.js';
+import { CatalogV2Error, createCatalogV2Repository } from '../../repositories/postgres/catalog-v2.js';
 import {
   toCategoryTreeDto,
   toProductTypeDto,
@@ -62,6 +62,14 @@ export function createAdminCatalogV2Service({
       };
     },
 
+    async createNextSchemaVersion(productTypeId, context) {
+      const normalizedId = Number(productTypeId);
+      if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+        throw new CatalogV2Error('Mã loại sản phẩm không hợp lệ', 400);
+      }
+      return await schemaRepository.createNextSchemaVersion(normalizedId, context);
+    },
+
     async getSchemaDetails(schemaId) {
       const schema = await schemaRepository.getSchemaDetails(Number(schemaId));
       return toSchemaDetailsDto(schema);
@@ -101,17 +109,24 @@ export function createAdminCatalogV2Service({
 
     async createProduct(input, context) {
       if (!input.name || String(input.name).trim().length < 2) {
-        throw new Error('Tên sản phẩm phải từ 2 ký tự trở lên');
+        throw new CatalogV2Error('Tên sản phẩm phải từ 2 ký tự trở lên', 400);
       }
       if (!input.category_id || Number(input.category_id) <= 0) {
-        throw new Error('Vui lòng chọn danh mục hợp lệ');
+        throw new CatalogV2Error('Vui lòng chọn danh mục hợp lệ', 400);
       }
 
       const slug = String(input.slug || '')
         .trim()
         .toLowerCase();
       if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-        throw new Error('Slug sản phẩm phải đúng định dạng kebab-case');
+        throw new CatalogV2Error('Slug sản phẩm phải đúng định dạng kebab-case', 400);
+      }
+      const price = Number(input.price ?? 0);
+      if (!Number.isInteger(price) || price < 0) {
+        throw new CatalogV2Error('Giá sản phẩm phải là số nguyên không âm', 400);
+      }
+      if (input.status !== undefined && !['draft', 'active'].includes(input.status)) {
+        throw new CatalogV2Error('Trạng thái sản phẩm không hợp lệ', 400);
       }
 
       const created = await catalogRepository.createProduct(
@@ -121,7 +136,7 @@ export function createAdminCatalogV2Service({
           name: String(input.name).trim(),
           slug,
           description: input.description || null,
-          price: Number(input.price || 0),
+          price,
           image_url: input.image_url || null,
           status: input.status || 'active',
           fulfillment_lane: input.fulfillment_lane || 'kitchen',
@@ -135,7 +150,45 @@ export function createAdminCatalogV2Service({
     },
 
     async updateProduct(id, input) {
-      const updated = await catalogRepository.updateProduct(Number(id), input);
+      const normalized = {};
+      if (input.name !== undefined) {
+        const name = String(input.name).trim();
+        if (name.length < 2 || name.length > 200) {
+          throw new CatalogV2Error('Tên sản phẩm phải từ 2 đến 200 ký tự', 400);
+        }
+        normalized.name = name;
+      }
+      if (input.slug !== undefined) {
+        const slug = String(input.slug).trim().toLowerCase();
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+          throw new CatalogV2Error('Slug sản phẩm phải đúng định dạng kebab-case', 400);
+        }
+        normalized.slug = slug;
+      }
+      if (input.category_id !== undefined) {
+        const categoryId = Number(input.category_id);
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+          throw new CatalogV2Error('Danh mục sản phẩm không hợp lệ', 400);
+        }
+        normalized.category_id = categoryId;
+      }
+      if (input.price !== undefined) {
+        const price = Number(input.price);
+        if (!Number.isInteger(price) || price < 0) {
+          throw new CatalogV2Error('Giá sản phẩm phải là số nguyên không âm', 400);
+        }
+        normalized.price = price;
+      }
+      if (input.status !== undefined) {
+        if (!['draft', 'active'].includes(input.status)) {
+          throw new CatalogV2Error('Trạng thái sản phẩm không hợp lệ', 400);
+        }
+        normalized.status = input.status;
+      }
+      if (input.description !== undefined) normalized.description = input.description;
+      if (input.image_url !== undefined) normalized.image_url = input.image_url;
+
+      const updated = await catalogRepository.updateProduct(Number(id), normalized);
       return toProductV2Dto(updated);
     },
 
@@ -178,7 +231,7 @@ export function createAdminCatalogV2Service({
 
       const combinations = cartesian(attrArrays);
       if (combinations.length > 500) {
-        throw new Error('Số lượng tổ hợp biến thể vượt quá giới hạn tối đa (500 biến thể)');
+        throw new CatalogV2Error('Số lượng tổ hợp biến thể vượt quá giới hạn tối đa (500 biến thể)', 400);
       }
 
       return combinations.map((combo) => {
@@ -195,7 +248,21 @@ export function createAdminCatalogV2Service({
     },
 
     async createVariant(productId, variantData) {
-      const created = await catalogRepository.createVariant(Number(productId), variantData);
+      const normalizedProductId = Number(productId);
+      if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0) {
+        throw new CatalogV2Error('Mã sản phẩm không hợp lệ', 400);
+      }
+      const sku = String(variantData?.sku || '').trim().toUpperCase();
+      if (!sku || sku.length > 100 || !/^[A-Z0-9._-]+$/.test(sku)) {
+        throw new CatalogV2Error('SKU chỉ được chứa chữ in hoa, số, dấu chấm, gạch ngang hoặc gạch dưới', 400);
+      }
+      if (variantData.status !== undefined && !['active', 'archived'].includes(variantData.status)) {
+        throw new CatalogV2Error('Trạng thái SKU không hợp lệ', 400);
+      }
+      const created = await catalogRepository.createVariant(normalizedProductId, {
+        ...variantData,
+        sku,
+      });
       return toVariantDto(created);
     },
   };

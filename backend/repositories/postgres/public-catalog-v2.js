@@ -22,15 +22,25 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       if (storeId) {
         params.push(Number(storeId));
         storeJoin = `
-          LEFT JOIN product_variants pv_main ON pv_main.product_id = p.id AND pv_main.variant_signature = 'default'
-          LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv_main.id AND bvo.store_id = $${params.length}
-          LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv_main.id AND bvi.store_id = $${params.length}
+          LEFT JOIN LATERAL (
+            SELECT MIN(bvo.price) AS price,
+                   MIN(bvo.compare_at_price) AS compare_at_price,
+                   BOOL_OR(
+                     bvo.is_available = TRUE
+                     AND (p.stock_mode <> 'tracked' OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0)
+                   ) AS is_available,
+                   MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
+            FROM product_variants pv
+            JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length}
+            LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $${params.length}
+            WHERE pv.product_id = p.id AND pv.status = 'active'
+          ) branch_offer ON TRUE
         `;
         priceSelect = `
-          COALESCE(bvo.price, p.price) AS price,
-          bvo.compare_at_price,
-          COALESCE(bvo.is_available, p.is_available) AS is_available,
-          COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) AS available_stock
+          branch_offer.price,
+          branch_offer.compare_at_price,
+          COALESCE(branch_offer.is_available, FALSE) AS is_available,
+          branch_offer.available_stock
         `;
       }
 
@@ -38,7 +48,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
 
       if (categorySlug) {
         params.push(categorySlug);
-        where += ` AND (c.slug = $${params.length} OR parent_c.slug = $${params.length})`;
+        where += ` AND (c.slug = $${params.length} OR parent_c.slug = $${params.length} OR grandparent_c.slug = $${params.length})`;
       }
 
       if (search) {
@@ -61,6 +71,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
          FROM products p
          JOIN categories c ON c.id = p.category_id
          LEFT JOIN categories parent_c ON parent_c.id = c.parent_id
+         LEFT JOIN categories grandparent_c ON grandparent_c.id = parent_c.parent_id
          LEFT JOIN product_type_schemas pts ON pts.id = p.product_type_schema_id
          LEFT JOIN product_types pt ON pt.id = pts.product_type_id
          ${storeJoin}
@@ -83,7 +94,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
           LEFT JOIN product_variants pv_def ON pv_def.product_id = p.id AND pv_def.variant_signature = 'default'
           LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv_def.id AND bvo.store_id = $2
         `;
-        priceSelect = 'COALESCE(bvo.price, p.price) AS price, COALESCE(bvo.is_available, p.is_available) AS is_available';
+        priceSelect = 'bvo.price AS price, COALESCE(bvo.is_available, FALSE) AS is_available';
       }
 
       const [rows] = await database.query(
@@ -107,15 +118,29 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       let schemaAttributes = [];
       if (product.product_type_schema_id) {
         const [attrRows] = await database.query(
-          `SELECT a.* FROM attribute_definitions a WHERE a.schema_id = $1 ORDER BY a.sort_order ASC, a.name ASC`,
+          `SELECT a.*
+           FROM attribute_definitions a
+           WHERE a.schema_id = $1
+           ORDER BY a.sort_order ASC, a.name ASC`,
           [product.product_type_schema_id],
         );
         const attrIds = attrRows.map((a) => a.id);
         let valRows = [];
         if (attrIds.length > 0) {
           const [v] = await database.query(
-            `SELECT v.* FROM attribute_values v WHERE v.attribute_definition_id = ANY($1::bigint[]) AND v.is_active = TRUE ORDER BY v.sort_order ASC`,
-            [attrIds],
+            `SELECT v.*,
+                    COALESCE(pmv.price_override, v.price_adjustment) AS price_adjustment
+             FROM attribute_values v
+             JOIN attribute_definitions a ON a.id = v.attribute_definition_id
+             LEFT JOIN product_modifier_values pmv
+               ON pmv.attribute_value_id = v.id
+              AND pmv.attribute_definition_id = v.attribute_definition_id
+              AND pmv.product_id = $2
+             WHERE v.attribute_definition_id = ANY($1::bigint[])
+               AND v.is_active = TRUE
+               AND (a.role = 'variant' OR pmv.id IS NOT NULL)
+             ORDER BY v.sort_order ASC`,
+            [attrIds, product.id],
           );
           valRows = v;
         }
@@ -137,7 +162,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
           LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $2
           LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $2
         `;
-        vPriceSelect += `, COALESCE(bvo.price, ${product.price}) AS price, bvo.compare_at_price, COALESCE(bvo.is_available, TRUE) AS is_available, (COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock`;
+        vPriceSelect += `, bvo.price, bvo.compare_at_price, COALESCE(bvo.is_available, FALSE) AS is_available, (COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock`;
       }
 
       const [variants] = await database.query(

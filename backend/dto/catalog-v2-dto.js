@@ -33,6 +33,8 @@ export function toProductTypeDto(row) {
     default_fulfillment_lane: row.default_fulfillment_lane,
     published_version: row.published_version == null ? null : Number(row.published_version),
     published_schema_id: row.published_schema_id == null ? null : Number(row.published_schema_id),
+    draft_version: row.draft_version == null ? null : Number(row.draft_version),
+    draft_schema_id: row.draft_schema_id == null ? null : Number(row.draft_schema_id),
     products_count: Number(row.products_count || 0),
     archived_at: row.archived_at || null,
     created_at: row.created_at,

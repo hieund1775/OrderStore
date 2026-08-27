@@ -89,6 +89,8 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
       variantId: configured.variantId,
       sku: configured.sku,
       variantName: configured.variantName,
+      stockMode: configured.stockMode,
+      fulfillmentLane: configured.fulfillmentLane,
       size: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'size')?.value_code?.toUpperCase() || editingItem.size,
       base: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'base')?.value_label || editingItem.base,
       sugar: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'sugar')?.value_label || editingItem.sugar,

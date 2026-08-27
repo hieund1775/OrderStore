@@ -3,6 +3,7 @@ import { requireRole } from '../../middleware/auth.js';
 import { logAudit } from '../../services/audit.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { createAdminCatalogV2Service } from '../../services/catalog/admin-catalog-v2-service.js';
+import { CatalogV2Error } from '../../repositories/postgres/catalog-v2.js';
 
 const router = Router();
 const service = createAdminCatalogV2Service();
@@ -120,5 +121,18 @@ router.post('/products/:id/variants', requireRole('super'), asyncHandler(async (
   await logAudit(req.user.sub, 'Tạo biến thể SKU', variant.sku, req);
   res.status(201).json(variant);
 }));
+
+router.post('/product-types/:id/schemas', requireRole('super'), asyncHandler(async (req, res) => {
+  const schema = await service.createNextSchemaVersion(req.params.id, { createdBy: req.user.sub });
+  await logAudit(req.user.sub, 'Tạo phiên bản schema mới', `Product Type: ${req.params.id}, v${schema.version}`, req);
+  res.status(201).json(schema);
+}));
+
+router.use((err, req, res, next) => {
+  if (err?.code === '23505') {
+    return next(new CatalogV2Error('Mã, slug, SKU hoặc tổ hợp biến thể đã tồn tại', 409));
+  }
+  return next(err);
+});
 
 export default router;

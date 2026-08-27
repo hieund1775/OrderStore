@@ -24,6 +24,20 @@ export function createVariantInventoryRepository(database = postgresDb) {
 
     async recordMovement(storeId, data, { createdBy = null } = {}) {
       return await database.transaction(async (tx) => {
+        const [variantRows] = await tx.query(
+          `SELECT p.stock_mode
+           FROM product_variants pv
+           JOIN products p ON p.id = pv.product_id
+           WHERE pv.id = $1`,
+          [data.variant_id],
+        );
+        if (!variantRows[0]) {
+          throw new CatalogV2Error('Biến thể SKU không tồn tại', 404);
+        }
+        if (variantRows[0].stock_mode !== 'tracked') {
+          throw new CatalogV2Error('Chỉ sản phẩm theo dõi tồn kho SKU mới được ghi nhận biến động kho', 400);
+        }
+
         // Row lock current balance or initialize if not exists
         await tx.query(
           `INSERT INTO branch_variant_inventory (store_id, variant_id, on_hand, reserved, version)
@@ -65,12 +79,23 @@ export function createVariantInventoryRepository(database = postgresDb) {
           afterReserved = beforeReserved + data.quantity;
         } else if (data.movement_type === 'release') {
           if (data.quantity <= 0) throw new CatalogV2Error('Hủy giữ hàng (release) phải có số lượng dương', 400);
-          afterReserved = Math.max(0, beforeReserved - data.quantity);
+          if (data.quantity > beforeReserved) {
+            throw new CatalogV2Error('Số lượng giải phóng không thể lớn hơn lượng đang được giữ', 409);
+          }
+          afterReserved = beforeReserved - data.quantity;
         } else if (data.movement_type === 'sale') {
           if (data.quantity <= 0) throw new CatalogV2Error('Xuất bán (sale) phải có số lượng dương', 400);
+          if (data.quantity > beforeReserved) {
+            throw new CatalogV2Error('Chỉ được xuất bán số lượng đã được giữ cho đơn hàng', 409);
+          }
           afterOnHand = beforeOnHand - data.quantity;
-          afterReserved = Math.max(0, beforeReserved - data.quantity);
+          afterReserved = beforeReserved - data.quantity;
           if (afterOnHand < 0) throw new CatalogV2Error('Tồn kho không đủ để xuất bán', 409);
+        } else if (data.movement_type === 'cancel_restock' || data.movement_type === 'return_restock') {
+          if (data.quantity <= 0) throw new CatalogV2Error('Số lượng hoàn kho phải là số dương', 400);
+          afterOnHand = beforeOnHand + data.quantity;
+        } else {
+          throw new CatalogV2Error('Loại biến động tồn kho chưa được hỗ trợ', 400);
         }
 
         // Update inventory balance
