@@ -36,7 +36,7 @@ export async function seedDemoData({ customUrl = null, pool = null } = {}) {
         (4, 'Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'kitchen', 1),
         (6, 'Nhân viên Soạn hàng Chi nhánh 1', '0909000006', 'packing1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'packing', 1),
         (5, 'Nguyễn Khách Hàng', '0901234567', 'customer@example.com', NULL, 'Vàng', 350, false, NULL, NULL)
-      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, password_hash = EXCLUDED.password_hash, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
+      ON CONFLICT (id) DO UPDATE SET fullname = EXCLUDED.fullname, password_hash = EXCLUDED.password_hash, is_admin = EXCLUDED.is_admin, admin_role = EXCLUDED.admin_role, admin_branch_id = EXCLUDED.admin_branch_id;
     `);
     await client.query(`
       INSERT INTO categories (id, name, slug, sort_order, is_visible) VALUES

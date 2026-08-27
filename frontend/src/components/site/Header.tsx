@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useCart } from '@/lib/cart';
+import { SmartCartDrawer } from '@/components/cart/SmartCartDrawer';
 import { useBranch } from '@/lib/branch';
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
 import { toast } from 'sonner';
@@ -125,82 +126,7 @@ function BranchSelector() {
 }
 
 function QuickCart() {
-  const { items, count, subtotal, setQty, removeItem } = useCart();
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Giỏ hàng">
-          <ShoppingCart className="size-5" />
-          {count > 0 && (
-            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4.5 min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] font-bold">
-              {count}
-            </span>
-          )}
-        </Button>
-      </SheetTrigger>
-      <SheetContent className="flex w-full flex-col gap-0 sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="font-display">Giỏ hàng ({count} món)</SheetTitle>
-        </SheetHeader>
-        <div className="flex-1 space-y-3 overflow-y-auto px-4">
-          {items.length === 0 && (
-            <p className="text-muted-foreground py-12 text-center text-sm">
-              Giỏ hàng đang trống. Ghé Menu chọn ly trà bạn thích nhé!
-            </p>
-          )}
-          {items.map((i) => (
-            <div key={i.key} className="bg-card flex gap-3 rounded-xl border p-3">
-              <img
-                src={i.image}
-                alt={i.name}
-                loading="lazy"
-                className="size-16 rounded-lg object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{i.name}</p>
-                <p className="text-muted-foreground text-xs">
-                  {i.size} · {i.sugar} đường · {i.ice} đá
-                </p>
-                {i.toppings.length > 0 && (
-                  <p className="text-muted-foreground truncate text-xs">
-                    + {i.toppings.join(', ')}
-                  </p>
-                )}
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-full border px-1">
-                    <button className="px-1.5 text-sm" onClick={() => setQty(i.key, i.qty - 1)}>
-                      −
-                    </button>
-                    <span className="w-5 text-center text-xs font-semibold">{i.qty}</span>
-                    <button className="px-1.5 text-sm" onClick={() => setQty(i.key, i.qty + 1)}>
-                      +
-                    </button>
-                  </div>
-                  <span className="text-primary ml-auto text-sm font-bold">
-                    {vnd(i.unitPrice * i.qty)}
-                  </span>
-                  <button onClick={() => removeItem(i.key)} aria-label="Xóa món">
-                    <Trash2 className="text-muted-foreground size-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="space-y-3 border-t p-4">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Tạm tính</span>
-            <span className="font-bold">{vnd(subtotal)}</span>
-          </div>
-          <Button asChild variant="hero" className="w-full">
-            <Link to="/thanh-toan">
-              Thanh toán ngay <ChevronRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
+  return <SmartCartDrawer />;
 }
 
 function WishlistButton() {

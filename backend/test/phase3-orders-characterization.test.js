@@ -208,6 +208,10 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
     assert.equal(calls.public.find((call) => call.name === 'create').args.paymentProvider, 'cod');
     const replay = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'replay-key' }, body: JSON.stringify({ ...required, source: 'pos' }) });
     assert.equal(replay.status, 200);
+    delete process.env.PAYOS_CLIENT_ID;
+    delete process.env.PAYOS_API_KEY;
+    delete process.env.PAYOS_CHECKSUM_KEY;
+    setPayOSForTest(null);
     const unconfigured = await fetch(`${baseUrl}/api/orders`, { method: 'POST', headers: { authorization: `Bearer ${customerToken}`, 'content-type': 'application/json', 'idempotency-key': 'payos-off' }, body: JSON.stringify({ ...required, payment_method: 'VietQR' }) });
     assert.equal(unconfigured.status, 400);
     process.env.PAYOS_CLIENT_ID = 'test-client'; process.env.PAYOS_API_KEY = 'test-key'; process.env.PAYOS_CHECKSUM_KEY = 'test-checksum';

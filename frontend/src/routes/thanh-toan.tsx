@@ -62,7 +62,9 @@ type PendingPayOSOrder = {
 };
 
 function Checkout() {
-  const { items, subtotal, clear } = useCart();
+  const { items, subtotal, clear, selectedItems, selectedSubtotal } = useCart();
+  const checkoutItems = selectedItems.length > 0 ? selectedItems : items;
+  const checkoutSubtotal = selectedItems.length > 0 ? selectedSubtotal : subtotal;
   const {
     stores: storeOptions,
     selectedStoreId,
@@ -356,8 +358,8 @@ function Checkout() {
     };
   }, [bindTable, clearTable, tableId]);
 
-  const discount = Math.min(voucherDiscount, subtotal);
-  const total = Math.max(0, subtotal - discount);
+  const discount = Math.min(voucherDiscount, checkoutSubtotal);
+  const total = Math.max(0, checkoutSubtotal - discount);
 
   async function applyVoucher() {
     if (!voucherCode.trim()) return toast.error("Nhập mã ưu đãi trước");
@@ -368,7 +370,7 @@ function Checkout() {
         "/api/vouchers/apply",
         {
           code: voucherCode.trim(),
-          subtotal,
+          subtotal: checkoutSubtotal,
           customer_phone: phone || "khach",
           store_id: storeAtRequest,
         },
@@ -385,7 +387,7 @@ function Checkout() {
   }
 
   async function submitOrder() {
-    if (items.length === 0) return;
+    if (checkoutItems.length === 0) return;
     if (!getCustomerToken()) {
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
     }
@@ -439,13 +441,13 @@ function Checkout() {
         source: "online",
         return_url: `${window.location.origin}/theo-doi-don`,
         cancel_url: `${window.location.origin}/thanh-toan`,
-        items: items.map((i) => ({
+        items: checkoutItems.map((i) => ({
           product_id: productIdBySlug.get(i.productId) ?? Number(i.productId),
-          size_id: sizeIdByLabel.get(i.size.toLowerCase()) ?? null,
-          base_tea: i.base,
-          sugar_level: i.sugar,
-          ice_level: i.ice,
-          topping_ids: i.toppings
+          size_id: i.size ? sizeIdByLabel.get(i.size.toLowerCase()) ?? null : null,
+          base_tea: i.base || "Lục Trà Lài",
+          sugar_level: i.sugar || "100%",
+          ice_level: i.ice || "100%",
+          topping_ids: (i.toppings || [])
             .map((t) => toppingIdByName.get(t.toLowerCase()))
             .filter((id): id is number => id != null),
           qty: i.qty,
@@ -720,7 +722,7 @@ function Checkout() {
                     <p className="text-muted-foreground text-xs">
                       Size {i.size} · {i.base} · {i.sugar} đường · {i.ice} đá
                     </p>
-                    {i.toppings.length > 0 && (
+                    {i.toppings && i.toppings.length > 0 && (
                       <p className="text-muted-foreground text-xs">
                         Topping: {i.toppings.join(", ")}
                       </p>
@@ -892,7 +894,7 @@ function Checkout() {
             <Separator />
 
             <div className="space-y-2 text-sm">
-              <Row label="Tiền món" value={vnd(subtotal)} />
+              <Row label="Tiền món" value={vnd(checkoutSubtotal)} />
               <Row label="Giảm giá" value={discount ? `− ${vnd(discount)}` : "0₫"} />
             </div>
 
@@ -908,7 +910,7 @@ function Checkout() {
             <Button
               variant="hero"
               className="w-full"
-              disabled={items.length === 0 || submitting}
+              disabled={checkoutItems.length === 0 || submitting}
               onClick={submitOrder}
             >
               {submitting ? "Đang đặt hàng…" : "Xác nhận đặt hàng"}

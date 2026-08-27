@@ -262,7 +262,7 @@ function MenuPage() {
                     </p>
                     <p className="text-muted-foreground truncate text-xs">
                       {i.size} · {i.sugar} đường · {i.ice} đá
-                      {i.toppings.length ? ` · ${i.toppings.join(", ")}` : ""}
+                      {i.toppings?.length ? ` · ${i.toppings.join(", ")}` : ""}
                     </p>
                   </div>
                   <span className="text-sm font-bold">{vnd(i.unitPrice * i.qty)}</span>
