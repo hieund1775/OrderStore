@@ -92,4 +92,64 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     assert.equal(result.allTasksCompleted, true);
     assert.equal(result.orderId, 88);
   });
+
+  await t.test('rejects a missing fulfillment lane instead of silently routing it to kitchen', { todo: 'Enable in Checkpoint E' }, async () => {
+    const mockRepo = {
+      async createTasksForOrder() {
+        return [];
+      },
+    };
+
+    const service = createFulfillmentService({ repository: mockRepo });
+
+    await assert.rejects(
+      async () => service.splitAndCreateTasksForOrder({
+        orderId: 100,
+        branchId: 1,
+        items: [{ id: 301, product_name: 'Unknown Item', fulfillment_lane: null, qty: 1 }],
+      }),
+      (err) => err?.status === 400 && err?.code === 'FULFILLMENT_LANE_REQUIRED',
+    );
+  });
+
+  await t.test('rejects an unsupported fulfillment lane instead of silently routing it to kitchen', { todo: 'Enable in Checkpoint E' }, async () => {
+    const mockRepo = {
+      async createTasksForOrder() {
+        return [];
+      },
+    };
+
+    const service = createFulfillmentService({ repository: mockRepo });
+
+    await assert.rejects(
+      async () => service.splitAndCreateTasksForOrder({
+        orderId: 100,
+        branchId: 1,
+        items: [{ id: 302, product_name: 'Robot Item', fulfillment_lane: 'drone_delivery', qty: 1 }],
+      }),
+      (err) => err?.status === 400 && err?.code === 'FULFILLMENT_LANE_UNSUPPORTED',
+    );
+  });
+
+  await t.test('rejects a registered but inactive fulfillment lane', { todo: 'Enable in Checkpoint E' }, async () => {
+    const mockRepo = {
+      async isLaneActive(lane) {
+        assert.equal(lane, 'packing');
+        return false;
+      },
+      async createTasksForOrder() {
+        return [];
+      },
+    };
+
+    const service = createFulfillmentService({ repository: mockRepo });
+    await assert.rejects(
+      async () => service.splitAndCreateTasksForOrder({
+        orderId: 100,
+        branchId: 1,
+        items: [{ id: 303, product_name: 'Inactive lane item', fulfillment_lane: 'packing', qty: 1 }],
+      }),
+      (err) => err?.status === 409 && err?.code === 'FULFILLMENT_LANE_INACTIVE',
+    );
+  });
 });

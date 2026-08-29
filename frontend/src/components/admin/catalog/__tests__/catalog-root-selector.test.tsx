@@ -25,4 +25,15 @@ describe('Admin catalog root selector contracts', () => {
     expect(scoped.map((category) => category.id)).toEqual([1, 2, 3]);
     expect(getLeafCategories(scoped).map((category) => category.id)).toEqual([3]);
   });
+
+  it('Characterization: Root identification relies on ID and slug, never array index', () => {
+    const scrambledCategories = [
+      { id: 10, name: 'Quần áo', slug: 'quan-ao', parent_id: null, depth: 0 },
+      { id: 1, name: 'Thực đơn', slug: 'thuc-don', parent_id: null, depth: 0 },
+    ];
+    const roots = getRootCategories(scrambledCategories);
+
+    expect(roots.map((root) => root.id)).toEqual([10, 1]);
+    expect([...collectCategorySubtreeIds(scrambledCategories, 1)]).toEqual([1]);
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatAdminRoleLabel } from '../admin-topbar';
+import { adminNav } from '@/components/admin/AdminSidebar';
 
 describe('Legacy Admin Menu & RBAC Contract Suite', () => {
   it('formats valid role labels for legacy staff and admin hierarchy', () => {
@@ -9,5 +10,16 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
     expect(formatAdminRoleLabel('kitchen')).toBe('Bếp / Pha chế');
     expect(formatAdminRoleLabel('packing')).toBe('Soạn hàng / Đóng gói');
     expect(formatAdminRoleLabel('unknown')).toBe('Nhân viên');
+  });
+
+  it('Characterization: Legacy menu route /admin/thuc-don exists in compatibility window', async () => {
+    const routeModule = await import('@/routes/admin.thuc-don');
+    expect(routeModule.Route).toBeDefined();
+  });
+
+  it('Characterization: Admin sidebar currently exposes legacy menu item (locked for Checkpoint F)', () => {
+    const legacyItem = adminNav.find((item) => item.to === '/admin/thuc-don');
+    expect(legacyItem).toBeDefined();
+    expect(legacyItem?.label).toContain('Thực đơn');
   });
 });

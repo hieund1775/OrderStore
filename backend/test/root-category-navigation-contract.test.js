@@ -209,4 +209,24 @@ test('Root Category Navigation Contract Suite', async (t) => {
       (err) => err.status === 404 || /Không tìm thấy danh mục/.test(err.message),
     );
   });
+
+  await t.test('Characterization: Root identity relies on ID and slug, never array index', async () => {
+    const mockRepo = {
+      async getCategoryTree() {
+        return [
+          { id: 10, name: 'Quần áo', slug: 'quan-ao', parent_id: null, depth: 0 },
+          { id: 1, name: 'Thực đơn', slug: 'thuc-don', parent_id: null, depth: 0 },
+        ];
+      },
+    };
+
+    const service = createPublicCatalogV2Service({ catalogRepository: mockRepo });
+    const tree = await service.getCategoryTree();
+
+    const beverage = tree.find((c) => c.slug === 'thuc-don' || c.id === 1);
+    const apparel = tree.find((c) => c.slug === 'quan-ao' || c.id === 10);
+
+    assert.equal(beverage.id, 1);
+    assert.equal(apparel.id, 10);
+  });
 });
