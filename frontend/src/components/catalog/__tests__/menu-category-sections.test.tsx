@@ -1,6 +1,25 @@
 import { describe, it, expect } from 'vitest';
+import { mapApiProduct } from '@/lib/data';
 
 describe('Menu Category Sections & Subtree View Suite', () => {
+  it('maps Catalog V2 DTOs to the safe ProductCard shape', () => {
+    const product = mapApiProduct({
+      id: 101,
+      name: 'Trà đào',
+      slug: 'tra-dao',
+      description: 'Trà đào tươi',
+      price: 35000,
+      image_url: '/images/tra-dao.jpg',
+      category_name: 'Trà trái cây',
+    });
+
+    expect(product.image).toBe('/images/tra-dao.jpg');
+    expect(product.desc).toBe('Trà đào tươi');
+    expect(product.base).toBe('Trà trái cây');
+    expect(product.tags).toEqual([]);
+    expect(product.price).toBe(35000);
+  });
+
   it('groups products into sections according to root categories', () => {
     const mockSections = [
       {

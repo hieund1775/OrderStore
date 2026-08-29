@@ -82,7 +82,7 @@ export type ApiCatalogProduct = {
   name?: string;
   slug?: string;
   base_tea?: string;
-  description?: string;
+  description?: string | null;
   price?: number | string;
   image_url?: string | null;
   rating?: number | string;
@@ -103,7 +103,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     id: String(product.id),
     name: product.name || 'Sản phẩm TeaPlus',
     slug: product.slug || '',
-    base: product.base_tea || 'Trà đậm vị',
+    base: product.base_tea || category,
     desc: product.description || '',
     price: Number(product.price || 0),
     image: product.image_url || '',

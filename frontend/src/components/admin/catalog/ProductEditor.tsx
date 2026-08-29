@@ -57,7 +57,12 @@ export type ProductV2 = {
 
 interface ProductEditorProps {
   products: ProductV2[];
-  categories: any[];
+  categories: Array<{
+    id: number;
+    name: string;
+    depth: number;
+    breadcrumb?: string;
+  }>;
   onRefresh: () => void;
   isSuperAdmin: boolean;
 }
@@ -104,7 +109,7 @@ export function ProductEditor({
     setFormData({
       name: '',
       slug: '',
-      category_id: categories.find((c) => c.depth >= 0)?.id || '',
+      category_id: categories[0]?.id || '',
       price: 35000,
       description: '',
       image_url: '',
@@ -230,7 +235,7 @@ export function ProductEditor({
           <option value="all">Tất cả danh mục</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.depth > 0 ? `└─ ${c.name}` : c.name}
+              {c.breadcrumb || c.name}
             </option>
           ))}
         </select>
@@ -366,7 +371,7 @@ export function ProductEditor({
                   <option value="">(Chọn danh mục)</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.depth > 0 ? `└─ ${c.name}` : c.name}
+                      {c.breadcrumb || c.name}
                     </option>
                   ))}
                 </select>

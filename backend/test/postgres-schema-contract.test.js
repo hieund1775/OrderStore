@@ -152,7 +152,9 @@ test('catalog integrity migration 0013 prevents multiple published schemas and a
 
 test('root category navigation migration 0015 creates reparent history audit table', async () => {
   const rootNavMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0015_root_category_navigation.sql');
+  const rootNavRollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0015_root_category_navigation.rollback.sql');
   const sql = await readFile(rootNavMigrationPath, 'utf8');
+  const rollbackSql = await readFile(rootNavRollbackPath, 'utf8');
   const requiredFragments = [
     'CREATE TABLE IF NOT EXISTS catalog_category_reparent_history',
     'run_key VARCHAR(100) NOT NULL',
@@ -168,4 +170,13 @@ test('root category navigation migration 0015 creates reparent history audit tab
   for (const fragment of requiredFragments) {
     assert.ok(sql.includes(fragment), `missing root category navigation migration contract: ${fragment}`);
   }
+
+  assert.ok(
+    rollbackSql.includes("h.run_key = 'legacy-root-category-navigation-v1'"),
+    'rollback must only restore the root-navigation backfill run',
+  );
+  assert.ok(
+    rollbackSql.includes("WHERE name = 'legacy-root-category-navigation-v1'"),
+    'rollback must clear the completion marker so the backfill can run again',
+  );
 });

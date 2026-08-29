@@ -7,12 +7,10 @@ import {
   Sliders,
   RefreshCw,
   Plus,
-  Layers,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -30,9 +28,17 @@ import {
   getUser,
 } from '@/lib/api';
 import { CategoryTreeEditor } from '@/components/admin/catalog/CategoryTreeEditor';
-import { ProductTypeEditor } from '@/components/admin/catalog/ProductTypeEditor';
+import { ProductTypeEditor, type ProductType } from '@/components/admin/catalog/ProductTypeEditor';
 import { SchemaAttributeEditor } from '@/components/admin/catalog/SchemaAttributeEditor';
-import { ProductEditor } from '@/components/admin/catalog/ProductEditor';
+import { ProductEditor, type ProductV2 } from '@/components/admin/catalog/ProductEditor';
+import type { CategoryNode } from '@/components/admin/catalog/CategoryTreeEditor';
+import { CatalogRootSelector } from '@/components/admin/catalog/CatalogRootSelector';
+import {
+  buildCategoryBreadcrumb,
+  collectCategorySubtreeIds,
+  getLeafCategories,
+  getRootCategories,
+} from '@/lib/catalog-navigation';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/admin/catalog')({
@@ -47,10 +53,10 @@ export const Route = createFileRoute('/admin/catalog')({
 
 function AdminCatalogPage() {
   const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'schemas'>('products');
-  const [categories, setCategories] = useState<any[]>([]);
-  const [productTypes, setProductTypes] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [selectedProductType, setSelectedProductType] = useState<any | null>(null);
+  const [categories, setCategories] = useState<CategoryNode[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [products, setProducts] = useState<ProductV2[]>([]);
+  const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -78,7 +84,7 @@ function AdminCatalogPage() {
 
       if (types.length > 0) {
         const currentSelected = selectedProductType
-          ? types.find((t: any) => t.id === selectedProductType.id) || types[0]
+          ? types.find((type) => type.id === selectedProductType.id) || types[0]
           : types[0];
         setSelectedProductType(currentSelected);
 
@@ -95,7 +101,7 @@ function AdminCatalogPage() {
     }
   };
 
-  const handleSelectProductType = async (pt: any) => {
+  const handleSelectProductType = async (pt: ProductType) => {
     setSelectedProductType(pt);
     try {
       const schemaId = pt.draft_schema_id || pt.published_schema_id;
@@ -115,28 +121,14 @@ function AdminCatalogPage() {
 
   // Danh mục gốc (depth = 0)
   const rootCategories = useMemo(() => {
-    return categories.filter((c) => Number(c.depth || 0) === 0 && !c.parent_id);
+    return getRootCategories(categories);
   }, [categories]);
 
   // Tập hợp các category ID thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
     if (selectedRootId === 'all') return null;
 
-    const rootId = Number(selectedRootId);
-    const ids = new Set<number>([rootId]);
-
-    // Thu thập con cháu
-    let added = true;
-    while (added) {
-      added = false;
-      for (const cat of categories) {
-        if (cat.parent_id && ids.has(Number(cat.parent_id)) && !ids.has(Number(cat.id))) {
-          ids.add(Number(cat.id));
-          added = true;
-        }
-      }
-    }
-    return ids;
+    return collectCategorySubtreeIds(categories, Number(selectedRootId));
   }, [selectedRootId, categories]);
 
   // Danh mục hiển thị theo scope
@@ -150,6 +142,13 @@ function AdminCatalogPage() {
     if (!scopedCategoryIds) return products;
     return products.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
   }, [scopedCategoryIds, products]);
+
+  const productCategoryOptions = useMemo(() => {
+    return getLeafCategories(filteredCategories).map((category) => ({
+      ...category,
+      breadcrumb: buildCategoryBreadcrumb(categories, category.id),
+    }));
+  }, [categories, filteredCategories]);
 
   const handleCreateRootCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,44 +218,18 @@ function AdminCatalogPage() {
         </div>
       </div>
 
-      {/* Root Category Context Selector Bar */}
-      <div className="bg-muted/40 border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
-        <div className="flex items-center gap-3">
-          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap flex items-center gap-1.5">
-            <Layers className="size-4 text-primary" /> Ngành hàng gốc:
-          </Label>
-          <Select value={selectedRootId} onValueChange={setSelectedRootId}>
-            <SelectTrigger className="w-[240px] font-semibold h-9 text-sm bg-background">
-              <SelectValue placeholder="Chọn danh mục gốc" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="font-semibold">
-                🌐 Tất cả ngành hàng ({categories.length} danh mục)
-              </SelectItem>
-              {rootCategories.map((root) => (
-                <SelectItem key={root.id} value={String(root.id)}>
-                  📁 {root.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {isSuperAdmin && (
-          <Button
-            variant="hero"
-            size="sm"
-            onClick={() => setCreateRootOpen(true)}
-            className="h-9 font-semibold text-xs"
-          >
-            <Plus className="size-4 mr-1.5" /> Tạo danh mục gốc
-          </Button>
-        )}
-      </div>
+      <CatalogRootSelector
+        roots={rootCategories}
+        totalCategories={categories.length}
+        value={selectedRootId}
+        onValueChange={setSelectedRootId}
+        canCreateRoot={isSuperAdmin}
+        onCreateRoot={() => setCreateRootOpen(true)}
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-lg">
+        <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-3 max-w-lg' : 'grid-cols-2 max-w-md'}`}>
           <TabsTrigger value="products" className="flex items-center gap-2 text-xs sm:text-sm">
             <ShoppingBag className="size-4" />
             <span>Sản phẩm ({filteredProducts.length})</span>
@@ -265,16 +238,18 @@ function AdminCatalogPage() {
             <FolderTree className="size-4" />
             <span>Cây danh mục ({filteredCategories.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="schemas" className="flex items-center gap-2 text-xs sm:text-sm">
-            <Sliders className="size-4" />
-            <span>Cấu hình nâng cao</span>
-          </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="schemas" className="flex items-center gap-2 text-xs sm:text-sm">
+              <Sliders className="size-4" />
+              <span>Cấu hình nâng cao</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="products">
           <ProductEditor
             products={filteredProducts}
-            categories={filteredCategories}
+            categories={productCategoryOptions}
             onRefresh={loadAllData}
             isSuperAdmin={isSuperAdmin}
           />
@@ -289,7 +264,7 @@ function AdminCatalogPage() {
           />
         </TabsContent>
 
-        <TabsContent value="schemas" className="space-y-6">
+        {isSuperAdmin && <TabsContent value="schemas" className="space-y-6">
           <div className="bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 rounded-lg p-3 text-xs">
             💡 <b>Cấu hình kỹ thuật nâng cao:</b> Định nghĩa các loại sản phẩm (Product Types) cùng Schema biến thể SKU và Modifiers (Đường, Đá, Topping, Size, Màu sắc...). Danh mục lá sẽ được liên kết với Schema tương ứng.
           </div>
@@ -309,7 +284,7 @@ function AdminCatalogPage() {
               isSuperAdmin={isSuperAdmin}
             />
           )}
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
 
       {/* Modal Tạo Danh Mục Gốc */}

@@ -1,6 +1,76 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPublicCatalogV2Service } from '../services/catalog/public-catalog-v2-service.js';
+import { createPublicCatalogV2Repository } from '../repositories/postgres/public-catalog-v2.js';
+import { validateSubtreeProductsQuery } from '../validation/catalog-v2-schemas.js';
+
+test('Grouped sections repository keeps empty roots and filters unavailable catalog rows', async () => {
+  const queries = [];
+  const queuedRows = [
+    [{
+      root_id: 1,
+      root_name: 'Thực đơn',
+      root_slug: 'thuc-don',
+      total_products: 0,
+      children: [],
+      products: [],
+    }],
+  ];
+  const database = {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      return [queuedRows.shift() || []];
+    },
+  };
+
+  const repository = createPublicCatalogV2Repository(database);
+  const sections = await repository.getGroupedSections({ storeId: 1, limitPerRoot: 12 });
+
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].root_slug, 'thuc-don');
+  assert.equal(sections[0].total_products, 0);
+  assert.deepEqual(sections[0].products, []);
+
+  assert.equal(queries.length, 1);
+  const productSql = queries[0].sql;
+  assert.match(productSql, /p\.is_available = TRUE/);
+  assert.match(productSql, /bvo\.is_available = TRUE/);
+  assert.match(productSql, /COALESCE\(bvi\.on_hand, 0\) - COALESCE\(bvi\.reserved, 0\) > 0/);
+});
+
+test('Public product details require branch context', async () => {
+  let capturedStoreId = null;
+  const service = createPublicCatalogV2Service({
+    catalogRepository: {
+      async getProductBySlug(_slug, { storeId }) {
+        capturedStoreId = storeId;
+        return { id: 10, slug: 'tra-dao' };
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => service.getProductBySlug('tra-dao'),
+    (error) => error.status === 400,
+  );
+  await service.getProductBySlug('tra-dao', { storeId: '2' });
+  assert.equal(capturedStoreId, 2);
+});
+
+test('Subtree pagination rejects non-integer query values before reaching SQL', () => {
+  assert.throws(
+    () => validateSubtreeProductsQuery({ store_id: '1', limit: 'abc' }),
+    (error) => error.status === 400,
+  );
+  assert.throws(
+    () => validateSubtreeProductsQuery({ store_id: '1', offset: '-1' }),
+    (error) => error.status === 400,
+  );
+  assert.throws(
+    () => validateSubtreeProductsQuery({ store_id: '1', category: 'a'.repeat(151) }),
+    (error) => error.status === 400,
+  );
+});
 
 test('Root Category Navigation Contract Suite', async (t) => {
   await t.test('Characterization: Public tree builds nested hierarchy from repository rows', async () => {

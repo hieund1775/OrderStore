@@ -75,8 +75,12 @@ export function createPublicCatalogV2Service({
       return await catalogRepository.listProducts(filters);
     },
 
-    async getProductBySlug(slug, options) {
-      return await catalogRepository.getProductBySlug(slug, options);
+    async getProductBySlug(slug, { storeId } = {}) {
+      const normalizedStoreId = Number(storeId);
+      if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
+        throw new CatalogV2Error('Vui lòng chọn chi nhánh hợp lệ', 400);
+      }
+      return await catalogRepository.getProductBySlug(slug, { storeId: normalizedStoreId });
     },
 
     /**

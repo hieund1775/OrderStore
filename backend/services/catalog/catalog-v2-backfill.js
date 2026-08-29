@@ -20,6 +20,10 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
       "SELECT id FROM product_types WHERE code = 'beverage' LIMIT 1",
     );
     const beverageTypeId = ptRows[0]?.id;
+    if (!beverageTypeId) {
+      summary.errors.push("Product type 'beverage' does not exist; no categories were reparented");
+      return summary;
+    }
 
     // 2. Find depth=0 categories that belong to beverage or need reparenting
     const [categoriesToMove] = await database.query(
@@ -28,9 +32,9 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
        WHERE c.parent_id IS NULL
          AND c.depth = 0
          AND c.slug != 'thuc-don'
-         AND ($1::bigint IS NULL OR c.product_type_id = $1)
+         AND c.product_type_id = $1
          AND c.archived_at IS NULL`,
-      [beverageTypeId || null],
+      [beverageTypeId],
     );
 
     summary.categoriesToReparent = categoriesToMove.length;
@@ -53,6 +57,11 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
   }
 
   return await database.transaction(async (tx) => {
+    await tx.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      [runKey],
+    );
+
     // Check if already applied
     const [completedRuns] = await tx.query(
       'SELECT 1 FROM catalog_v2_backfill_runs WHERE name = $1 LIMIT 1',
@@ -68,6 +77,9 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
       "SELECT id FROM product_types WHERE code = 'beverage' LIMIT 1",
     );
     const beverageTypeId = ptRows[0]?.id;
+    if (!beverageTypeId) {
+      throw new Error("Cannot reparent legacy categories because product type 'beverage' does not exist");
+    }
 
     // 2. Find categories at depth = 0 that need reparenting
     const [categoriesToMove] = await tx.query(
@@ -76,10 +88,10 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
        WHERE c.parent_id IS NULL
          AND c.depth = 0
          AND c.slug != 'thuc-don'
-         AND ($1::bigint IS NULL OR c.product_type_id = $1)
+         AND c.product_type_id = $1
          AND c.archived_at IS NULL
        ORDER BY c.sort_order ASC, c.id ASC`,
-      [beverageTypeId || null],
+      [beverageTypeId],
     );
 
     summary.categoriesToReparent = categoriesToMove.length;

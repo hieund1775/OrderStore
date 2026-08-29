@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductCard } from '@/components/menu/ProductCard';
 import type { PublicCatalogSection } from '@/lib/api';
+import { mapApiProduct } from '@/lib/data';
 
 interface CatalogSectionProps {
   section: PublicCatalogSection;
@@ -70,7 +71,7 @@ export function CatalogSection({ section, searchParams }: CatalogSectionProps) {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {section.products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product.id} product={mapApiProduct(product)} />
           ))}
         </div>
       )}

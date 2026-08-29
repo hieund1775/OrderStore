@@ -55,9 +55,9 @@ import {
   setCustomerToken,
   setCustomerUser,
   clearCustomerToken,
-  fetchPublicCategoryTree,
 } from '@/lib/api';
 import { brand, vnd } from '@/lib/data';
+import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -620,24 +620,11 @@ function StandaloneBanner() {
 }
 
 export function Header() {
-  const [categoryTree, setCategoryTree] = useState<any[]>([]);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [mobileCatOpen, setMobileCatOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-
-  useEffect(() => {
-    let mounted = true;
-    fetchPublicCategoryTree()
-      .then((tree) => {
-        if (mounted && Array.isArray(tree)) {
-          setCategoryTree(tree);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const categoryTreeQuery = usePublicCategoryTree();
+  const categoryTree = categoryTreeQuery.data || [];
 
   const rootCategories = categoryTree.filter((c) => Number(c.depth || 0) === 0 && !c.parent_id);
 
@@ -655,7 +642,7 @@ export function Header() {
               variant="ghost"
               size="icon"
               className="rounded-full lg:hidden"
-              aria-label="Menu"
+              aria-label="Mở điều hướng"
             >
               <MenuIcon className="size-5" />
             </Button>
@@ -686,30 +673,48 @@ export function Header() {
 
               {/* Accordion Danh mục trên Mobile */}
               <div className="border-b py-2">
-                <div
+                <button
+                  type="button"
                   onClick={() => setMobileCatOpen(!mobileCatOpen)}
-                  className="flex items-center justify-between py-2 text-sm font-medium cursor-pointer hover:text-primary"
+                  aria-expanded={mobileCatOpen}
+                  aria-controls="mobile-category-navigation"
+                  className="flex w-full items-center justify-between py-2 text-sm font-medium cursor-pointer hover:text-primary"
                 >
                   <span className="flex items-center gap-1.5">
                     <FolderTree className="size-4 text-primary" /> Danh mục sản phẩm
                   </span>
                   <ChevronDown className={`size-4 transition-transform ${mobileCatOpen ? 'rotate-180' : ''}`} />
-                </div>
+                </button>
                 {mobileCatOpen && (
-                  <div className="pl-4 pb-2 space-y-2 text-xs">
+                  <div id="mobile-category-navigation" className="pl-4 pb-2 space-y-2 text-xs">
                     <Link
                       to="/menu"
-                      search={(prev) => prev}
+                      search={(prev) => ({ ...prev, category: undefined, page: undefined })}
                       onClick={() => setMobileSheetOpen(false)}
                       className="block py-1 font-semibold text-primary hover:underline"
                     >
                       🌐 Xem tất cả sản phẩm
                     </Link>
+                    {categoryTreeQuery.isLoading && (
+                      <p className="py-1 text-muted-foreground">Đang tải danh mục…</p>
+                    )}
+                    {categoryTreeQuery.isError && (
+                      <button
+                        type="button"
+                        className="py-1 font-semibold text-destructive hover:underline"
+                        onClick={() => void categoryTreeQuery.refetch()}
+                      >
+                        Tải lại danh mục
+                      </button>
+                    )}
+                    {categoryTreeQuery.isSuccess && rootCategories.length === 0 && (
+                      <p className="py-1 text-muted-foreground">Chưa có danh mục công khai.</p>
+                    )}
                     {rootCategories.map((root) => (
                       <div key={root.id} className="space-y-1">
                         <Link
                           to="/menu"
-                          search={(prev) => ({ ...prev, category: root.slug })}
+                          search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
                           onClick={() => setMobileSheetOpen(false)}
                           className="block font-medium py-1 text-foreground hover:text-primary"
                         >
@@ -717,11 +722,11 @@ export function Header() {
                         </Link>
                         {root.children && root.children.length > 0 && (
                           <div className="pl-3 space-y-1 border-l border-border/60">
-                            {root.children.map((child: any) => (
+                            {root.children.map((child) => (
                               <Link
                                 key={child.id}
                                 to="/menu"
-                                search={(prev) => ({ ...prev, category: child.slug })}
+                                search={(prev) => ({ ...prev, category: child.slug, page: undefined })}
                                 onClick={() => setMobileSheetOpen(false)}
                                 className="block text-muted-foreground hover:text-primary py-0.5"
                               >
@@ -790,6 +795,7 @@ export function Header() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
+                type="button"
                 className={`hover:bg-accent rounded-full px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 cursor-pointer ${
                   pathname.startsWith('/menu') ? 'bg-accent text-accent-foreground font-semibold' : ''
                 }`}
@@ -800,18 +806,29 @@ export function Header() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56 p-1.5">
               <DropdownMenuItem asChild>
-                <Link to="/menu" search={(prev) => prev} className="font-bold flex items-center justify-between cursor-pointer">
+                <Link to="/menu" search={(prev) => ({ ...prev, category: undefined, page: undefined })} className="font-bold flex items-center justify-between cursor-pointer">
                   <span>🌐 Tất cả sản phẩm</span>
                   <ChevronRight className="size-3.5 text-muted-foreground" />
                 </Link>
               </DropdownMenuItem>
               {rootCategories.length > 0 && <DropdownMenuSeparator />}
+              {categoryTreeQuery.isLoading && (
+                <DropdownMenuItem disabled>Đang tải danh mục…</DropdownMenuItem>
+              )}
+              {categoryTreeQuery.isError && (
+                <DropdownMenuItem onSelect={() => void categoryTreeQuery.refetch()}>
+                  Tải lại danh mục
+                </DropdownMenuItem>
+              )}
+              {categoryTreeQuery.isSuccess && rootCategories.length === 0 && (
+                <DropdownMenuItem disabled>Chưa có danh mục công khai</DropdownMenuItem>
+              )}
               {rootCategories.map((root) => (
                 <div key={root.id} className="py-1">
                   <DropdownMenuItem asChild>
                     <Link
                       to="/menu"
-                      search={(prev) => ({ ...prev, category: root.slug })}
+                      search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
                       className="font-semibold text-xs flex items-center justify-between cursor-pointer"
                     >
                       <span>📁 {root.name}</span>
@@ -819,9 +836,9 @@ export function Header() {
                   </DropdownMenuItem>
                   {root.children && root.children.length > 0 && (
                     <div className="pl-4 pr-1 py-0.5 space-y-0.5">
-                      {root.children.map((child: any) => (
+                      {root.children.map((child) => (
                         <DropdownMenuItem key={child.id} asChild className="text-[11px] py-1 text-muted-foreground hover:text-foreground cursor-pointer">
-                          <Link to="/menu" search={(prev) => ({ ...prev, category: child.slug })}>
+                          <Link to="/menu" search={(prev) => ({ ...prev, category: child.slug, page: undefined })}>
                             • {child.name}
                           </Link>
                         </DropdownMenuItem>

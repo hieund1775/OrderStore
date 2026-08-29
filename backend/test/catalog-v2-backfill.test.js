@@ -87,6 +87,8 @@ test('Catalog V2 Backfill Suite', async (t) => {
     assert.equal(auditInsert.params[1], 99); // root_category_id
     assert.equal(auditInsert.params[2], 2); // category_id
     assert.equal(auditInsert.params[4], 0); // old_depth
+    assert.match(executedQueries[0].sql, /pg_advisory_xact_lock/);
+    assert.deepEqual(executedQueries[0].params, ['legacy-root-category-navigation-v1']);
   });
 
   await t.test('runRootCategoryReparentBackfill: idempotent when already applied', async () => {
@@ -108,5 +110,21 @@ test('Catalog V2 Backfill Suite', async (t) => {
     const summary = await runRootCategoryReparentBackfill({ dryRun: false, database: fakeDb });
     assert.equal(summary.alreadyApplied, true);
     assert.equal(summary.categoriesReparented, 0);
+  });
+
+  await t.test('dry-run does not reparent unrelated roots when beverage type is missing', async () => {
+    let categoryQueryExecuted = false;
+    const fakeDb = {
+      async query(sql) {
+        if (sql.includes("code = 'beverage'")) return [[]];
+        if (sql.includes('FROM categories c')) categoryQueryExecuted = true;
+        return [[]];
+      },
+    };
+
+    const summary = await runRootCategoryReparentBackfill({ dryRun: true, database: fakeDb });
+    assert.equal(summary.categoriesToReparent, 0);
+    assert.equal(categoryQueryExecuted, false);
+    assert.equal(summary.errors.length, 1);
   });
 });

@@ -32,63 +32,53 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       const normalizedStoreId = Number(storeId);
       const limit = Math.min(Math.max(1, Number(limitPerRoot) || 12), 12);
 
-      // 1. Get all visible root categories
-      const [roots] = await database.query(
-        `SELECT c.id, c.name, c.slug, c.sort_order
-         FROM categories c
-         WHERE c.parent_id IS NULL AND c.depth = 0
-           AND c.is_visible = TRUE AND c.archived_at IS NULL
-         ORDER BY c.sort_order ASC, c.id ASC`,
-      );
-
-      if (roots.length === 0) return [];
-
-      // 2. Get direct children for each root
-      const rootIds = roots.map((r) => Number(r.id));
-      const [children] = await database.query(
-        `SELECT c.id, c.name, c.slug, c.parent_id, c.sort_order
-         FROM categories c
-         WHERE c.parent_id = ANY($1::bigint[])
-           AND c.is_visible = TRUE AND c.archived_at IS NULL
-         ORDER BY c.sort_order ASC, c.id ASC`,
-        [rootIds],
-      );
-
-      const childrenByRootId = new Map();
-      for (const child of children) {
-        const pId = Number(child.parent_id);
-        if (!childrenByRootId.has(pId)) childrenByRootId.set(pId, []);
-        childrenByRootId.get(pId).push(child);
-      }
-
-      // 3. Query top products and total_products per root using recursive subtree CTE & window functions
-      const [productRows] = await database.query(
+      const [rows] = await database.query(
         `WITH RECURSIVE category_tree AS (
-           -- Anchor: Root categories
            SELECT c.id AS category_id, c.id AS root_id
            FROM categories c
            WHERE c.parent_id IS NULL AND c.depth = 0
              AND c.is_visible = TRUE AND c.archived_at IS NULL
            UNION ALL
-           -- Recursive: Subcategories
-           SELECT c.id AS category_id, ct.root_id
+           SELECT child.id AS category_id, tree.root_id
+           FROM categories child
+           JOIN category_tree tree ON child.parent_id = tree.category_id
+           WHERE child.is_visible = TRUE AND child.archived_at IS NULL
+         ),
+         roots AS (
+           SELECT c.id, c.name, c.slug, c.sort_order
            FROM categories c
-           JOIN category_tree ct ON c.parent_id = ct.category_id
+           WHERE c.parent_id IS NULL AND c.depth = 0
+             AND c.is_visible = TRUE AND c.archived_at IS NULL
+         ),
+         direct_children AS (
+           SELECT c.parent_id AS root_id,
+                  JSONB_AGG(
+                    JSONB_BUILD_OBJECT(
+                      'id', c.id,
+                      'name', c.name,
+                      'slug', c.slug,
+                      'parent_id', c.parent_id,
+                      'sort_order', c.sort_order
+                    ) ORDER BY c.sort_order ASC, c.id ASC
+                  ) AS children
+           FROM categories c
+           JOIN roots r ON r.id = c.parent_id
            WHERE c.is_visible = TRUE AND c.archived_at IS NULL
+           GROUP BY c.parent_id
          ),
          scoped_products AS (
            SELECT p.id, p.name, p.slug, p.description, p.image_url, p.fulfillment_lane, p.stock_mode,
                   p.category_id, c.name AS category_name, c.slug AS category_slug,
-                  ct.root_id,
+                  tree.root_id,
                   branch_offer.price,
                   branch_offer.compare_at_price,
                   COALESCE(branch_offer.is_available, FALSE) AS is_available,
                   branch_offer.available_stock,
-                  (SELECT COUNT(*)::int FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active') AS variants_count,
-                  COUNT(*) OVER (PARTITION BY ct.root_id) AS root_total_products,
-                  ROW_NUMBER() OVER (PARTITION BY ct.root_id ORDER BY p.id ASC) AS rank_in_root
-           FROM category_tree ct
-           JOIN products p ON p.category_id = ct.category_id
+                  (SELECT COUNT(*)::int
+                   FROM product_variants pv
+                   WHERE pv.product_id = p.id AND pv.status = 'active') AS variants_count
+           FROM category_tree tree
+           JOIN products p ON p.category_id = tree.category_id
            JOIN categories c ON c.id = p.category_id
            JOIN LATERAL (
              SELECT MIN(bvo.price) AS price,
@@ -101,47 +91,53 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
              FROM product_variants pv
              JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
-             WHERE pv.product_id = p.id AND pv.status = 'active'
+             WHERE pv.product_id = p.id
+               AND pv.status = 'active'
+               AND bvo.is_available = TRUE
+               AND (
+                 p.stock_mode <> 'tracked'
+                 OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
+               )
            ) branch_offer ON branch_offer.price IS NOT NULL
-           WHERE p.status = 'active'
+           WHERE p.status = 'active' AND p.is_available = TRUE
+         ),
+         ranked_products AS (
+           SELECT scoped_products.*,
+                  COUNT(*) OVER (PARTITION BY root_id)::int AS root_total_products,
+                  ROW_NUMBER() OVER (PARTITION BY root_id ORDER BY id ASC) AS rank_in_root
+           FROM scoped_products
+         ),
+         product_sections AS (
+           SELECT root_id,
+                  MAX(root_total_products)::int AS total_products,
+                  JSONB_AGG(
+                    TO_JSONB(ranked_products)
+                      - 'root_id' - 'root_total_products' - 'rank_in_root'
+                    ORDER BY rank_in_root ASC
+                  ) FILTER (WHERE rank_in_root <= $2) AS products
+           FROM ranked_products
+           GROUP BY root_id
          )
-         SELECT * FROM scoped_products
-         WHERE rank_in_root <= $2
-         ORDER BY root_id ASC, rank_in_root ASC`,
+         SELECT r.id AS root_id,
+                r.name AS root_name,
+                r.slug AS root_slug,
+                COALESCE(ps.total_products, 0)::int AS total_products,
+                COALESCE(dc.children, '[]'::jsonb) AS children,
+                COALESCE(ps.products, '[]'::jsonb) AS products
+         FROM roots r
+         LEFT JOIN direct_children dc ON dc.root_id = r.id
+         LEFT JOIN product_sections ps ON ps.root_id = r.id
+         ORDER BY r.sort_order ASC, r.id ASC`,
         [normalizedStoreId, limit],
       );
 
-      // Group products by root_id
-      const productsByRootId = new Map();
-      const totalsByRootId = new Map();
-
-      for (const p of productRows) {
-        const rId = Number(p.root_id);
-        if (!productsByRootId.has(rId)) productsByRootId.set(rId, []);
-        productsByRootId.get(rId).push(p);
-        totalsByRootId.set(rId, Number(p.root_total_products || 0));
-      }
-
-      // Build output sections
-      const sections = [];
-      for (const root of roots) {
-        const rId = Number(root.id);
-        const rootProducts = productsByRootId.get(rId) || [];
-        const total = totalsByRootId.get(rId) || 0;
-
-        if (total > 0 || rootProducts.length > 0) {
-          sections.push({
-            root_id: rId,
-            root_name: root.name,
-            root_slug: root.slug,
-            total_products: total,
-            children: childrenByRootId.get(rId) || [],
-            products: rootProducts,
-          });
-        }
-      }
-
-      return sections;
+      return rows.map((row) => ({
+        ...row,
+        root_id: Number(row.root_id),
+        total_products: Number(row.total_products || 0),
+        children: Array.isArray(row.children) ? row.children : [],
+        products: Array.isArray(row.products) ? row.products : [],
+      }));
     },
 
     async listProducts({ storeId, categorySlug, categoryId, search, limit = 50, offset = 0 } = {}) {
@@ -163,7 +159,13 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
             FROM product_variants pv
             JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length}
             LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $${params.length}
-            WHERE pv.product_id = p.id AND pv.status = 'active'
+            WHERE pv.product_id = p.id
+              AND pv.status = 'active'
+              AND bvo.is_available = TRUE
+              AND (
+                p.stock_mode <> 'tracked'
+                OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
+              )
           ) branch_offer ON branch_offer.price IS NOT NULL
         `;
         priceSelect = `
@@ -176,7 +178,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
 
       let categoryCte = '';
       let categoryJoin = 'JOIN categories c ON c.id = p.category_id';
-      let where = "WHERE p.status = 'active' AND c.is_visible = TRUE AND c.archived_at IS NULL";
+      let where = "WHERE p.status = 'active' AND p.is_available = TRUE AND c.is_visible = TRUE AND c.archived_at IS NULL";
 
       if (categoryId) {
         params.push(Number(categoryId));

@@ -99,7 +99,7 @@ describe('PostgreSQL admin domains suite', () => {
         base_tea: 'Lục trà', price: 35000,
       });
       assert.ok(prod.id);
-      const toggled = await adminCatalogRepository.toggleProductAvailability(prod.id);
+      const toggled = await adminCatalogRepository.setProductAvailability(prod.id, false);
       assert.equal(toggled.is_available, false);
 
       // 2. Stores & Tables CRUD
@@ -143,7 +143,7 @@ describe('PostgreSQL admin domains suite', () => {
       const accounts = await adminManagementRepository.listAccounts();
       assert.ok(accounts.length > 0);
       const notif = await adminManagementRepository.createNotification({
-        title: `Test Notif ${suffix}`, type: 'system',
+        user_id: accounts[0].id, title: `Test Notif ${suffix}`, type: 'system',
       });
       assert.ok(notif.id);
     } finally {

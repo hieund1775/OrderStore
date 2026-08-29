@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import fulfillmentService from '../../services/orders/fulfillment-service.js';
-import { requireAdminRoles } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 
 const router = Router();
 
 // Allowed roles for fulfillment operations
-const requireFulfillmentRole = requireAdminRoles('super', 'manager', 'kitchen', 'packing');
+const requireFulfillmentRole = requireRole('super', 'manager', 'kitchen', 'packing');
 
 /**
  * GET /api/admin/fulfillment/tasks

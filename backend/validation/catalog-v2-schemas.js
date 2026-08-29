@@ -33,12 +33,24 @@ export function validateSubtreeProductsQuery(query) {
   }
 
   const categorySlug = query?.category ? String(query.category).trim().toLowerCase() : null;
-  if (categorySlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(categorySlug)) {
+  if (
+    categorySlug &&
+    (categorySlug.length > 150 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(categorySlug))
+  ) {
     throw badRequest('Category slug không hợp lệ');
   }
 
-  const limit = query?.limit ? Math.min(Math.max(1, Number(query.limit)), 100) : 50;
-  const offset = query?.offset ? Math.max(0, Number(query.offset)) : 0;
+  const rawLimit = query?.limit == null ? 50 : Number(query.limit);
+  if (!Number.isInteger(rawLimit) || rawLimit <= 0) {
+    throw badRequest('limit phải là số nguyên dương hợp lệ');
+  }
+  const limit = Math.min(rawLimit, 100);
+
+  const rawOffset = query?.offset == null ? 0 : Number(query.offset);
+  if (!Number.isInteger(rawOffset) || rawOffset < 0) {
+    throw badRequest('offset phải là số nguyên không âm hợp lệ');
+  }
+  const offset = rawOffset;
   const search = query?.search ? String(query.search).trim() : null;
 
   return { storeId, categorySlug, limit, offset, search };

@@ -360,7 +360,29 @@ export type PublicCatalogSection = {
   root_slug: string;
   total_products: number;
   children: Array<{ id: number; name: string; slug: string }>;
-  products: any[];
+  products: PublicCatalogProduct[];
+};
+
+export type PublicCatalogProduct = {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  category_id: number;
+  category_name?: string;
+  category_slug?: string;
+  fulfillment_lane?: string;
+  stock_mode?: string;
+  variants_count?: number;
+  is_available?: boolean;
+  available_stock?: number | null;
+};
+
+export type PublicCatalogProductsResponse = {
+  products: PublicCatalogProduct[];
+  total: number;
 };
 
 export async function fetchPublicCategoryTree(): Promise<PublicCategoryNode[]> {
@@ -371,7 +393,7 @@ export async function fetchPublicCatalogSections(storeId: number | string, limit
   return apiFetch<{ sections: PublicCatalogSection[] }>(`/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
 }
 
-export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }) {
+export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }): Promise<PublicCatalogProductsResponse> {
   const q = new URLSearchParams();
   if (params?.store_id) q.set('store_id', String(params.store_id));
   if (params?.category) q.set('category', params.category);
@@ -379,7 +401,7 @@ export async function fetchPublicProducts(params?: { store_id?: number | string;
   if (params?.limit) q.set('limit', String(params.limit));
   if (params?.offset) q.set('offset', String(params.offset));
   const query = q.toString() ? `?${q.toString()}` : '';
-  return apiFetch<any[]>(`/catalog/products${query}`);
+  return apiFetch<PublicCatalogProductsResponse>(`/catalog/products${query}`);
 }
 
 export async function fetchPublicProductDetails(slug: string, storeId?: number | string) {
