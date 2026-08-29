@@ -40,6 +40,14 @@ export const EXPECTED_POSTGRES_TABLES = [
   'idempotency_keys',
   'background_jobs',
   'schema_migrations',
+  'catalog_category_reparent_history',
+  'category_slug_aliases',
+  'category_attribute_assignments',
+  'product_attribute_overrides',
+  'fulfillment_lane_registry',
+  'branch_fulfillment_capabilities',
+  'fulfillment_tasks',
+  'fulfillment_task_items',
 ];
 
 // These fields are used directly by the current routes. Keeping this compact

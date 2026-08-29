@@ -180,3 +180,58 @@ test('root category navigation migration 0015 creates reparent history audit tab
     'rollback must clear the completion marker so the backfill can run again',
   );
 });
+
+test('catalog option scopes migration 0016 creates aliases, assignments and overrides', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0016_catalog_option_scopes.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0016_catalog_option_scopes.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS category_slug_aliases',
+    'alias_slug VARCHAR(150) NOT NULL UNIQUE',
+    'CREATE TABLE IF NOT EXISTS category_attribute_assignments',
+    'uq_category_attribute_assignment UNIQUE (category_id, attribute_definition_id)',
+    'CREATE TABLE IF NOT EXISTS product_attribute_overrides',
+    'uq_product_attribute_override UNIQUE (product_id, attribute_definition_id)',
+    'idx_category_slug_aliases_category_id',
+    'idx_cat_attr_assign_category_id',
+    'idx_prod_attr_override_product_id',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0016 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS product_attribute_overrides CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS category_attribute_assignments CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS category_slug_aliases CASCADE'));
+});
+
+test('fulfillment capabilities migration 0017 creates lane registry, branch capabilities and task hardening', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0017_fulfillment_capabilities.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0017_fulfillment_capabilities.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS fulfillment_lane_registry',
+    'code VARCHAR(50) PRIMARY KEY',
+    "('kitchen', 'Pha chế / Bếp', 'kitchen', TRUE, TRUE)",
+    "('packing', 'Soạn hàng / Đóng gói', 'packing', TRUE, TRUE)",
+    'CREATE TABLE IF NOT EXISTS branch_fulfillment_capabilities',
+    'uq_branch_fulfillment_lane UNIQUE (store_id, lane_code)',
+    'default_fulfillment_lane VARCHAR(50)',
+    'fk_products_fulfillment_lane',
+    'fk_fulfillment_tasks_lane',
+    'uq_fulfillment_task_order_item',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0017 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS branch_fulfillment_capabilities CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS fulfillment_lane_registry CASCADE'));
+});
+
