@@ -229,4 +229,35 @@ test('Root Category Navigation Contract Suite', async (t) => {
     assert.equal(beverage.id, 1);
     assert.equal(apparel.id, 10);
   });
+
+  await t.test('Alias Resolution: Resolving legacy slug thuc-don returns canonical category nuoc-uong', async () => {
+    const mockRepo = {
+      async findCategoryBySlug(slug) {
+        if (slug === 'thuc-don' || slug === 'nuoc-uong') {
+          return {
+            id: 1,
+            name: 'Nước uống',
+            slug: 'nuoc-uong',
+            canonical_slug: 'nuoc-uong',
+            is_alias_resolved: slug === 'thuc-don',
+          };
+        }
+        return null;
+      },
+      async listProducts(params) {
+        return {
+          products: [{ id: 101, name: 'Trà Đào' }],
+          total: 1,
+        };
+      },
+    };
+
+    const service = createPublicCatalogV2Service({ catalogRepository: mockRepo });
+    const result = await service.listSubtreeProducts({ storeId: 1, categorySlug: 'thuc-don' });
+
+    assert.equal(result.products.length, 1);
+    assert.equal(result.category.slug, 'nuoc-uong');
+    assert.equal(result.category.is_alias_resolved, true);
+  });
 });
+

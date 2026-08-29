@@ -17,9 +17,15 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
     async findCategoryBySlug(slug) {
       if (!slug) return null;
       const [rows] = await database.query(
-        `SELECT c.id, c.name, c.slug, c.parent_id, c.depth, c.sort_order, c.is_visible, c.archived_at
+        `SELECT c.id, c.name, c.slug, c.parent_id, c.depth, c.sort_order, c.is_visible, c.archived_at,
+                c.slug AS canonical_slug,
+                CASE WHEN c.slug <> $1 THEN TRUE ELSE FALSE END AS is_alias_resolved
          FROM categories c
-         WHERE c.slug = $1 AND c.is_visible = TRUE AND c.archived_at IS NULL
+         LEFT JOIN category_slug_aliases csa ON csa.category_id = c.id
+         WHERE (c.slug = $1 OR csa.alias_slug = $1)
+           AND c.is_visible = TRUE
+           AND c.archived_at IS NULL
+         ORDER BY (CASE WHEN c.slug = $1 THEN 0 ELSE 1 END) ASC
          LIMIT 1`,
         [slug],
       );

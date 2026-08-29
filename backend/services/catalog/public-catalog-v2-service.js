@@ -55,20 +55,33 @@ export function createPublicCatalogV2Service({
         throw new CatalogV2Error('Vui lòng chọn chi nhánh hợp lệ', 400);
       }
 
+      let resolvedCategory = null;
       if (categorySlug) {
-        const category = await catalogRepository.findCategoryBySlug(categorySlug);
-        if (!category) {
+        resolvedCategory = await catalogRepository.findCategoryBySlug(categorySlug);
+        if (!resolvedCategory) {
           throw new CatalogV2Error('Không tìm thấy danh mục hoặc danh mục đã ngừng phục vụ', 404);
         }
       }
 
-      return await catalogRepository.listProducts({
+      const result = await catalogRepository.listProducts({
         storeId: normalizedStoreId,
-        categorySlug,
+        categorySlug: resolvedCategory ? (resolvedCategory.canonical_slug || resolvedCategory.slug) : categorySlug,
+        categoryId: resolvedCategory ? resolvedCategory.id : undefined,
         search,
         limit,
         offset,
       });
+
+      if (resolvedCategory) {
+        result.category = {
+          id: resolvedCategory.id,
+          name: resolvedCategory.name,
+          slug: resolvedCategory.canonical_slug || resolvedCategory.slug,
+          is_alias_resolved: Boolean(resolvedCategory.is_alias_resolved),
+        };
+      }
+
+      return result;
     },
 
     async listProducts(filters) {
