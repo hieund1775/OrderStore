@@ -38,7 +38,7 @@ test('Fulfillment Task Idempotency & Lifecycle Suite', async (t) => {
     assert.equal(capturedPayload.laneItemsMap.packing.length, 1);
   });
 
-  await t.test('repository retry never deletes existing task items and inserts items idempotently', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('repository retry never deletes existing task items and inserts items idempotently', async () => {
     const statements = [];
     const fakeDatabase = {
       async query(sql) {
@@ -80,7 +80,7 @@ test('Fulfillment Task Idempotency & Lifecycle Suite', async (t) => {
     );
   });
 
-  await t.test('an order that requires fulfillment is not complete when it has zero tasks', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('an order that requires fulfillment is not complete when it has zero tasks', async () => {
     const repository = createFulfillmentRepository({
       async query(sql) {
         assert.match(sql, /SELECT status FROM fulfillment_tasks/);
@@ -91,7 +91,7 @@ test('Fulfillment Task Idempotency & Lifecycle Suite', async (t) => {
     assert.equal(await repository.areAllTasksCompletedForOrder(999), false);
   });
 
-  await t.test('cancelling one order preserves completed tasks and tasks of sibling orders', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('cancelling one order preserves completed tasks and tasks of sibling orders', async () => {
     const tasks = [
       { id: 21, order_id: 601, status: 'pending', lane: 'kitchen' },
       { id: 22, order_id: 601, status: 'completed', lane: 'packing' },

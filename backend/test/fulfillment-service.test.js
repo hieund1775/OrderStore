@@ -93,7 +93,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     assert.equal(result.orderId, 88);
   });
 
-  await t.test('rejects a missing fulfillment lane instead of silently routing it to kitchen', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('rejects a missing fulfillment lane instead of silently routing it to kitchen', async () => {
     const mockRepo = {
       async createTasksForOrder() {
         return [];
@@ -112,7 +112,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     );
   });
 
-  await t.test('rejects an unsupported fulfillment lane instead of silently routing it to kitchen', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('rejects an unsupported fulfillment lane instead of silently routing it to kitchen', async () => {
     const mockRepo = {
       async createTasksForOrder() {
         return [];
@@ -131,7 +131,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     );
   });
 
-  await t.test('rejects a registered but inactive fulfillment lane', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('rejects a registered but inactive fulfillment lane', async () => {
     const mockRepo = {
       async isLaneActive(lane) {
         assert.equal(lane, 'packing');

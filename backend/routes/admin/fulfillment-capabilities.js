@@ -1,7 +1,7 @@
 import express from 'express';
 import { createFulfillmentCapabilitiesRepository } from '../../repositories/postgres/fulfillment-capabilities.js';
 import { validateCapabilityInput } from '../../validation/fulfillment-capability-schemas.js';
-import { requireAdminRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 
 export function createFulfillmentCapabilitiesRoutes({
   repository = createFulfillmentCapabilitiesRepository(),
@@ -9,7 +9,7 @@ export function createFulfillmentCapabilitiesRoutes({
   const router = express.Router();
 
   // GET /api/admin/branches/:storeId/capabilities
-  router.get('/branches/:storeId/capabilities', requireAdminRole(['super', 'manager']), async (req, res, next) => {
+  router.get('/branches/:storeId/capabilities', requireRole('super', 'manager'), async (req, res, next) => {
     try {
       const storeId = Number(req.params.storeId);
       if (!Number.isInteger(storeId) || storeId <= 0) {
@@ -29,7 +29,7 @@ export function createFulfillmentCapabilitiesRoutes({
   });
 
   // PUT /api/admin/branches/:storeId/capabilities
-  router.put('/branches/:storeId/capabilities', requireAdminRole(['super']), async (req, res, next) => {
+  router.put('/branches/:storeId/capabilities', requireRole('super'), async (req, res, next) => {
     try {
       const storeId = Number(req.params.storeId);
       if (!Number.isInteger(storeId) || storeId <= 0) {

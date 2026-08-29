@@ -25,7 +25,7 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
     );
   });
 
-  await t.test('Super Admin must specify a branch explicitly before loading board tasks', { todo: 'Enable in Checkpoint E' }, async () => {
+  await t.test('Super Admin must specify a branch explicitly before loading board tasks', async () => {
     let repositoryCalled = false;
     const mockRepo = {
       async listTasks() {

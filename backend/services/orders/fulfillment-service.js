@@ -11,6 +11,14 @@ export function createFulfillmentService({
         return [];
       }
 
+      // Check if tasks already exist for this order (Idempotency)
+      if (typeof repository.getTasksForOrder === 'function') {
+        const existing = await repository.getTasksForOrder(orderId, client);
+        if (existing && existing.length > 0) {
+          return existing;
+        }
+      }
+
       // Group items into lanes
       const laneItemsMap = {
         kitchen: [],
@@ -18,12 +26,33 @@ export function createFulfillmentService({
       };
 
       for (const item of items) {
-        // Determine lane from item or default to kitchen for drinks
-        const lane = item.fulfillment_lane === 'packing' || item.lane === 'packing'
-          ? 'packing'
-          : 'kitchen';
+        const lane = item.fulfillment_lane || item.lane;
+        if (!lane) {
+          const err = new Error(`Luồng xử lý không hợp lệ hoặc chưa được thiết lập cho sản phẩm "${item.product_name || item.id}"`);
+          err.status = 400;
+          err.code = 'FULFILLMENT_LANE_REQUIRED';
+          throw err;
+        }
 
-        laneItemsMap[lane].push({
+        const normalizedLane = String(lane).trim().toLowerCase();
+        if (!['kitchen', 'packing'].includes(normalizedLane)) {
+          const err = new Error(`Luồng xử lý ${lane} không được hỗ trợ`);
+          err.status = 400;
+          err.code = 'FULFILLMENT_LANE_UNSUPPORTED';
+          throw err;
+        }
+
+        if (typeof repository.isLaneActive === 'function') {
+          const active = await repository.isLaneActive(normalizedLane);
+          if (!active) {
+            const err = new Error(`Luồng xử lý ${lane} đang tạm ngừng hoạt động`);
+            err.status = 409;
+            err.code = 'FULFILLMENT_LANE_INACTIVE';
+            throw err;
+          }
+        }
+
+        laneItemsMap[normalizedLane].push({
           order_item_id: item.id || item.order_item_id,
           product_id: item.product_id,
           variant_id: item.variant_id,
@@ -45,8 +74,15 @@ export function createFulfillmentService({
     },
 
     async listTasks({ user, branchId = null, lane = null, statuses = null, limit = 50 }) {
+      if (user?.admin_role === 'super' && !branchId) {
+        const err = new Error('Vui lòng chọn chi nhánh cụ thể để xem danh sách vận hành');
+        err.status = 400;
+        err.code = 'FULFILLMENT_BRANCH_REQUIRED';
+        throw err;
+      }
+
       const effectiveBranchId = user?.admin_role === 'super'
-        ? (branchId || null)
+        ? branchId
         : (user?.admin_branch_id || branchId || null);
 
       let effectiveLane = lane;
@@ -85,8 +121,8 @@ export function createFulfillmentService({
         throw err;
       }
 
-      if (user?.admin_role !== 'super' && user?.admin_branch_id && user.admin_branch_id !== Number(task.branch_id)) {
-        const err = new Error('Bạn không có quyền truy cập nhiệm vụ của chi nhánh khác');
+      if (user?.admin_role !== 'super' && user?.admin_branch_id && Number(user.admin_branch_id) !== Number(task.branch_id)) {
+        const err = new Error('Bạn không có quyền quản lý đơn hàng của chi nhánh khác');
         err.status = 403;
         throw err;
       }
@@ -120,6 +156,32 @@ export function createFulfillmentService({
         allTasksCompleted,
         orderId: task.order_id,
       };
+    },
+
+    async cancelTasksForOrder(orderId, client = database) {
+      if (!orderId) return [];
+      if (typeof repository.cancelTasksForOrder === 'function') {
+        return await repository.cancelTasksForOrder(orderId, client);
+      }
+      const tasks = await repository.getTasksForOrder(orderId, client);
+      const results = [];
+      for (const t of tasks || []) {
+        if (t.status !== 'completed') {
+          if (typeof repository.cancelTask === 'function') {
+            const res = await repository.cancelTask(t.id, client);
+            results.push(res);
+          } else if (typeof repository.updateTaskStatus === 'function') {
+            const res = await repository.updateTaskStatus({ taskId: t.id, status: 'cancelled' }, client);
+            results.push(res);
+          }
+        }
+      }
+      return results;
+    },
+
+    async areAllTasksCompletedForOrder(orderId, client = database) {
+      if (!orderId) return false;
+      return await repository.areAllTasksCompletedForOrder(orderId, client);
     },
   };
 }
