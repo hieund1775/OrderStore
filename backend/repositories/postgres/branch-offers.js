@@ -57,11 +57,13 @@ export function createBranchOffersRepository(database = postgresDb) {
 
     async upsertBranchOffer(storeId, data) {
       return await database.transaction(async (tx) => {
-        // Validate variant & product is active
         const [vRows] = await tx.query(
-          `SELECT pv.*, p.status AS product_status, p.price AS product_base_price
+          `SELECT pv.*, p.status AS product_status, p.price AS product_base_price,
+                  p.name AS product_name,
+                  COALESCE(p.fulfillment_lane, c.default_fulfillment_lane) AS effective_lane
            FROM product_variants pv
            JOIN products p ON p.id = pv.product_id
+           LEFT JOIN categories c ON c.id = p.category_id
            WHERE pv.id = $1`,
           [data.variant_id],
         );
@@ -69,6 +71,20 @@ export function createBranchOffersRepository(database = postgresDb) {
         if (!variant) throw new CatalogV2Error('Biến thể SKU không tồn tại', 404);
         if (variant.product_status === 'archived' || variant.status === 'archived') {
           throw new CatalogV2Error('Không thể tạo hoặc cập nhật giá cho sản phẩm đã lưu trữ', 400);
+        }
+
+        if (variant.effective_lane && data.is_available) {
+          const [capRows] = await tx.query(
+            `SELECT 1 FROM branch_fulfillment_capabilities
+             WHERE store_id = $1 AND lane_code = $2 AND is_enabled = TRUE`,
+            [storeId, variant.effective_lane],
+          );
+          if (!capRows[0]) {
+            throw new CatalogV2Error(
+              `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${variant.effective_lane}" cho sản phẩm "${variant.product_name}"`,
+              400,
+            );
+          }
         }
 
         const [rows] = await tx.query(

@@ -139,7 +139,7 @@ export function createAdminCatalogV2Service({
           price,
           image_url: input.image_url || null,
           status: input.status || 'active',
-          fulfillment_lane: input.fulfillment_lane || 'kitchen',
+          fulfillment_lane: input.fulfillment_lane || null,
           stock_mode: input.stock_mode || 'made_to_order',
           media: input.media || [],
         },
@@ -264,6 +264,39 @@ export function createAdminCatalogV2Service({
         sku,
       });
       return toVariantDto(created);
+    },
+
+    // -------------------------------------------------------------
+    // OPTION SCOPES & ASSIGNMENTS
+    // -------------------------------------------------------------
+    async listCategoryAssignments(categoryId) {
+      return await catalogRepository.listCategoryAssignments?.(Number(categoryId)) || [];
+    },
+
+    async upsertCategoryAssignment(categoryId, input) {
+      return await catalogRepository.upsertCategoryAssignment?.({
+        categoryId: Number(categoryId),
+        ...input,
+      });
+    },
+
+    async deleteCategoryAssignment(categoryId, attrDefId) {
+      return await catalogRepository.deleteCategoryAssignment?.(Number(categoryId), Number(attrDefId));
+    },
+
+    async listProductOverrides(productId) {
+      return await catalogRepository.listProductOverrides?.(Number(productId)) || [];
+    },
+
+    async upsertProductOverride(productId, input) {
+      return await catalogRepository.upsertProductOverride?.({
+        productId: Number(productId),
+        ...input,
+      });
+    },
+
+    async deleteProductOverride(productId, attrDefId) {
+      return await catalogRepository.deleteProductOverride?.(Number(productId), Number(attrDefId));
     },
   };
 }

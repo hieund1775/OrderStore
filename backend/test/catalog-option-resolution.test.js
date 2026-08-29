@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAdminCatalogV2Service } from '../services/catalog/admin-catalog-v2-service.js';
 import { createPublicCatalogV2Service } from '../services/catalog/public-catalog-v2-service.js';
+import { resolveProductOptions } from '../services/catalog/catalog-option-resolver.js';
+import { resolveFulfillmentLane } from '../services/catalog/fulfillment-lane-resolver.js';
 
 function configurableProduct(attributes) {
   return {
@@ -22,7 +24,7 @@ function configurableProduct(attributes) {
 }
 
 test('Catalog Option Visibility & Lane Inheritance Contracts', async (t) => {
-  await t.test('inactive option definitions do not remain required in public configuration', { todo: 'Enable in Checkpoint D' }, async () => {
+  await t.test('inactive option definitions do not remain required in public configuration', async () => {
     const catalogRepository = {
       async getProductBySlug() {
         return configurableProduct([{
@@ -51,7 +53,7 @@ test('Catalog Option Visibility & Lane Inheritance Contracts', async (t) => {
     assert.deepEqual(result.applied_modifiers, []);
   });
 
-  await t.test('inactive option values cannot be selected or charged', { todo: 'Enable in Checkpoint D' }, async () => {
+  await t.test('inactive option values cannot be selected or charged', async () => {
     const catalogRepository = {
       async getProductBySlug() {
         return configurableProduct([{
@@ -80,7 +82,7 @@ test('Catalog Option Visibility & Lane Inheritance Contracts', async (t) => {
     );
   });
 
-  await t.test('creating a product without an explicit lane preserves null for category inheritance', { todo: 'Enable in Checkpoint D' }, async () => {
+  await t.test('creating a product without an explicit lane preserves null for category inheritance', async () => {
     let persistedInput = null;
     const catalogRepository = {
       async createProduct(input) {
@@ -108,6 +110,68 @@ test('Catalog Option Visibility & Lane Inheritance Contracts', async (t) => {
     assert.equal(persistedInput.fulfillment_lane, null);
   });
 
-  await t.test('root assignment is inherited and child/product overrides win', { todo: true }, () => {});
-  await t.test('nearest category lane is resolved when product override is null', { todo: true }, () => {});
+  await t.test('root assignment is inherited and child/product overrides win', async () => {
+    const categoryAssignments = [
+      {
+        category_id: 1,
+        category_name: 'Nước uống',
+        attribute_definition_id: 10,
+        attribute_code: 'sugar',
+        attribute_name: 'Đường',
+        attribute_role: 'modifier',
+        is_enabled: true,
+        sort_order: 1,
+      },
+      {
+        category_id: 2,
+        category_name: 'Nước đóng chai',
+        attribute_definition_id: 10,
+        attribute_code: 'sugar',
+        attribute_name: 'Đường',
+        attribute_role: 'modifier',
+        is_enabled: false, // Disabled at child category
+        sort_order: 1,
+      },
+    ];
+
+    const productOverrides = [
+      {
+        product_id: 105,
+        attribute_definition_id: 10,
+        is_enabled: true, // Re-enabled at product level
+        sort_order: 2,
+      },
+    ];
+
+    // Case 1: Category 2 product without override -> sugar is disabled
+    const resolvedCat2 = resolveProductOptions({
+      categoryAssignments,
+      productOverrides: [],
+    });
+    assert.equal(resolvedCat2.length, 0);
+
+    // Case 2: Product 105 with override -> sugar is enabled
+    const resolvedProd = resolveProductOptions({
+      categoryAssignments,
+      productOverrides,
+    });
+    assert.equal(resolvedProd.length, 1);
+    assert.equal(resolvedProd[0].is_enabled, true);
+    assert.equal(resolvedProd[0].is_overridden, true);
+  });
+
+  await t.test('nearest category lane is resolved when product override is null', async () => {
+    const lineage = [
+      { id: 1, depth: 0, default_fulfillment_lane: 'kitchen' },
+      { id: 2, depth: 1, default_fulfillment_lane: 'packing' },
+    ];
+
+    const prodNull = { id: 10, category_id: 2, fulfillment_lane: null };
+    const prodOverride = { id: 11, category_id: 2, fulfillment_lane: 'kitchen' };
+
+    // Null inherits nearest (packing from depth 1)
+    assert.equal(resolveFulfillmentLane({ product: prodNull, lineage }), 'packing');
+    // Explicit override wins
+    assert.equal(resolveFulfillmentLane({ product: prodOverride, lineage }), 'kitchen');
+  });
 });

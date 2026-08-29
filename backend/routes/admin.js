@@ -16,6 +16,7 @@ import adminCatalogV2Router from './admin/catalog-v2.js';
 import branchOffersRouter from './admin/branch-offers.js';
 import variantInventoryRouter from './admin/variant-inventory.js';
 import adminFulfillmentRouter from './admin/fulfillment.js';
+import { createFulfillmentCapabilitiesRoutes } from './admin/fulfillment-capabilities.js';
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.use('/branch-offers', branchOffersRouter);
 router.use('/variant-inventory', variantInventoryRouter);
 router.use('/branches', branchesRouter);
 router.use('/tables', tablesRouter);
+router.use('/', createFulfillmentCapabilitiesRoutes());
 router.use('/promotions', adminPromotionsRouter);
 // Recruitment router owns the explicit /jobs and /job-applications paths.
 router.use('/', adminRecruitmentRouter);

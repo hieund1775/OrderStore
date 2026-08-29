@@ -111,15 +111,26 @@ export function createPublicCatalogV2Service({
       if (!product) throw new CatalogV2Error('Sản phẩm không tồn tại hoặc đã ngừng bán', 404);
 
       const attributes = product.attributes || [];
-      const variantAttributes = attributes.filter((attr) => attr.role === 'variant');
-      const modifierAttributes = attributes.filter((attr) => attr.role === 'modifier');
+      const variantAttributes = attributes.filter((attr) => attr.role === 'variant' && attr.is_active !== false);
+      const modifierAttributes = attributes.filter((attr) => attr.role === 'modifier' && attr.is_active !== false);
+
+      // Check if user selected any value belonging to inactive modifier values
+      for (const attr of attributes) {
+        for (const val of attr.values || []) {
+          if (modifierValueIds.includes(Number(val.id)) && val.is_active === false) {
+            const err = new CatalogV2Error(`Tùy chọn "${val.label || val.code}" đã tạm ngừng bán`, 400);
+            err.code = 'OPTION_VALUE_INACTIVE';
+            throw err;
+          }
+        }
+      }
 
       // 1. Resolve Variant SKU & Base Price
       const variantPairs = [];
       const consumedVariantIds = new Set();
       for (const attr of variantAttributes) {
         const selectedForAttribute = (attr.values || []).filter((value) =>
-          variantValueIds.includes(Number(value.id)),
+          variantValueIds.includes(Number(value.id)) && value.is_active !== false,
         );
         if (selectedForAttribute.length !== 1) {
           throw new CatalogV2Error(`Vui lòng chọn đúng một giá trị cho ${attr.name}`, 400);
@@ -157,7 +168,7 @@ export function createPublicCatalogV2Service({
 
       for (const attr of modifierAttributes) {
         const selectedForAttribute = (attr.values || []).filter((value) =>
-          modifierValueIds.includes(Number(value.id)),
+          modifierValueIds.includes(Number(value.id)) && value.is_active !== false,
         );
         const minimum = Number(attr.min_selections ?? (attr.is_required ? 1 : 0));
         const maximum = attr.input_type === 'single_select'

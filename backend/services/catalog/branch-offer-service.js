@@ -20,6 +20,24 @@ export function createBranchOfferService(repository = createBranchOffersReposito
         throw new CatalogV2Error('store_id không hợp lệ', 400);
       }
       const validated = validateBranchOfferInput(input);
+
+      if (validated.is_available) {
+        if (typeof repository.getVariantFulfillmentContext === 'function' && typeof repository.hasFulfillmentCapability === 'function') {
+          const ctx = await repository.getVariantFulfillmentContext(validated.variant_id);
+          if (ctx?.fulfillment_lane) {
+            const hasCap = await repository.hasFulfillmentCapability(Number(storeId), ctx.fulfillment_lane);
+            if (!hasCap) {
+              const err = new CatalogV2Error(
+                `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${ctx.fulfillment_lane}" cho sản phẩm này`,
+                409,
+              );
+              err.code = 'BRANCH_CAPABILITY_REQUIRED';
+              throw err;
+            }
+          }
+        }
+      }
+
       return await repository.upsertBranchOffer(Number(storeId), validated);
     },
 

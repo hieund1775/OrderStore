@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBranchOfferService } from '../services/catalog/branch-offer-service.js';
+import { createFulfillmentCapabilitiesRepository } from '../repositories/postgres/fulfillment-capabilities.js';
 
 test('Branch Fulfillment Capability & Offer Validation Suite', async (t) => {
-  await t.test('branch lacking the resolved lane capability cannot enable a branch offer', { todo: 'Enable in Checkpoint D' }, async () => {
+  await t.test('branch lacking the resolved lane capability cannot enable a branch offer', async () => {
     let upsertCalled = false;
     const repository = {
       async getVariantFulfillmentContext(variantId) {
@@ -33,6 +34,31 @@ test('Branch Fulfillment Capability & Offer Validation Suite', async (t) => {
     assert.equal(upsertCalled, false, 'Invalid offer must be rejected before it is persisted');
   });
 
-  await t.test('disabling a capability with active offers reports blockers', { todo: true }, () => {});
-  await t.test('disabling a capability with active tasks reports blockers', { todo: true }, () => {});
+  await t.test('disabling a capability with active offers reports blockers', async () => {
+    const mockDb = {
+      async query(sql) {
+        if (sql.includes('countActiveOffersByLane') || sql.includes('COUNT(*)::int AS count') && sql.includes('branch_variant_offers')) {
+          return [[{ count: 5 }]];
+        }
+        return [[]];
+      },
+    };
+    const repo = createFulfillmentCapabilitiesRepository(mockDb);
+    const count = await repo.countActiveOffersByLane(1, 'kitchen');
+    assert.equal(count, 5);
+  });
+
+  await t.test('disabling a capability with active tasks reports blockers', async () => {
+    const mockDb = {
+      async query(sql) {
+        if (sql.includes('fulfillment_tasks') && sql.includes('COUNT(*)::int AS count')) {
+          return [[{ count: 3 }]];
+        }
+        return [[]];
+      },
+    };
+    const repo = createFulfillmentCapabilitiesRepository(mockDb);
+    const count = await repo.countPendingTasksByLane(1, 'kitchen');
+    assert.equal(count, 3);
+  });
 });
