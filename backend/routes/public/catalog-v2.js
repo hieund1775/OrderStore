@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { createPublicCatalogV2Service } from '../../services/catalog/public-catalog-v2-service.js';
+import { validateSectionsQuery, validateSubtreeProductsQuery } from '../../validation/catalog-v2-schemas.js';
+import { toCatalogSectionDto } from '../../dto/catalog-v2-dto.js';
 
 const router = Router();
 const service = createPublicCatalogV2Service();
@@ -10,15 +12,22 @@ router.get('/categories/tree', asyncHandler(async (req, res) => {
   res.json(tree);
 }));
 
+router.get('/sections', asyncHandler(async (req, res) => {
+  const { storeId, limitPerRoot } = validateSectionsQuery(req.query);
+  const sections = await service.getSections({ storeId, limitPerRoot });
+  res.json({ sections: sections.map(toCatalogSectionDto) });
+}));
+
 router.get('/products', asyncHandler(async (req, res) => {
-  const products = await service.listProducts({
-    storeId: req.query.store_id,
-    categorySlug: req.query.category,
-    search: req.query.search,
-    limit: req.query.limit ? Number(req.query.limit) : 50,
-    offset: req.query.offset ? Number(req.query.offset) : 0,
+  const { storeId, categorySlug, search, limit, offset } = validateSubtreeProductsQuery(req.query);
+  const result = await service.listSubtreeProducts({
+    storeId,
+    categorySlug,
+    search,
+    limit,
+    offset,
   });
-  res.json(products);
+  res.json(result);
 }));
 
 router.get('/products/:slug', asyncHandler(async (req, res) => {

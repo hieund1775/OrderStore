@@ -10,7 +10,15 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
 
       if (categoryId) {
         params.push(Number(categoryId));
-        where += ` AND p.category_id = $${params.length}`;
+        where += ` AND p.category_id IN (
+          WITH RECURSIVE cat_tree AS (
+            SELECT id FROM categories WHERE id = $${params.length} AND archived_at IS NULL
+            UNION ALL
+            SELECT c.id FROM categories c JOIN cat_tree ct ON c.parent_id = ct.id
+            WHERE c.archived_at IS NULL
+          )
+          SELECT id FROM cat_tree
+        )`;
       }
       if (status) {
         params.push(status);

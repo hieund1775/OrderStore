@@ -1,5 +1,161 @@
 import postgresDb from '../../config/db-postgres.js';
 
+export async function runRootCategoryReparentBackfill({ dryRun = false, database = postgresDb } = {}) {
+  const summary = {
+    dryRun,
+    runKey: 'legacy-root-category-navigation-v1',
+    rootCategoryCreated: false,
+    rootCategoryId: null,
+    categoriesToReparent: 0,
+    categoriesReparented: 0,
+    alreadyApplied: false,
+    errors: [],
+  };
+
+  const runKey = 'legacy-root-category-navigation-v1';
+
+  if (dryRun) {
+    // 1. Find beverage product type
+    const [ptRows] = await database.query(
+      "SELECT id FROM product_types WHERE code = 'beverage' LIMIT 1",
+    );
+    const beverageTypeId = ptRows[0]?.id;
+
+    // 2. Find depth=0 categories that belong to beverage or need reparenting
+    const [categoriesToMove] = await database.query(
+      `SELECT c.id, c.name, c.slug, c.depth, c.parent_id
+       FROM categories c
+       WHERE c.parent_id IS NULL
+         AND c.depth = 0
+         AND c.slug != 'thuc-don'
+         AND ($1::bigint IS NULL OR c.product_type_id = $1)
+         AND c.archived_at IS NULL`,
+      [beverageTypeId || null],
+    );
+
+    summary.categoriesToReparent = categoriesToMove.length;
+
+    // Check if 'thuc-don' already exists
+    const [existingRootRows] = await database.query(
+      "SELECT id, depth, parent_id FROM categories WHERE slug = 'thuc-don' LIMIT 1",
+    );
+    if (existingRootRows[0]) {
+      const existing = existingRootRows[0];
+      if (existing.parent_id !== null || existing.depth !== 0) {
+        summary.errors.push("Slug 'thuc-don' exists but is not a valid root category (depth != 0 or parent_id != null)");
+      }
+      summary.rootCategoryId = existing.id;
+    } else {
+      summary.rootCategoryCreated = categoriesToMove.length > 0;
+    }
+
+    return summary;
+  }
+
+  return await database.transaction(async (tx) => {
+    // Check if already applied
+    const [completedRuns] = await tx.query(
+      'SELECT 1 FROM catalog_v2_backfill_runs WHERE name = $1 LIMIT 1',
+      [runKey],
+    );
+    if (completedRuns[0]) {
+      summary.alreadyApplied = true;
+      return summary;
+    }
+
+    // 1. Find beverage product type
+    const [ptRows] = await tx.query(
+      "SELECT id FROM product_types WHERE code = 'beverage' LIMIT 1",
+    );
+    const beverageTypeId = ptRows[0]?.id;
+
+    // 2. Find categories at depth = 0 that need reparenting
+    const [categoriesToMove] = await tx.query(
+      `SELECT c.id, c.name, c.slug, c.depth, c.parent_id
+       FROM categories c
+       WHERE c.parent_id IS NULL
+         AND c.depth = 0
+         AND c.slug != 'thuc-don'
+         AND ($1::bigint IS NULL OR c.product_type_id = $1)
+         AND c.archived_at IS NULL
+       ORDER BY c.sort_order ASC, c.id ASC`,
+      [beverageTypeId || null],
+    );
+
+    summary.categoriesToReparent = categoriesToMove.length;
+
+    if (categoriesToMove.length === 0) {
+      // Nothing to move, mark complete
+      await tx.query(
+        `INSERT INTO catalog_v2_backfill_runs (name, summary)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (name) DO NOTHING`,
+        [runKey, JSON.stringify(summary)],
+      );
+      return summary;
+    }
+
+    // 3. Find or create root category 'thuc-don'
+    let rootCategoryId = null;
+    let rootWasCreated = false;
+
+    const [existingRootRows] = await tx.query(
+      "SELECT id, depth, parent_id FROM categories WHERE slug = 'thuc-don' LIMIT 1",
+    );
+
+    if (existingRootRows[0]) {
+      const existing = existingRootRows[0];
+      if (existing.parent_id !== null || existing.depth !== 0) {
+        throw new Error("Conflict: Slug 'thuc-don' exists but is not a valid root category (depth != 0 or parent_id != null)");
+      }
+      rootCategoryId = existing.id;
+    } else {
+      const [newRootRows] = await tx.query(
+        `INSERT INTO categories (name, slug, description, depth, parent_id, product_type_id, sort_order, is_visible)
+         VALUES ('Thực đơn', 'thuc-don', 'Toàn bộ thực đơn đồ uống và món ăn của quán', 0, NULL, NULL, 1, TRUE)
+         RETURNING id`,
+      );
+      rootCategoryId = newRootRows[0].id;
+      rootWasCreated = true;
+      summary.rootCategoryCreated = true;
+    }
+
+    summary.rootCategoryId = rootCategoryId;
+
+    // 4. Reparent categories and log to audit table
+    for (const cat of categoriesToMove) {
+      // Insert into audit table
+      await tx.query(
+        `INSERT INTO catalog_category_reparent_history (
+           run_key, root_category_id, category_id, old_parent_id, old_depth, root_was_created
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (run_key, category_id) DO NOTHING`,
+        [runKey, rootCategoryId, cat.id, cat.parent_id, cat.depth, rootWasCreated],
+      );
+
+      // Move category under root and set depth = 1
+      await tx.query(
+        `UPDATE categories
+         SET parent_id = $1, depth = 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [rootCategoryId, cat.id],
+      );
+
+      summary.categoriesReparented++;
+    }
+
+    // 5. Record completed backfill run
+    await tx.query(
+      `INSERT INTO catalog_v2_backfill_runs (name, summary)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (name) DO NOTHING`,
+      [runKey, JSON.stringify(summary)],
+    );
+
+    return summary;
+  });
+}
+
 export async function runCatalogV2Backfill({ dryRun = false, database = postgresDb } = {}) {
   const summary = {
     dryRun,
@@ -11,6 +167,7 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
     offersCreated: 0,
     modifierMappingsCreated: 0,
     alreadyApplied: false,
+    reparentSummary: null,
   };
 
   if (dryRun) {
@@ -18,6 +175,7 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
       'SELECT COUNT(*)::int AS count FROM products WHERE product_type_schema_id IS NULL',
     );
     summary.productsMigrated = pRows[0]?.count || 0;
+    summary.reparentSummary = await runRootCategoryReparentBackfill({ dryRun: true, database });
     return summary;
   }
 
@@ -28,6 +186,7 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
   );
   if (completedRuns[0]) {
     summary.alreadyApplied = true;
+    summary.reparentSummary = await runRootCategoryReparentBackfill({ dryRun: false, database });
     return summary;
   }
 
@@ -206,6 +365,10 @@ export async function runCatalogV2Backfill({ dryRun = false, database = postgres
        ON CONFLICT (name) DO NOTHING`,
       [backfillName, JSON.stringify(summary)],
     );
+
+    // 5. Also run root category reparenting backfill
+    summary.reparentSummary = await runRootCategoryReparentBackfill({ dryRun: false, database: { transaction: (cb) => cb(tx), query: (...args) => tx.query(...args) } });
+
     return summary;
   });
 }

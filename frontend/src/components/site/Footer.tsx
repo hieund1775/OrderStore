@@ -22,7 +22,7 @@ export function Footer() {
           <ul className="text-muted-foreground space-y-2 text-sm">
             <li>
               <Link to="/menu" className="hover:text-primary">
-                Thực đơn
+                Danh mục sản phẩm
               </Link>
             </li>
             <li>

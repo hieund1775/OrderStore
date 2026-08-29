@@ -117,3 +117,19 @@ export function toVariantDto(row) {
     updated_at: row.updated_at,
   };
 }
+
+export function toCatalogSectionDto(section) {
+  if (!section) return null;
+  return {
+    root_id: Number(section.root_id),
+    root_name: section.root_name,
+    root_slug: section.root_slug,
+    total_products: Number(section.total_products || 0),
+    children: (section.children || []).map((c) => ({
+      id: Number(c.id),
+      name: c.name,
+      slug: c.slug,
+    })),
+    products: (section.products || []).map((p) => toProductV2Dto(p)),
+  };
+}

@@ -8,9 +8,11 @@ import {
   ShoppingCart,
   User,
   ChevronRight,
+  ChevronDown,
   Trash2,
   Loader2,
   RefreshCw,
+  FolderTree,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +55,7 @@ import {
   setCustomerToken,
   setCustomerUser,
   clearCustomerToken,
+  fetchPublicCategoryTree,
 } from '@/lib/api';
 import { brand, vnd } from '@/lib/data';
 import {
@@ -617,6 +620,27 @@ function StandaloneBanner() {
 }
 
 export function Header() {
+  const [categoryTree, setCategoryTree] = useState<any[]>([]);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [mobileCatOpen, setMobileCatOpen] = useState(false);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    let mounted = true;
+    fetchPublicCategoryTree()
+      .then((tree) => {
+        if (mounted && Array.isArray(tree)) {
+          setCategoryTree(tree);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const rootCategories = categoryTree.filter((c) => Number(c.depth || 0) === 0 && !c.parent_id);
+
   return (
     <header className="bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
       <StandaloneBanner />
@@ -624,7 +648,8 @@ export function Header() {
         🍓 Freeship 0đ cho đơn từ 99.000₫ · Hotline {brand.hotline}
       </div>
       <div className="container-page flex h-16 items-center gap-3">
-        <Sheet>
+        {/* Mobile Sheet */}
+        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
           <SheetTrigger asChild>
             <Button
               variant="ghost"
@@ -641,22 +666,101 @@ export function Header() {
                 <Logo />
               </SheetTitle>
             </SheetHeader>
-            <nav className="flex flex-col px-4">
-              {navItems.map((n) => (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  className="hover:text-primary border-b py-3 text-sm font-medium"
-                  activeProps={{ className: 'text-primary' }}
+            <nav className="flex flex-col px-4 overflow-y-auto max-h-[calc(100vh-140px)]">
+              <Link
+                to="/"
+                onClick={() => setMobileSheetOpen(false)}
+                className="hover:text-primary border-b py-3 text-sm font-medium"
+                activeProps={{ className: 'text-primary' }}
+              >
+                Trang chủ
+              </Link>
+              <Link
+                to="/gioi-thieu"
+                onClick={() => setMobileSheetOpen(false)}
+                className="hover:text-primary border-b py-3 text-sm font-medium"
+                activeProps={{ className: 'text-primary' }}
+              >
+                Giới thiệu
+              </Link>
+
+              {/* Accordion Danh mục trên Mobile */}
+              <div className="border-b py-2">
+                <div
+                  onClick={() => setMobileCatOpen(!mobileCatOpen)}
+                  className="flex items-center justify-between py-2 text-sm font-medium cursor-pointer hover:text-primary"
                 >
-                  {n.label}
-                </Link>
-              ))}
-              <Link to="/ho-so" className="hover:text-primary border-b py-3 text-sm font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <FolderTree className="size-4 text-primary" /> Danh mục sản phẩm
+                  </span>
+                  <ChevronDown className={`size-4 transition-transform ${mobileCatOpen ? 'rotate-180' : ''}`} />
+                </div>
+                {mobileCatOpen && (
+                  <div className="pl-4 pb-2 space-y-2 text-xs">
+                    <Link
+                      to="/menu"
+                      search={(prev) => prev}
+                      onClick={() => setMobileSheetOpen(false)}
+                      className="block py-1 font-semibold text-primary hover:underline"
+                    >
+                      🌐 Xem tất cả sản phẩm
+                    </Link>
+                    {rootCategories.map((root) => (
+                      <div key={root.id} className="space-y-1">
+                        <Link
+                          to="/menu"
+                          search={(prev) => ({ ...prev, category: root.slug })}
+                          onClick={() => setMobileSheetOpen(false)}
+                          className="block font-medium py-1 text-foreground hover:text-primary"
+                        >
+                          📁 {root.name}
+                        </Link>
+                        {root.children && root.children.length > 0 && (
+                          <div className="pl-3 space-y-1 border-l border-border/60">
+                            {root.children.map((child: any) => (
+                              <Link
+                                key={child.id}
+                                to="/menu"
+                                search={(prev) => ({ ...prev, category: child.slug })}
+                                onClick={() => setMobileSheetOpen(false)}
+                                className="block text-muted-foreground hover:text-primary py-0.5"
+                              >
+                                • {child.name}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Link
+                to="/cua-hang"
+                onClick={() => setMobileSheetOpen(false)}
+                className="hover:text-primary border-b py-3 text-sm font-medium"
+                activeProps={{ className: 'text-primary' }}
+              >
+                Cửa hàng
+              </Link>
+              <Link
+                to="/tuyen-dung"
+                onClick={() => setMobileSheetOpen(false)}
+                className="hover:text-primary border-b py-3 text-sm font-medium"
+                activeProps={{ className: 'text-primary' }}
+              >
+                Tuyển dụng
+              </Link>
+              <Link
+                to="/ho-so"
+                onClick={() => setMobileSheetOpen(false)}
+                className="hover:text-primary border-b py-3 text-sm font-medium"
+              >
                 Hồ sơ cá nhân
               </Link>
             </nav>
-            <div className="px-4">
+            <div className="px-4 mt-auto pt-4">
               <BranchSelector />
             </div>
           </SheetContent>
@@ -664,18 +768,85 @@ export function Header() {
 
         <Logo />
 
+        {/* Desktop Navigation */}
         <nav className="ml-4 hidden items-center gap-1 lg:flex">
-          {navItems.map((n) => (
-            <Link
-              key={n.to}
-              to={n.to}
-              className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
-              activeProps={{ className: 'bg-accent text-accent-foreground' }}
-              activeOptions={{ exact: n.to === '/' }}
-            >
-              {n.label}
-            </Link>
-          ))}
+          <Link
+            to="/"
+            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            activeOptions={{ exact: true }}
+          >
+            Trang chủ
+          </Link>
+          <Link
+            to="/gioi-thieu"
+            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+          >
+            Giới thiệu
+          </Link>
+
+          {/* Danh mục Dropdown trên Desktop */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={`hover:bg-accent rounded-full px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 cursor-pointer ${
+                  pathname.startsWith('/menu') ? 'bg-accent text-accent-foreground font-semibold' : ''
+                }`}
+              >
+                <span>Danh mục</span>
+                <ChevronDown className="size-3.5 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 p-1.5">
+              <DropdownMenuItem asChild>
+                <Link to="/menu" search={(prev) => prev} className="font-bold flex items-center justify-between cursor-pointer">
+                  <span>🌐 Tất cả sản phẩm</span>
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                </Link>
+              </DropdownMenuItem>
+              {rootCategories.length > 0 && <DropdownMenuSeparator />}
+              {rootCategories.map((root) => (
+                <div key={root.id} className="py-1">
+                  <DropdownMenuItem asChild>
+                    <Link
+                      to="/menu"
+                      search={(prev) => ({ ...prev, category: root.slug })}
+                      className="font-semibold text-xs flex items-center justify-between cursor-pointer"
+                    >
+                      <span>📁 {root.name}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  {root.children && root.children.length > 0 && (
+                    <div className="pl-4 pr-1 py-0.5 space-y-0.5">
+                      {root.children.map((child: any) => (
+                        <DropdownMenuItem key={child.id} asChild className="text-[11px] py-1 text-muted-foreground hover:text-foreground cursor-pointer">
+                          <Link to="/menu" search={(prev) => ({ ...prev, category: child.slug })}>
+                            • {child.name}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Link
+            to="/cua-hang"
+            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+          >
+            Cửa hàng
+          </Link>
+          <Link
+            to="/tuyen-dung"
+            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+          >
+            Tuyển dụng
+          </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">

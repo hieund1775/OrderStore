@@ -149,3 +149,23 @@ test('catalog integrity migration 0013 prevents multiple published schemas and a
     assert.ok(sql.includes(fragment), `missing catalog integrity migration contract: ${fragment}`);
   }
 });
+
+test('root category navigation migration 0015 creates reparent history audit table', async () => {
+  const rootNavMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0015_root_category_navigation.sql');
+  const sql = await readFile(rootNavMigrationPath, 'utf8');
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS catalog_category_reparent_history',
+    'run_key VARCHAR(100) NOT NULL',
+    'root_category_id BIGINT NOT NULL REFERENCES categories(id)',
+    'category_id BIGINT NOT NULL REFERENCES categories(id)',
+    'old_parent_id BIGINT REFERENCES categories(id)',
+    'old_depth INTEGER NOT NULL',
+    'root_was_created BOOLEAN NOT NULL',
+    'uq_reparent_run_category UNIQUE (run_key, category_id)',
+    'idx_reparent_history_run_key',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing root category navigation migration contract: ${fragment}`);
+  }
+});

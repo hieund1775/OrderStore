@@ -344,8 +344,31 @@ export async function fetchInventoryMovements(params?: { store_id?: number | str
 
 // ═══════════ PUBLIC CATALOG V2 APIS ═══════════
 
-export async function fetchPublicCategoryTree() {
-  return apiFetch<any[]>('/catalog/categories/tree');
+export type PublicCategoryNode = {
+  id: number;
+  name: string;
+  slug: string;
+  parent_id: number | null;
+  depth: number;
+  sort_order: number;
+  children?: PublicCategoryNode[];
+};
+
+export type PublicCatalogSection = {
+  root_id: number;
+  root_name: string;
+  root_slug: string;
+  total_products: number;
+  children: Array<{ id: number; name: string; slug: string }>;
+  products: any[];
+};
+
+export async function fetchPublicCategoryTree(): Promise<PublicCategoryNode[]> {
+  return apiFetch<PublicCategoryNode[]>('/catalog/categories/tree');
+}
+
+export async function fetchPublicCatalogSections(storeId: number | string, limitPerRoot = 12): Promise<{ sections: PublicCatalogSection[] }> {
+  return apiFetch<{ sections: PublicCatalogSection[] }>(`/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
 }
 
 export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }) {
@@ -375,6 +398,7 @@ export async function resolveProductConfiguration(data: {
     body: JSON.stringify(data),
   });
 }
+
 
 
 

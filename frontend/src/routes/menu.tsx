@@ -1,18 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
-import { ChevronRight, MapPin, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, MapPin, Search, AlertCircle, RefreshCw, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
+import { CatalogSection } from "@/components/catalog/CatalogSection";
+import { CategorySelector } from "@/components/catalog/CategorySelector";
 import { useCart } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
-import { mapApiProduct, products, vnd, type ApiCatalogProduct } from "@/lib/data";
-import { apiGet } from "@/lib/api";
+import {
+  fetchPublicCategoryTree,
+  fetchPublicCatalogSections,
+  fetchPublicProducts,
+  type PublicCategoryNode,
+  type PublicCatalogSection,
+  apiGet,
+} from "@/lib/api";
+import { vnd } from "@/lib/data";
 import menuBannerImg from "@/assets/menu.jpg";
 
 export const Route = createFileRoute("/menu")({
-  validateSearch: (search: Record<string, unknown>): { table_id?: string; store_id?: string } => ({
+  validateSearch: (search: Record<string, unknown>): {
+    table_id?: string;
+    store_id?: string;
+    category?: string;
+  } => ({
     table_id:
       typeof search.table_id === "string"
         ? search.table_id
@@ -25,19 +39,20 @@ export const Route = createFileRoute("/menu")({
         : typeof search.store_id === "number"
           ? String(search.store_id)
           : undefined,
+    category: typeof search.category === "string" && search.category.trim() ? search.category.trim() : undefined,
   }),
   head: () => ({
     meta: [
-      { title: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
+      { title: "Danh mục sản phẩm & Thực đơn — Trà Trái Cây Tô" },
       {
         name: "description",
         content:
-          "Menu trà trái cây tươi, trà đậm vị, trà tuyết và Hi-Tea detox. Lọc theo danh mục, cốt trà nền và đặt hàng ngay.",
+          "Khám phá danh mục đa ngành hàng: Trà trái cây, Trà sữa đậm vị, Đồ ăn vặt và Thời trang merchandise độc quyền.",
       },
-      { property: "og:title", content: "Thực đơn trà trái cây — Trà Trái Cây Tô" },
+      { property: "og:title", content: "Danh mục sản phẩm & Thực đơn — Trà Trái Cây Tô" },
       {
         property: "og:description",
-        content: "Lọc theo danh mục và cốt trà nền, tùy chỉnh từng ly.",
+        content: "Duyệt theo từng danh mục ngành hàng, tùy biến sản phẩm và đặt hàng ngay.",
       },
     ],
   }),
@@ -45,44 +60,37 @@ export const Route = createFileRoute("/menu")({
 });
 
 function MenuPage() {
-  const [selectedCategory, setSelectedCategory] = useState<string>("Tất cả");
-  const [selectedBase, setSelectedBase] = useState<string>("Tất cả");
-  const [catalogProducts, setCatalogProducts] = useState(products);
-  const [dbCategories, setDbCategories] = useState<{ id: number; name: string }[]>([]);
-  const [dbBases, setDbBases] = useState<{ id: number; name: string }[]>([]);
-  const { items, subtotal, count } = useCart();
+  const { table_id, store_id, category } = useSearch({ from: "/menu" });
   const { selectedStore: storeInfo, status: branchStatus, selectStore, bindTable, clearTable } = useBranch();
-  const { table_id, store_id } = useSearch({ from: "/menu" });
+  const { items, subtotal, count } = useCart();
+
+  // State
+  const [categoryTree, setCategoryTree] = useState<PublicCategoryNode[]>([]);
+  const [sections, setSections] = useState<PublicCatalogSection[]>([]);
+  const [categoryProducts, setCategoryProducts] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [notFoundError, setNotFoundError] = useState(false);
+
+  // Table binding
   const [tableInfo, setTableInfo] = useState<{
     table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
   } | null>(null);
 
+  const effectiveStoreId = storeInfo?.id || (store_id ? Number(store_id) : 1);
+
+  // 1. Fetch category tree
   useEffect(() => {
     let cancelled = false;
-    // 1. Fetch Products
-    apiGet<ApiCatalogProduct[]>("/api/products")
-      .then((rows) => {
-        if (!cancelled && rows.length > 0) setCatalogProducts(rows.map(mapApiProduct));
+    fetchPublicCategoryTree()
+      .then((tree) => {
+        if (!cancelled && Array.isArray(tree)) setCategoryTree(tree);
       })
       .catch(() => {});
-
-    // 2. Fetch Categories directly from Database API
-    apiGet<{ id: number; name: string }[]>("/api/categories")
-      .then((rows) => {
-        if (!cancelled && Array.isArray(rows)) setDbCategories(rows);
-      })
-      .catch(() => {});
-
-    // 3. Fetch Base Options directly from Database API
-    apiGet<{ id: number; name: string }[]>("/api/options/bases")
-      .then((rows) => {
-        if (!cancelled && Array.isArray(rows)) setDbBases(rows);
-      })
-      .catch(() => {});
-
     return () => { cancelled = true; };
   }, []);
 
+  // 2. Resolve table if present in URL
   useEffect(() => {
     if (!table_id && store_id && branchStatus === "ready") selectStore(store_id);
   }, [branchStatus, selectStore, store_id, table_id]);
@@ -98,8 +106,8 @@ function MenuPage() {
     )
       .then((res) => {
         if (!cancelled) {
-          if (bindTable(res.table.id, res.table.store_id)) setTableInfo(res);
-          else setTableInfo(null);
+          setTableInfo(res);
+          bindTable(res.table.id, res.table.name, res.table.store_id);
         }
       })
       .catch(() => {
@@ -108,200 +116,158 @@ function MenuPage() {
           clearTable();
         }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [bindTable, clearTable, table_id]);
+    return () => { cancelled = true; };
+  }, [table_id, bindTable, clearTable]);
 
-  const categoryList = useMemo(() => {
-    if (dbCategories.length > 0) {
-      return ["Tất cả", ...dbCategories.map((c) => c.name)];
+  // 3. Fetch Catalog Data (Grouped Sections if no category, Subtree Products if category selected)
+  const loadCatalogData = async () => {
+    setLoading(true);
+    setNotFoundError(false);
+
+    try {
+      if (!category) {
+        // Grouped sections view
+        const res = await fetchPublicCatalogSections(effectiveStoreId, 12);
+        setSections(res.sections || []);
+        setCategoryProducts([]);
+      } else {
+        // Subtree products view
+        const res = await fetchPublicProducts({
+          store_id: effectiveStoreId,
+          category: category,
+          search: searchQuery || undefined,
+        });
+        const productsList = (res as any).products || res || [];
+        setCategoryProducts(productsList);
+        setSections([]);
+      }
+    } catch (err: any) {
+      if (err?.status === 404 || err?.message?.includes("404") || err?.message?.includes("Không tìm thấy")) {
+        setNotFoundError(true);
+      }
+      setSections([]);
+      setCategoryProducts([]);
+    } finally {
+      setLoading(false);
     }
-    const derived = Array.from(new Set(catalogProducts.map((p) => p.line).filter(Boolean)));
-    return ["Tất cả", ...derived];
-  }, [dbCategories, catalogProducts]);
+  };
 
-  const baseList = useMemo(() => {
-    if (dbBases.length > 0) {
-      return ["Tất cả", ...dbBases.map((b) => b.name)];
-    }
-    const derived = Array.from(new Set(catalogProducts.map((p) => p.base).filter(Boolean)));
-    return ["Tất cả", ...derived];
-  }, [dbBases, catalogProducts]);
-
-  const filtered = useMemo(
-    () =>
-      catalogProducts.filter(
-        (p) =>
-          (selectedCategory === "Tất cả" || p.line === selectedCategory) &&
-          (selectedBase === "Tất cả" || p.base === selectedBase),
-      ),
-    [catalogProducts, selectedCategory, selectedBase],
-  );
+  useEffect(() => {
+    loadCatalogData();
+  }, [category, effectiveStoreId, searchQuery]);
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
+      {/* Table Banner */}
+      {tableInfo && (
+        <div className="bg-primary text-primary-foreground py-2.5 px-4">
+          <div className="container-page flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <MapPin className="size-4" />
+              Bạn đang quét QR tại <b>{tableInfo.table.name}</b> · {tableInfo.table.store_name}
+            </span>
+            <span className="text-[11px] opacity-90">Đơn hàng sẽ tự động gắn vào bàn này</span>
+          </div>
+        </div>
+      )}
+
+      {/* Hero Page Header */}
       <PageHeader
-        eyebrow="Menu"
-        title="Thực đơn trà trái cây tươi"
-        desc="Chọn danh mục và cốt trà nền yêu thích, tùy chỉnh mức đường – đá – topping theo đúng khẩu vị của bạn."
-        bannerImg={menuBannerImg}
+        title="Danh Mục Sản Phẩm & Thực Đơn"
+        description="Khám phá các sản phẩm tươi ngon & merchandise chất lượng cao từ hệ thống Trà Trái Cây Tô."
+        badge="Catalog Đa Ngành V2"
+        image={menuBannerImg}
       />
 
-      {tableInfo && (
-        <div className="container-page mt-6">
-          <div className="gradient-warm text-primary-foreground flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 px-5 py-4 shadow-glow">
-            <div className="flex items-center gap-3">
-              <span className="bg-white/20 flex size-11 shrink-0 items-center justify-center rounded-xl">
-                <MapPin className="size-6" />
-              </span>
-              <div>
-                <p className="font-display text-base font-bold">
-                  Bạn đang ngồi tại: {tableInfo.table.name}
-                </p>
-                <p className="text-sm opacity-90">
-                  {tableInfo.table.store_name} · {tableInfo.table.store_address}
-                </p>
-              </div>
-            </div>
-            <Badge variant="secondary" className="bg-white/95">
-              Đặt món tại bàn
-            </Badge>
+      <div className="container-page py-8 space-y-6">
+        {/* Branch & Category Filter Controls */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-6">
+          <CategorySelector
+            categoryTree={categoryTree}
+            activeCategorySlug={category}
+            searchParams={{ store_id, table_id }}
+          />
+
+          {/* Search bar */}
+          <div className="relative w-full md:w-64 shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Tìm kiếm sản phẩm…"
+              className="pl-9 h-9 text-xs"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
         </div>
-      )}
 
-      {storeInfo && !tableInfo && (
-        <div className="container-page mt-6">
-          <div className="gradient-warm text-primary-foreground flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/20 px-5 py-4 shadow-glow">
-            <div className="flex items-center gap-3">
-              <span className="bg-white/20 flex size-11 shrink-0 items-center justify-center rounded-xl">
-                <MapPin className="size-6" />
-              </span>
-              <div>
-                <p className="font-display text-base font-bold">
-                  Quý khách đang quét Mã QR Chi nhánh: {storeInfo.name}
-                </p>
-                <p className="text-sm opacity-90">
-                  {storeInfo.address || "Chi nhánh chính thức Trà Trái Cây Tô"}
-                </p>
-              </div>
-            </div>
-            <Badge variant="secondary" className="bg-white/95">
-              Mang đi / Tại quầy
-            </Badge>
+        {/* Content Area */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <RefreshCw className="size-8 text-primary animate-spin mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">Đang tải danh mục sản phẩm…</p>
           </div>
-        </div>
-      )}
-
-      <div className="container-page grid gap-8 py-10 lg:grid-cols-[1fr_320px]">
-        <div>
-          {/* Filters */}
-          <div className="bg-card top-32 z-20 mb-6 space-y-3 rounded-2xl border p-4 shadow-sm">
-            <div className="text-muted-foreground flex items-center gap-2 text-xs font-bold tracking-wide uppercase">
-              <SlidersHorizontal className="size-3.5" /> Danh mục
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {categoryList.map((c) => (
-                <FilterChip
-                  key={c}
-                  active={selectedCategory === c}
-                  onClick={() => setSelectedCategory(c)}
-                  label={c}
-                />
-              ))}
-            </div>
-            <div className="text-muted-foreground flex items-center gap-2 pt-1 text-xs font-bold tracking-wide uppercase">
-              Cốt trà nền
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {baseList.map((b) => (
-                <FilterChip
-                  key={b}
-                  active={selectedBase === b}
-                  onClick={() => setSelectedBase(b)}
-                  label={b}
-                />
-              ))}
-            </div>
-          </div>
-
-          <p className="text-muted-foreground mb-4 text-sm">{filtered.length} món phù hợp</p>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-            {filtered.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
-          {filtered.length === 0 && (
-            <p className="text-muted-foreground py-16 text-center text-sm">
-              Chưa có món nào khớp bộ lọc. Thử chọn danh mục hoặc cốt trà khác nhé.
+        ) : notFoundError ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed rounded-2xl p-8">
+            <AlertCircle className="size-12 text-destructive mb-3" />
+            <h3 className="font-display text-lg font-bold text-foreground">Không tìm thấy danh mục</h3>
+            <p className="text-xs text-muted-foreground mt-1 max-w-md">
+              Danh mục "{category}" không tồn tại hoặc đã ngừng phục vụ. Vui lòng quay lại trang danh mục chính.
             </p>
-          )}
-        </div>
-
-        {/* Cart overview */}
-        <aside className="hidden lg:block">
-          <div className="bg-card sticky top-32 rounded-2xl border p-5">
-            <p className="font-display text-lg font-bold">Giỏ hàng của bạn</p>
-            <p className="text-muted-foreground text-xs">{count} món đã chọn</p>
-            <div className="mt-4 max-h-80 space-y-3 overflow-y-auto">
-              {items.length === 0 && (
-                <p className="text-muted-foreground text-sm">Chọn món để bắt đầu đơn hàng.</p>
-              )}
-              {items.map((i) => (
-                <div key={i.key} className="flex gap-3 border-b pb-3 last:border-0">
-                  <img
-                    src={i.image}
-                    alt={i.name}
-                    loading="lazy"
-                    className="size-12 rounded-lg object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">
-                      {i.qty}× {i.name}
-                    </p>
-                    <p className="text-muted-foreground truncate text-xs">
-                      {i.size} · {i.sugar} đường · {i.ice} đá
-                      {i.toppings?.length ? ` · ${i.toppings.join(", ")}` : ""}
-                    </p>
-                  </div>
-                  <span className="text-sm font-bold">{vnd(i.unitPrice * i.qty)}</span>
-                </div>
+            <Link to="/menu" search={{ store_id, table_id, category: undefined }} className="mt-4">
+              <Button variant="hero" size="sm">
+                Xem tất cả danh mục
+              </Button>
+            </Link>
+          </div>
+        ) : !category ? (
+          /* Default Grouped Sections View */
+          sections.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed rounded-2xl p-8">
+              <ShoppingBag className="size-12 text-muted-foreground/40 mb-3" />
+              <p className="text-base font-semibold text-foreground">Chưa có sản phẩm nào khả dụng</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Chi nhánh hiện tại chưa cập nhật bảng giá hoặc sản phẩm đang tạm ngừng bán.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {sections.map((section) => (
+                <CatalogSection
+                  key={section.root_id}
+                  section={section}
+                  searchParams={{ store_id, table_id }}
+                />
               ))}
             </div>
-            <div className="mt-4 flex items-center justify-between border-t pt-4">
-              <span className="text-muted-foreground text-sm">Tạm tính</span>
-              <span className="text-primary text-lg font-extrabold">{vnd(subtotal)}</span>
+          )
+        ) : (
+          /* Subtree Products Grid View */
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-xl font-bold tracking-tight">
+                Danh sách sản phẩm ({categoryProducts.length})
+              </h2>
             </div>
-            <Button asChild variant="hero" className="mt-4 w-full">
-              <Link to="/thanh-toan">
-                Thanh toán <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </div>
-        </aside>
-      </div>
-    </>
-  );
-}
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick}>
-      <Badge
-        variant={active ? "default" : "secondary"}
-        className={`cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium ${active ? "" : "hover:bg-accent"}`}
-      >
-        {label}
-      </Badge>
-    </button>
+            {categoryProducts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed rounded-2xl p-8">
+                <ShoppingBag className="size-12 text-muted-foreground/40 mb-3" />
+                <p className="text-base font-semibold text-foreground">Chưa có sản phẩm trong danh mục này</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Vui lòng chọn danh mục khác hoặc quay lại danh mục gốc.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {categoryProducts.map((product) => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
+export default MenuPage;

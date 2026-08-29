@@ -41,6 +41,36 @@ export function createPublicCatalogV2Service({
       }));
     },
 
+    async getSections({ storeId, limitPerRoot = 12 } = {}) {
+      const normalizedStoreId = Number(storeId);
+      if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
+        throw new CatalogV2Error('Vui lòng chọn chi nhánh hợp lệ', 400);
+      }
+      return await catalogRepository.getGroupedSections({ storeId: normalizedStoreId, limitPerRoot });
+    },
+
+    async listSubtreeProducts({ storeId, categorySlug, search, limit = 50, offset = 0 } = {}) {
+      const normalizedStoreId = Number(storeId);
+      if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
+        throw new CatalogV2Error('Vui lòng chọn chi nhánh hợp lệ', 400);
+      }
+
+      if (categorySlug) {
+        const category = await catalogRepository.findCategoryBySlug(categorySlug);
+        if (!category) {
+          throw new CatalogV2Error('Không tìm thấy danh mục hoặc danh mục đã ngừng phục vụ', 404);
+        }
+      }
+
+      return await catalogRepository.listProducts({
+        storeId: normalizedStoreId,
+        categorySlug,
+        search,
+        limit,
+        offset,
+      });
+    },
+
     async listProducts(filters) {
       return await catalogRepository.listProducts(filters);
     },
@@ -97,7 +127,8 @@ export function createPublicCatalogV2Service({
         throw new CatalogV2Error('Tổ hợp biến thể này không tồn tại hoặc đã ngừng bán', 409);
       }
 
-      const variantPrice = Number(matchedVariant.price);
+      const rawPrice = matchedVariant.price;
+      const variantPrice = (rawPrice === null || rawPrice === undefined) ? NaN : Number(rawPrice);
       if (!Number.isInteger(variantPrice) || variantPrice < 0) {
         throw new CatalogV2Error('Chi nhánh chưa thiết lập giá bán cho biến thể này', 409);
       }
@@ -125,47 +156,56 @@ export function createPublicCatalogV2Service({
           );
         }
 
-        for (const matchedValue of selectedForAttribute) {
-          consumedModifierIds.add(Number(matchedValue.id));
-          const extra = Number(matchedValue.price_adjustment || 0);
+        for (const selectedVal of selectedForAttribute) {
+          consumedModifierIds.add(Number(selectedVal.id));
+          const extra = Number(selectedVal.price_adjustment || 0);
           modifierExtraTotal += extra;
           appliedModifiers.push({
-            attribute_code: attr.code,
+            attribute_definition_id: attr.id,
             attribute_name: attr.name,
-            value_code: matchedValue.code,
-            value_label: matchedValue.label,
+            attribute_value_id: selectedVal.id,
+            attribute_label: selectedVal.label,
             price_adjustment: extra,
           });
         }
       }
 
       if (consumedModifierIds.size !== modifierValueIds.length) {
-        throw new CatalogV2Error('Tùy chọn đã chọn không thuộc sản phẩm này hoặc đã ngừng sử dụng', 400);
+        throw new CatalogV2Error('Một số tùy chọn topping/đường/đá đã chọn không hợp lệ', 400);
       }
 
-      const unitPrice = variantPrice + modifierExtraTotal;
-      const availableStock = matchedVariant.available_stock == null
-        ? null
-        : Number(matchedVariant.available_stock);
-      const isAvailable = matchedVariant.is_available === true
-        && (product.stock_mode !== 'tracked' || (availableStock != null && availableStock > 0));
+      const finalPrice = variantPrice + modifierExtraTotal;
 
       return {
-        product_id: product.id,
-        product_name: product.name,
-        product_slug: product.slug,
-        fulfillment_lane: product.fulfillment_lane,
-        stock_mode: product.stock_mode,
-        variant_id: matchedVariant.id,
-        sku: matchedVariant.sku,
-        variant_name: matchedVariant.name_suffix || null,
-        is_available: isAvailable,
-        available_stock: availableStock,
+        product: {
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          fulfillment_lane: product.fulfillment_lane,
+          stock_mode: product.stock_mode,
+        },
+        variant: {
+          id: matchedVariant.id,
+          sku: matchedVariant.sku,
+          variant_signature: matchedVariant.variant_signature,
+          name_suffix: matchedVariant.name_suffix,
+          base_price: variantPrice,
+          compare_at_price: matchedVariant.compare_at_price ? Number(matchedVariant.compare_at_price) : null,
+          is_available: matchedVariant.is_available,
+          available_stock: matchedVariant.available_stock,
+        },
+        applied_modifiers: appliedModifiers,
+        pricing: {
+          variant_base_price: variantPrice,
+          modifiers_extra_total: modifierExtraTotal,
+          final_price: finalPrice,
+        },
         base_price: variantPrice,
         modifier_extra: modifierExtraTotal,
-        unit_price: unitPrice,
-        applied_modifiers: appliedModifiers,
+        unit_price: finalPrice,
       };
     },
   };
 }
+
+export default createPublicCatalogV2Service();

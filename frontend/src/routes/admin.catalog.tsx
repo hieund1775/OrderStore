@@ -1,20 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   FolderTree,
   ShoppingBag,
   Boxes,
   Sliders,
   RefreshCw,
-  Sparkles,
+  Plus,
+  Layers,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   fetchCatalogCategories,
   fetchProductTypes,
   fetchCatalogProducts,
   fetchSchemaDetails,
+  createCatalogCategory,
   getUser,
 } from '@/lib/api';
 import { CategoryTreeEditor } from '@/components/admin/catalog/CategoryTreeEditor';
@@ -40,7 +52,14 @@ function AdminCatalogPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<any | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
+  const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+
+  // Modal tạo danh mục gốc (depth = 0)
+  const [createRootOpen, setCreateRootOpen] = useState(false);
+  const [newRootName, setNewRootName] = useState('');
+  const [newRootSlug, setNewRootSlug] = useState('');
+  const [creatingRoot, setCreatingRoot] = useState(false);
 
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === 'super';
@@ -94,6 +113,84 @@ function AdminCatalogPage() {
     loadAllData();
   }, []);
 
+  // Danh mục gốc (depth = 0)
+  const rootCategories = useMemo(() => {
+    return categories.filter((c) => Number(c.depth || 0) === 0 && !c.parent_id);
+  }, [categories]);
+
+  // Tập hợp các category ID thuộc subtree của root đang chọn
+  const scopedCategoryIds = useMemo(() => {
+    if (selectedRootId === 'all') return null;
+
+    const rootId = Number(selectedRootId);
+    const ids = new Set<number>([rootId]);
+
+    // Thu thập con cháu
+    let added = true;
+    while (added) {
+      added = false;
+      for (const cat of categories) {
+        if (cat.parent_id && ids.has(Number(cat.parent_id)) && !ids.has(Number(cat.id))) {
+          ids.add(Number(cat.id));
+          added = true;
+        }
+      }
+    }
+    return ids;
+  }, [selectedRootId, categories]);
+
+  // Danh mục hiển thị theo scope
+  const filteredCategories = useMemo(() => {
+    if (!scopedCategoryIds) return categories;
+    return categories.filter((c) => scopedCategoryIds.has(Number(c.id)));
+  }, [scopedCategoryIds, categories]);
+
+  // Sản phẩm hiển thị theo scope
+  const filteredProducts = useMemo(() => {
+    if (!scopedCategoryIds) return products;
+    return products.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
+  }, [scopedCategoryIds, products]);
+
+  const handleCreateRootCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRootName.trim() || !newRootSlug.trim()) {
+      toast.error('Vui lòng nhập tên và slug danh mục gốc');
+      return;
+    }
+
+    try {
+      setCreatingRoot(true);
+      await createCatalogCategory({
+        name: newRootName.trim(),
+        slug: newRootSlug.trim().toLowerCase(),
+        parent_id: null,
+        product_type_id: null,
+        sort_order: rootCategories.length + 1,
+        is_visible: true,
+      });
+      toast.success(`Đã tạo danh mục gốc "${newRootName}"`);
+      setCreateRootOpen(false);
+      setNewRootName('');
+      setNewRootSlug('');
+      await loadAllData();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi tạo danh mục gốc');
+    } finally {
+      setCreatingRoot(false);
+    }
+  };
+
+  const generateSlugFromName = (name: string) => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -105,10 +202,10 @@ function AdminCatalogPage() {
             </span>
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight">
-                Quản Lý Sản Phẩm & Danh Mục (Catalog V2)
+                Quản Lý Sản Phẩm & Cây Danh Mục
               </h1>
               <p className="text-muted-foreground text-xs sm:text-sm">
-                Mở rộng bán đa ngành hàng (F&B, Đồ ăn vặt, Thời trang & Quần áo) với cây danh mục 3 cấp và biến thể SKU.
+                Quản lý các ngành hàng (Thực đơn, Quần áo, Quà lưu niệm...) với cây phân cấp danh mục trực quan.
               </p>
             </div>
           </div>
@@ -122,27 +219,62 @@ function AdminCatalogPage() {
         </div>
       </div>
 
+      {/* Root Category Context Selector Bar */}
+      <div className="bg-muted/40 border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap flex items-center gap-1.5">
+            <Layers className="size-4 text-primary" /> Ngành hàng gốc:
+          </Label>
+          <Select value={selectedRootId} onValueChange={setSelectedRootId}>
+            <SelectTrigger className="w-[240px] font-semibold h-9 text-sm bg-background">
+              <SelectValue placeholder="Chọn danh mục gốc" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="font-semibold">
+                🌐 Tất cả ngành hàng ({categories.length} danh mục)
+              </SelectItem>
+              {rootCategories.map((root) => (
+                <SelectItem key={root.id} value={String(root.id)}>
+                  📁 {root.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isSuperAdmin && (
+          <Button
+            variant="hero"
+            size="sm"
+            onClick={() => setCreateRootOpen(true)}
+            className="h-9 font-semibold text-xs"
+          >
+            <Plus className="size-4 mr-1.5" /> Tạo danh mục gốc
+          </Button>
+        )}
+      </div>
+
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
-          <TabsTrigger value="products" className="flex items-center gap-2">
+        <TabsList className="grid w-full grid-cols-3 max-w-lg">
+          <TabsTrigger value="products" className="flex items-center gap-2 text-xs sm:text-sm">
             <ShoppingBag className="size-4" />
-            <span>Sản phẩm</span>
+            <span>Sản phẩm ({filteredProducts.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="categories" className="flex items-center gap-2">
+          <TabsTrigger value="categories" className="flex items-center gap-2 text-xs sm:text-sm">
             <FolderTree className="size-4" />
-            <span>Cây danh mục</span>
+            <span>Cây danh mục ({filteredCategories.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="schemas" className="flex items-center gap-2">
+          <TabsTrigger value="schemas" className="flex items-center gap-2 text-xs sm:text-sm">
             <Sliders className="size-4" />
-            <span>Ngành hàng & Schema</span>
+            <span>Cấu hình nâng cao</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="products">
           <ProductEditor
-            products={products}
-            categories={categories}
+            products={filteredProducts}
+            categories={filteredCategories}
             onRefresh={loadAllData}
             isSuperAdmin={isSuperAdmin}
           />
@@ -150,7 +282,7 @@ function AdminCatalogPage() {
 
         <TabsContent value="categories">
           <CategoryTreeEditor
-            categories={categories}
+            categories={filteredCategories}
             productTypes={productTypes}
             onRefresh={loadAllData}
             isSuperAdmin={isSuperAdmin}
@@ -158,6 +290,10 @@ function AdminCatalogPage() {
         </TabsContent>
 
         <TabsContent value="schemas" className="space-y-6">
+          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 rounded-lg p-3 text-xs">
+            💡 <b>Cấu hình kỹ thuật nâng cao:</b> Định nghĩa các loại sản phẩm (Product Types) cùng Schema biến thể SKU và Modifiers (Đường, Đá, Topping, Size, Màu sắc...). Danh mục lá sẽ được liên kết với Schema tương ứng.
+          </div>
+
           <ProductTypeEditor
             productTypes={productTypes}
             selectedTypeId={selectedProductType?.id || null}
@@ -175,6 +311,68 @@ function AdminCatalogPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Modal Tạo Danh Mục Gốc */}
+      <Dialog open={createRootOpen} onOpenChange={setCreateRootOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handleCreateRootCategory}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Plus className="size-5 text-primary" />
+                <span>Tạo Danh Mục Cấp Gốc Mới</span>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="root-name" className="text-xs font-semibold">
+                  Tên danh mục gốc <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="root-name"
+                  placeholder="Ví dụ: Thực đơn, Quần áo & Thời trang..."
+                  value={newRootName}
+                  onChange={(e) => {
+                    setNewRootName(e.target.value);
+                    if (!newRootSlug || newRootSlug === generateSlugFromName(newRootName)) {
+                      setNewRootSlug(generateSlugFromName(e.target.value));
+                    }
+                  }}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="root-slug" className="text-xs font-semibold">
+                  Slug (Định danh URL) <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="root-slug"
+                  placeholder="thuc-don, quan-ao..."
+                  value={newRootSlug}
+                  onChange={(e) => setNewRootSlug(e.target.value.toLowerCase())}
+                  required
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateRootOpen(false)}
+                disabled={creatingRoot}
+              >
+                Hủy
+              </Button>
+              <Button type="submit" variant="hero" disabled={creatingRoot}>
+                {creatingRoot ? 'Đang tạo...' : 'Tạo danh mục gốc'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+export default AdminCatalogPage;

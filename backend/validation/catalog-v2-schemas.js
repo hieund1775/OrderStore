@@ -9,6 +9,41 @@ function badRequest(message) {
   return error;
 }
 
+export function validateSectionsQuery(query) {
+  const storeId = Number(query?.store_id);
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    throw badRequest('store_id phải là số nguyên dương hợp lệ');
+  }
+
+  let limitPerRoot = query?.limit_per_root ? Number(query.limit_per_root) : 12;
+  if (!Number.isInteger(limitPerRoot) || limitPerRoot <= 0) {
+    limitPerRoot = 12;
+  }
+  if (limitPerRoot > 12) {
+    limitPerRoot = 12;
+  }
+
+  return { storeId, limitPerRoot };
+}
+
+export function validateSubtreeProductsQuery(query) {
+  const storeId = Number(query?.store_id);
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    throw badRequest('store_id phải là số nguyên dương hợp lệ');
+  }
+
+  const categorySlug = query?.category ? String(query.category).trim().toLowerCase() : null;
+  if (categorySlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(categorySlug)) {
+    throw badRequest('Category slug không hợp lệ');
+  }
+
+  const limit = query?.limit ? Math.min(Math.max(1, Number(query.limit)), 100) : 50;
+  const offset = query?.offset ? Math.max(0, Number(query.offset)) : 0;
+  const search = query?.search ? String(query.search).trim() : null;
+
+  return { storeId, categorySlug, limit, offset, search };
+}
+
 export function validateCategoryInput(input) {
   if (!input || typeof input !== 'object') {
     throw badRequest('Category payload must be an object');
