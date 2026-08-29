@@ -2,7 +2,6 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import {
   ClipboardList,
   ChefHat,
-  UtensilsCrossed,
   QrCode,
   Store,
   Megaphone,
@@ -20,19 +19,21 @@ import {
 import { cn } from '@/lib/utils';
 
 export const adminNav = [
-  { to: '/admin/pos', label: 'Gọi món (POS)', icon: ShoppingCart },
-  { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList },
-  { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat },
-  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package },
-  { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode },
-  { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes },
-  { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck },
-  { to: '/admin/thuc-don', label: 'Thực đơn (Legacy)', icon: UtensilsCrossed },
-  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store },
-  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone },
-  { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase },
-  { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell },
-  { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings },
+  // Nhóm 1: Vận hành
+  { to: '/admin/pos', label: 'Gọi món (POS)', icon: ShoppingCart, section: 'operations' },
+  { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList, section: 'operations' },
+  { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat, section: 'operations' },
+  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'operations' },
+  { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode, section: 'operations' },
+  // Nhóm 2: Hàng hóa
+  { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog' },
+  { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck, section: 'catalog' },
+  // Nhóm 3: Quản trị
+  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'management' },
+  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone, section: 'management' },
+  { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase, section: 'management' },
+  { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell, section: 'management' },
+  { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings, section: 'management' },
 ] as const;
 
 export function AdminSidebar({
@@ -58,24 +59,29 @@ export function AdminSidebar({
           <Leaf className="size-5" />
         </span>
         {!collapsed && (
-          <div className="min-w-0">
-            <p className="font-display truncate text-sm font-bold">Trà Trái Cây Tô Admin</p>
-            <p className="text-muted-foreground truncate text-[11px]">Bảng điều khiển v4.0</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold tracking-tight text-foreground">Tea Station</p>
+            <p className="text-muted-foreground truncate text-xs">Trang quản trị</p>
           </div>
         )}
         <button
+          type="button"
           onClick={onToggle}
-          aria-label={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
-          className="hover:bg-sidebar-accent ml-auto hidden rounded-lg p-1.5 lg:block"
+          aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          className={cn(
+            'hover:bg-accent text-muted-foreground hover:text-accent-foreground ml-auto grid size-8 place-items-center rounded-lg transition-colors',
+            collapsed && 'hidden',
+          )}
         >
-          {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          <PanelLeftClose className="size-4" />
         </button>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {adminNav.map((item) => {
-          const active =
-            'exact' in item && item.exact ? pathname === item.to : pathname.startsWith(item.to);
+          const Icon = item.icon;
+          const active = pathname === item.to || (item.to !== '/admin' && pathname.startsWith(`${item.to}/`));
+
           return (
             <Link
               key={item.to}
@@ -83,29 +89,32 @@ export function AdminSidebar({
               onClick={onNavigate}
               title={collapsed ? item.label : undefined}
               className={cn(
-                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                 active
-                  ? 'bg-primary text-primary-foreground shadow-glow'
-                  : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                collapsed && 'justify-center px-0',
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                collapsed && 'justify-center px-2',
               )}
             >
-              <item.icon className="size-[18px] shrink-0" />
+              <Icon className={cn('size-4.5 shrink-0 transition-transform duration-150 group-hover:scale-105', active && 'text-primary-foreground')} />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t p-3">
-        <Link
-          to="/"
-          className="text-muted-foreground hover:text-primary flex items-center gap-3 rounded-xl px-3 py-2 text-xs"
-        >
-          <Store className="size-4 shrink-0" />
-          {!collapsed && <span>Về website khách hàng</span>}
-        </Link>
-      </div>
+      {collapsed && (
+        <div className="border-t p-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label="Mở rộng sidebar"
+            className="hover:bg-accent text-muted-foreground hover:text-accent-foreground grid size-10 w-full place-items-center rounded-lg transition-colors"
+          >
+            <PanelLeftOpen className="size-4.5" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

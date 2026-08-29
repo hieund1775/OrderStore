@@ -421,6 +421,16 @@ export async function resolveProductConfiguration(data: {
   });
 }
 
+export async function fetchBranchCapabilities(storeId: number | string): Promise<{ data: Array<{ lane_code: string; display_name: string; is_enabled: boolean }> }> {
+  return apiFetch<{ data: Array<{ lane_code: string; display_name: string; is_enabled: boolean }> }>(`/branches/${storeId}/capabilities`);
+}
 
-
-
+export async function updateBranchCapability(
+  storeId: number | string,
+  data: { lane_code: string; is_enabled: boolean },
+) {
+  return apiFetch<any>(`/branches/${storeId}/capabilities`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}

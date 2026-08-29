@@ -12,14 +12,17 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
     expect(formatAdminRoleLabel('unknown')).toBe('Nhân viên');
   });
 
-  it('Characterization: Legacy menu route /admin/thuc-don exists in compatibility window', async () => {
+  it('Legacy menu route /admin/thuc-don exists in compatibility window', async () => {
     const routeModule = await import('@/routes/admin.thuc-don');
     expect(routeModule.Route).toBeDefined();
   });
 
-  it('Characterization: Admin sidebar currently exposes legacy menu item (locked for Checkpoint F)', () => {
+  it('Admin sidebar has removed legacy menu item in favor of unified Catalog', () => {
     const legacyItem = adminNav.find((item) => item.to === '/admin/thuc-don');
-    expect(legacyItem).toBeDefined();
-    expect(legacyItem?.label).toContain('Thực đơn');
+    expect(legacyItem).toBeUndefined();
+
+    const catalogItem = adminNav.find((item) => item.to === '/admin/catalog');
+    expect(catalogItem).toBeDefined();
+    expect(catalogItem?.label).toContain('Sản phẩm & Danh mục');
   });
 });

@@ -241,7 +241,7 @@ function AdminCatalogPage() {
           {isSuperAdmin && (
             <TabsTrigger value="schemas" className="flex items-center gap-2 text-xs sm:text-sm">
               <Sliders className="size-4" />
-              <span>Cấu hình nâng cao</span>
+              <span>{selectedRootId === 'all' ? 'Cấu hình nâng cao' : 'Tùy chọn & Biến thể'}</span>
             </TabsTrigger>
           )}
         </TabsList>
