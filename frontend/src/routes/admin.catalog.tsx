@@ -368,17 +368,10 @@ function AdminCatalogPage() {
                 Quản Lý Sản Phẩm & Danh Mục
               </h1>
               <p className="text-muted-foreground text-xs sm:text-sm">
-                Quản lý các ngành hàng (Nước uống, Quần áo...) theo 3 Khối Tab: Danh mục con &bull; Sản phẩm &bull; Tùy chọn độc lập.
+                Quản lý các danh mục theo 3 Khối Tab: Danh mục con &bull; Sản phẩm &bull; Tùy chọn độc lập.
               </p>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={loadAllData} disabled={loading}>
-            <RefreshCw className={`size-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Làm mới
-          </Button>
         </div>
       </div>
 
@@ -571,7 +564,6 @@ function AdminCatalogPage() {
                     onChange={(e) => setProductFormData((prev) => ({ ...prev, price: Number(e.target.value) }))}
                     required
                   />
-                  <p className="text-[10px] text-muted-foreground">Bấm tăng/giảm nhảy 1.000đ</p>
                 </div>
               </div>
 
