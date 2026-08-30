@@ -16,6 +16,7 @@ export function createCatalogV2Repository(database = postgresDb) {
       const where = includeArchived ? '' : 'WHERE c.archived_at IS NULL';
       const [rows] = await database.query(
         `SELECT c.id, c.name, c.slug, c.parent_id, c.depth, c.product_type_id,
+                c.default_fulfillment_lane,
                 c.sort_order, c.is_visible, c.archived_at, c.created_at,
                 pt.name AS product_type_name, pt.code AS product_type_code,
                 (SELECT COUNT(*)::int FROM categories sub WHERE sub.parent_id = c.id AND sub.archived_at IS NULL) AS children_count,

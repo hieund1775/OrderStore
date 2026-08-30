@@ -40,6 +40,7 @@ import {
   updateCatalogCategory,
   archiveCatalogCategory,
 } from '@/lib/api';
+import { collectCategorySubtreeIds } from '@/lib/catalog-navigation';
 import type { CategoryNode } from './CategoryTreeEditor';
 import type { ProductV2 } from './ProductEditor';
 import type { SchemaDetails } from './SchemaAttributeEditor';
@@ -71,6 +72,12 @@ export function CatalogTabBlocksView({
   // Tab hiện tại: 'subcategories' | 'products' | 'options'
   const [activeTab, setActiveTab] = useState<'subcategories' | 'products' | 'options'>('subcategories');
 
+  // Danh mục gốc đang chọn
+  const activeRootCategory = useMemo(() => {
+    if (selectedRootId === 'all') return null;
+    return rootCategories.find((r) => String(r.id) === String(selectedRootId)) || null;
+  }, [rootCategories, selectedRootId]);
+
   // Lọc danh sách danh mục con trực thuộc Root đang chọn
   const subcategories = useMemo(() => {
     if (selectedRootId === 'all') {
@@ -80,12 +87,18 @@ export function CatalogTabBlocksView({
     return categories.filter((c) => Number(c.parent_id) === rootIdNum);
   }, [categories, selectedRootId]);
 
+  // Toàn bộ category IDs thuộc subtree của root đang chọn (bao gồm chính rootId và các nhánh con)
+  const scopedCategoryIds = useMemo(() => {
+    if (selectedRootId === 'all') return null;
+    return collectCategorySubtreeIds(categories, Number(selectedRootId));
+  }, [categories, selectedRootId]);
+
   // Tab 2: Lọc sản phẩm theo danh mục con
   const [productFilterSubcat, setProductFilterSubcat] = useState<string>('all');
   const [productSearch, setProductSearch] = useState('');
 
-  // Tab 3: Danh mục con đang chọn để cấu hình tùy chọn
-  const [optionSubcatId, setOptionSubcatId] = useState<number | null>(null);
+  // Tab 3: Danh mục đang chọn để cấu hình tùy chọn
+  const [optionTargetCatId, setOptionTargetCatId] = useState<number | null>(null);
 
   // Modal Thêm / Sửa Danh Mục Con
   const [catDialogOpen, setCatDialogOpen] = useState(false);
@@ -97,19 +110,29 @@ export function CatalogTabBlocksView({
   // Tên Ngành gốc đang chọn
   const activeRootName = useMemo(() => {
     if (selectedRootId === 'all') return 'Tất cả ngành hàng';
-    const root = rootCategories.find((r) => String(r.id) === String(selectedRootId));
-    return root ? root.name : 'Ngành hàng';
-  }, [rootCategories, selectedRootId]);
+    return activeRootCategory ? activeRootCategory.name : 'Ngành hàng';
+  }, [activeRootCategory, selectedRootId]);
 
-  // Tự động chọn danh mục con đầu tiên cho Tab 3 nếu chưa chọn
-  const currentOptionSubcat = useMemo(() => {
-    if (subcategories.length === 0) return null;
-    if (optionSubcatId) {
-      const found = subcategories.find((c) => Number(c.id) === optionSubcatId);
+  // Danh mục khả dụng để cấu hình tùy chọn trong Tab 3
+  const optionEligibleCategories = useMemo(() => {
+    if (subcategories.length > 0) {
+      return subcategories;
+    }
+    if (activeRootCategory) {
+      return [activeRootCategory];
+    }
+    return categories;
+  }, [subcategories, activeRootCategory, categories]);
+
+  // Danh mục đang được cấu hình tùy chọn ở Tab 3
+  const currentOptionCategory = useMemo(() => {
+    if (optionEligibleCategories.length === 0) return null;
+    if (optionTargetCatId) {
+      const found = optionEligibleCategories.find((c) => Number(c.id) === optionTargetCatId);
       if (found) return found;
     }
-    return subcategories[0];
-  }, [subcategories, optionSubcatId]);
+    return optionEligibleCategories[0];
+  }, [optionEligibleCategories, optionTargetCatId]);
 
   // Tự động sinh slug URL ngầm (ẩn khỏi mắt người dùng)
   const generateSlugFromName = (name: string) => {
@@ -123,15 +146,14 @@ export function CatalogTabBlocksView({
       .replace(/\s+/g, '-');
   };
 
-  // Danh sách sản phẩm cho Tab 2 (áp dụng lọc theo subcategory và tìm kiếm)
+  // Danh sách sản phẩm cho Tab 2 (hiển thị đầy đủ tất cả sản phẩm thuộc scope của ngành gốc)
   const displayedProducts = useMemo(() => {
     let list = products;
     if (productFilterSubcat !== 'all') {
       const targetSubcatId = Number(productFilterSubcat);
       list = list.filter((p) => Number(p.category_id) === targetSubcatId);
-    } else if (selectedRootId !== 'all') {
-      const subcatIds = new Set(subcategories.map((c) => Number(c.id)));
-      list = list.filter((p) => subcatIds.has(Number(p.category_id)));
+    } else if (scopedCategoryIds) {
+      list = list.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
     }
 
     if (productSearch.trim()) {
@@ -143,7 +165,7 @@ export function CatalogTabBlocksView({
       );
     }
     return list;
-  }, [products, productFilterSubcat, selectedRootId, subcategories, productSearch]);
+  }, [products, productFilterSubcat, scopedCategoryIds, productSearch]);
 
   const handleOpenCreateCategory = () => {
     setEditingCategory(null);
@@ -198,7 +220,7 @@ export function CatalogTabBlocksView({
           is_visible: true,
         });
         toast.success(`Đã tạo danh mục con "${catName}"`);
-        setOptionSubcatId(Number(created.id));
+        setOptionTargetCatId(Number(created.id));
       }
 
       setCatDialogOpen(false);
@@ -270,7 +292,7 @@ export function CatalogTabBlocksView({
       </div>
 
       {/* ========================================================= */}
-      {/* TAB 1: DANH MỤC CON (BẢNG RỘNG RÃI) */}
+      {/* TAB 1: DANH MỤC CON */}
       {/* ========================================================= */}
       {activeTab === 'subcategories' && (
         <div className="bg-card rounded-xl border p-5 space-y-4 shadow-xs">
@@ -313,8 +335,13 @@ export function CatalogTabBlocksView({
               <tbody className="divide-y">
                 {subcategories.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
-                      Chưa có danh mục con nào trong ngành “{activeRootName}”.
+                    <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs space-y-2">
+                      <p>Chưa có danh mục con nào trong ngành “{activeRootName}”.</p>
+                      {activeRootCategory && (
+                        <p className="text-[11px] text-primary">
+                          (Danh mục “{activeRootCategory.name}” hiện đang chứa trực tiếp {displayedProducts.length} sản phẩm ở Tab 2).
+                        </p>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -384,7 +411,7 @@ export function CatalogTabBlocksView({
       )}
 
       {/* ========================================================= */}
-      {/* TAB 2: QUẢN LÝ SẢN PHẨM (CÓ BỘ LỌC THEO DANH MỤC CON) */}
+      {/* TAB 2: QUẢN LÝ SẢN PHẨM */}
       {/* ========================================================= */}
       {activeTab === 'products' && (
         <div className="bg-card rounded-xl border p-5 space-y-4 shadow-xs">
@@ -396,22 +423,24 @@ export function CatalogTabBlocksView({
               </div>
 
               {/* LỌC THEO DANH MỤC CON */}
-              <Select value={productFilterSubcat} onValueChange={setProductFilterSubcat}>
-                <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
-                  <SelectValue placeholder="Lọc theo danh mục con" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" className="text-xs">Tất cả danh mục con ({products.length} món)</SelectItem>
-                  {subcategories.map((subcat) => {
-                    const count = products.filter((p) => Number(p.category_id) === Number(subcat.id)).length;
-                    return (
-                      <SelectItem key={subcat.id} value={String(subcat.id)} className="text-xs">
-                        {subcat.name} ({count} món)
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              {subcategories.length > 0 && (
+                <Select value={productFilterSubcat} onValueChange={setProductFilterSubcat}>
+                  <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
+                    <SelectValue placeholder="Lọc theo danh mục con" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Tất cả danh mục con ({displayedProducts.length} món)</SelectItem>
+                    {subcategories.map((subcat) => {
+                      const count = products.filter((p) => Number(p.category_id) === Number(subcat.id)).length;
+                      return (
+                        <SelectItem key={subcat.id} value={String(subcat.id)} className="text-xs">
+                          {subcat.name} ({count} món)
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -431,8 +460,16 @@ export function CatalogTabBlocksView({
                   size="sm"
                   variant="hero"
                   className="h-8 text-xs px-3"
-                  onClick={() => onOpenProductEditor(undefined, productFilterSubcat !== 'all' ? Number(productFilterSubcat) : (subcategories[0]?.id ? Number(subcategories[0].id) : undefined))}
-                  disabled={subcategories.length === 0}
+                  onClick={() => onOpenProductEditor(
+                    undefined,
+                    productFilterSubcat !== 'all'
+                      ? Number(productFilterSubcat)
+                      : subcategories[0]?.id
+                      ? Number(subcategories[0].id)
+                      : activeRootCategory?.id
+                      ? Number(activeRootCategory.id)
+                      : undefined
+                  )}
                 >
                   <Plus className="size-3.5 mr-1" />
                   Thêm Món Mới
@@ -446,7 +483,7 @@ export function CatalogTabBlocksView({
               <thead className="bg-muted/50 border-b text-muted-foreground font-bold uppercase text-[10px] tracking-wider">
                 <tr>
                   <th className="p-3.5">Sản Phẩm</th>
-                  <th className="p-3.5">Danh Mục Con</th>
+                  <th className="p-3.5">Danh Mục</th>
                   <th className="p-3.5">Giá Bán</th>
                   <th className="p-3.5">Khu Vực Xử Lý</th>
                   <th className="p-3.5">Trạng Thái</th>
@@ -457,13 +494,13 @@ export function CatalogTabBlocksView({
                 {displayedProducts.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-muted-foreground text-xs">
-                      Không tìm thấy sản phẩm nào phù hợp.
+                      Không tìm thấy sản phẩm nào phù hợp trong ngành này.
                     </td>
                   </tr>
                 ) : (
                   displayedProducts.map((prod) => {
-                    const subcat = categories.find((c) => Number(c.id) === Number(prod.category_id));
-                    const lane = prod.fulfillment_lane || subcat?.default_fulfillment_lane || 'kitchen';
+                    const cat = categories.find((c) => Number(c.id) === Number(prod.category_id));
+                    const lane = prod.fulfillment_lane || cat?.default_fulfillment_lane || 'kitchen';
 
                     return (
                       <tr key={prod.id} className="hover:bg-muted/30 transition-colors">
@@ -480,7 +517,7 @@ export function CatalogTabBlocksView({
                             {prod.base_tea && <p className="text-[10px] text-muted-foreground">Trà nền: {prod.base_tea}</p>}
                           </div>
                         </td>
-                        <td className="p-3.5 font-semibold text-foreground">{subcat ? subcat.name : 'Chưa gán'}</td>
+                        <td className="p-3.5 font-semibold text-foreground">{cat ? cat.name : 'Chưa gán'}</td>
                         <td className="p-3.5 font-bold text-primary">
                           {new Intl.NumberFormat('vi-VN').format(prod.price)}đ
                         </td>
@@ -524,7 +561,7 @@ export function CatalogTabBlocksView({
       )}
 
       {/* ========================================================= */}
-      {/* TAB 3: TÙY CHỌN DANH MỤC CON (CẤU HÌNH ĐỘC LẬP) */}
+      {/* TAB 3: TÙY CHỌN DANH MỤC CON */}
       {/* ========================================================= */}
       {activeTab === 'options' && (
         <div className="bg-card rounded-xl border p-5 space-y-5 shadow-xs">
@@ -544,33 +581,33 @@ export function CatalogTabBlocksView({
               </div>
             </div>
 
-            {/* Subcategory selector pills */}
+            {/* Category selector pills */}
             <div className="flex flex-wrap items-center gap-1.5 bg-muted/60 p-1.5 rounded-xl border">
-              <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Chọn danh mục con:</span>
-              {subcategories.map((subcat) => {
-                const isSelected = currentOptionSubcat?.id === subcat.id;
+              <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Chọn danh mục:</span>
+              {optionEligibleCategories.map((cat) => {
+                const isSelected = currentOptionCategory?.id === cat.id;
                 return (
                   <button
-                    key={subcat.id}
-                    onClick={() => setOptionSubcatId(Number(subcat.id))}
+                    key={cat.id}
+                    onClick={() => setOptionTargetCatId(Number(cat.id))}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                       isSelected
                         ? 'bg-primary text-primary-foreground shadow-xs'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {subcat.name}
+                    {cat.name}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Option content for active subcategory */}
-          {!currentOptionSubcat ? (
+          {/* Option content for active category */}
+          {!currentOptionCategory ? (
             <div className="p-12 text-center text-muted-foreground space-y-2">
               <FolderTree className="size-10 mx-auto opacity-30" />
-              <p className="text-xs">Vui lòng tạo hoặc chọn một danh mục con để cấu hình tùy chọn.</p>
+              <p className="text-xs">Vui lòng tạo hoặc chọn một danh mục để cấu hình tùy chọn.</p>
             </div>
           ) : !activeSchema ? (
             <div className="p-8 text-center text-muted-foreground space-y-2">
@@ -582,13 +619,13 @@ export function CatalogTabBlocksView({
               <div className="p-3 bg-primary/5 border border-primary/10 rounded-xl text-xs text-muted-foreground flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-primary shrink-0" />
                 <span>
-                  Đang thiết lập tùy chọn cho: <b className="text-foreground">{currentOptionSubcat.name}</b>. Khách đặt các món thuộc danh mục này sẽ nhìn thấy các tùy chọn đang bật bên dưới.
+                  Đang thiết lập tùy chọn cho: <b className="text-foreground">{currentOptionCategory.name}</b>. Khách đặt các món thuộc danh mục này sẽ nhìn thấy các tùy chọn đang bật bên dưới.
                 </span>
               </div>
 
               <OptionScopeEditor
-                categoryId={Number(currentOptionSubcat.id)}
-                categoryName={currentOptionSubcat.name}
+                categoryId={Number(currentOptionCategory.id)}
+                categoryName={currentOptionCategory.name}
                 schema={activeSchema}
               />
             </div>
@@ -596,7 +633,7 @@ export function CatalogTabBlocksView({
         </div>
       )}
 
-      {/* MODAL TẠO / SỬA DANH MỤC CON (ẨN HOÀN TOÀN TRƯỜNG SLUG) */}
+      {/* MODAL TẠO / SỬA DANH MỤC CON */}
       <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSaveCategory}>

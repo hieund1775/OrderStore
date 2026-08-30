@@ -13,6 +13,7 @@ export function toCategoryTreeDto(row) {
     product_type_id: row.product_type_id == null ? null : Number(row.product_type_id),
     product_type_name: row.product_type_name || null,
     product_type_code: row.product_type_code || null,
+    default_fulfillment_lane: row.default_fulfillment_lane || null,
     sort_order: Number(row.sort_order || 0),
     is_visible: Boolean(row.is_visible),
     archived_at: row.archived_at || null,
