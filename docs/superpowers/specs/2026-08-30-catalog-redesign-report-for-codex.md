@@ -77,18 +77,22 @@ Trước đây, giao diện quản trị Catalog bị phân mảnh và nhồi nh
    - Tab 1: Danh mục con (Quản lý phân cấp, toggle Tạm ẩn/Hiển thị, gán luồng Bếp/Đóng gói).
    - Tab 2: Quản lý sản phẩm (Dropdown lọc danh mục con, toggle Đang bán/Tạm ngưng, xóa món, sửa món).
    - Tab 3: Tùy chọn danh mục con (Gán tùy chọn cô lập cho từng danh mục con, phân nhóm Mặc định vs Sở thích, kèm modal `+ Tạo Nhóm Tùy Chọn Mới`).
-2. **Bộ Chọn Ngành Gốc ([`CatalogRootSelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogRootSelector.tsx))**:
-   - Thêm nút `✏️ Sửa tên ngành` và `🗑️ Xóa ngành` (có modal và cảnh báo an toàn).
-3. **Trang Quản Trị Chính ([`admin.catalog.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/admin.catalog.tsx))**:
-   - Tích hợp `CatalogRootSelector` và `CatalogTabBlocksView`.
-   - Modal tạo/sửa món: Ảnh ở trên cùng (hỗ trợ upload file từ máy + URL + xem trước), giá bán `step=1000`, bắt buộc chọn danh mục con, loại bỏ hoàn toàn ô mô tả món.
-4. **Bộ Chọn Danh Mục Khách Hàng ([`CategorySelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CategorySelector.tsx))**:
-   - Hàng 1: Ngành hàng gốc.
-   - Hàng 2: Danh mục con của ngành đang chọn.
-5. **Trang Thực Đơn Khách Hàng ([`menu.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/menu.tsx))**:
-   - Sanitize thông báo lỗi thân thiện, loại bỏ hoàn toàn việc để lộ mã lỗi hay đường dẫn kỹ thuật.
-6. **API Client ([`api.ts`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/lib/api.ts))**:
-   - Chuẩn hóa toàn bộ URL gọi Public Catalog sang `/api/catalog/...`.
+2. **Bộ Chọn Danh Mục Khách Hàng ([`CategorySelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CategorySelector.tsx))**:
+   - Chuyển đổi thành **Bộ lọc Dropdown / Select gọn gàng**:
+     - Dropdown 1: `Danh mục` (Tất cả danh mục, Nước uống, Quần áo...).
+     - Dropdown 2: `Danh sách danh mục` (Tất cả món trong danh mục, Trà sữa, Nước ép...).
+   - Bỏ hoàn toàn các icon File rườm rà và không để thanh tràn ngang màn hình.
+3. **Quản Lý Tùy Chọn 3 Block Chuẩn Xác ([`CatalogOption3BlocksEditor.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogOption3BlocksEditor.tsx))**:
+   - **Block 1: Tùy Chọn Không Tiền**: Chọn 1 trong nhóm (+0đ) như Mức đá (100%, 70%, 50%), Mức đường... Có nút tạo thêm nhóm không tiền.
+   - **Block 2: Tùy Chọn Có Tiền**: Chọn nhiều loại kèm phụ thu (+VND) như Topping (Trân châu, Thạch, Pudding...), Size ly nâng cấp... Có nút tạo thêm nhóm có tiền.
+   - **Block 3: Cấu Hình Riêng Sản Phẩm**: Chọn một món cụ thể (VD: Trà Sữa Thập Cẩm) để áp dụng các nhóm từ Block 1 và Block 2 thành giá trị mặc định có sẵn.
+4. **Cơ Chế Trạng Thái Liên Kết Danh Mục Con & Món**:
+   - Khi tạm ngưng một danh mục con &rarr; Tự động tạm ngưng toàn bộ sản phẩm bên trong.
+   - Khi mở bán lại một món &rarr; Tự động mở bán lại danh mục con cha nếu danh mục đang tạm ngưng.
+5. **Trang Quản Trị Chính ([`admin.catalog.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/admin.catalog.tsx))**:
+   - Bỏ nút "Làm mới" ở trên cùng.
+   - Bỏ dòng text hướng dẫn `Bấm tăng/giảm nhảy 1.000đ`.
+   - Bỏ các thông tin/thuật ngữ kỹ thuật DB.
 
 ---
 
@@ -111,4 +115,5 @@ Toàn bộ hệ thống đã vượt qua 100% các bài test tự động và bu
 - **Commit `fc8586f`**: Chuyển đổi sang giao diện 3 Tab toàn diện và ẩn hoàn toàn trường `slug-url`.
 - **Commit `e4986f3`**: Xử lý tương thích ngược dữ liệu phẳng trên DB và bổ sung hiển thị danh mục 2 tầng cho User.
 - **Commit `9611f43`**: Chuẩn hóa toàn bộ 9 hạng mục (API path, ẩn mã lỗi, sửa/xóa ngành gốc, auto-resolve schema, upload ảnh trên cùng, giá step 1000, bỏ mô tả, toggle tạm ngưng món & danh mục con, tạo nhóm tùy chọn mới).
+- **Commit `f3bc5a9`**: Tối ưu bộ lọc Dropdown trang Menu, bỏ icon file, logic tạm ngưng liên kết sản phẩm và xây dựng cấu trúc 3 Block Tùy chọn độc lập chuẩn xác.
 - **Nhánh đồng bộ**: Đã push đồng bộ thành công lên cả 3 nhánh: `origin/Hieu`, `origin/develop`, `origin/main`.
