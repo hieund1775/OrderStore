@@ -1,12 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import React from 'react';
-import { Catalog3BlockView } from '../Catalog3BlockView';
+import { CatalogTabBlocksView } from '../CatalogTabBlocksView';
 import type { CategoryNode } from '../CategoryTreeEditor';
 import type { ProductV2 } from '../ProductEditor';
 import type { SchemaDetails } from '../SchemaAttributeEditor';
 
-describe('Admin Catalog 3-Block View Suite', () => {
+describe('Admin Catalog Tab Blocks View Suite', () => {
   const rootCategories: CategoryNode[] = [
     {
       id: 1,
@@ -147,9 +147,9 @@ describe('Admin Catalog 3-Block View Suite', () => {
     ],
   };
 
-  it('renders all 3 blocks with titles and subcategories of selected root', () => {
+  it('renders tab buttons for 1. Danh Mục Con, 2. Quản Lý Sản Phẩm, 3. Tùy Chọn Danh Mục Con', () => {
     const html = renderToString(
-      <Catalog3BlockView
+      <CatalogTabBlocksView
         rootCategories={rootCategories}
         selectedRootId="1"
         onSelectRootId={() => {}}
@@ -162,23 +162,16 @@ describe('Admin Catalog 3-Block View Suite', () => {
       />,
     );
 
-    // Block 1 check
     expect(html).toContain('1. Danh Mục Con');
+    expect(html).toContain('2. Quản Lý Sản Phẩm');
+    expect(html).toContain('3. Tùy Chọn Danh Mục Con');
     expect(html).toContain('Trà sữa');
     expect(html).toContain('Nước giải khát đóng chai');
-
-    // Block 2 check
-    expect(html).toContain('2. Sản Phẩm:');
-
-    // Block 3 check
-    expect(html).toContain('3. Tùy Chọn:');
-    expect(html).toContain('Độc lập');
-    expect(html).toContain('chỉ áp dụng cho các món trong danh mục này');
   });
 
-  it('displays fulfillment lane indicators (Bếp vs Đóng gói) clearly for categories and products', () => {
+  it('hides technical slug-url columns from the user UI', () => {
     const html = renderToString(
-      <Catalog3BlockView
+      <CatalogTabBlocksView
         rootCategories={rootCategories}
         selectedRootId="1"
         onSelectRootId={() => {}}
@@ -191,7 +184,7 @@ describe('Admin Catalog 3-Block View Suite', () => {
       />,
     );
 
-    expect(html).toContain('Bếp');
-    expect(html).toContain('Đóng gói');
+    expect(html).not.toContain('Slug (URL)');
+    expect(html).not.toContain('Mã Slug');
   });
 });

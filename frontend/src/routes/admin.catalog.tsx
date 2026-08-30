@@ -7,8 +7,6 @@ import {
   Sliders,
   RefreshCw,
   Plus,
-  LayoutGrid,
-  ListTree,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -39,13 +37,12 @@ import {
   updateCatalogProduct,
   getUser,
 } from '@/lib/api';
-import { CategoryTreeEditor } from '@/components/admin/catalog/CategoryTreeEditor';
 import { ProductTypeEditor, type ProductType } from '@/components/admin/catalog/ProductTypeEditor';
 import { SchemaAttributeEditor } from '@/components/admin/catalog/SchemaAttributeEditor';
-import { ProductEditor, type ProductV2 } from '@/components/admin/catalog/ProductEditor';
 import type { CategoryNode } from '@/components/admin/catalog/CategoryTreeEditor';
 import { CatalogRootSelector } from '@/components/admin/catalog/CatalogRootSelector';
-import { Catalog3BlockView } from '@/components/admin/catalog/Catalog3BlockView';
+import { CatalogTabBlocksView } from '@/components/admin/catalog/CatalogTabBlocksView';
+import type { ProductV2 } from '@/components/admin/catalog/ProductEditor';
 import {
   buildCategoryBreadcrumb,
   collectCategorySubtreeIds,
@@ -65,9 +62,6 @@ export const Route = createFileRoute('/admin/catalog')({
 });
 
 function AdminCatalogPage() {
-  // Mode: 3block (mặc định) hoặc advanced (danh sách tabs)
-  const [viewMode, setViewMode] = useState<'3block' | 'tabs'>('3block');
-  const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'schemas'>('products');
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [products, setProducts] = useState<ProductV2[]>([]);
@@ -76,18 +70,16 @@ function AdminCatalogPage() {
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
-  // Modal tạo danh mục gốc (depth = 0)
+  // Modal tạo danh mục gốc (ẩn trường slug)
   const [createRootOpen, setCreateRootOpen] = useState(false);
   const [newRootName, setNewRootName] = useState('');
-  const [newRootSlug, setNewRootSlug] = useState('');
   const [creatingRoot, setCreatingRoot] = useState(false);
 
-  // Modal Tạo / Sửa Sản Phẩm Nhanh
+  // Modal Tạo / Sửa Sản Phẩm Nhanh (ẩn trường slug)
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductV2 | null>(null);
   const [productFormData, setProductFormData] = useState({
     name: '',
-    slug: '',
     category_id: '' as string | number,
     price: 0,
     description: '',
@@ -99,6 +91,18 @@ function AdminCatalogPage() {
 
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === 'super';
+
+  // Hàm tự động sinh slug URL chuẩn không dấu ngầm ở background
+  const generateSlugFromName = (name: string) => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+  };
 
   const loadAllData = async () => {
     setLoading(true);
@@ -125,23 +129,9 @@ function AdminCatalogPage() {
         } else setActiveSchema(null);
       }
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi nạp dữ liệu Catalog V2');
+      toast.error(err.message || 'Lỗi nạp dữ liệu Catalog');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSelectProductType = async (pt: ProductType) => {
-    setSelectedProductType(pt);
-    try {
-      const schemaId = pt.draft_schema_id || pt.published_schema_id;
-      if (!schemaId) {
-        setActiveSchema(null);
-        return;
-      }
-      setActiveSchema(await fetchSchemaDetails(schemaId));
-    } catch (err: any) {
-      toast.error(err.message || 'Lỗi nạp cấu hình schema');
     }
   };
 
@@ -186,56 +176,44 @@ function AdminCatalogPage() {
     }));
   }, [categories, filteredCategories]);
 
-  const generateSlugFromName = (name: string) => {
-    return name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[đĐ]/g, 'd')
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-');
-  };
-
   const handleCreateRootCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRootName.trim() || !newRootSlug.trim()) {
-      toast.error('Vui lòng nhập tên và slug danh mục gốc');
+    if (!newRootName.trim()) {
+      toast.error('Vui lòng nhập tên ngành hàng gốc');
       return;
     }
+
+    const autoSlug = generateSlugFromName(newRootName);
 
     try {
       setCreatingRoot(true);
       const created = await createCatalogCategory({
         name: newRootName.trim(),
-        slug: newRootSlug.trim().toLowerCase(),
+        slug: autoSlug,
         parent_id: null,
         product_type_id: null,
         sort_order: rootCategories.length + 1,
         is_visible: true,
       });
-      toast.success(`Đã tạo danh mục gốc "${newRootName}"`);
+      toast.success(`Đã tạo ngành hàng "${newRootName}"`);
       setCreateRootOpen(false);
       setNewRootName('');
-      setNewRootSlug('');
       await loadAllData();
       if (created?.id) {
         setSelectedRootId(String(created.id));
       }
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi tạo danh mục gốc');
+      toast.error(err.message || 'Lỗi tạo ngành hàng gốc');
     } finally {
       setCreatingRoot(false);
     }
   };
 
-  // Mở modal tạo hoặc sửa sản phẩm
   const handleOpenProductModal = (product?: ProductV2, defaultCategoryId?: number) => {
     if (product) {
       setEditingProduct(product);
       setProductFormData({
         name: product.name,
-        slug: product.slug,
         category_id: product.category_id,
         price: product.price,
         description: product.description || '',
@@ -247,7 +225,6 @@ function AdminCatalogPage() {
       setEditingProduct(null);
       setProductFormData({
         name: '',
-        slug: '',
         category_id: defaultCategoryId || (productCategoryOptions[0]?.id ?? ''),
         price: 0,
         description: '',
@@ -261,16 +238,19 @@ function AdminCatalogPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productFormData.name.trim() || !productFormData.slug.trim() || !productFormData.category_id) {
-      toast.error('Vui lòng nhập đầy đủ tên, slug và chọn danh mục con');
+    if (!productFormData.name.trim() || !productFormData.category_id) {
+      toast.error('Vui lòng nhập đầy đủ tên và chọn danh mục con');
       return;
     }
+
+    const autoSlug = editingProduct ? editingProduct.slug : generateSlugFromName(productFormData.name);
 
     try {
       setProductSaving(true);
       if (editingProduct) {
         await updateCatalogProduct(editingProduct.id, {
           ...productFormData,
+          slug: autoSlug,
           category_id: Number(productFormData.category_id),
           price: Number(productFormData.price),
         });
@@ -278,6 +258,7 @@ function AdminCatalogPage() {
       } else {
         await createCatalogProduct({
           ...productFormData,
+          slug: autoSlug,
           category_id: Number(productFormData.category_id),
           price: Number(productFormData.price),
         });
@@ -306,39 +287,13 @@ function AdminCatalogPage() {
                 Quản Lý Sản Phẩm & Danh Mục
               </h1>
               <p className="text-muted-foreground text-xs sm:text-sm">
-                Quản lý các ngành hàng (Nước uống, Quần áo...) theo mô hình 3 Block trực quan và độc lập.
+                Quản lý các ngành hàng (Nước uống, Quần áo...) theo 3 Khối Tab: Danh mục con &bull; Sản phẩm &bull; Tùy chọn độc lập.
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Switch View Mode */}
-          <div className="flex items-center bg-muted p-1 rounded-lg border text-xs">
-            <button
-              onClick={() => setViewMode('3block')}
-              className={`px-3 py-1 rounded-md font-semibold transition-all flex items-center gap-1.5 ${
-                viewMode === '3block'
-                  ? 'bg-background text-foreground shadow-xs font-bold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <LayoutGrid className="size-3.5" />
-              <span>Khung 3 Block</span>
-            </button>
-            <button
-              onClick={() => setViewMode('tabs')}
-              className={`px-3 py-1 rounded-md font-semibold transition-all flex items-center gap-1.5 ${
-                viewMode === 'tabs'
-                  ? 'bg-background text-foreground shadow-xs font-bold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <ListTree className="size-3.5" />
-              <span>Dạng Bảng / Tab</span>
-            </button>
-          </div>
-
           <Button variant="outline" size="sm" onClick={loadAllData} disabled={loading}>
             <RefreshCw className={`size-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Làm mới
@@ -356,124 +311,45 @@ function AdminCatalogPage() {
         onCreateRoot={() => setCreateRootOpen(true)}
       />
 
-      {/* MAIN VIEW: 3-BLOCK OR ADVANCED TABS */}
-      {viewMode === '3block' ? (
-        <Catalog3BlockView
-          rootCategories={rootCategories}
-          selectedRootId={selectedRootId}
-          onSelectRootId={setSelectedRootId}
-          categories={filteredCategories}
-          products={filteredProducts}
-          activeSchema={activeSchema}
-          isSuperAdmin={isSuperAdmin}
-          onRefresh={loadAllData}
-          onOpenProductEditor={handleOpenProductModal}
-        />
-      ) : (
-        /* Tabs View (Legacy / Advanced) */
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-4">
-          <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-3 max-w-lg' : 'grid-cols-2 max-w-md'}`}>
-            <TabsTrigger value="products" className="flex items-center gap-2 text-xs sm:text-sm">
-              <ShoppingBag className="size-4" />
-              <span>Sản phẩm ({filteredProducts.length})</span>
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="flex items-center gap-2 text-xs sm:text-sm">
-              <FolderTree className="size-4" />
-              <span>Cây danh mục ({filteredCategories.length})</span>
-            </TabsTrigger>
-            {isSuperAdmin && (
-              <TabsTrigger value="schemas" className="flex items-center gap-2 text-xs sm:text-sm">
-                <Sliders className="size-4" />
-                <span>Cấu hình nâng cao</span>
-              </TabsTrigger>
-            )}
-          </TabsList>
+      {/* 3-TAB VIEW: SUB-CATEGORIES, PRODUCTS, OPTIONS */}
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId={selectedRootId}
+        onSelectRootId={setSelectedRootId}
+        categories={filteredCategories}
+        products={filteredProducts}
+        activeSchema={activeSchema}
+        isSuperAdmin={isSuperAdmin}
+        onRefresh={loadAllData}
+        onOpenProductEditor={handleOpenProductModal}
+      />
 
-          <TabsContent value="products">
-            <ProductEditor
-              products={filteredProducts}
-              categories={productCategoryOptions}
-              onRefresh={loadAllData}
-              isSuperAdmin={isSuperAdmin}
-            />
-          </TabsContent>
-
-          <TabsContent value="categories">
-            <CategoryTreeEditor
-              categories={filteredCategories}
-              productTypes={productTypes}
-              onRefresh={loadAllData}
-              isSuperAdmin={isSuperAdmin}
-            />
-          </TabsContent>
-
-          {isSuperAdmin && (
-            <TabsContent value="schemas" className="space-y-6">
-              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 rounded-lg p-3 text-xs">
-                💡 <b>Cấu hình kỹ thuật nâng cao:</b> Định nghĩa các loại sản phẩm (Product Types) cùng Schema biến thể SKU và Modifiers.
-              </div>
-
-              <ProductTypeEditor
-                productTypes={productTypes}
-                selectedTypeId={selectedProductType?.id || null}
-                onSelectType={handleSelectProductType}
-                onRefresh={loadAllData}
-                isSuperAdmin={isSuperAdmin}
-              />
-
-              {activeSchema && (
-                <SchemaAttributeEditor
-                  schema={activeSchema}
-                  onRefresh={loadAllData}
-                  isSuperAdmin={isSuperAdmin}
-                />
-              )}
-            </TabsContent>
-          )}
-        </Tabs>
-      )}
-
-      {/* MODAL TẠO DANH MỤC GỐC */}
+      {/* MODAL TẠO DANH MỤC GỐC (ẨN HOÀN TOÀN TRƯỜNG SLUG) */}
       <Dialog open={createRootOpen} onOpenChange={setCreateRootOpen}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleCreateRootCategory}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Plus className="size-5 text-primary" />
-                <span>Tạo Danh Mục Cấp Gốc Mới</span>
+                <span>Tạo Ngành Hàng Cấp Gốc Mới</span>
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="root-name" className="text-xs font-semibold">
-                  Tên danh mục gốc <span className="text-destructive">*</span>
+                  Tên ngành hàng gốc <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="root-name"
-                  placeholder="Ví dụ: Nước uống, Quần áo & Thời trang..."
+                  placeholder="Ví dụ: Nước uống, Quần áo & Thời trang, Quà lưu niệm..."
                   value={newRootName}
-                  onChange={(e) => {
-                    setNewRootName(e.target.value);
-                    if (!newRootSlug || newRootSlug === generateSlugFromName(newRootName)) {
-                      setNewRootSlug(generateSlugFromName(e.target.value));
-                    }
-                  }}
+                  onChange={(e) => setNewRootName(e.target.value)}
                   required
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="root-slug" className="text-xs font-semibold">
-                  Slug (Định danh URL) <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="root-slug"
-                  placeholder="nuoc-uong, quan-ao..."
-                  value={newRootSlug}
-                  onChange={(e) => setNewRootSlug(e.target.value.toLowerCase())}
-                  required
-                />
+                <p className="text-[10px] text-muted-foreground">
+                  Hệ thống sẽ tự động tạo mã định danh URL chuẩn không dấu cho ngành hàng này.
+                </p>
               </div>
             </div>
 
@@ -487,14 +363,14 @@ function AdminCatalogPage() {
                 Hủy
               </Button>
               <Button type="submit" variant="hero" disabled={creatingRoot}>
-                {creatingRoot ? 'Đang tạo...' : 'Tạo danh mục gốc'}
+                {creatingRoot ? 'Đang tạo...' : 'Tạo ngành hàng'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL TẠO / SỬA SẢN PHẨM NHANH */}
+      {/* MODAL TẠO / SỬA SẢN PHẨM (ẨN HOÀN TOÀN TRƯỜNG SLUG) */}
       <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleSaveProduct}>
@@ -512,17 +388,11 @@ function AdminCatalogPage() {
                 </Label>
                 <Input
                   id="prod-name"
-                  placeholder="Ví dụ: Trà sữa Khoai môn, Áo thun..."
+                  placeholder="Ví dụ: Trà sữa Khoai môn, Nước ép cam, Áo thun..."
                   value={productFormData.name}
                   onChange={(e) => {
                     const name = e.target.value;
-                    setProductFormData((prev) => ({
-                      ...prev,
-                      name,
-                      slug: !editingProduct && (!prev.slug || prev.slug === generateSlugFromName(prev.name))
-                        ? generateSlugFromName(name)
-                        : prev.slug,
-                    }));
+                    setProductFormData((prev) => ({ ...prev, name }));
                   }}
                   required
                 />
@@ -530,15 +400,22 @@ function AdminCatalogPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label htmlFor="prod-slug" className="text-xs font-semibold">
-                    Slug <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="prod-slug"
-                    value={productFormData.slug}
-                    onChange={(e) => setProductFormData((prev) => ({ ...prev, slug: e.target.value.toLowerCase() }))}
-                    required
-                  />
+                  <Label className="text-xs font-semibold">Danh mục con trực thuộc <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={String(productFormData.category_id)}
+                    onValueChange={(val) => setProductFormData((prev) => ({ ...prev, category_id: val }))}
+                  >
+                    <SelectTrigger className="text-xs">
+                      <SelectValue placeholder="Chọn danh mục con" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productCategoryOptions.map((cat) => (
+                        <SelectItem key={cat.id} value={String(cat.id)} className="text-xs">
+                          {cat.breadcrumb || cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -554,25 +431,6 @@ function AdminCatalogPage() {
                     required
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Danh mục con trực thuộc <span className="text-destructive">*</span></Label>
-                <Select
-                  value={String(productFormData.category_id)}
-                  onValueChange={(val) => setProductFormData((prev) => ({ ...prev, category_id: val }))}
-                >
-                  <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Chọn danh mục con" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {productCategoryOptions.map((cat) => (
-                      <SelectItem key={cat.id} value={String(cat.id)} className="text-xs">
-                        {cat.breadcrumb || cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
