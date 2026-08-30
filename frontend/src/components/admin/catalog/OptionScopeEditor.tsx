@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, Loader2 } from 'lucide-react';
+import { Sliders, Loader2, Sparkles, Check, Bookmark } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -56,6 +56,19 @@ export function OptionScopeEditor({
     [assignments],
   );
 
+  // Phân chia thành 2 nhóm: Mặc định (Bắt buộc) & Sở thích (Tùy chọn thêm)
+  const defaultAttributes = useMemo(() => {
+    return schema.attributes.filter(
+      (attr) => attr.role === 'variant' || attr.is_required === true,
+    );
+  }, [schema.attributes]);
+
+  const preferenceAttributes = useMemo(() => {
+    return schema.attributes.filter(
+      (attr) => attr.role !== 'variant' && attr.is_required !== true,
+    );
+  }, [schema.attributes]);
+
   async function toggleAttribute(attribute: SchemaDetails['attributes'][number]) {
     if (updatingId) return;
     const existing = assignmentByAttribute.get(Number(attribute.id));
@@ -78,7 +91,7 @@ export function OptionScopeEditor({
         });
         setAssignments((current) => [...current, saved]);
       }
-      toast.success(existing ? `Đã gỡ ${attribute.name}` : `Đã áp dụng ${attribute.name}`);
+      toast.success(existing ? `Đã gỡ tùy chọn "${attribute.name}"` : `Đã bật tùy chọn "${attribute.name}"`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Cập nhật phạm vi tùy chọn thất bại');
     } finally {
@@ -86,54 +99,109 @@ export function OptionScopeEditor({
     }
   }
 
-  return (
-    <section className="rounded-xl border bg-card p-4 shadow-sm">
-      <div className="mb-4 flex items-start gap-3">
-        <span className="bg-primary/10 text-primary rounded-lg p-2">
-          <GitBranch className="size-4" />
-        </span>
-        <div>
-          <h3 className="text-sm font-semibold">Áp dụng tùy chọn cho “{categoryName}”</h3>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            Tùy chọn được bật tại danh mục gốc sẽ kế thừa xuống các danh mục con. Sản phẩm có thể ghi đè riêng khi cần.
-          </p>
-        </div>
-      </div>
+  const renderAttributeItem = (attribute: SchemaDetails['attributes'][number]) => {
+    const enabled = assignmentByAttribute.has(Number(attribute.id));
+    const isRequired = attribute.role === 'variant' || attribute.is_required === true;
 
+    return (
+      <div
+        key={attribute.id}
+        className={`p-3 rounded-lg border transition-all ${
+          enabled
+            ? 'bg-card border-primary/40 shadow-xs'
+            : 'bg-muted/30 border-border opacity-70 hover:opacity-100'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold text-foreground">{attribute.name}</span>
+              <Badge
+                variant={isRequired ? 'default' : 'secondary'}
+                className="text-[9px] px-1.5 py-0 h-4 font-semibold"
+              >
+                {isRequired ? 'Bắt buộc' : 'Tùy biến'}
+              </Badge>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {enabled ? (
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                  <Check className="size-3" /> Đang áp dụng cho danh mục này
+                </span>
+              ) : (
+                'Chưa kích hoạt'
+              )}
+            </p>
+          </div>
+
+          <Switch
+            checked={enabled}
+            disabled={updatingId === attribute.id}
+            onCheckedChange={() => toggleAttribute(attribute)}
+            aria-label={`${enabled ? 'Gỡ' : 'Áp dụng'} ${attribute.name}`}
+          />
+        </div>
+
+        {/* Value chips preview */}
+        {attribute.values && attribute.values.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {attribute.values.map((val) => (
+              <span
+                key={val.id}
+                className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-medium"
+              >
+                {val.value_label}
+                {val.price_adjustment && val.price_adjustment > 0
+                  ? ` (+${new Intl.NumberFormat('vi-VN').format(val.price_adjustment)}đ)`
+                  : ''}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
       {loading ? (
-        <div className="text-muted-foreground flex items-center gap-2 py-4 text-xs">
-          <Loader2 className="size-4 animate-spin" /> Đang tải…
+        <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
+          <Loader2 className="size-4 animate-spin text-primary" /> Đang nạp cấu hình tùy chọn…
         </div>
       ) : schema.attributes.length === 0 ? (
-        <p className="text-muted-foreground py-4 text-xs">Schema này chưa có tùy chọn nào.</p>
+        <p className="text-muted-foreground py-6 text-center text-xs">
+          Chưa có nhóm tùy chọn nào trong ngành này.
+        </p>
       ) : (
-        <div className="grid gap-2 md:grid-cols-2">
-          {schema.attributes.map((attribute) => {
-            const enabled = assignmentByAttribute.has(Number(attribute.id));
-            return (
-              <div key={attribute.id} className="bg-muted/40 flex items-center gap-3 rounded-lg px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-xs font-semibold">{attribute.name}</p>
-                    <Badge variant="outline" className="text-[10px]">
-                      {attribute.role === 'variant' ? 'Biến thể' : 'Tùy chọn'}
-                    </Badge>
-                  </div>
-                  <p className="text-muted-foreground mt-0.5 truncate text-[11px]">
-                    {attribute.values?.length || 0} giá trị · {enabled ? 'Đang kế thừa xuống danh mục con' : 'Chưa áp dụng'}
-                  </p>
-                </div>
-                <Switch
-                  checked={enabled}
-                  disabled={updatingId === attribute.id}
-                  onCheckedChange={() => toggleAttribute(attribute)}
-                  aria-label={`${enabled ? 'Gỡ' : 'Áp dụng'} ${attribute.name}`}
-                />
+        <div className="space-y-4">
+          {/* Group 1: Tùy chọn Mặc định */}
+          {defaultAttributes.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                <Bookmark className="size-3.5 text-primary" />
+                <span>1. Tùy chọn Mặc định (Bắt buộc chọn)</span>
               </div>
-            );
-          })}
+              <div className="space-y-2">
+                {defaultAttributes.map(renderAttributeItem)}
+              </div>
+            </div>
+          )}
+
+          {/* Group 2: Tùy chọn Sở thích */}
+          {preferenceAttributes.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                <Sparkles className="size-3.5 text-amber-600 dark:text-amber-400" />
+                <span>2. Tùy chọn Sở thích (Tùy biến thêm)</span>
+              </div>
+              <div className="space-y-2">
+                {preferenceAttributes.map(renderAttributeItem)}
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
