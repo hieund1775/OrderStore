@@ -129,11 +129,42 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
 
         if (!schemaId && category.product_type_id) {
           const [pubSchemaRows] = await tx.query(
-            "SELECT * FROM product_type_schemas WHERE product_type_id = $1 AND status = 'published' ORDER BY version DESC LIMIT 1",
+            "SELECT id FROM product_type_schemas WHERE product_type_id = $1 AND status = 'published' ORDER BY version DESC LIMIT 1",
             [category.product_type_id],
           );
           if (pubSchemaRows[0]) {
             schemaId = pubSchemaRows[0].id;
+          }
+        }
+
+        if (!schemaId) {
+          const [ancestorSchemaRows] = await tx.query(
+            `WITH RECURSIVE ancestors AS (
+               SELECT c.id, c.parent_id, c.product_type_id FROM categories c WHERE c.id = $1
+               UNION ALL
+               SELECT p.id, p.parent_id, p.product_type_id
+               FROM categories p JOIN ancestors a ON a.parent_id = p.id
+             )
+             SELECT s.id FROM ancestors a
+             JOIN product_type_schemas s ON s.product_type_id = a.product_type_id AND s.status = 'published'
+             WHERE a.product_type_id IS NOT NULL
+             ORDER BY s.version DESC LIMIT 1`,
+            [category.id],
+          );
+          if (ancestorSchemaRows[0]) {
+            schemaId = ancestorSchemaRows[0].id;
+          }
+        }
+
+        if (!schemaId) {
+          const [fallbackRows] = await tx.query(
+            `SELECT s.id FROM product_type_schemas s
+             JOIN product_types pt ON pt.id = s.product_type_id
+             WHERE s.status = 'published'
+             ORDER BY CASE WHEN pt.code = 'beverage' THEN 0 ELSE 1 END, s.version DESC LIMIT 1`,
+          );
+          if (fallbackRows[0]) {
+            schemaId = fallbackRows[0].id;
           }
         }
 
@@ -145,17 +176,14 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
              WHERE s.id = $1 AND s.status = 'published'`,
             [schemaId],
           );
-          if (!sRows[0]) {
-            throw new CatalogV2Error('Schema sản phẩm không tồn tại hoặc chưa được xuất bản', 400);
+          if (sRows[0]) {
+            fulfillmentLane = data.fulfillment_lane || sRows[0].default_fulfillment_lane;
+            stockMode = data.stock_mode || sRows[0].default_stock_mode;
           }
-          if (category.product_type_id && Number(category.product_type_id) !== Number(sRows[0].product_type_id)) {
-            throw new CatalogV2Error('Schema sản phẩm không thuộc loại sản phẩm của danh mục', 400);
-          }
-          fulfillmentLane = sRows[0].default_fulfillment_lane;
-          stockMode = sRows[0].default_stock_mode;
-        } else {
-          throw new CatalogV2Error('Sản phẩm Catalog V2 phải gắn với một schema đã xuất bản', 400);
         }
+
+        if (!fulfillmentLane) fulfillmentLane = data.fulfillment_lane || 'kitchen';
+        if (!stockMode) stockMode = data.stock_mode || 'made_to_order';
 
         const [pRows] = await tx.query(
           `INSERT INTO products (

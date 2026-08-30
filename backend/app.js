@@ -8,6 +8,7 @@ import swaggerSpec from './config/swagger.js';
 import { requestContext } from './middleware/request-context.js';
 import { errorHandler, sanitizeLegacyErrorResponses } from './middleware/error-handler.js';
 import publicRoutes from './routes/public.js';
+import publicCatalogV2Router from './routes/public/catalog-v2.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -184,6 +185,7 @@ export function createApp() {
   // ─────────────────────────────────────────────
   app.use('/api/auth', customerAuthRoutes);
   app.use('/api', publicRoutes);
+  app.use('/catalog', publicCatalogV2Router);
   app.use('/admin', authRoutes);
   app.use('/admin', adminRoutes);
 

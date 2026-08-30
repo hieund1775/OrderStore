@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FolderTree,
   ShoppingBag,
@@ -7,8 +7,10 @@ import {
   Sliders,
   RefreshCw,
   Plus,
+  Image as ImageIcon,
+  Upload,
+  X,
 } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -26,19 +28,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   fetchCatalogCategories,
   fetchProductTypes,
   fetchCatalogProducts,
   fetchSchemaDetails,
   createCatalogCategory,
+  updateCatalogCategory,
+  archiveCatalogCategory,
   createCatalogProduct,
   updateCatalogProduct,
   getUser,
 } from '@/lib/api';
-import { ProductTypeEditor, type ProductType } from '@/components/admin/catalog/ProductTypeEditor';
-import { SchemaAttributeEditor } from '@/components/admin/catalog/SchemaAttributeEditor';
+import { type ProductType } from '@/components/admin/catalog/ProductTypeEditor';
 import type { CategoryNode } from '@/components/admin/catalog/CategoryTreeEditor';
 import { CatalogRootSelector } from '@/components/admin/catalog/CatalogRootSelector';
 import { CatalogTabBlocksView } from '@/components/admin/catalog/CatalogTabBlocksView';
@@ -70,24 +72,25 @@ function AdminCatalogPage() {
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
-  // Modal tạo danh mục gốc (ẩn trường slug)
+  // Modal tạo / sửa danh mục gốc
   const [createRootOpen, setCreateRootOpen] = useState(false);
+  const [editingRootCategory, setEditingRootCategory] = useState<CategoryNode | null>(null);
   const [newRootName, setNewRootName] = useState('');
   const [creatingRoot, setCreatingRoot] = useState(false);
 
-  // Modal Tạo / Sửa Sản Phẩm Nhanh (ẩn trường slug)
+  // Modal Tạo / Sửa Sản Phẩm Nhanh (Ảnh ở trên, bỏ mô tả, step=1000)
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductV2 | null>(null);
   const [productFormData, setProductFormData] = useState({
     name: '',
     category_id: '' as string | number,
-    price: 0,
-    description: '',
+    price: 35000,
     image_url: '',
     fulfillment_lane: 'kitchen' as 'kitchen' | 'packing',
     stock_mode: 'made_to_order' as 'tracked' | 'made_to_order',
   });
   const [productSaving, setProductSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === 'super';
@@ -169,46 +172,96 @@ function AdminCatalogPage() {
     return products.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
   }, [scopedCategoryIds, products]);
 
+  // Danh sách danh mục con khả dụng để gán sản phẩm
   const productCategoryOptions = useMemo(() => {
-    return getLeafCategories(filteredCategories).map((category) => ({
+    const list = getLeafCategories(filteredCategories);
+    if (list.length > 0) {
+      return list.map((category) => ({
+        ...category,
+        breadcrumb: buildCategoryBreadcrumb(categories, category.id),
+      }));
+    }
+    return filteredCategories.map((category) => ({
       ...category,
-      breadcrumb: buildCategoryBreadcrumb(categories, category.id),
+      breadcrumb: category.name,
     }));
   }, [categories, filteredCategories]);
 
-  const handleCreateRootCategory = async (e: React.FormEvent) => {
+  // Tạo / Sửa ngành gốc
+  const handleOpenCreateRoot = () => {
+    setEditingRootCategory(null);
+    setNewRootName('');
+    setCreateRootOpen(true);
+  };
+
+  const handleOpenEditRoot = (root: any) => {
+    setEditingRootCategory(root);
+    setNewRootName(root.name);
+    setCreateRootOpen(true);
+  };
+
+  const handleDeleteRootCategory = async (root: any) => {
+    const hasSubcats = categories.some((c) => Number(c.parent_id) === Number(root.id));
+    const hasDirectProds = products.some((p) => Number(p.category_id) === Number(root.id));
+
+    if (hasSubcats || hasDirectProds) {
+      toast.error(`Ngành "${root.name}" đang chứa danh mục con hoặc sản phẩm. Vui lòng chuyển hoặc xóa danh mục con trước.`);
+      return;
+    }
+
+    if (!confirm(`Bạn có chắc chắn muốn xóa ngành hàng gốc "${root.name}"?`)) return;
+
+    try {
+      await archiveCatalogCategory(root.id);
+      toast.success(`Đã xóa ngành hàng "${root.name}"`);
+      setSelectedRootId('all');
+      await loadAllData();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi xóa ngành hàng');
+    }
+  };
+
+  const handleSaveRootCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRootName.trim()) {
       toast.error('Vui lòng nhập tên ngành hàng gốc');
       return;
     }
 
-    const autoSlug = generateSlugFromName(newRootName);
+    const autoSlug = editingRootCategory ? editingRootCategory.slug : generateSlugFromName(newRootName);
 
     try {
       setCreatingRoot(true);
-      const created = await createCatalogCategory({
-        name: newRootName.trim(),
-        slug: autoSlug,
-        parent_id: null,
-        product_type_id: null,
-        sort_order: rootCategories.length + 1,
-        is_visible: true,
-      });
-      toast.success(`Đã tạo ngành hàng "${newRootName}"`);
+      if (editingRootCategory) {
+        await updateCatalogCategory(editingRootCategory.id, {
+          name: newRootName.trim(),
+          slug: autoSlug,
+          is_visible: editingRootCategory.is_visible,
+        });
+        toast.success(`Đã cập nhật ngành hàng "${newRootName}"`);
+      } else {
+        const created = await createCatalogCategory({
+          name: newRootName.trim(),
+          slug: autoSlug,
+          parent_id: null,
+          product_type_id: null,
+          sort_order: rootCategories.length + 1,
+          is_visible: true,
+        });
+        toast.success(`Đã tạo ngành hàng "${newRootName}"`);
+        if (created?.id) setSelectedRootId(String(created.id));
+      }
       setCreateRootOpen(false);
       setNewRootName('');
       await loadAllData();
-      if (created?.id) {
-        setSelectedRootId(String(created.id));
-      }
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi tạo ngành hàng gốc');
+      toast.error(err.message || 'Lỗi lưu ngành hàng gốc');
     } finally {
       setCreatingRoot(false);
     }
   };
 
+  // Mở modal tạo / sửa sản phẩm
   const handleOpenProductModal = (product?: ProductV2, defaultCategoryId?: number) => {
     if (product) {
       setEditingProduct(product);
@@ -216,7 +269,6 @@ function AdminCatalogPage() {
         name: product.name,
         category_id: product.category_id,
         price: product.price,
-        description: product.description || '',
         image_url: product.image_url || '',
         fulfillment_lane: product.fulfillment_lane || 'kitchen',
         stock_mode: product.stock_mode || 'made_to_order',
@@ -226,8 +278,7 @@ function AdminCatalogPage() {
       setProductFormData({
         name: '',
         category_id: defaultCategoryId || (productCategoryOptions[0]?.id ?? ''),
-        price: 0,
-        description: '',
+        price: 35000,
         image_url: '',
         fulfillment_lane: 'kitchen',
         stock_mode: 'made_to_order',
@@ -236,10 +287,40 @@ function AdminCatalogPage() {
     setProductModalOpen(true);
   };
 
+  // Xử lý upload ảnh từ thiết bị
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Dung lượng ảnh tối đa 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setProductFormData((prev) => ({ ...prev, image_url: dataUrl }));
+      toast.success('Đã tải ảnh lên thành công');
+    };
+    reader.onerror = () => {
+      toast.error('Lỗi đọc file ảnh');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productFormData.name.trim() || !productFormData.category_id) {
-      toast.error('Vui lòng nhập đầy đủ tên và chọn danh mục con');
+    if (!productFormData.name.trim()) {
+      toast.error('Vui lòng nhập tên sản phẩm');
+      return;
+    }
+    if (!productFormData.category_id) {
+      toast.error('Vui lòng chọn danh mục con cho sản phẩm');
+      return;
+    }
+    if (productFormData.price == null || productFormData.price < 0) {
+      toast.error('Vui lòng nhập giá bán hợp lệ');
       return;
     }
 
@@ -308,7 +389,9 @@ function AdminCatalogPage() {
         value={selectedRootId}
         onValueChange={setSelectedRootId}
         canCreateRoot={isSuperAdmin}
-        onCreateRoot={() => setCreateRootOpen(true)}
+        onCreateRoot={handleOpenCreateRoot}
+        onEditRoot={handleOpenEditRoot}
+        onDeleteRoot={handleDeleteRootCategory}
       />
 
       {/* 3-TAB VIEW: SUB-CATEGORIES, PRODUCTS, OPTIONS */}
@@ -324,14 +407,14 @@ function AdminCatalogPage() {
         onOpenProductEditor={handleOpenProductModal}
       />
 
-      {/* MODAL TẠO DANH MỤC GỐC (ẨN HOÀN TOÀN TRƯỜNG SLUG) */}
+      {/* MODAL TẠO / SỬA DANH MỤC GỐC */}
       <Dialog open={createRootOpen} onOpenChange={setCreateRootOpen}>
         <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleCreateRootCategory}>
+          <form onSubmit={handleSaveRootCategory}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Plus className="size-5 text-primary" />
-                <span>Tạo Ngành Hàng Cấp Gốc Mới</span>
+                <span>{editingRootCategory ? 'Đổi Tên Ngành Hàng Gốc' : 'Tạo Ngành Hàng Cấp Gốc Mới'}</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -347,9 +430,6 @@ function AdminCatalogPage() {
                   onChange={(e) => setNewRootName(e.target.value)}
                   required
                 />
-                <p className="text-[10px] text-muted-foreground">
-                  Hệ thống sẽ tự động tạo mã định danh URL chuẩn không dấu cho ngành hàng này.
-                </p>
               </div>
             </div>
 
@@ -363,14 +443,14 @@ function AdminCatalogPage() {
                 Hủy
               </Button>
               <Button type="submit" variant="hero" disabled={creatingRoot}>
-                {creatingRoot ? 'Đang tạo...' : 'Tạo ngành hàng'}
+                {creatingRoot ? 'Đang lưu...' : editingRootCategory ? 'Cập nhật' : 'Tạo ngành hàng'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL TẠO / SỬA SẢN PHẨM (ẨN HOÀN TOÀN TRƯỜNG SLUG) */}
+      {/* MODAL TẠO / SỬA SẢN PHẨM (ẢNH Ở TRÊN, STEP=1000, BỎ MÔ TẢ) */}
       <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleSaveProduct}>
@@ -382,6 +462,63 @@ function AdminCatalogPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-3 max-h-[70vh] overflow-y-auto pr-1">
+              {/* KHUNG TẢI ẢNH / LINK ẢNH NẰM TRÊN CÙNG (POINT 5) */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold flex items-center justify-between">
+                  <span>Ảnh sản phẩm</span>
+                  {productFormData.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => setProductFormData((prev) => ({ ...prev, image_url: '' }))}
+                      className="text-[11px] text-destructive hover:underline flex items-center gap-1"
+                    >
+                      <X className="size-3" /> Xóa ảnh
+                    </button>
+                  )}
+                </Label>
+
+                <div className="flex items-center gap-3">
+                  <div className="size-20 rounded-xl border-2 border-dashed bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                    {productFormData.image_url ? (
+                      <img src={productFormData.image_url} alt="Xem trước" className="size-full object-cover" />
+                    ) : (
+                      <ImageIcon className="size-8 text-muted-foreground/40" />
+                    )}
+                  </div>
+
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 bg-background"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload className="size-3.5 mr-1.5" />
+                        Tải ảnh từ máy
+                      </Button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageFileChange}
+                      />
+                    </div>
+
+                    <Input
+                      id="prod-image-url"
+                      placeholder="Hoặc dán đường dẫn link ảnh (URL)..."
+                      className="text-xs h-8"
+                      value={productFormData.image_url}
+                      onChange={(e) => setProductFormData((prev) => ({ ...prev, image_url: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* TÊN SẢN PHẨM */}
               <div className="space-y-2">
                 <Label htmlFor="prod-name" className="text-xs font-semibold">
                   Tên sản phẩm <span className="text-destructive">*</span>
@@ -398,9 +535,12 @@ function AdminCatalogPage() {
                 />
               </div>
 
+              {/* DANH MỤC CON & GIÁ BÁN (STEP=1000, BẮT BUỘC - POINT 6) */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold">Danh mục con trực thuộc <span className="text-destructive">*</span></Label>
+                  <Label className="text-xs font-semibold">
+                    Danh mục con trực thuộc <span className="text-destructive">*</span>
+                  </Label>
                   <Select
                     value={String(productFormData.category_id)}
                     onValueChange={(val) => setProductFormData((prev) => ({ ...prev, category_id: val }))}
@@ -426,13 +566,16 @@ function AdminCatalogPage() {
                     id="prod-price"
                     type="number"
                     min={0}
+                    step={1000}
                     value={productFormData.price}
                     onChange={(e) => setProductFormData((prev) => ({ ...prev, price: Number(e.target.value) }))}
                     required
                   />
+                  <p className="text-[10px] text-muted-foreground">Bấm tăng/giảm nhảy 1.000đ</p>
                 </div>
               </div>
 
+              {/* KHU VỰC XỬ LÝ & HÌNH THỨC KHO */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold">Khu vực xử lý đơn</Label>
@@ -465,28 +608,6 @@ function AdminCatalogPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="prod-image" className="text-xs font-semibold">Link ảnh món (URL)</Label>
-                <Input
-                  id="prod-image"
-                  placeholder="https://..."
-                  value={productFormData.image_url}
-                  onChange={(e) => setProductFormData((prev) => ({ ...prev, image_url: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="prod-desc" className="text-xs font-semibold">Mô tả món</Label>
-                <Textarea
-                  id="prod-desc"
-                  placeholder="Mô tả hương vị, thành phần nguyên liệu..."
-                  rows={2}
-                  className="text-xs"
-                  value={productFormData.description}
-                  onChange={(e) => setProductFormData((prev) => ({ ...prev, description: e.target.value }))}
-                />
               </div>
             </div>
 

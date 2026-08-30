@@ -12,9 +12,11 @@ import {
   Sparkles,
   Edit2,
   Trash2,
+  Eye,
   EyeOff,
   Bookmark,
   Layers,
+  Power,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +41,11 @@ import {
   createCatalogCategory,
   updateCatalogCategory,
   archiveCatalogCategory,
+  updateCatalogProduct,
+  archiveCatalogProduct,
+  addAttributeToSchema,
+  addAttributeValue,
+  updateCategoryOptionAssignment,
 } from '@/lib/api';
 import { collectCategorySubtreeIds } from '@/lib/catalog-navigation';
 import type { CategoryNode } from './CategoryTreeEditor';
@@ -87,7 +94,7 @@ export function CatalogTabBlocksView({
     return categories.filter((c) => Number(c.parent_id) === rootIdNum);
   }, [categories, selectedRootId]);
 
-  // Toàn bộ category IDs thuộc subtree của root đang chọn (bao gồm chính rootId và các nhánh con)
+  // Toàn bộ category IDs thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
     if (selectedRootId === 'all') return null;
     return collectCategorySubtreeIds(categories, Number(selectedRootId));
@@ -107,6 +114,13 @@ export function CatalogTabBlocksView({
   const [catLane, setCatLane] = useState<'kitchen' | 'packing' | 'inherit'>('inherit');
   const [catSaving, setCatSaving] = useState(false);
 
+  // Modal Tạo Nhóm Tùy Chọn Mới cho Danh Mục Con (Point 9)
+  const [createOptionGroupOpen, setCreateOptionGroupOpen] = useState(false);
+  const [optGroupName, setOptGroupName] = useState('');
+  const [optGroupRole, setOptGroupRole] = useState<'variant' | 'modifier'>('variant');
+  const [optGroupValuesStr, setOptGroupValuesStr] = useState('Size M:0, Size L:7000');
+  const [optGroupSaving, setOptGroupSaving] = useState(false);
+
   // Tên Ngành gốc đang chọn
   const activeRootName = useMemo(() => {
     if (selectedRootId === 'all') return 'Tất cả ngành hàng';
@@ -115,12 +129,8 @@ export function CatalogTabBlocksView({
 
   // Danh mục khả dụng để cấu hình tùy chọn trong Tab 3
   const optionEligibleCategories = useMemo(() => {
-    if (subcategories.length > 0) {
-      return subcategories;
-    }
-    if (activeRootCategory) {
-      return [activeRootCategory];
-    }
+    if (subcategories.length > 0) return subcategories;
+    if (activeRootCategory) return [activeRootCategory];
     return categories;
   }, [subcategories, activeRootCategory, categories]);
 
@@ -134,7 +144,7 @@ export function CatalogTabBlocksView({
     return optionEligibleCategories[0];
   }, [optionEligibleCategories, optionTargetCatId]);
 
-  // Tự động sinh slug URL ngầm (ẩn khỏi mắt người dùng)
+  // Tự động sinh slug URL ngầm
   const generateSlugFromName = (name: string) => {
     return name
       .toLowerCase()
@@ -146,7 +156,7 @@ export function CatalogTabBlocksView({
       .replace(/\s+/g, '-');
   };
 
-  // Danh sách sản phẩm cho Tab 2 (hiển thị đầy đủ tất cả sản phẩm thuộc scope của ngành gốc)
+  // Danh sách sản phẩm cho Tab 2
   const displayedProducts = useMemo(() => {
     let list = products;
     if (productFilterSubcat !== 'all') {
@@ -181,6 +191,21 @@ export function CatalogTabBlocksView({
     setCatDialogOpen(true);
   };
 
+  const handleToggleCategoryVisibility = async (cat: CategoryNode) => {
+    try {
+      await updateCatalogCategory(cat.id, {
+        name: cat.name,
+        slug: cat.slug,
+        is_visible: !cat.is_visible,
+        default_fulfillment_lane: cat.default_fulfillment_lane,
+      });
+      toast.success(`Đã ${cat.is_visible ? 'tạm ẩn' : 'bật hiển thị'} danh mục "${cat.name}"`);
+      await onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi cập nhật trạng thái danh mục');
+    }
+  };
+
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catName.trim()) {
@@ -194,7 +219,6 @@ export function CatalogTabBlocksView({
       return;
     }
 
-    // Tự sinh slug ngầm từ tên
     const autoSlug = editingCategory ? editingCategory.slug : generateSlugFromName(catName);
 
     try {
@@ -247,6 +271,107 @@ export function CatalogTabBlocksView({
       await onRefresh();
     } catch (err: any) {
       toast.error(err.message || 'Lỗi xóa danh mục');
+    }
+  };
+
+  // Toggle trạng thái Tạm ngưng / Bán của Sản phẩm
+  const handleToggleProductAvailability = async (prod: ProductV2) => {
+    try {
+      const nextStatus = prod.is_available ? 'inactive' : 'active';
+      await updateCatalogProduct(prod.id, {
+        name: prod.name,
+        slug: prod.slug,
+        category_id: prod.category_id,
+        price: prod.price,
+        is_available: !prod.is_available,
+        status: nextStatus,
+      });
+      toast.success(`Đã ${prod.is_available ? 'tạm ngưng' : 'mở bán'} món "${prod.name}"`);
+      await onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi cập nhật trạng thái món');
+    }
+  };
+
+  // Xóa sản phẩm
+  const handleDeleteProduct = async (prod: ProductV2) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa món "${prod.name}" khỏi danh mục?`)) return;
+    try {
+      await archiveCatalogProduct(prod.id);
+      toast.success(`Đã xóa món "${prod.name}"`);
+      await onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi xóa sản phẩm');
+    }
+  };
+
+  // Tạo Nhóm Tùy Chọn Mới (Point 9)
+  const handleCreateOptionGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!optGroupName.trim()) {
+      toast.error('Vui lòng nhập tên nhóm tùy chọn');
+      return;
+    }
+    if (!activeSchema) {
+      toast.error('Chưa có Schema tùy chọn nào để gán');
+      return;
+    }
+
+    try {
+      setOptGroupSaving(true);
+      const code = generateSlugFromName(optGroupName).replace(/-/g, '_');
+      const isRequired = optGroupRole === 'variant';
+
+      // 1. Thêm thuộc tính vào schema
+      const createdAttr = await addAttributeToSchema(activeSchema.id, {
+        code,
+        name: optGroupName.trim(),
+        role: optGroupRole,
+        input_type: 'single_select',
+        is_required: isRequired,
+        min_selections: isRequired ? 1 : 0,
+        max_selections: 1,
+        sort_order: (activeSchema.attributes?.length || 0) + 1,
+      });
+
+      // 2. Thêm các giá trị tùy chọn
+      const valuePairs = optGroupValuesStr.split(',').map((s) => s.trim()).filter(Boolean);
+      for (let i = 0; i < valuePairs.length; i++) {
+        const [label, priceStr] = valuePairs[i].split(':').map((p) => p.trim());
+        const extraPrice = Number(priceStr) || 0;
+        const valCode = generateSlugFromName(label || `opt_${i}`).replace(/-/g, '_');
+        await addAttributeValue(createdAttr.id, {
+          code: valCode,
+          label: label || `Tùy chọn ${i + 1}`,
+          price_adjustment: extraPrice,
+          sort_order: i + 1,
+          is_active: true,
+        });
+      }
+
+      // 3. Gán thuộc tính này cho danh mục con đang chọn
+      if (currentOptionCategory) {
+        await updateCategoryOptionAssignment(currentOptionCategory.id, {
+          assignments: [
+            {
+              attribute_definition_id: createdAttr.id,
+              is_required: isRequired,
+              min_selected: isRequired ? 1 : 0,
+              max_selected: 1,
+              sort_order: 1,
+            },
+          ],
+        });
+      }
+
+      toast.success(`Đã tạo nhóm tùy chọn "${optGroupName}" thành công!`);
+      setCreateOptionGroupOpen(false);
+      setOptGroupName('');
+      await onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi tạo nhóm tùy chọn');
+    } finally {
+      setOptGroupSaving(false);
     }
   };
 
@@ -338,7 +463,7 @@ export function CatalogTabBlocksView({
                     <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs space-y-2">
                       <p>Chưa có danh mục con nào trong ngành “{activeRootName}”.</p>
                       {activeRootCategory && (
-                        <p className="text-[11px] text-primary">
+                        <p className="text-[11px] text-primary font-semibold">
                           (Danh mục “{activeRootCategory.name}” hiện đang chứa trực tiếp {displayedProducts.length} sản phẩm ở Tab 2).
                         </p>
                       )}
@@ -374,13 +499,23 @@ export function CatalogTabBlocksView({
                           </Badge>
                         </td>
                         <td className="p-3.5">
-                          <span className={cat.is_visible ? 'text-emerald-600 font-bold' : 'text-muted-foreground'}>
-                            {cat.is_visible ? 'Đang hiển thị' : 'Tạm ẩn'}
+                          <span className={cat.is_visible ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
+                            {cat.is_visible ? '🟢 Đang hiển thị' : '🟡 Tạm ẩn'}
                           </span>
                         </td>
-                        <td className="p-3.5 text-right space-x-2">
+                        <td className="p-3.5 text-right space-x-1.5">
                           {isSuperAdmin && (
                             <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={`h-7 text-xs px-2 ${cat.is_visible ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
+                                onClick={() => handleToggleCategoryVisibility(cat)}
+                                title={cat.is_visible ? 'Tạm ẩn danh mục con này' : 'Bật hiển thị danh mục con'}
+                              >
+                                {cat.is_visible ? <EyeOff className="size-3 mr-1" /> : <Eye className="size-3 mr-1" />}
+                                {cat.is_visible ? 'Tạm ẩn' : 'Hiển thị'}
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -419,7 +554,7 @@ export function CatalogTabBlocksView({
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <h2 className="text-sm font-bold text-foreground">Danh Sách Sản Phẩm</h2>
-                <p className="text-xs text-muted-foreground">Xem và chỉnh sửa các món theo từng danh mục con</p>
+                <p className="text-xs text-muted-foreground">Xem, chỉnh sửa, tạm ngưng và xóa món</p>
               </div>
 
               {/* LỌC THEO DANH MỤC CON */}
@@ -505,11 +640,11 @@ export function CatalogTabBlocksView({
                     return (
                       <tr key={prod.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3.5 font-bold text-foreground flex items-center gap-2.5">
-                          <div className="size-9 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden border">
+                          <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden border">
                             {prod.image_url ? (
                               <img src={prod.image_url} alt={prod.name} className="size-full object-cover" />
                             ) : (
-                              <ShoppingBag className="size-4 text-muted-foreground/50" />
+                              <ShoppingBag className="size-5 text-muted-foreground/50" />
                             )}
                           </div>
                           <div>
@@ -535,19 +670,39 @@ export function CatalogTabBlocksView({
                         </td>
                         <td className="p-3.5">
                           <span className={prod.is_available ? 'text-emerald-600 font-bold' : 'text-destructive font-bold'}>
-                            {prod.is_available ? 'Đang bán' : 'Tạm ngưng'}
+                            {prod.is_available ? '🟢 Đang bán' : '🔴 Tạm ngưng'}
                           </span>
                         </td>
-                        <td className="p-3.5 text-right">
+                        <td className="p-3.5 text-right space-x-1.5">
                           {isSuperAdmin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs px-2 bg-background hover:bg-accent"
-                              onClick={() => onOpenProductEditor(prod, Number(prod.category_id))}
-                            >
-                              <Edit2 className="size-3 mr-1" /> Sửa
-                            </Button>
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={`h-7 text-xs px-2 ${prod.is_available ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
+                                onClick={() => handleToggleProductAvailability(prod)}
+                                title={prod.is_available ? 'Tạm ngưng bán món này' : 'Mở bán món này'}
+                              >
+                                <Power className="size-3 mr-1" />
+                                {prod.is_available ? 'Tạm ngưng' : 'Mở bán'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs px-2 bg-background hover:bg-accent"
+                                onClick={() => onOpenProductEditor(prod, Number(prod.category_id))}
+                              >
+                                <Edit2 className="size-3 mr-1" /> Sửa
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs px-2 text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteProduct(prod)}
+                              >
+                                <Trash2 className="size-3 mr-1" /> Xóa
+                              </Button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -581,25 +736,40 @@ export function CatalogTabBlocksView({
               </div>
             </div>
 
-            {/* Category selector pills */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-muted/60 p-1.5 rounded-xl border">
-              <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Chọn danh mục:</span>
-              {optionEligibleCategories.map((cat) => {
-                const isSelected = currentOptionCategory?.id === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => setOptionTargetCatId(Number(cat.id))}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                      isSelected
-                        ? 'bg-primary text-primary-foreground shadow-xs'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {cat.name}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Category selector pills */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-muted/60 p-1.5 rounded-xl border">
+                <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Chọn danh mục:</span>
+                {optionEligibleCategories.map((cat) => {
+                  const isSelected = currentOptionCategory?.id === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setOptionTargetCatId(Number(cat.id))}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        isSelected
+                          ? 'bg-primary text-primary-foreground shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {cat.name}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {isSuperAdmin && (
+                <Button
+                  size="sm"
+                  variant="hero"
+                  className="h-8 text-xs"
+                  onClick={() => setCreateOptionGroupOpen(true)}
+                  disabled={!currentOptionCategory}
+                >
+                  <Plus className="size-3.5 mr-1" />
+                  + Tạo Nhóm Tùy Chọn Mới
+                </Button>
+              )}
             </div>
           </div>
 
@@ -686,6 +856,77 @@ export function CatalogTabBlocksView({
               </Button>
               <Button type="submit" variant="hero" disabled={catSaving}>
                 {catSaving ? 'Đang lưu...' : editingCategory ? 'Cập nhật' : 'Tạo danh mục'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL TẠO NHÓM TÙY CHỌN MỚI (Point 9) */}
+      <Dialog open={createOptionGroupOpen} onOpenChange={setCreateOptionGroupOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handleCreateOptionGroup}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Sliders className="size-5 text-primary" />
+                <span>Tạo Nhóm Tùy Chọn Mới Cho Danh Mục</span>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="p-2.5 rounded-lg bg-muted text-xs text-muted-foreground">
+                Áp dụng cho danh mục: <b className="text-foreground">{currentOptionCategory?.name}</b>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="opt-group-name" className="text-xs font-semibold">
+                  Tên nhóm tùy chọn <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="opt-group-name"
+                  placeholder="Ví dụ: Size Ly, Mức Đường, Mức Đá, Topping..."
+                  value={optGroupName}
+                  onChange={(e) => setOptGroupName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Phân loại tùy chọn</Label>
+                <Select value={optGroupRole} onValueChange={(v: any) => setOptGroupRole(v)}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="variant" className="text-xs">📌 Tùy chọn Mặc định (Bắt buộc chọn 1, ví dụ: Size Ly / Size Áo)</SelectItem>
+                    <SelectItem value="modifier" className="text-xs">💡 Tùy chọn Sở thích (Tùy biến thêm, ví dụ: Đường / Đá / Topping)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="opt-group-values" className="text-xs font-semibold">
+                  Danh sách lựa chọn (Tên:Giá cộng thêm, cách nhau bằng dấu phẩy)
+                </Label>
+                <Input
+                  id="opt-group-values"
+                  placeholder="Ví dụ: Size M:0, Size L:7000, Size XL:12000"
+                  value={optGroupValuesStr}
+                  onChange={(e) => setOptGroupValuesStr(e.target.value)}
+                  required
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Định dạng: <code>Tên:Tiền</code> (Ví dụ: <code>Size M:0, Size L:7000</code> hoặc <code>50% Đường:0, 100% Đường:0</code>)
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateOptionGroupOpen(false)} disabled={optGroupSaving}>
+                Hủy
+              </Button>
+              <Button type="submit" variant="hero" disabled={optGroupSaving}>
+                {optGroupSaving ? 'Đang tạo...' : 'Tạo tùy chọn'}
               </Button>
             </DialogFooter>
           </form>

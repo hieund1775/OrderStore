@@ -170,7 +170,11 @@ function MenuPage() {
       if (category && (apiError.status === 404 || apiError.message?.includes("404") || apiError.message?.includes("Không tìm thấy"))) {
         setNotFoundError(true);
       } else {
-        setCatalogError(apiError.message || "Không thể tải danh mục sản phẩm. Vui lòng thử lại.");
+        const rawMsg = apiError.message || '';
+        const safeMsg = rawMsg && !rawMsg.includes('Route ') && !rawMsg.includes('not found') && !rawMsg.includes('HTML')
+          ? rawMsg
+          : 'Không thể tải danh mục sản phẩm lúc này. Vui lòng thử lại sau.';
+        setCatalogError(safeMsg);
       }
       setSections([]);
       setCategoryProducts([]);

@@ -428,11 +428,11 @@ export type PublicCatalogProductsResponse = {
 };
 
 export async function fetchPublicCategoryTree(): Promise<PublicCategoryNode[]> {
-  return apiFetch<PublicCategoryNode[]>('/catalog/categories/tree');
+  return apiFetch<PublicCategoryNode[]>('/api/catalog/categories/tree');
 }
 
 export async function fetchPublicCatalogSections(storeId: number | string, limitPerRoot = 12): Promise<{ sections: PublicCatalogSection[] }> {
-  return apiFetch<{ sections: PublicCatalogSection[] }>(`/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
+  return apiFetch<{ sections: PublicCatalogSection[] }>(`/api/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
 }
 
 export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }): Promise<PublicCatalogProductsResponse> {
@@ -443,12 +443,12 @@ export async function fetchPublicProducts(params?: { store_id?: number | string;
   if (params?.limit) q.set('limit', String(params.limit));
   if (params?.offset) q.set('offset', String(params.offset));
   const query = q.toString() ? `?${q.toString()}` : '';
-  return apiFetch<PublicCatalogProductsResponse>(`/catalog/products${query}`);
+  return apiFetch<PublicCatalogProductsResponse>(`/api/catalog/products${query}`);
 }
 
 export async function fetchPublicProductDetails(slug: string, storeId?: number | string) {
   const query = storeId ? `?store_id=${storeId}` : '';
-  return apiFetch<any>(`/catalog/products/${slug}${query}`);
+  return apiFetch<any>(`/api/catalog/products/${slug}${query}`);
 }
 
 export async function resolveProductConfiguration(data: {
@@ -457,7 +457,7 @@ export async function resolveProductConfiguration(data: {
   variant_value_ids?: number[];
   modifier_value_ids?: number[];
 }) {
-  return apiFetch<any>('/catalog/resolve-configuration', {
+  return apiFetch<any>('/api/catalog/resolve-configuration', {
     method: 'POST',
     body: JSON.stringify(data),
   });
