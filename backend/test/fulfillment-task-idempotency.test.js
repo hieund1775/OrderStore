@@ -7,6 +7,9 @@ test('Fulfillment Task Idempotency & Lifecycle Suite', async (t) => {
   await t.test('mixed order creates exactly one task per lane for the same order and branch', async () => {
     let capturedPayload = null;
     const repository = {
+      async isLaneActive() {
+        return true;
+      },
       async createTasksForOrder(payload) {
         capturedPayload = payload;
         return Object.entries(payload.laneItemsMap)

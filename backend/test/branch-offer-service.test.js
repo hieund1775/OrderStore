@@ -31,6 +31,12 @@ test('Branch Offer Validation: strictly enforces valid variant ID and non-negati
 
 test('Branch Offer Service: delegates upsert to repository', async () => {
   const fakeRepo = {
+    async getVariantFulfillmentContext() {
+      return { variant_id: 20, fulfillment_lane: 'kitchen' };
+    },
+    async hasFulfillmentCapability() {
+      return true;
+    },
     async upsertBranchOffer(storeId, data) {
       return { id: 1, store_id: storeId, ...data };
     },

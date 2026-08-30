@@ -22,19 +22,27 @@ export function createBranchOfferService(repository = createBranchOffersReposito
       const validated = validateBranchOfferInput(input);
 
       if (validated.is_available) {
-        if (typeof repository.getVariantFulfillmentContext === 'function' && typeof repository.hasFulfillmentCapability === 'function') {
-          const ctx = await repository.getVariantFulfillmentContext(validated.variant_id);
-          if (ctx?.fulfillment_lane) {
-            const hasCap = await repository.hasFulfillmentCapability(Number(storeId), ctx.fulfillment_lane);
-            if (!hasCap) {
-              const err = new CatalogV2Error(
-                `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${ctx.fulfillment_lane}" cho sản phẩm này`,
-                409,
-              );
-              err.code = 'BRANCH_CAPABILITY_REQUIRED';
-              throw err;
-            }
-          }
+        if (typeof repository.getVariantFulfillmentContext !== 'function'
+          || typeof repository.hasFulfillmentCapability !== 'function') {
+          const err = new CatalogV2Error('Không thể xác minh khả năng vận hành của chi nhánh', 500);
+          err.code = 'BRANCH_CAPABILITY_VALIDATION_UNAVAILABLE';
+          throw err;
+        }
+        const ctx = await repository.getVariantFulfillmentContext(validated.variant_id);
+        if (!ctx) throw new CatalogV2Error('Biến thể SKU không tồn tại', 404);
+        if (!ctx.fulfillment_lane) {
+          const err = new CatalogV2Error('Sản phẩm chưa được thiết lập luồng xử lý', 409);
+          err.code = 'FULFILLMENT_LANE_REQUIRED';
+          throw err;
+        }
+        const hasCap = await repository.hasFulfillmentCapability(Number(storeId), ctx.fulfillment_lane);
+        if (!hasCap) {
+          const err = new CatalogV2Error(
+            `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${ctx.fulfillment_lane}" cho sản phẩm này`,
+            409,
+          );
+          err.code = 'BRANCH_CAPABILITY_REQUIRED';
+          throw err;
         }
       }
 
@@ -54,6 +62,17 @@ export function createBranchOfferService(repository = createBranchOffersReposito
       }
       if (typeof isAvailable !== 'boolean') {
         throw new CatalogV2Error('is_available phải là boolean', 400);
+      }
+      if (isAvailable) {
+        if (typeof repository.assertVariantsCanBeOffered !== 'function') {
+          const err = new CatalogV2Error('Không thể xác minh khả năng vận hành cho thao tác hàng loạt', 500);
+          err.code = 'BRANCH_CAPABILITY_VALIDATION_UNAVAILABLE';
+          throw err;
+        }
+        await repository.assertVariantsCanBeOffered(
+          Number(storeId),
+          [...new Set(normalizedVariantIds)],
+        );
       }
       return await repository.batchSetAvailability(
         Number(storeId),

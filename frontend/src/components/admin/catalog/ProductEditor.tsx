@@ -35,6 +35,7 @@ import {
   fetchSchemaDetails,
 } from '@/lib/api';
 import { VariantGenerator } from './VariantGenerator';
+import { ProductOptionOverrides } from './ProductOptionOverrides';
 import { toast } from 'sonner';
 
 export type ProductV2 = {
@@ -492,14 +493,21 @@ export function ProductEditor({
 
               {/* Variant Generator nếu có schema */}
               {activeSchema && (
-                <VariantGenerator
-                  productId={detailedProduct.id}
-                  productSlug={detailedProduct.slug}
-                  schemaAttributes={activeSchema.attributes || []}
-                  existingVariants={detailedProduct.variants || []}
-                  onSuccess={() => handleOpenDetail(detailedProduct)}
-                  isSuperAdmin={isSuperAdmin}
-                />
+                <>
+                  <ProductOptionOverrides
+                    productId={detailedProduct.id}
+                    schema={activeSchema}
+                    editable={isSuperAdmin}
+                  />
+                  <VariantGenerator
+                    productId={detailedProduct.id}
+                    productSlug={detailedProduct.slug}
+                    schemaAttributes={activeSchema.attributes || []}
+                    existingVariants={detailedProduct.variants || []}
+                    onSuccess={() => handleOpenDetail(detailedProduct)}
+                    isSuperAdmin={isSuperAdmin}
+                  />
+                </>
               )}
 
               {/* Danh sách biến thể SKU hiện tại */}

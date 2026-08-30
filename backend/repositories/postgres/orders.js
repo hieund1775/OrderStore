@@ -5,6 +5,7 @@ import defaultNotificationsRepository from './notifications.js';
 import { claimOrderIdempotency, completeOrderIdempotency } from '../../services/order-idempotency.js';
 import { OrderDomainError } from '../../services/orders/order-errors.js';
 import { formatVietnamOrderDatePrefix } from '../../services/business-time.js';
+import { createFulfillmentRepository } from './fulfillment.js';
 
 export class OrderError extends OrderDomainError {
   constructor(message, status = 400, code = 'ORDER_BUSINESS_RULE') {
@@ -35,6 +36,8 @@ export function createOrdersRepository(
   notifications = defaultNotificationsRepository,
   { clock = () => new Date(), randomInt = crypto.randomInt } = {},
 ) {
+  const fulfillment = createFulfillmentRepository(database);
+
   return {
     async createPublicOrder({ input, userId = null, cancelTokenHash = null, cancelToken = null, idempotencyKey, requestHash, paymentProvider = 'cod' }) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
@@ -65,8 +68,47 @@ export function createOrdersRepository(
         for (const item of input.items || []) {
           const qty = Number(item.qty || 1);
           if (!Number.isInteger(qty) || qty < 1 || qty > 50) throw new OrderError('Số lượng phải từ 1 đến 50');
-          const [products] = await tx.query('SELECT id, name, price FROM products WHERE id = $1 AND is_available = TRUE', [item.product_id]);
+          const [products] = await tx.query(
+            `SELECT p.id, p.name, p.price, p.category_id,
+                    COALESCE(
+                      p.fulfillment_lane,
+                      (
+                        WITH RECURSIVE ancestors AS (
+                          SELECT c.id, c.parent_id, c.depth, c.default_fulfillment_lane
+                          FROM categories c WHERE c.id = p.category_id
+                          UNION ALL
+                          SELECT parent.id, parent.parent_id, parent.depth, parent.default_fulfillment_lane
+                          FROM categories parent
+                          JOIN ancestors child ON child.parent_id = parent.id
+                        )
+                        SELECT default_fulfillment_lane FROM ancestors
+                        WHERE default_fulfillment_lane IS NOT NULL
+                        ORDER BY depth DESC LIMIT 1
+                      )
+                    ) AS fulfillment_lane
+             FROM products p
+             WHERE p.id = $1 AND p.is_available = TRUE AND p.status = 'active'`,
+            [item.product_id],
+          );
           if (!products[0]) throw new OrderError('Sản phẩm không tồn tại hoặc đã ngừng bán');
+          if (!products[0].fulfillment_lane) {
+            throw new OrderError('Sản phẩm chưa được thiết lập luồng xử lý', 409, 'FULFILLMENT_LANE_REQUIRED');
+          }
+          const [capabilities] = await tx.query(
+            `SELECT 1
+             FROM branch_fulfillment_capabilities bfc
+             JOIN fulfillment_lane_registry flr ON flr.code = bfc.lane_code
+             WHERE bfc.store_id = $1 AND bfc.lane_code = $2
+               AND bfc.is_enabled = TRUE AND flr.is_active = TRUE`,
+            [input.store_id, products[0].fulfillment_lane],
+          );
+          if (!capabilities[0]) {
+            throw new OrderError(
+              `Chi nhánh chưa hỗ trợ luồng ${products[0].fulfillment_lane} cho sản phẩm này`,
+              409,
+              'BRANCH_CAPABILITY_REQUIRED',
+            );
+          }
           let sizeExtra = 0;
           let sizeLabel = item.size_label || 'M';
           if (item.size_id != null) {
@@ -85,7 +127,16 @@ export function createOrdersRepository(
           const unitPrice = Number(products[0].price) + sizeExtra;
           const lineTotal = (unitPrice + toppingTotal) * qty;
           subtotal += lineTotal;
-          lines.push({ item, product: products[0], qty, sizeLabel, unitPrice, lineTotal, toppings });
+          lines.push({
+            item,
+            product: products[0],
+            qty,
+            sizeLabel,
+            unitPrice,
+            lineTotal,
+            toppings,
+            fulfillmentLane: products[0].fulfillment_lane,
+          });
         }
 
         const voucher = await promotions.validateForOrder({
@@ -131,18 +182,43 @@ export function createOrdersRepository(
           throw new OrderError('Không thể tạo đơn hàng lúc này, vui lòng thử lại sau giây lát', 500, 'ORDER_CREATE_FAILED');
         }
         await promotions.consumeForOrder({ voucher, orderId: order.id, tx });
+        const fulfillmentItems = [];
         for (const line of lines) {
           const [items] = await tx.query(
             `INSERT INTO order_items (order_id, product_id, product_name, qty, size_label, base_tea,
-              sugar_level, ice_level, note, unit_price, line_total)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+              sugar_level, ice_level, note, unit_price, line_total, fulfillment_lane)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
             [order.id, line.product.id, line.product.name, line.qty, line.sizeLabel, line.item.base_tea || '',
-              line.item.sugar_level || '', line.item.ice_level || '', line.item.note || null, line.unitPrice, line.lineTotal],
+              line.item.sugar_level || '', line.item.ice_level || '', line.item.note || null, line.unitPrice, line.lineTotal,
+              line.fulfillmentLane],
           );
           for (const topping of line.toppings) {
             await tx.query('INSERT INTO order_item_toppings (order_item_id, topping_name, topping_price) VALUES ($1,$2,$3)', [items[0].id, topping.name, topping.price]);
           }
+          fulfillmentItems.push({
+            order_item_id: items[0].id,
+            product_id: line.product.id,
+            product_name: line.product.name,
+            quantity: line.qty,
+            fulfillment_lane: line.fulfillmentLane,
+            modifiers_snapshot: {
+              size: line.sizeLabel,
+              base: line.item.base_tea || '',
+              sugar: line.item.sugar_level || '',
+              ice: line.item.ice_level || '',
+              toppings: line.toppings.map((topping) => ({ name: topping.name, price: topping.price })),
+            },
+            note: line.item.note || null,
+          });
         }
+        await fulfillment.createTasksForOrder({
+          orderId: order.id,
+          branchId: input.store_id,
+          laneItemsMap: {
+            kitchen: fulfillmentItems.filter((item) => item.fulfillment_lane === 'kitchen'),
+            packing: fulfillmentItems.filter((item) => item.fulfillment_lane === 'packing'),
+          },
+        }, tx);
         await tx.query("INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')", [order.id]);
 
         if (userId) {
@@ -277,6 +353,7 @@ export function createOrdersRepository(
         const cancelReason = reason || 'Khách yêu cầu hủy đơn';
         await tx.query("INSERT INTO order_status_history (order_id, status, note) VALUES ($1, 'Đã hủy', $2)", [order.id, cancelReason]);
         await tx.query('UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, cancelReason]);
+        await fulfillment.cancelTasksForOrder(order.id, tx);
 
         if (order.user_id) {
           await notifications.insertForUser({

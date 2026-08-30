@@ -7,16 +7,13 @@ export function createFulfillmentService({
 } = {}) {
   return {
     async splitAndCreateTasksForOrder({ orderId, branchId, items }, client = database) {
-      if (!orderId || !branchId || !items || !Array.isArray(items)) {
-        return [];
-      }
-
-      // Check if tasks already exist for this order (Idempotency)
-      if (typeof repository.getTasksForOrder === 'function') {
-        const existing = await repository.getTasksForOrder(orderId, client);
-        if (existing && existing.length > 0) {
-          return existing;
-        }
+      if (!Number.isInteger(Number(orderId)) || Number(orderId) <= 0
+        || !Number.isInteger(Number(branchId)) || Number(branchId) <= 0
+        || !Array.isArray(items) || items.length === 0) {
+        const err = new Error('Dữ liệu tạo nhiệm vụ vận hành không hợp lệ');
+        err.status = 400;
+        err.code = 'FULFILLMENT_INPUT_INVALID';
+        throw err;
       }
 
       // Group items into lanes
@@ -42,14 +39,18 @@ export function createFulfillmentService({
           throw err;
         }
 
-        if (typeof repository.isLaneActive === 'function') {
-          const active = await repository.isLaneActive(normalizedLane);
-          if (!active) {
-            const err = new Error(`Luồng xử lý ${lane} đang tạm ngừng hoạt động`);
-            err.status = 409;
-            err.code = 'FULFILLMENT_LANE_INACTIVE';
-            throw err;
-          }
+        if (typeof repository.isLaneActive !== 'function') {
+          const err = new Error('Không thể xác minh trạng thái luồng xử lý');
+          err.status = 500;
+          err.code = 'FULFILLMENT_LANE_VALIDATION_UNAVAILABLE';
+          throw err;
+        }
+        const active = await repository.isLaneActive(normalizedLane, client);
+        if (!active) {
+          const err = new Error(`Luồng xử lý ${lane} đang tạm ngừng hoạt động`);
+          err.status = 409;
+          err.code = 'FULFILLMENT_LANE_INACTIVE';
+          throw err;
         }
 
         laneItemsMap[normalizedLane].push({
@@ -81,15 +82,49 @@ export function createFulfillmentService({
         throw err;
       }
 
-      const effectiveBranchId = user?.admin_role === 'super'
-        ? branchId
-        : (user?.admin_branch_id || branchId || null);
+      const requestedBranchId = branchId == null ? null : Number(branchId);
+      const assignedBranchId = user?.admin_branch_id == null ? null : Number(user.admin_branch_id);
+      if (user?.admin_role !== 'super') {
+        if (!assignedBranchId) {
+          const err = new Error('Tài khoản vận hành chưa được gán chi nhánh');
+          err.status = 403;
+          err.code = 'FULFILLMENT_BRANCH_ASSIGNMENT_REQUIRED';
+          throw err;
+        }
+        if (requestedBranchId && requestedBranchId !== assignedBranchId) {
+          const err = new Error('Bạn không có quyền truy cập nhiệm vụ của chi nhánh khác');
+          err.status = 403;
+          err.code = 'FULFILLMENT_BRANCH_FORBIDDEN';
+          throw err;
+        }
+      }
+
+      const effectiveBranchId = user?.admin_role === 'super' ? requestedBranchId : assignedBranchId;
 
       let effectiveLane = lane;
       if (user?.admin_role === 'kitchen') {
+        if (lane && lane !== 'kitchen') {
+          const err = new Error('Tài khoản bếp không có quyền truy cập luồng khác');
+          err.status = 403;
+          err.code = 'FULFILLMENT_LANE_FORBIDDEN';
+          throw err;
+        }
         effectiveLane = 'kitchen';
       } else if (user?.admin_role === 'packing') {
+        if (lane && lane !== 'packing') {
+          const err = new Error('Tài khoản đóng gói không có quyền truy cập luồng khác');
+          err.status = 403;
+          err.code = 'FULFILLMENT_LANE_FORBIDDEN';
+          throw err;
+        }
         effectiveLane = 'packing';
+      }
+
+      if (effectiveLane && !['kitchen', 'packing'].includes(effectiveLane)) {
+        const err = new Error(`Luồng xử lý ${effectiveLane} không được hỗ trợ`);
+        err.status = 400;
+        err.code = 'FULFILLMENT_LANE_UNSUPPORTED';
+        throw err;
       }
 
       return repository.listTasks({
@@ -121,7 +156,10 @@ export function createFulfillmentService({
         throw err;
       }
 
-      if (user?.admin_role !== 'super' && user?.admin_branch_id && Number(user.admin_branch_id) !== Number(task.branch_id)) {
+      if (user?.admin_role !== 'super' && (
+        user?.admin_branch_id == null
+        || Number(user.admin_branch_id) !== Number(task.branch_id)
+      )) {
         const err = new Error('Bạn không có quyền quản lý đơn hàng của chi nhánh khác');
         err.status = 403;
         throw err;
@@ -141,12 +179,33 @@ export function createFulfillmentService({
       // Verify task and permissions
       const task = await this.getTaskDetails({ taskId, user });
 
+      const allowedTransitions = {
+        pending: new Set(['preparing', 'cancelled']),
+        preparing: new Set(['ready', 'cancelled']),
+        ready: new Set(['completed', 'cancelled']),
+        completed: new Set(),
+        cancelled: new Set(),
+      };
+      if (!allowedTransitions[task.status]?.has(status)) {
+        const err = new Error(`KhÃ´ng thá»ƒ chuyá»ƒn nhiá»‡m vá»¥ tá»« ${task.status} sang ${status}`);
+        err.status = 409;
+        err.code = 'FULFILLMENT_STATUS_TRANSITION_INVALID';
+        throw err;
+      }
+
       const updatedTask = await repository.updateTaskStatus({
         taskId,
         status,
         assignedTo: user?.id || null,
         notes,
+        expectedStatus: task.status,
       });
+      if (!updatedTask) {
+        const err = new Error('Nhiá»‡m vá»¥ vá»«a Ä‘Æ°á»£c cáº­p nháº­t bá»Ÿi ngÆ°á»i khÃ¡c, vui lÃ²ng táº£i láº¡i');
+        err.status = 409;
+        err.code = 'FULFILLMENT_STATUS_CONFLICT';
+        throw err;
+      }
 
       // Check if all tasks for this order are now ready/completed
       const allTasksCompleted = await repository.areAllTasksCompletedForOrder(task.order_id);

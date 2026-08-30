@@ -18,7 +18,7 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
   });
 
   it('Admin sidebar has removed legacy menu item in favor of unified Catalog', () => {
-    const legacyItem = adminNav.find((item) => item.to === '/admin/thuc-don');
+    const legacyItem = adminNav.find((item) => String(item.to) === '/admin/thuc-don');
     expect(legacyItem).toBeUndefined();
 
     const catalogItem = adminNav.find((item) => item.to === '/admin/catalog');

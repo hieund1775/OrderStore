@@ -273,8 +273,11 @@ describe('Voucher Archive & Per-Account Notifications Comprehensive Suite', () =
               if (sql.includes('INSERT INTO order_items')) {
                 return [[{ id: 1 }]];
               }
-              if (sql.includes('SELECT id, name, price FROM products')) {
-                return [[{ id: 1, name: 'Trà Đào', price: 50000 }]];
+              if (sql.includes('FROM products p')) {
+                return [[{ id: 1, name: 'Trà Đào', price: 50000, fulfillment_lane: 'kitchen' }]];
+              }
+              if (sql.includes('FROM branch_fulfillment_capabilities')) {
+                return [[{ exists: 1 }]];
               }
               if (sql.includes('INSERT INTO idempotency_keys')) {
                 return [[{ id: 1 }], 1];

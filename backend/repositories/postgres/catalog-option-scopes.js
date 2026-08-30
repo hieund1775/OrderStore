@@ -2,6 +2,31 @@ import postgresDb from '../../config/db-postgres.js';
 
 export function createCatalogOptionScopesRepository(database = postgresDb) {
   return {
+    async getCategoryAssignmentContext(categoryId, attributeDefinitionId) {
+      const [rows] = await database.query(
+        `SELECT c.id AS category_id, c.product_type_id AS category_product_type_id,
+                ad.id AS attribute_definition_id, pts.product_type_id AS attribute_product_type_id
+         FROM categories c
+         CROSS JOIN attribute_definitions ad
+         JOIN product_type_schemas pts ON pts.id = ad.schema_id
+         WHERE c.id = $1 AND ad.id = $2 AND c.archived_at IS NULL`,
+        [Number(categoryId), Number(attributeDefinitionId)],
+      );
+      return rows[0] || null;
+    },
+
+    async getProductOverrideContext(productId, attributeDefinitionId) {
+      const [rows] = await database.query(
+        `SELECT p.id AS product_id, p.product_type_schema_id,
+                ad.id AS attribute_definition_id, ad.schema_id AS attribute_schema_id
+         FROM products p
+         CROSS JOIN attribute_definitions ad
+         WHERE p.id = $1 AND ad.id = $2 AND p.status <> 'archived'`,
+        [Number(productId), Number(attributeDefinitionId)],
+      );
+      return rows[0] || null;
+    },
+
     async listCategoryAssignments(categoryId) {
       const [rows] = await database.query(
         `SELECT caa.*, ad.name AS attribute_name, ad.code AS attribute_code,
@@ -166,8 +191,9 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
            JOIN categories c ON c.id = caa.category_id
            JOIN attribute_definitions ad ON ad.id = caa.attribute_definition_id
            WHERE caa.category_id = ANY($1::bigint[])
+             AND (caa.category_id = $2 OR caa.inherit_to_descendants = TRUE)
            ORDER BY c.depth ASC, caa.sort_order ASC`,
-          [ancestorIds],
+          [ancestorIds, categoryId],
         );
         categoryAssignments = assignRows;
       }

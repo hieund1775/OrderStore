@@ -6,6 +6,9 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
   await t.test('splits mixed order items into kitchen and packing lanes', async () => {
     let capturedOrder = null;
     const mockRepo = {
+      async isLaneActive() {
+        return true;
+      },
       async createTasksForOrder(payload) {
         capturedOrder = payload;
         return [
@@ -85,12 +88,32 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     const result = await service.updateTaskStatus({
       taskId: 20,
       user: managerUser,
-      status: 'completed',
+      status: 'ready',
     });
 
-    assert.equal(result.task.status, 'completed');
+    assert.equal(result.task.status, 'ready');
     assert.equal(result.allTasksCompleted, true);
     assert.equal(result.orderId, 88);
+  });
+
+  await t.test('rejects regression from a terminal task status', async () => {
+    const mockRepo = {
+      async getTaskById(id) {
+        return { id, lane: 'kitchen', branch_id: 1, order_id: 88, status: 'completed' };
+      },
+      async updateTaskStatus() {
+        throw new Error('must not update');
+      },
+    };
+    const service = createFulfillmentService({ repository: mockRepo });
+    await assert.rejects(
+      service.updateTaskStatus({
+        taskId: 20,
+        user: { id: 1, admin_role: 'manager', admin_branch_id: 1 },
+        status: 'preparing',
+      }),
+      (err) => err?.status === 409 && err?.code === 'FULFILLMENT_STATUS_TRANSITION_INVALID',
+    );
   });
 
   await t.test('rejects a missing fulfillment lane instead of silently routing it to kitchen', async () => {

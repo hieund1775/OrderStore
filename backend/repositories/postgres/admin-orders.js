@@ -3,6 +3,7 @@ import { OrderDomainError } from '../../services/orders/order-errors.js';
 import { createOrderReadRepository } from '../orders.js';
 import { normalizeAndValidatePhone } from '../../validation/customer-schemas.js';
 import defaultNotificationsRepository from './notifications.js';
+import { createFulfillmentRepository } from './fulfillment.js';
 
 export class AdminOrderError extends OrderDomainError {
   constructor(message, status = 400, code = 'ADMIN_ORDER_BUSINESS_RULE') {
@@ -24,6 +25,7 @@ export function createAdminOrdersRepository(
   notifications = defaultNotificationsRepository,
 ) {
   const readRepository = createOrderReadRepository(database);
+  const fulfillment = createFulfillmentRepository(database);
   return {
     async list({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
       return readRepository.listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit });
@@ -48,6 +50,21 @@ export function createAdminOrdersRepository(
           throw new AdminOrderError('Chỉ đơn giao hàng Delivery mới được chuyển sang trạng thái Đang giao', 400);
         }
         if (transition.idempotent) return { order_id: Number(order.id), status: targetStatus, idempotent: true };
+        if (targetStatus === 'Đang giao' || targetStatus === 'Hoàn thành') {
+          // Keep historical orders (created before fulfillment tasks existed) operable.
+          // New orders always have tasks and every active lane must be ready.
+          const tasks = await fulfillment.getTasksForOrder(order.id, tx);
+          const activeTasks = tasks.filter((task) => task.status !== 'cancelled');
+          const ready = activeTasks.length === 0
+            || activeTasks.every((task) => task.status === 'ready' || task.status === 'completed');
+          if (!ready) {
+            throw new AdminOrderError(
+              'Đơn hàng vẫn còn nhiệm vụ bếp hoặc đóng gói chưa hoàn tất',
+              409,
+              'FULFILLMENT_TASKS_INCOMPLETE',
+            );
+          }
+        }
 
         let normalizedDriverPhone = null;
         let normalizedDriverName = null;
@@ -76,7 +93,10 @@ export function createAdminOrdersRepository(
         }
 
         await tx.query('INSERT INTO order_status_history (order_id, status, note, changed_by) VALUES ($1, $2, $3, $4)', [order.id, targetStatus, note || null, actorId]);
-        if (targetStatus === 'Đã hủy') await tx.query('UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, cancelReason || note]);
+        if (targetStatus === 'Đã hủy') {
+          await tx.query('UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, cancelReason || note]);
+          await fulfillment.cancelTasksForOrder(order.id, tx);
+        }
         if (targetStatus === 'Đang chuẩn bị') await tx.query('UPDATE orders SET kitchen_notified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id]);
         if (targetStatus === 'Đang giao') {
           await tx.query('UPDATE orders SET shipping_driver_name = $2, shipping_driver_phone = $3, shipping_tracking_url = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [order.id, normalizedDriverName || null, normalizedDriverPhone || null, trackingUrl || null]);

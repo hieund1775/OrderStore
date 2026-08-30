@@ -9,7 +9,8 @@ describe('PostgreSQL Order Code Vietnam Timezone & Collision Resilience', () => 
       async query(sql, params) {
         if (sql.includes('idempotency_keys')) return [[{ id: 1 }], 1];
         if (sql.includes('SELECT id FROM stores')) return [[{ id: 1, is_active: true }], 1];
-        if (sql.includes('SELECT id, name, price FROM products')) return [[{ id: 1, name: 'Trà Đào', price: 35000 }], 1];
+        if (sql.includes('FROM products p')) return [[{ id: 1, name: 'Trà Đào', price: 35000, fulfillment_lane: 'kitchen' }], 1];
+        if (sql.includes('FROM branch_fulfillment_capabilities')) return [[{ exists: 1 }], 1];
         if (sql.includes('INSERT INTO orders')) {
           insertedOrderCode = params[0];
           return [[{ id: 100, order_code: params[0], subtotal: 35000, discount_amount: 0, total: 35000, payment_status: 'unpaid', payment_provider: 'cod' }], 1];
@@ -67,7 +68,8 @@ describe('PostgreSQL Order Code Vietnam Timezone & Collision Resilience', () => 
         executedQueries.push({ sql, params });
         if (sql.includes('idempotency_keys')) return [[{ id: 1 }], 1];
         if (sql.includes('SELECT id FROM stores')) return [[{ id: 1, is_active: true }], 1];
-        if (sql.includes('SELECT id, name, price FROM products')) return [[{ id: 1, name: 'Trà Đào', price: 35000 }], 1];
+        if (sql.includes('FROM products p')) return [[{ id: 1, name: 'Trà Đào', price: 35000, fulfillment_lane: 'kitchen' }], 1];
+        if (sql.includes('FROM branch_fulfillment_capabilities')) return [[{ exists: 1 }], 1];
         if (sql.includes('INSERT INTO orders')) {
           attempts++;
           if (attempts === 1) {
@@ -138,7 +140,8 @@ describe('PostgreSQL Order Code Vietnam Timezone & Collision Resilience', () => 
         queries.push(sql);
         if (sql.includes('idempotency_keys')) return [[{ id: 1 }], 1];
         if (sql.includes('SELECT id FROM stores')) return [[{ id: 1 }], 1];
-        if (sql.includes('SELECT id, name, price FROM products')) return [[{ id: 1, name: 'Trà Đào', price: 35000 }], 1];
+        if (sql.includes('FROM products p')) return [[{ id: 1, name: 'Trà Đào', price: 35000, fulfillment_lane: 'kitchen' }], 1];
+        if (sql.includes('FROM branch_fulfillment_capabilities')) return [[{ exists: 1 }], 1];
         if (sql.includes('INSERT INTO orders')) {
           orderInsertAttempts++;
           throw unrelatedError;
@@ -207,7 +210,8 @@ describe('PostgreSQL Order Code Vietnam Timezone & Collision Resilience', () => 
       async query(sql) {
         if (sql.includes('idempotency_keys')) return [[{ id: 1 }], 1];
         if (sql.includes('SELECT id FROM stores')) return [[{ id: 1, is_active: true }], 1];
-        if (sql.includes('SELECT id, name, price FROM products')) return [[{ id: 1, name: 'Trà Đào', price: 35000 }], 1];
+        if (sql.includes('FROM products p')) return [[{ id: 1, name: 'Trà Đào', price: 35000, fulfillment_lane: 'kitchen' }], 1];
+        if (sql.includes('FROM branch_fulfillment_capabilities')) return [[{ exists: 1 }], 1];
         if (sql.includes('INSERT INTO orders')) {
           const err = new Error('duplicate key value violates unique constraint "orders_order_code_key"');
           err.code = '23505';

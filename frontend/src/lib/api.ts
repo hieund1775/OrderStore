@@ -280,6 +280,48 @@ export async function archiveCatalogProduct(id: number | string) {
   });
 }
 
+export async function fetchCategoryOptionAssignments(categoryId: number | string) {
+  return apiFetch<any[]>(`/admin/catalog/categories/${categoryId}/option-assignments`);
+}
+
+export async function updateCategoryOptionAssignment(categoryId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/categories/${categoryId}/option-assignments`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCategoryOptionAssignment(
+  categoryId: number | string,
+  attributeDefinitionId: number | string,
+) {
+  return apiFetch<{ removed: boolean }>(
+    `/admin/catalog/categories/${categoryId}/option-assignments/${attributeDefinitionId}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function fetchProductOptionOverrides(productId: number | string) {
+  return apiFetch<any[]>(`/admin/catalog/products/${productId}/option-overrides`);
+}
+
+export async function updateProductOptionOverride(productId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/products/${productId}/option-overrides`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProductOptionOverride(
+  productId: number | string,
+  attributeDefinitionId: number | string,
+) {
+  return apiFetch<{ removed: boolean }>(
+    `/admin/catalog/products/${productId}/option-overrides/${attributeDefinitionId}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function previewVariants(data: { attributes: any[]; product_slug: string }) {
   return apiFetch<any[]>('/admin/catalog/products/preview-variants', {
     method: 'POST',
@@ -422,14 +464,14 @@ export async function resolveProductConfiguration(data: {
 }
 
 export async function fetchBranchCapabilities(storeId: number | string): Promise<{ data: Array<{ lane_code: string; display_name: string; is_enabled: boolean }> }> {
-  return apiFetch<{ data: Array<{ lane_code: string; display_name: string; is_enabled: boolean }> }>(`/branches/${storeId}/capabilities`);
+  return apiFetch<{ data: Array<{ lane_code: string; display_name: string; is_enabled: boolean }> }>(`/admin/branches/${storeId}/capabilities`);
 }
 
 export async function updateBranchCapability(
   storeId: number | string,
   data: { lane_code: string; is_enabled: boolean },
 ) {
-  return apiFetch<any>(`/branches/${storeId}/capabilities`, {
+  return apiFetch<any>(`/admin/branches/${storeId}/capabilities`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });

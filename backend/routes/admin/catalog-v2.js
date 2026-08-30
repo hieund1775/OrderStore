@@ -128,6 +128,79 @@ router.post('/product-types/:id/schemas', requireRole('super'), asyncHandler(asy
   res.status(201).json(schema);
 }));
 
+function positiveId(value, field) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) throw new CatalogV2Error(`${field} không hợp lệ`, 400);
+  return id;
+}
+
+function normalizeScopeInput(input = {}) {
+  const minSelected = input.min_selected == null ? null : Number(input.min_selected);
+  const maxSelected = input.max_selected == null ? null : Number(input.max_selected);
+  if (minSelected != null && (!Number.isInteger(minSelected) || minSelected < 0)) {
+    throw new CatalogV2Error('min_selected không hợp lệ', 400);
+  }
+  if (maxSelected != null && (!Number.isInteger(maxSelected) || maxSelected < 0)) {
+    throw new CatalogV2Error('max_selected không hợp lệ', 400);
+  }
+  if (minSelected != null && maxSelected != null && minSelected > maxSelected) {
+    throw new CatalogV2Error('min_selected không được lớn hơn max_selected', 400);
+  }
+  const sortOrder = input.sort_order == null ? 0 : Number(input.sort_order);
+  if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+    throw new CatalogV2Error('sort_order không hợp lệ', 400);
+  }
+  return {
+    attributeDefinitionId: positiveId(input.attribute_definition_id, 'attribute_definition_id'),
+    isEnabled: input.is_enabled === undefined ? true : Boolean(input.is_enabled),
+    inheritToDescendants: input.inherit_to_descendants === undefined
+      ? true
+      : Boolean(input.inherit_to_descendants),
+    sortOrder,
+    isRequired: input.is_required == null ? null : Boolean(input.is_required),
+    minSelected,
+    maxSelected,
+  };
+}
+
+router.get('/categories/:id/option-assignments', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  res.json(await service.listCategoryAssignments(positiveId(req.params.id, 'category_id')));
+}));
+
+router.put('/categories/:id/option-assignments', requireRole('super'), asyncHandler(async (req, res) => {
+  const categoryId = positiveId(req.params.id, 'category_id');
+  const assignment = await service.upsertCategoryAssignment(categoryId, normalizeScopeInput(req.body));
+  await logAudit(req.user.sub, 'Cập nhật tùy chọn danh mục', `Category ID: ${categoryId}`, req);
+  res.json(assignment);
+}));
+
+router.delete('/categories/:id/option-assignments/:attributeId', requireRole('super'), asyncHandler(async (req, res) => {
+  const removed = await service.deleteCategoryAssignment(
+    positiveId(req.params.id, 'category_id'),
+    positiveId(req.params.attributeId, 'attribute_definition_id'),
+  );
+  res.json({ removed });
+}));
+
+router.get('/products/:id/option-overrides', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  res.json(await service.listProductOverrides(positiveId(req.params.id, 'product_id')));
+}));
+
+router.put('/products/:id/option-overrides', requireRole('super'), asyncHandler(async (req, res) => {
+  const productId = positiveId(req.params.id, 'product_id');
+  const override = await service.upsertProductOverride(productId, normalizeScopeInput(req.body));
+  await logAudit(req.user.sub, 'Cập nhật tùy chọn sản phẩm', `Product ID: ${productId}`, req);
+  res.json(override);
+}));
+
+router.delete('/products/:id/option-overrides/:attributeId', requireRole('super'), asyncHandler(async (req, res) => {
+  const removed = await service.deleteProductOverride(
+    positiveId(req.params.id, 'product_id'),
+    positiveId(req.params.attributeId, 'attribute_definition_id'),
+  );
+  res.json({ removed });
+}));
+
 router.use((err, req, res, next) => {
   if (err?.code === '23505') {
     return next(new CatalogV2Error('Mã, slug, SKU hoặc tổ hợp biến thể đã tồn tại', 409));

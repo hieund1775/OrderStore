@@ -2,7 +2,69 @@ import postgresDb from '../../config/db-postgres.js';
 import { CatalogV2Error } from './catalog-v2.js';
 
 export function createBranchOffersRepository(database = postgresDb) {
-  return {
+  const repository = {
+    async getVariantFulfillmentContext(variantId, client = database) {
+      const [rows] = await client.query(
+        `WITH RECURSIVE category_lineage AS (
+           SELECT c.id, c.parent_id, c.depth, c.default_fulfillment_lane
+           FROM product_variants pv
+           JOIN products p ON p.id = pv.product_id
+           JOIN categories c ON c.id = p.category_id
+           WHERE pv.id = $1
+           UNION ALL
+           SELECT parent.id, parent.parent_id, parent.depth, parent.default_fulfillment_lane
+           FROM categories parent
+           JOIN category_lineage child ON child.parent_id = parent.id
+         )
+         SELECT pv.id AS variant_id, p.id AS product_id, p.name AS product_name,
+                COALESCE(
+                  p.fulfillment_lane,
+                  (SELECT default_fulfillment_lane
+                   FROM category_lineage
+                   WHERE default_fulfillment_lane IS NOT NULL
+                   ORDER BY depth DESC LIMIT 1)
+                ) AS fulfillment_lane
+         FROM product_variants pv
+         JOIN products p ON p.id = pv.product_id
+         WHERE pv.id = $1`,
+        [Number(variantId)],
+      );
+      return rows[0] || null;
+    },
+
+    async hasFulfillmentCapability(storeId, lane, client = database) {
+      const [rows] = await client.query(
+        `SELECT 1
+         FROM branch_fulfillment_capabilities bfc
+         JOIN fulfillment_lane_registry flr ON flr.code = bfc.lane_code
+         WHERE bfc.store_id = $1 AND bfc.lane_code = $2
+           AND bfc.is_enabled = TRUE AND flr.is_active = TRUE`,
+        [Number(storeId), lane],
+      );
+      return Boolean(rows[0]);
+    },
+
+    async assertVariantsCanBeOffered(storeId, variantIds, client = database) {
+      for (const variantId of variantIds) {
+        const context = await repository.getVariantFulfillmentContext(variantId, client);
+        if (!context) throw new CatalogV2Error(`Biến thể SKU #${variantId} không tồn tại`, 404);
+        if (!context.fulfillment_lane) {
+          const err = new CatalogV2Error(`Sản phẩm "${context.product_name}" chưa được thiết lập luồng xử lý`, 409);
+          err.code = 'FULFILLMENT_LANE_REQUIRED';
+          throw err;
+        }
+        if (!await repository.hasFulfillmentCapability(storeId, context.fulfillment_lane, client)) {
+          const err = new CatalogV2Error(
+            `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${context.fulfillment_lane}" cho sản phẩm "${context.product_name}"`,
+            409,
+          );
+          err.code = 'BRANCH_CAPABILITY_REQUIRED';
+          throw err;
+        }
+      }
+      return true;
+    },
+
     async listBranchOffers(storeId, { categoryId, isAvailable, search } = {}) {
       const params = [storeId];
       let where = "WHERE p.status <> 'archived' AND pv.status <> 'archived'";
@@ -56,35 +118,22 @@ export function createBranchOffersRepository(database = postgresDb) {
     },
 
     async upsertBranchOffer(storeId, data) {
-      return await database.transaction(async (tx) => {
-        const [vRows] = await tx.query(
-          `SELECT pv.*, p.status AS product_status, p.price AS product_base_price,
-                  p.name AS product_name,
-                  COALESCE(p.fulfillment_lane, c.default_fulfillment_lane) AS effective_lane
+      return database.transaction(async (tx) => {
+        const [variantRows] = await tx.query(
+          `SELECT pv.id, pv.status, p.status AS product_status
            FROM product_variants pv
            JOIN products p ON p.id = pv.product_id
-           LEFT JOIN categories c ON c.id = p.category_id
-           WHERE pv.id = $1`,
+           WHERE pv.id = $1
+           FOR UPDATE`,
           [data.variant_id],
         );
-        const variant = vRows[0];
+        const variant = variantRows[0];
         if (!variant) throw new CatalogV2Error('Biến thể SKU không tồn tại', 404);
         if (variant.product_status === 'archived' || variant.status === 'archived') {
-          throw new CatalogV2Error('Không thể tạo hoặc cập nhật giá cho sản phẩm đã lưu trữ', 400);
+          throw new CatalogV2Error('Không thể cập nhật giá cho sản phẩm đã lưu trữ', 400);
         }
-
-        if (variant.effective_lane && data.is_available) {
-          const [capRows] = await tx.query(
-            `SELECT 1 FROM branch_fulfillment_capabilities
-             WHERE store_id = $1 AND lane_code = $2 AND is_enabled = TRUE`,
-            [storeId, variant.effective_lane],
-          );
-          if (!capRows[0]) {
-            throw new CatalogV2Error(
-              `Chi nhánh #${storeId} không hỗ trợ luồng vận hành "${variant.effective_lane}" cho sản phẩm "${variant.product_name}"`,
-              400,
-            );
-          }
+        if (data.is_available) {
+          await repository.assertVariantsCanBeOffered(storeId, [data.variant_id], tx);
         }
 
         const [rows] = await tx.query(
@@ -98,13 +147,7 @@ export function createBranchOffersRepository(database = postgresDb) {
              version = branch_variant_offers.version + 1,
              updated_at = CURRENT_TIMESTAMP
            RETURNING *`,
-          [
-            storeId,
-            data.variant_id,
-            data.price,
-            data.compare_at_price,
-            data.is_available,
-          ],
+          [storeId, data.variant_id, data.price, data.compare_at_price, data.is_available],
         );
         return rows[0];
       });
@@ -112,15 +155,19 @@ export function createBranchOffersRepository(database = postgresDb) {
 
     async batchSetAvailability(storeId, variantIds, isAvailable) {
       if (!Array.isArray(variantIds) || variantIds.length === 0) return [];
-
-      const [rows] = await database.query(
-        `UPDATE branch_variant_offers
-         SET is_available = $1, version = version + 1, updated_at = CURRENT_TIMESTAMP
-         WHERE store_id = $2 AND variant_id = ANY($3::bigint[])
-         RETURNING *`,
-        [isAvailable, storeId, variantIds],
-      );
-      return rows;
+      return database.transaction(async (tx) => {
+        if (isAvailable) await repository.assertVariantsCanBeOffered(storeId, variantIds, tx);
+        const [rows] = await tx.query(
+          `UPDATE branch_variant_offers
+           SET is_available = $1, version = version + 1, updated_at = CURRENT_TIMESTAMP
+           WHERE store_id = $2 AND variant_id = ANY($3::bigint[])
+           RETURNING *`,
+          [isAvailable, storeId, variantIds],
+        );
+        return rows;
+      });
     },
   };
+
+  return repository;
 }

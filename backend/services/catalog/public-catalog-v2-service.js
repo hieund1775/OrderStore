@@ -2,6 +2,9 @@ import { createPublicCatalogV2Repository } from '../../repositories/postgres/pub
 import { createBranchOffersRepository } from '../../repositories/postgres/branch-offers.js';
 import { CatalogV2Error } from '../../repositories/postgres/catalog-v2.js';
 import { generateCanonicalVariantSignature } from '../../validation/catalog-v2-schemas.js';
+import { createCatalogOptionScopesRepository } from '../../repositories/postgres/catalog-option-scopes.js';
+import { resolveProductOptions } from './catalog-option-resolver.js';
+import { resolveFulfillmentLane } from './fulfillment-lane-resolver.js';
 
 function normalizeSelectedIds(values, fieldName) {
   if (!Array.isArray(values)) {
@@ -18,10 +21,71 @@ function normalizeSelectedIds(values, fieldName) {
   return normalized;
 }
 
-export function createPublicCatalogV2Service({
-  catalogRepository = createPublicCatalogV2Repository(),
-  branchOffersRepository = createBranchOffersRepository(),
-} = {}) {
+export function createPublicCatalogV2Service(options = {}) {
+  const catalogRepository = options.catalogRepository || createPublicCatalogV2Repository();
+  const branchOffersRepository = options.branchOffersRepository || createBranchOffersRepository();
+  const optionScopesRepository = options.optionScopesRepository === undefined
+    ? (options.catalogRepository ? null : createCatalogOptionScopesRepository())
+    : options.optionScopesRepository;
+
+  async function loadResolvedProduct(slug, storeId, { includeInactiveValues = false } = {}) {
+    const product = await catalogRepository.getProductBySlug(slug, { storeId });
+    if (!product) return null;
+
+    const scopeData = optionScopesRepository
+      ? await optionScopesRepository.getOptionScopesForProduct(product.id)
+      : null;
+    const schemaAttributes = (product.attributes || []).filter((attribute) => attribute.is_active !== false);
+    let attributes = schemaAttributes;
+
+    if (scopeData && (scopeData.categoryAssignments.length > 0 || scopeData.productOverrides.length > 0)) {
+      const resolvedScopes = resolveProductOptions({
+        categoryAssignments: scopeData.categoryAssignments,
+        productOverrides: scopeData.productOverrides,
+      });
+      const attributesById = new Map(schemaAttributes.map((attribute) => [Number(attribute.id), attribute]));
+      attributes = resolvedScopes
+        .map((scope) => {
+          const attribute = attributesById.get(Number(scope.attribute_definition_id));
+          if (!attribute) return null;
+          return {
+            ...attribute,
+            is_required: scope.is_required == null ? attribute.is_required : Boolean(scope.is_required),
+            min_selections: scope.min_selected == null ? attribute.min_selections : Number(scope.min_selected),
+            max_selections: scope.max_selected == null ? attribute.max_selections : Number(scope.max_selected),
+            sort_order: scope.sort_order,
+            source: {
+              type: scope.source_type,
+              id: scope.source_id,
+              name: scope.source_name,
+              is_overridden: scope.is_overridden,
+            },
+            values: includeInactiveValues
+              ? (attribute.values || [])
+              : (attribute.values || []).filter((value) => value.is_active !== false),
+          };
+        })
+        .filter(Boolean);
+    } else {
+      attributes = schemaAttributes.map((attribute) => ({
+        ...attribute,
+        values: includeInactiveValues
+          ? (attribute.values || [])
+          : (attribute.values || []).filter((value) => value.is_active !== false),
+      }));
+    }
+
+    const laneProduct = {
+      ...product,
+      fulfillment_lane: scopeData?.product?.product_lane ?? product.fulfillment_lane,
+    };
+    const fulfillmentLane = optionScopesRepository || laneProduct.fulfillment_lane
+      ? resolveFulfillmentLane({ product: laneProduct, lineage: scopeData?.lineage || [] })
+      : null;
+
+    return { ...product, fulfillment_lane: fulfillmentLane, attributes };
+  }
+
   return {
     async getCategoryTree() {
       const rows = await catalogRepository.getCategoryTree();
@@ -93,7 +157,7 @@ export function createPublicCatalogV2Service({
       if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
         throw new CatalogV2Error('Vui lòng chọn chi nhánh hợp lệ', 400);
       }
-      return await catalogRepository.getProductBySlug(slug, { storeId: normalizedStoreId });
+      return await loadResolvedProduct(slug, normalizedStoreId);
     },
 
     /**
@@ -107,7 +171,9 @@ export function createPublicCatalogV2Service({
 
       const variantValueIds = normalizeSelectedIds(selectedVariantValueIds, 'variant_value_ids');
       const modifierValueIds = normalizeSelectedIds(selectedModifierValueIds, 'modifier_value_ids');
-      const product = await catalogRepository.getProductBySlug(productSlug, { storeId });
+      const product = await loadResolvedProduct(productSlug, normalizedStoreId, {
+        includeInactiveValues: true,
+      });
       if (!product) throw new CatalogV2Error('Sản phẩm không tồn tại hoặc đã ngừng bán', 404);
 
       const attributes = product.attributes || [];

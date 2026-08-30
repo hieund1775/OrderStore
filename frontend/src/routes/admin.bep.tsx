@@ -69,6 +69,8 @@ export type KitchenOrder = {
   payment_method?: string;
   created_at: string;
   current_status: string;
+  fulfillment_task_id?: number | null;
+  fulfillment_task_status?: "pending" | "preparing" | "ready" | "completed" | "cancelled" | null;
   items: (KitchenItem & { line_total?: number })[];
   shipping_driver_name?: string | null;
   shipping_driver_phone?: string | null;
@@ -383,6 +385,27 @@ function KdsPage() {
     }
   }
 
+  async function markKitchenTaskReady(o: KitchenOrder) {
+    if (!o.fulfillment_task_id) return;
+    if (o.fulfillment_task_status === "pending") {
+      await apiPatch(`/admin/fulfillment/tasks/${o.fulfillment_task_id}/status`, {
+        status: "preparing",
+      });
+    }
+    if (o.fulfillment_task_status === "pending" || o.fulfillment_task_status === "preparing") {
+      await apiPatch(`/admin/fulfillment/tasks/${o.fulfillment_task_id}/status`, {
+        status: "ready",
+      });
+    }
+  }
+
+  async function completeKitchenTask(o: KitchenOrder) {
+    if (!o.fulfillment_task_id || o.fulfillment_task_status === "completed") return;
+    await apiPatch(`/admin/fulfillment/tasks/${o.fulfillment_task_id}/status`, {
+      status: "completed",
+    });
+  }
+
   async function submitHandover(o: KitchenOrder) {
     const trimmedName = handoverDriverName.trim();
     const trimmedPhone = handoverDriverPhone.trim();
@@ -397,11 +420,13 @@ function KdsPage() {
 
     setHandoverLoading(true);
     try {
+      await markKitchenTaskReady(o);
       await apiPatch(`/admin/orders/${o.id}/status`, {
         status: "Đang giao",
         driver_name: trimmedName,
         driver_phone: trimmedPhone,
       });
+      await completeKitchenTask(o);
       toast.success(`Đơn ${o.order_code} → 🚚 Đang giao (Đã bàn giao shipper)`);
       setHandoverOrder(null);
       await fetchOrders();
@@ -426,7 +451,9 @@ function KdsPage() {
 
   async function completeNonDelivery(o: KitchenOrder) {
     try {
+      await markKitchenTaskReady(o);
       await apiPatch(`/admin/orders/${o.id}/status`, { status: "Hoàn thành" });
+      await completeKitchenTask(o);
       setDoneAt((s) => ({ ...s, [o.id]: Date.now() }));
       setDoneOrders((s) => [...s.filter((x) => x.id !== o.id), { ...o, current_status: "Hoàn thành" }]);
       toast.success(`Đơn ${o.order_code} → 🟢 Hoàn thành`);

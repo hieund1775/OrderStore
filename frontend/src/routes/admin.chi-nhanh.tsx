@@ -9,7 +9,7 @@ import {
 } from "react";
 import type * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Clock, Loader2, MapPin, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
+import { ChefHat, Clock, Loader2, MapPin, Package, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import {
@@ -41,7 +41,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import {
+  apiDelete,
+  apiGet,
+  apiPost,
+  apiPut,
+  fetchBranchCapabilities,
+  getUser,
+  updateBranchCapability,
+} from "@/lib/api";
 import { formatFullAddress } from "@/lib/data";
 import { parseHours } from "@/lib/store-hours";
 
@@ -93,6 +101,82 @@ type StorePayload = {
   amenities: string[];
   is_active: number;
 };
+
+type BranchCapability = {
+  lane_code: string;
+  display_name: string;
+  is_enabled: boolean;
+};
+
+function BranchCapabilities({ storeId, editable }: { storeId: number; editable: boolean }) {
+  const [capabilities, setCapabilities] = useState<BranchCapability[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingLane, setUpdatingLane] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchBranchCapabilities(storeId)
+      .then((response) => {
+        if (active) setCapabilities(response.data || []);
+      })
+      .catch((error) => {
+        if (active) toast.error(error instanceof Error ? error.message : "Không tải được khu vực vận hành");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId]);
+
+  async function toggleCapability(capability: BranchCapability) {
+    if (!editable || updatingLane) return;
+    setUpdatingLane(capability.lane_code);
+    try {
+      await updateBranchCapability(storeId, {
+        lane_code: capability.lane_code,
+        is_enabled: !capability.is_enabled,
+      });
+      setCapabilities((current) => current.map((item) =>
+        item.lane_code === capability.lane_code
+          ? { ...item, is_enabled: !item.is_enabled }
+          : item,
+      ));
+      toast.success(`Đã ${capability.is_enabled ? "tắt" : "bật"} ${capability.display_name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Cập nhật khu vực vận hành thất bại");
+    } finally {
+      setUpdatingLane(null);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-muted-foreground mt-4 text-xs">Đang tải khu vực vận hành…</p>;
+  }
+
+  return (
+    <div className="mt-4 space-y-2 border-t pt-4">
+      <p className="text-xs font-semibold">Khu vực vận hành</p>
+      {capabilities.map((capability) => {
+        const Icon = capability.lane_code === "kitchen" ? ChefHat : Package;
+        return (
+          <div key={capability.lane_code} className="bg-muted/40 flex items-center gap-2 rounded-lg px-3 py-2">
+            <Icon className="text-primary size-4" />
+            <span className="flex-1 text-xs font-medium">{capability.display_name}</span>
+            <Switch
+              checked={capability.is_enabled}
+              disabled={!editable || updatingLane === capability.lane_code}
+              onCheckedChange={() => toggleCapability(capability)}
+              aria-label={`${capability.is_enabled ? "Tắt" : "Bật"} ${capability.display_name}`}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 type NominatimPlace = {
   lat?: string;
@@ -299,6 +383,7 @@ type MapPickerProps = {
 };
 
 function StoresAdminPage() {
+  const user = getUser();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Store | null>(null);
@@ -484,6 +569,7 @@ function StoresAdminPage() {
                       <p className="font-display text-primary mt-0.5 font-bold">{vnd(s.today_revenue)}</p>
                     </div>
                   </div>
+                  <BranchCapabilities storeId={s.id} editable={user?.role === "super"} />
                   <div className="mt-4 flex flex-wrap gap-2">
                     {parseAmenities(s.amenities).map((a) => (
                       <Badge key={a} variant="secondary">

@@ -33,6 +33,7 @@ import { SchemaAttributeEditor } from '@/components/admin/catalog/SchemaAttribut
 import { ProductEditor, type ProductV2 } from '@/components/admin/catalog/ProductEditor';
 import type { CategoryNode } from '@/components/admin/catalog/CategoryTreeEditor';
 import { CatalogRootSelector } from '@/components/admin/catalog/CatalogRootSelector';
+import { OptionScopeEditor } from '@/components/admin/catalog/OptionScopeEditor';
 import {
   buildCategoryBreadcrumb,
   collectCategorySubtreeIds,
@@ -278,11 +279,20 @@ function AdminCatalogPage() {
           />
 
           {activeSchema && (
-            <SchemaAttributeEditor
-              schema={activeSchema}
-              onRefresh={loadAllData}
-              isSuperAdmin={isSuperAdmin}
-            />
+            <>
+              <SchemaAttributeEditor
+                schema={activeSchema}
+                onRefresh={loadAllData}
+                isSuperAdmin={isSuperAdmin}
+              />
+              {selectedRootId !== 'all' && (
+                <OptionScopeEditor
+                  categoryId={Number(selectedRootId)}
+                  categoryName={rootCategories.find((root) => Number(root.id) === Number(selectedRootId))?.name || 'Danh mục'}
+                  schema={activeSchema}
+                />
+              )}
+            </>
           )}
         </TabsContent>}
       </Tabs>

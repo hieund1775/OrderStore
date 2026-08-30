@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS category_slug_aliases (
     alias_slug VARCHAR(150) NOT NULL UNIQUE,
     category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT chk_category_slug_alias_normalized
+        CHECK (alias_slug = LOWER(BTRIM(alias_slug)) AND alias_slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
 
 CREATE INDEX IF NOT EXISTS idx_category_slug_aliases_category_id
@@ -28,7 +30,12 @@ CREATE TABLE IF NOT EXISTS category_attribute_assignments (
     max_selected INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_category_attribute_assignment UNIQUE (category_id, attribute_definition_id)
+    CONSTRAINT uq_category_attribute_assignment UNIQUE (category_id, attribute_definition_id),
+    CONSTRAINT chk_category_attribute_selection_bounds CHECK (
+        (min_selected IS NULL OR min_selected >= 0)
+        AND (max_selected IS NULL OR max_selected >= 0)
+        AND (min_selected IS NULL OR max_selected IS NULL OR min_selected <= max_selected)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_cat_attr_assign_category_id
@@ -49,7 +56,12 @@ CREATE TABLE IF NOT EXISTS product_attribute_overrides (
     max_selected INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_product_attribute_override UNIQUE (product_id, attribute_definition_id)
+    CONSTRAINT uq_product_attribute_override UNIQUE (product_id, attribute_definition_id),
+    CONSTRAINT chk_product_attribute_selection_bounds CHECK (
+        (min_selected IS NULL OR min_selected >= 0)
+        AND (max_selected IS NULL OR max_selected >= 0)
+        AND (min_selected IS NULL OR max_selected IS NULL OR min_selected <= max_selected)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_prod_attr_override_product_id

@@ -2,6 +2,16 @@ import postgresDb from '../../config/db-postgres.js';
 
 export function createFulfillmentRepository(database = postgresDb) {
   return {
+    async isLaneActive(lane, client = database) {
+      const [rows] = await client.query(
+        `SELECT 1
+         FROM fulfillment_lane_registry
+         WHERE code = $1 AND is_active = TRUE`,
+        [lane],
+      );
+      return Boolean(rows[0]);
+    },
+
     async getTasksForOrder(orderId, client = database) {
       const [rows] = await client.query(
         `SELECT id, order_id, branch_id, lane, status, assigned_to, started_at, completed_at, notes, created_at, updated_at
@@ -30,15 +40,21 @@ export function createFulfillmentRepository(database = postgresDb) {
 
         const task = taskRows[0];
         if (!task) continue;
+        if (Number(task.branch_id) !== Number(branchId)) {
+          const err = new Error('Nhiệm vụ hiện có thuộc chi nhánh khác');
+          err.status = 409;
+          err.code = 'FULFILLMENT_TASK_BRANCH_CONFLICT';
+          throw err;
+        }
 
-        // Insert task items using ON CONFLICT (task_id, order_item_id) DO NOTHING (never delete existing)
+        // order_item_id is the immutable idempotency key: one order item belongs to one lane task.
         for (const item of items) {
           if (item.order_item_id) {
             await client.query(
               `INSERT INTO fulfillment_task_items
                (task_id, order_item_id, product_id, variant_id, sku, product_name, quantity, modifiers_snapshot, item_notes)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               ON CONFLICT (task_id, order_item_id) DO NOTHING`,
+               ON CONFLICT (order_item_id) WHERE order_item_id IS NOT NULL DO NOTHING`,
               [
                 task.id,
                 item.order_item_id,
@@ -52,22 +68,10 @@ export function createFulfillmentRepository(database = postgresDb) {
               ],
             );
           } else {
-            await client.query(
-              `INSERT INTO fulfillment_task_items
-               (task_id, order_item_id, product_id, variant_id, sku, product_name, quantity, modifiers_snapshot, item_notes)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-              [
-                task.id,
-                null,
-                item.product_id || null,
-                item.variant_id || null,
-                item.sku || null,
-                item.product_name,
-                item.quantity || item.qty || 1,
-                item.modifiers_snapshot ? JSON.stringify(item.modifiers_snapshot) : null,
-                item.note || item.item_notes || null,
-              ],
-            );
+            const err = new Error('Thiếu order_item_id để tạo nhiệm vụ idempotent');
+            err.status = 409;
+            err.code = 'FULFILLMENT_ORDER_ITEM_REQUIRED';
+            throw err;
           }
         }
 
@@ -81,6 +85,8 @@ export function createFulfillmentRepository(database = postgresDb) {
       const conditions = [];
       const values = [];
       let idx = 1;
+
+      conditions.push("(COALESCE(o.payment_provider, '') <> 'payos' OR o.payment_status = 'paid')");
 
       if (branchId) {
         conditions.push(`t.branch_id = $${idx++}`);
@@ -192,7 +198,7 @@ export function createFulfillmentRepository(database = postgresDb) {
       };
     },
 
-    async updateTaskStatus({ taskId, status, assignedTo = null, notes = null }, client = database) {
+    async updateTaskStatus({ taskId, status, assignedTo = null, notes = null, expectedStatus = null }, client = database) {
       let timeUpdateSql = '';
       if (status === 'preparing') {
         timeUpdateSql = ', started_at = COALESCE(started_at, CURRENT_TIMESTAMP)';
@@ -208,8 +214,9 @@ export function createFulfillmentRepository(database = postgresDb) {
              updated_at = CURRENT_TIMESTAMP
              ${timeUpdateSql}
          WHERE id = $1
+           AND ($5::varchar IS NULL OR status = $5)
          RETURNING id, order_id, branch_id, lane, status, assigned_to, started_at, completed_at, notes, updated_at`,
-        [taskId, status, assignedTo, notes],
+        [taskId, status, assignedTo, notes, expectedStatus],
       );
 
       return rows[0] || null;
@@ -219,7 +226,7 @@ export function createFulfillmentRepository(database = postgresDb) {
       const [rows] = await client.query(
         `UPDATE fulfillment_tasks
          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-         WHERE order_id = $1 AND status <> 'completed'
+         WHERE order_id = $1 AND status NOT IN ('completed', 'cancelled')
          RETURNING id, order_id, status`,
         [Number(orderId)],
       );

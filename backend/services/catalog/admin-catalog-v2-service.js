@@ -1,5 +1,6 @@
 import { createAdminCatalogV2Repository } from '../../repositories/postgres/admin-catalog-v2.js';
 import { CatalogV2Error, createCatalogV2Repository } from '../../repositories/postgres/catalog-v2.js';
+import { createCatalogOptionScopesRepository } from '../../repositories/postgres/catalog-option-scopes.js';
 import {
   toCategoryTreeDto,
   toProductTypeDto,
@@ -18,6 +19,7 @@ import {
 export function createAdminCatalogV2Service({
   catalogRepository = createAdminCatalogV2Repository(),
   schemaRepository = createCatalogV2Repository(),
+  optionScopesRepository = createCatalogOptionScopesRepository(),
 } = {}) {
   return {
     // -------------------------------------------------------------
@@ -270,33 +272,55 @@ export function createAdminCatalogV2Service({
     // OPTION SCOPES & ASSIGNMENTS
     // -------------------------------------------------------------
     async listCategoryAssignments(categoryId) {
-      return await catalogRepository.listCategoryAssignments?.(Number(categoryId)) || [];
+      return await optionScopesRepository.listCategoryAssignments(Number(categoryId));
     },
 
     async upsertCategoryAssignment(categoryId, input) {
-      return await catalogRepository.upsertCategoryAssignment?.({
+      const context = await optionScopesRepository.getCategoryAssignmentContext(
+        Number(categoryId),
+        Number(input.attributeDefinitionId),
+      );
+      if (!context) {
+        throw new CatalogV2Error('Danh mục hoặc tùy chọn không tồn tại', 404);
+      }
+      if (context.category_product_type_id != null
+        && Number(context.category_product_type_id) !== Number(context.attribute_product_type_id)) {
+        throw new CatalogV2Error('Tùy chọn không thuộc loại sản phẩm của danh mục', 409);
+      }
+      return await optionScopesRepository.upsertCategoryAssignment({
         categoryId: Number(categoryId),
         ...input,
       });
     },
 
     async deleteCategoryAssignment(categoryId, attrDefId) {
-      return await catalogRepository.deleteCategoryAssignment?.(Number(categoryId), Number(attrDefId));
+      return await optionScopesRepository.deleteCategoryAssignment(Number(categoryId), Number(attrDefId));
     },
 
     async listProductOverrides(productId) {
-      return await catalogRepository.listProductOverrides?.(Number(productId)) || [];
+      return await optionScopesRepository.listProductOverrides(Number(productId));
     },
 
     async upsertProductOverride(productId, input) {
-      return await catalogRepository.upsertProductOverride?.({
+      const context = await optionScopesRepository.getProductOverrideContext(
+        Number(productId),
+        Number(input.attributeDefinitionId),
+      );
+      if (!context) {
+        throw new CatalogV2Error('Sản phẩm hoặc tùy chọn không tồn tại', 404);
+      }
+      if (context.product_type_schema_id == null
+        || Number(context.product_type_schema_id) !== Number(context.attribute_schema_id)) {
+        throw new CatalogV2Error('Tùy chọn không thuộc schema hiện tại của sản phẩm', 409);
+      }
+      return await optionScopesRepository.upsertProductOverride({
         productId: Number(productId),
         ...input,
       });
     },
 
     async deleteProductOverride(productId, attrDefId) {
-      return await catalogRepository.deleteProductOverride?.(Number(productId), Number(attrDefId));
+      return await optionScopesRepository.deleteProductOverride(Number(productId), Number(attrDefId));
     },
   };
 }

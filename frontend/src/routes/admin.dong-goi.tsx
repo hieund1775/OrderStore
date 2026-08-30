@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, getUser } from '@/lib/api';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/admin/dong-goi')({
@@ -57,24 +57,33 @@ type FulfillmentTask = {
 };
 
 export function PackingStationPage() {
+  const user = getUser();
+  const isSuperAdmin = user?.role === 'super';
   const [tasks, setTasks] = useState<FulfillmentTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('active');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const [selectedBranch, setSelectedBranch] = useState<string>(() =>
+    user?.role === 'super' ? '' : user?.branch_id ? String(user.branch_id) : '',
+  );
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
 
   const fetchTasks = async () => {
+    if (isSuperAdmin && !selectedBranch) {
+      setTasks([]);
+      return;
+    }
     try {
       setLoading(true);
       const query = new URLSearchParams();
       query.set('lane', 'packing');
-      if (selectedBranch !== 'all') {
+      if (selectedBranch) {
         query.set('branch_id', selectedBranch);
       }
 
       const data = await apiGet<{ tasks: FulfillmentTask[] }>(
-        `/api/admin/fulfillment/tasks?${query.toString()}`,
+        `/admin/fulfillment/tasks?${query.toString()}`,
       );
       setTasks(data.tasks || []);
     } catch (err: any) {
@@ -90,11 +99,18 @@ export function PackingStationPage() {
     return () => clearInterval(interval);
   }, [selectedBranch]);
 
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    apiGet<Array<{ id: number; name: string }>>('/admin/branches')
+      .then((rows) => setBranches(Array.isArray(rows) ? rows : []))
+      .catch(() => setBranches([]));
+  }, [isSuperAdmin]);
+
   const handleUpdateStatus = async (taskId: number, newStatus: 'preparing' | 'ready' | 'completed') => {
     setUpdatingTaskId(taskId);
     try {
       const res = await apiPatch<{ success: boolean; message: string; allTasksCompleted?: boolean }>(
-        `/api/admin/fulfillment/tasks/${taskId}/status`,
+        `/admin/fulfillment/tasks/${taskId}/status`,
         { status: newStatus },
       );
       toast.success(res.message);
@@ -160,6 +176,20 @@ export function PackingStationPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isSuperAdmin && (
+            <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Chọn chi nhánh" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={String(branch.id)}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">

@@ -9,16 +9,20 @@ export function createFulfillmentCapabilitiesRoutes({
   const router = express.Router();
 
   // GET /api/admin/branches/:storeId/capabilities
-  router.get('/branches/:storeId/capabilities', requireRole('super', 'manager'), async (req, res, next) => {
+  router.get('/branches/:storeId/capabilities', requireRole('super', 'manager', 'kitchen', 'packing'), async (req, res, next) => {
     try {
       const storeId = Number(req.params.storeId);
       if (!Number.isInteger(storeId) || storeId <= 0) {
         return res.status(400).json({ error: 'Mã chi nhánh không hợp lệ' });
       }
 
-      // Manager can only view their own store
-      if (req.user?.admin_role === 'manager' && Number(req.user?.admin_branch_id) !== storeId) {
+      // Every non-super operator is restricted to their assigned store.
+      if (req.user?.admin_role !== 'super' && Number(req.user?.admin_branch_id) !== storeId) {
         return res.status(403).json({ error: 'Bạn chỉ có quyền xem khả năng vận hành của chi nhánh mình' });
+      }
+
+      if (!await repository.storeExists(storeId)) {
+        return res.status(404).json({ error: 'Không tìm thấy chi nhánh', code: 'STORE_NOT_FOUND' });
       }
 
       const capabilities = await repository.listCapabilities(storeId);
@@ -38,33 +42,30 @@ export function createFulfillmentCapabilitiesRoutes({
 
       const { lane_code, is_enabled } = validateCapabilityInput(req.body);
 
-      // If disabling capability, check blockers
-      if (!is_enabled) {
-        const activeOffers = await repository.countActiveOffersByLane(storeId, lane_code);
-        if (activeOffers > 0) {
-          return res.status(409).json({
-            error: `Không thể tắt luồng "${lane_code}" vì chi nhánh vẫn còn ${activeOffers} sản phẩm đang mở bán`,
-            code: 'BRANCH_CAPABILITY_BLOCKED_BY_OFFERS',
-          });
-        }
-
-        const pendingTasks = await repository.countPendingTasksByLane(storeId, lane_code);
-        if (pendingTasks > 0) {
-          return res.status(409).json({
-            error: `Không thể tắt luồng "${lane_code}" vì vẫn còn ${pendingTasks} nhiệm vụ đang xử lý`,
-            code: 'BRANCH_CAPABILITY_BLOCKED_BY_TASKS',
-          });
-        }
-      }
-
-      const updated = await repository.upsertCapability({
+      const result = await repository.setCapabilitySafely({
         storeId,
         laneCode: lane_code,
         isEnabled: is_enabled,
-        updatedBy: req.user?.id || null,
+        updatedBy: req.user?.id || req.user?.sub || null,
       });
+      if (result.notFound === 'store') {
+        return res.status(404).json({ error: 'Không tìm thấy chi nhánh', code: 'STORE_NOT_FOUND' });
+      }
+      if (result.notFound === 'lane') {
+        return res.status(409).json({ error: 'Luồng xử lý không tồn tại hoặc đang tạm ngừng', code: 'FULFILLMENT_LANE_INACTIVE' });
+      }
+      if (result.blocked) {
+        return res.status(409).json({
+          error: 'Không thể tắt luồng khi vẫn còn hàng đang mở bán hoặc nhiệm vụ đang xử lý',
+          code: 'BRANCH_CAPABILITY_HAS_BLOCKERS',
+          blockers: {
+            active_offers: result.activeOffers,
+            active_tasks: result.pendingTasks,
+          },
+        });
+      }
 
-      res.json({ data: updated, message: 'Cập nhật khả năng vận hành chi nhánh thành công' });
+      res.json({ data: result.capability, message: 'Cập nhật khả năng vận hành chi nhánh thành công' });
     } catch (err) {
       next(err);
     }
