@@ -235,3 +235,32 @@ test('fulfillment capabilities migration 0017 creates lane registry, branch capa
   assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS fulfillment_lane_registry CASCADE'));
 });
 
+test('hardening migration 0018 enforces DB constraints, restrict policy and task item trigger', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0018_fulfillment_and_scope_hardening.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0018_fulfillment_and_scope_hardening.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'chk_category_slug_alias_normalized',
+    'chk_category_attribute_selection_bounds',
+    'chk_product_attribute_selection_bounds',
+    'chk_fulfillment_lane_code',
+    'chk_fulfillment_handler_type',
+    'fk_categories_default_fulfillment_lane',
+    'fk_products_fulfillment_lane',
+    'fk_order_items_fulfillment_lane',
+    'ON DELETE RESTRICT',
+    'trg_fulfillment_task_item_order',
+    'enforce_fulfillment_task_item_order',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0018 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP TRIGGER IF EXISTS trg_fulfillment_task_item_order ON fulfillment_task_items'));
+  assert.ok(rollbackSql.includes('DROP FUNCTION IF EXISTS enforce_fulfillment_task_item_order()'));
+});
+
+
