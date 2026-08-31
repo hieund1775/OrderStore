@@ -115,12 +115,11 @@
 ---
 
 ### 2.5. Tối Ưu Bộ Lọc Trang Thực Đơn Khách Hàng ([`CategorySelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CategorySelector.tsx))
-- **Bỏ icon File**: Loại bỏ hoàn toàn các icon file/folder không cần thiết.
-- **Đổi "Ngành hàng" thành "Danh mục"**:
-  - Không để dạng thanh ngang dài tràn màn hình.
-  - Thiết kế thành **2 Dropdown Bộ lọc gọn gàng**:
-    - **Dropdown 1**: `Danh mục:` (`Tất cả danh mục`, `Nước uống`, `Quần áo & Merch`...).
-    - **Dropdown 2**: `Danh sách danh mục:` (`Tất cả món trong danh mục`, `Trà sữa`, `Nước ép`...).
+- **Bỏ icon File**: Loại bỏ hoàn toàn các icon file/folder (`FolderTree`) khỏi các tiêu đề mục và trang menu khách hàng.
+- **Chỉ hiển thị Danh mục Gốc (Root-only)**:
+  - Dropdown trên đầu menu chỉ hiển thị thuần các **Danh mục Gốc** (`Tất cả danh mục`, `Nước uống`, `Quần áo & Merch`...), không trộn lẫn danh mục con hay sản phẩm để tránh hiểu nhầm.
+- **Khắc phục lấy sản phẩm từ Database ([`public-catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/public-catalog-v2.js))**:
+  - Chuyển sang `LEFT JOIN LATERAL` với fallback `COALESCE(branch_offer.price, p.price)` và `COALESCE(branch_offer.is_available, p.is_available, TRUE)`, đảm bảo 100% sản phẩm trên Database luôn hiển thị đầy đủ kể cả khi chưa có branch offer riêng.
 - **Ẩn thông tin lỗi kỹ thuật ([`menu.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/menu.tsx))**:
   - Khi có sự cố mạng, hiển thị thông báo thân thiện: *"Không thể tải danh mục sản phẩm lúc này. Vui lòng thử lại sau."*, tuyệt đối không để lộ mã lỗi hay đường dẫn route.
 
@@ -130,16 +129,18 @@
 
 ### 3.1. Backend (`backend/`)
 - [`backend/app.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/app.js): Mount alias fallback `app.use('/catalog', publicCatalogV2Router)` bên cạnh `app.use('/api', publicRoutes)`.
-- [`backend/repositories/postgres/admin-catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/admin-catalog-v2.js): Tự động phân giải Schema nhiều tầng (Category &rarr; Ancestors &rarr; Fallback default schema), tự động gán defaults (`fulfillment_lane = 'kitchen'`, `stock_mode = 'made_to_order'`), loại bỏ triệt để lỗi tạo sản phẩm.
-- [`backend/repositories/postgres/catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/catalog-v2.js) & [`backend/dto/catalog-v2-dto.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/dto/catalog-v2-dto.js): Bổ sung `default_fulfillment_lane` vào truy vấn SQL và DTO mapper.
+- [`backend/repositories/postgres/admin-catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/admin-catalog-v2.js): Tự động phân giải Schema nhiều tầng (Category &rarr; Ancestors &rarr; Fallback default schema), tự động gán defaults (`fulfillment_lane = 'kitchen'`, `stock_mode = 'made_to_order'`), tự động đồng bộ branch offers khi tạo món mới.
+- [`backend/repositories/postgres/catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/catalog-v2.js): Bổ sung `default_fulfillment_lane` vào truy vấn SQL; **mở khóa cho phép thêm thuộc tính và giá trị vào cả schema published và draft** ở Tab 3.
+- [`backend/repositories/postgres/public-catalog-v2.js`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/repositories/postgres/public-catalog-v2.js): Truy vấn sản phẩm và sections với `LEFT JOIN LATERAL` và fallback giá gốc, bảo đảm lấy dữ liệu DB không bao giờ bị rỗng.
 - [`backend/database/postgres/migrations/0018_fulfillment_and_scope_hardening.sql`](file:///D:/Code/Extra/Planning_DuAn/Order/backend/database/postgres/migrations/0018_fulfillment_and_scope_hardening.sql): Đảm bảo toàn vẹn DB constraints, foreign key restrict và audit triggers mà không làm thay đổi checksum của migration 0016 và 0017 trên Render.
 
 ### 3.2. Frontend (`frontend/`)
-- [`frontend/src/components/admin/catalog/CatalogOption3BlocksEditor.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogOption3BlocksEditor.tsx) *(MỚI)*: Component quản lý 3 Block Tùy chọn độc lập: Block 1 (Không tiền), Block 2 (Có tiền), Block 3 (Cấu hình riêng món).
+- [`frontend/src/components/admin/catalog/CatalogOption3BlocksEditor.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogOption3BlocksEditor.tsx): Component quản lý 3 Block Tùy chọn độc lập: Block 1 (Không tiền), Block 2 (Có tiền), Block 3 (Cấu hình riêng món).
 - [`frontend/src/components/admin/catalog/CatalogTabBlocksView.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogTabBlocksView.tsx): Giao diện 3 Tab toàn diện, tích hợp cơ chế tạm ngưng liên kết sản phẩm, xóa món và lọc danh mục con.
 - [`frontend/src/components/admin/catalog/CatalogRootSelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/admin/catalog/CatalogRootSelector.tsx): Bộ chọn ngành gốc tích hợp nút `✏️ Sửa tên ngành` và `🗑️ Xóa ngành`.
 - [`frontend/src/routes/admin.catalog.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/admin.catalog.tsx): Trang quản trị catalog chính với modal tạo món (khung ảnh ở trên cùng, upload trực tiếp từ máy, giá step 1000, bỏ ô mô tả, bỏ nút làm mới).
-- [`frontend/src/components/catalog/CategorySelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CategorySelector.tsx): Bộ lọc 2 tầng dạng Dropdown Select cho khách hàng.
+- [`frontend/src/components/catalog/CategorySelector.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CategorySelector.tsx): Bộ lọc chỉ hiển thị Danh mục gốc thuần túy, không trộn lẫn danh mục con.
+- [`frontend/src/components/catalog/CatalogSection.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/components/catalog/CatalogSection.tsx): Gỡ bỏ toàn bộ icon file và chip con rườm rà.
 - [`frontend/src/routes/menu.tsx`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/routes/menu.tsx): Trang menu khách hàng đã sanitize thông báo lỗi kỹ thuật.
 - [`frontend/src/lib/api.ts`](file:///D:/Code/Extra/Planning_DuAn/Order/frontend/src/lib/api.ts): Chuẩn hóa toàn bộ URL gọi Public Catalog sang `/api/catalog/...`.
 
@@ -164,4 +165,5 @@
 - **`9611f43`**: Chuẩn hóa toàn bộ 9 hạng mục (API path, ẩn mã lỗi, sửa/xóa ngành gốc, auto-resolve schema, upload ảnh trên cùng, giá step 1000, bỏ mô tả, toggle tạm ngưng món & danh mục con, tạo nhóm tùy chọn mới).
 - **`f3bc5a9`**: Tối ưu bộ lọc Dropdown trang Menu, bỏ icon file, logic tạm ngưng liên kết sản phẩm và xây dựng cấu trúc 3 Block Tùy chọn độc lập chuẩn xác.
 - **`a4f085a`**: Cập nhật tài liệu kỹ thuật Catalog Redesign cho Codex.
+- **`b9f377d`**: Mở khóa thêm tùy chọn cho schema published, loại bỏ hoàn toàn icon file, chuyển bộ lọc user sang danh mục gốc thuần túy và làm câu truy vấn DB sản phẩm an toàn với fallback.
 - **Đồng bộ nhánh**: Đã push đồng bộ thành công lên cả 3 nhánh: `origin/Hieu`, `origin/develop`, `origin/main`.
