@@ -7,7 +7,7 @@ const router = Router();
 
 // Middleware: Strictly enforce Super Admin role for all payment profile management
 export function requireSuperAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'super_admin') {
+  if (!req.user || req.user.role !== 'super') {
     return res.status(403).json({ error: 'Chỉ Super Admin mới có quyền truy cập cấu hình Payment Profiles' });
   }
   next();
@@ -58,13 +58,15 @@ router.post('/', asyncHandler(async (req, res) => {
     });
 
     // Notify all super admins about new profile and required ENV variables (no secrets)
-    await notificationsRepository.fanOutOrderNotification({
-      type: 'system',
-      title: 'Payment Profile mới được tạo',
-      message: `Profile ${profile.display_name} (${profile.code}) đã được tạo. Vui lòng cấu hình ENV: ${profile.env_keys.client_id}, ${profile.env_keys.api_key}, ${profile.env_keys.checksum_key} trên server.`,
-      metadata: { profile_id: profile.id, profile_code: profile.code, env_prefix: profile.env_prefix },
-      actorUserId: req.user.id,
-    }).catch((err) => console.warn('Không thể gửi thông báo tạo payment profile:', err.message));
+    try {
+      await notificationsRepository.fanOutToSuperAdmins({
+        type: 'system',
+        title: 'Payment Profile mới được tạo',
+        body: `Profile ${profile.display_name} (${profile.code}) đã được tạo. Vui lòng cấu hình ENV: ${profile.env_keys.client_id}, ${profile.env_keys.api_key}, ${profile.env_keys.checksum_key} trên server.`,
+      });
+    } catch (err) {
+      console.warn('Không thể gửi thông báo tạo payment profile:', err.message);
+    }
 
     res.status(201).json({ profile });
   } catch (err) {
@@ -93,13 +95,15 @@ router.put('/:id', asyncHandler(async (req, res) => {
       updatedBy: req.user.id,
     });
 
-    await notificationsRepository.fanOutOrderNotification({
-      type: 'system',
-      title: 'Payment Profile đã được cập nhật',
-      message: `Profile ${updated.display_name} (${updated.code}) (v${updated.version}) đã được cập nhật trạng thái: ${updated.status}.`,
-      metadata: { profile_id: updated.id, profile_code: updated.code, version: updated.version },
-      actorUserId: req.user.id,
-    }).catch((err) => console.warn('Không thể gửi thông báo cập nhật payment profile:', err.message));
+    try {
+      await notificationsRepository.fanOutToSuperAdmins({
+        type: 'system',
+        title: 'Payment Profile đã được cập nhật',
+        body: `Profile ${updated.display_name} (${updated.code}) (v${updated.version}) đã được cập nhật trạng thái: ${updated.status}.`,
+      });
+    } catch (err) {
+      console.warn('Không thể gửi thông báo cập nhật payment profile:', err.message);
+    }
 
     res.json({ profile: updated });
   } catch (err) {
@@ -127,13 +131,15 @@ router.post('/:id/assign-root', asyncHandler(async (req, res) => {
       createdBy: req.user.id,
     });
 
-    await notificationsRepository.fanOutOrderNotification({
-      type: 'system',
-      title: 'Gán Payment Profile cho ngành hàng',
-      message: `Ngành hàng "${mapping.category_name}" đã được gán vào profile "${mapping.profile_name}" (${mapping.profile_code}).`,
-      metadata: { mapping_id: mapping.id, root_category_id, profile_id: req.params.id },
-      actorUserId: req.user.id,
-    }).catch((err) => console.warn('Không thể gửi thông báo gán ngành hàng:', err.message));
+    try {
+      await notificationsRepository.fanOutToSuperAdmins({
+        type: 'system',
+        title: 'Gán Payment Profile cho ngành hàng',
+        body: `Ngành hàng "${mapping.category_name}" đã được gán vào profile "${mapping.profile_name}" (${mapping.profile_code}).`,
+      });
+    } catch (err) {
+      console.warn('Không thể gửi thông báo gán ngành hàng:', err.message);
+    }
 
     res.json({ mapping });
   } catch (err) {

@@ -11,8 +11,9 @@ export class PaymentProfileError extends Error {
 }
 
 export function maskAccountNumber(acc) {
-  if (!acc || typeof acc !== 'string') return '';
+  if (!acc) return null;
   const trimmed = acc.trim();
+  if (!trimmed) return null;
   if (trimmed.length <= 4) return trimmed;
   return `${'*'.repeat(trimmed.length - 4)}${trimmed.slice(-4)}`;
 }
@@ -123,7 +124,6 @@ export function createPaymentProfilesRepository(database = postgresDb) {
         display_name: r.display_name,
         bank_name: r.bank_name || null,
         bank_bin: r.bank_bin || null,
-        account_number: r.account_number || null,
         account_number_masked: maskAccountNumber(r.account_number),
         account_holder: r.account_holder || null,
         env_prefix: r.env_prefix,
@@ -179,24 +179,25 @@ export function createPaymentProfilesRepository(database = postgresDb) {
     },
 
     async createProfile({ code, displayName, bankName = null, bankBin = null, accountNumber = null, accountHolder = null, createdBy = null }) {
-      if (!code || !displayName) {
-        throw new PaymentProfileError('Mã code và tên hiển thị là bắt buộc', 400);
+      if (!code || !String(code).trim()) {
+        throw new PaymentProfileError('Mã code profile không được để trống');
       }
+      if (!displayName || !String(displayName).trim()) {
+        throw new PaymentProfileError('Tên hiển thị profile không được để trống');
+      }
+
       const normalizedCode = String(code).toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
-      if (!normalizedCode) {
-        throw new PaymentProfileError('Mã profile không hợp lệ', 400);
-      }
       const envPrefix = generateEnvPrefix(normalizedCode);
 
       const [existing] = await database.query('SELECT id FROM payment_profiles WHERE code = $1', [normalizedCode]);
       if (existing[0]) {
-        throw new PaymentProfileError(`Mã payment profile ${normalizedCode} đã tồn tại`, 409);
+        throw new PaymentProfileError(`Payment profile với mã code "${normalizedCode}" đã tồn tại`, 409);
       }
 
       const [rows] = await database.query(
         `INSERT INTO payment_profiles
-           (code, display_name, bank_name, bank_bin, account_number, account_holder, env_prefix, status, version, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 1, $8, $8)
+           (code, display_name, bank_name, bank_bin, account_number, account_holder, env_prefix, status, version, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 1, $8)
          RETURNING *`,
         [normalizedCode, displayName.trim(), bankName?.trim() || null, bankBin?.trim() || null, accountNumber?.trim() || null, accountHolder?.trim() || null, envPrefix, createdBy],
       );
@@ -205,6 +206,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       return {
         ...r,
         id: Number(r.id),
+        account_number: undefined,
         account_number_masked: maskAccountNumber(r.account_number),
         env_keys: {
           client_id: `${r.env_prefix}_CLIENT_ID`,
@@ -228,6 +230,17 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       const newAccountNumber = accountNumber !== undefined ? (accountNumber?.trim() || null) : current.account_number;
       const newAccountHolder = accountHolder !== undefined ? (accountHolder?.trim() || null) : current.account_holder;
       const newStatus = status !== undefined ? status : current.status;
+
+      if (newStatus === 'active') {
+        const isConfigured = checkEnvConfigured(current.env_prefix, current.code);
+        if (!isConfigured) {
+          throw new PaymentProfileError(
+            'Không thể kích hoạt profile khi chưa cấu hình đủ 3 biến môi trường trên server',
+            400,
+            'ENV_NOT_CONFIGURED',
+          );
+        }
+      }
 
       // Version increments when banking details change
       const bankChanged =

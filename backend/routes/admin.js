@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
-
 import adminOrdersRouter, { updateOrderStatus } from './admin/orders.js';
 import adminKitchenRouter from './admin/kitchen.js';
 import adminMenuRouter from './admin/menu.js';
@@ -20,8 +19,6 @@ import { createFulfillmentCapabilitiesRoutes } from './admin/fulfillment-capabil
 import adminPaymentProfilesRouter from './admin/payment-profiles.js';
 
 const router = Router();
-
-// Toàn bộ /admin/* cần JWT + RBAC
 router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier', 'packing'));
 
 // ═══════════ DOMAIN ROUTERS ═══════════

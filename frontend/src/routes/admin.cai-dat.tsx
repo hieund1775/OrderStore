@@ -84,6 +84,9 @@ function SettingsPage() {
     };
   }, []);
 
+  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('auth_user') || 'null') : null;
+  const isSuper = currentUser?.role === 'super';
+
   return (
     <>
       <AdminPageHeader
@@ -91,15 +94,17 @@ function SettingsPage() {
         desc="Chỉ Super Admin có toàn quyền chỉnh sửa các mục dưới đây"
       />
 
-      <Tabs defaultValue="payment-profiles">
-        <TabsList className="grid grid-cols-3 max-w-xl w-full h-auto p-1.5 gap-1.5 rounded-2xl bg-muted/80">
-          <TabsTrigger
-            value="payment-profiles"
-            className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
-          >
-            <CreditCard className="size-4 text-primary shrink-0" />
-            <span className="truncate">Kênh Thanh Toán</span>
-          </TabsTrigger>
+      <Tabs defaultValue={isSuper ? "payment-profiles" : "accounts"}>
+        <TabsList className={`grid ${isSuper ? 'grid-cols-3 max-w-xl' : 'grid-cols-2 max-w-md'} w-full h-auto p-1.5 gap-1.5 rounded-2xl bg-muted/80`}>
+          {isSuper && (
+            <TabsTrigger
+              value="payment-profiles"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <CreditCard className="size-4 text-primary shrink-0" />
+              <span className="truncate">Kênh Thanh Toán</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="accounts"
             className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
@@ -116,9 +121,11 @@ function SettingsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="payment-profiles" className="mt-5">
-          <PaymentProfileManager />
-        </TabsContent>
+        {isSuper && (
+          <TabsContent value="payment-profiles" className="mt-5">
+            <PaymentProfileManager />
+          </TabsContent>
+        )}
 
         <TabsContent value="accounts" className="mt-5">
           <Card className="shadow-soft overflow-hidden">

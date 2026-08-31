@@ -1,300 +1,369 @@
-import test from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPaymentProfilesRepository, maskAccountNumber, generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
-import { createCheckoutGroupsRepository } from '../repositories/postgres/checkout-groups.js';
+import { requireSuperAdmin } from '../routes/admin/payment-profiles.js';
 import {
   resolvePaymentProfileForCart,
   allocateVoucherDiscount,
 } from '../services/payment-profiles/payment-profile-resolver.js';
-import { requireSuperAdmin } from '../routes/admin/payment-profiles.js';
+import { createPaymentProfilesRepository, maskAccountNumber, generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
+import { createCheckoutGroupsRepository, generateGroupCode } from '../repositories/postgres/checkout-groups.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
+import { isPayOSConfigured, getPayOS, setPayOSForTest } from '../services/payos.js';
 
-test('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', async (t) => {
-  await t.test('Gate 1 & 2: RBAC & Secret Safety', async () => {
-    // 1. Super Admin Middleware Check
-    let allowed = false;
-    const reqSuper = { user: { id: 1, role: 'super_admin' } };
-    const resMock = {
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      json(payload) {
-        this.body = payload;
-        return this;
-      },
+describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', () => {
+
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 1: RBAC & Canonical Role Enforcement ('super')
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 1: RBAC strictly permits canonical "super" role and rejects manager/kitchen/cashier/packing with 403', () => {
+    const nextCalls = [];
+    const mockNext = () => nextCalls.push(true);
+
+    const makeRes = () => {
+      const res = {
+        statusCode: 200,
+        body: null,
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload) {
+          this.body = payload;
+          return this;
+        },
+      };
+      return res;
     };
 
-    requireSuperAdmin(reqSuper, resMock, () => {
-      allowed = true;
-    });
-    assert.equal(allowed, true, 'super_admin must be allowed through');
+    // 1. Super admin passes
+    const superReq = { user: { id: 1, role: 'super', name: 'Super Admin' } };
+    const superRes = makeRes();
+    requireSuperAdmin(superReq, superRes, mockNext);
+    assert.equal(nextCalls.length, 1);
+    assert.equal(superRes.statusCode, 200);
 
-    // 2. Manager / Branch Admin role is strictly forbidden (403)
-    let managerAllowed = false;
-    const reqManager = { user: { id: 2, role: 'manager' } };
-    const resManager = {
-      statusCode: 200,
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      json(payload) {
-        this.body = payload;
-        return this;
-      },
-    };
-    requireSuperAdmin(reqManager, resManager, () => {
-      managerAllowed = true;
-    });
-    assert.equal(managerAllowed, false, 'manager must be rejected');
-    assert.equal(resManager.statusCode, 403, 'manager must receive 403 Forbidden');
-
-    // 3. Masking & ENV prefix generation
-    assert.equal(maskAccountNumber('0987654321'), '******4321');
-    assert.equal(maskAccountNumber('1234'), '1234');
-    assert.equal(generateEnvPrefix('nuoc_hieu'), 'PAYOS_PROFILE_NUOC_HIEU');
-    assert.equal(generateEnvPrefix('LONG_GROUPED_CHECKOUT'), 'PAYOS_PROFILE_LONG_GROUPED_CHECKOUT');
+    // 2. Non-super roles get 403
+    const forbiddenRoles = ['manager', 'kitchen', 'cashier', 'packing', 'super_admin', 'guest'];
+    for (const role of forbiddenRoles) {
+      const req = { user: { id: 2, role, name: `User ${role}` } };
+      const res = makeRes();
+      requireSuperAdmin(req, res, mockNext);
+      assert.equal(res.statusCode, 403);
+      assert.match(res.body.error, /Super Admin/i);
+    }
   });
 
-  await t.test('Gate 5: Voucher Rounding & Exact Remainder Allocation', async () => {
-    // 3 categories with subtotals 33,333, 33,333, and 33,334 (Total: 100,000)
-    // Voucher discount: 10,000 (10%)
-    const rootGroups = [
-      { rootCategoryId: 1, rootCategoryName: 'Ngành A', rootCategorySlug: 'nganh-a', subtotal: 33333, items: [] },
-      { rootCategoryId: 2, rootCategoryName: 'Ngành B', rootCategorySlug: 'nganh-b', subtotal: 33333, items: [] },
-      { rootCategoryId: 3, rootCategoryName: 'Ngành C', rootCategorySlug: 'nganh-c', subtotal: 33334, items: [] },
-    ];
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 2: Secret Safety & Account Number Masking
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 2: Secret Safety & Account Masking in Repository and ENV Prefix generator', () => {
+    assert.equal(maskAccountNumber('0987654321'), '******4321');
+    assert.equal(maskAccountNumber('12345'), '*2345');
+    assert.equal(maskAccountNumber('123'), '123');
+    assert.equal(maskAccountNumber(null), null);
 
-    const result = allocateVoucherDiscount({
-      rootGroupsWithSubtotal: rootGroups,
-      voucherDiscount: 10000,
+    assert.equal(generateEnvPrefix('nuoc_hieu'), 'PAYOS_PROFILE_NUOC_HIEU');
+    assert.equal(generateEnvPrefix('QUANAO-HUNG'), 'PAYOS_PROFILE_QUANAO_HUNG');
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 3: Decimal-Safe Pro-Rata Integer Remainder Allocation ($1 dong sink)
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 3: Decimal-Safe Pro-Rata Integer Remainder Allocation guarantees exact sum', () => {
+    // 3 groups with subtotals: 100k, 100k, 100k (Total = 300k), Voucher = 50k (16666.66... each)
+    const result1 = allocateVoucherDiscount({
+      rootGroupsWithSubtotal: [
+        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', subtotal: 100000 },
+        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'thoi-trang', subtotal: 100000 },
+        { rootCategoryId: 3, rootCategoryName: 'Mỹ Phẩm', rootCategorySlug: 'my-pham', subtotal: 100000 },
+      ],
+      voucherDiscount: 50000,
       shippingFee: 15000,
     });
 
-    assert.equal(result.subtotal, 100000);
-    assert.equal(result.discountAmount, 10000);
-    assert.equal(result.shippingFee, 15000);
+    assert.equal(result1.subtotal, 300000);
+    assert.equal(result1.discountAmount, 50000);
+    assert.equal(result1.allocations.length, 3);
 
-    const sumAllocatedDiscount = result.allocations.reduce((sum, a) => sum + a.allocatedDiscount, 0);
-    assert.equal(sumAllocatedDiscount, 10000, 'Sum of allocated discounts must strictly equal group voucher discount (10,000)');
+    // Integer allocation: Group 0: 16666, Group 1: 16666, Group 2 (remainder sink): 16668
+    assert.equal(result1.allocations[0].allocatedDiscount, 16666);
+    assert.equal(result1.allocations[1].allocatedDiscount, 16666);
+    assert.equal(result1.allocations[2].allocatedDiscount, 16668);
 
-    const sumAllocatedTotal = result.allocations.reduce((sum, a) => sum + a.allocatedTotal, 0);
-    const expectedTotal = 100000 - 10000 + 15000;
-    assert.equal(sumAllocatedTotal, expectedTotal, 'Sum of allocated totals must strictly equal grand total');
+    const sumDiscount = result1.allocations.reduce((sum, a) => sum + a.allocatedDiscount, 0);
+    assert.equal(sumDiscount, 50000);
 
-    // Verify individual allocations
-    assert.equal(result.allocations[0].allocatedDiscount, 3333);
-    assert.equal(result.allocations[1].allocatedDiscount, 3333);
-    assert.equal(result.allocations[2].allocatedDiscount, 3334, 'Last allocation takes the 1-dong remainder');
+    const sumTotal = result1.allocations.reduce((sum, a) => sum + a.allocatedTotal, 0);
+    assert.equal(sumTotal, 300000 - 50000 + 15000);
   });
 
-  await t.test('Gate 3, 4, 6: Cart Payment Profile Resolver (Single Industry vs Multi-industry vs Fallback)', async () => {
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 4: Single Profile Resolution vs Missing ENV Strict Fallback
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 4: Single Profile Resolution vs Strict Missing ENV Fallback (No silent legacy charge)', async () => {
+    // Setup mock DB for product resolution
     const mockDb = {
       async query(sql, params) {
-        // Mock product to category lookup
-        if (sql.includes('FROM products p')) {
-          const productIds = params[0];
-          const rows = [];
-          for (const pid of productIds) {
-            if (pid === 101) {
-              // Nuoc Uong
-              rows.push({
-                product_id: 101,
-                product_name: 'Trà Sữa Oolong',
-                price: 35000,
-                category_id: 11,
-                category_name: 'Trà Sữa',
-                depth: 1,
-                parent_id: 1,
-                root_category_id: 1,
-                root_category_name: 'Nước Uống',
-                root_category_slug: 'nuoc-uong',
-              });
-            } else if (pid === 102) {
-              // Nuoc Uong
-              rows.push({
-                product_id: 102,
-                product_name: 'Cà Phê Sữa',
-                price: 30000,
-                category_id: 12,
-                category_name: 'Cà Phê',
-                depth: 1,
-                parent_id: 1,
-                root_category_id: 1,
-                root_category_name: 'Nước Uống',
-                root_category_slug: 'nuoc-uong',
-              });
-            } else if (pid === 201) {
-              // Thoi Trang
-              rows.push({
-                product_id: 201,
-                product_name: 'Áo Phông Cotton',
-                price: 150000,
-                category_id: 21,
-                category_name: 'Áo Nam',
-                depth: 1,
-                parent_id: 2,
-                root_category_id: 2,
-                root_category_name: 'Thời Trang',
-                root_category_slug: 'thoi-trang',
-              });
-            }
-          }
-          return [rows];
-        }
-        return [[]];
+        return [[
+          {
+            product_id: 101,
+            product_name: 'Trà Sữa Trân Châu',
+            price: 35000,
+            category_id: 10,
+            depth: 1,
+            parent_id: 1,
+            root_category_id: 1,
+            root_category_name: 'Nước Uống',
+            root_category_slug: 'nuoc-uong',
+          },
+        ]];
       },
     };
 
-    const mockProfilesRepo = {
+    // Case 4A: Profile mapped but ENV missing -> Strictly falls back to LONG_GROUPED_CHECKOUT
+    const mockRepoMissingEnv = {
       async getActiveProfileByRootCategoryId(rootId) {
-        if (rootId === 1) {
-          return {
-            id: 10,
-            code: 'NUOC_HIEU',
-            display_name: 'Nước Uống - Hiếu',
-            env_prefix: 'PAYOS_PROFILE_NUOC_HIEU',
-            status: 'active',
-            version: 1,
-            bank_name: 'MB Bank',
-            account_number: '0987654321',
-          };
-        }
-        return null;
+        return {
+          id: 10,
+          code: 'NUOC_HIEU_UNCONFIGURED',
+          display_name: 'Nước Uống Hiếu (Chưa ENV)',
+          status: 'active',
+          version: 1,
+        };
       },
       async getProfileByCode(code) {
-        if (code === 'LONG_GROUPED_CHECKOUT') {
-          return {
-            id: 1,
-            code: 'LONG_GROUPED_CHECKOUT',
-            display_name: 'Long - Grouped Checkout',
-            env_prefix: 'PAYOS_PROFILE_LONG_GROUPED_CHECKOUT',
-            status: 'active',
-            version: 1,
-            bank_name: 'Vietcombank',
-            account_number: '1122334455',
-          };
-        }
+        return {
+          id: 1,
+          code: 'LONG_GROUPED_CHECKOUT',
+          display_name: 'Long - Grouped Checkout',
+          status: 'active',
+          version: 1,
+        };
+      },
+    };
+
+    const resolvedFallback = await resolvePaymentProfileForCart({
+      storeId: 1,
+      items: [{ product_id: 101, qty: 1 }],
+      database: mockDb,
+      profilesRepo: mockRepoMissingEnv,
+    });
+
+    assert.equal(resolvedFallback.isGrouped, false);
+    assert.equal(resolvedFallback.isFallback, true);
+    assert.equal(resolvedFallback.profile.code, 'LONG_GROUPED_CHECKOUT');
+
+    // Case 4B: Profile mapped and ENV configured -> Charges exact industry profile
+    process.env.PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID = 'test-client-id';
+    process.env.PAYOS_PROFILE_NUOC_HIEU_API_KEY = 'test-api-key';
+    process.env.PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY = 'test-checksum-key';
+
+    const mockRepoConfigured = {
+      async getActiveProfileByRootCategoryId(rootId) {
+        return {
+          id: 11,
+          code: 'NUOC_HIEU',
+          display_name: 'Nước Uống Hiếu',
+          status: 'active',
+          version: 1,
+        };
+      },
+      async getProfileByCode(code) {
         return null;
       },
     };
 
-    // 1. Single Industry: Cart with only Nuoc Uong items -> NUOC_HIEU
-    const singleCart = [{ product_id: 101, qty: 2 }, { product_id: 102, qty: 1 }];
-    const singleResolved = await resolvePaymentProfileForCart({
+    const resolvedConfigured = await resolvePaymentProfileForCart({
       storeId: 1,
-      items: singleCart,
+      items: [{ product_id: 101, qty: 1 }],
       database: mockDb,
-      profilesRepo: mockProfilesRepo,
+      profilesRepo: mockRepoConfigured,
     });
 
-    assert.equal(singleResolved.isGrouped, false);
-    assert.equal(singleResolved.profile.code, 'NUOC_HIEU');
-    assert.equal(singleResolved.rootCategory.rootCategoryName, 'Nước Uống');
+    assert.equal(resolvedConfigured.isGrouped, false);
+    assert.equal(resolvedConfigured.isFallback, undefined);
+    assert.equal(resolvedConfigured.profile.code, 'NUOC_HIEU');
 
-    // 2. Multi-industry: Cart with Nuoc Uong + Thoi Trang -> LONG_GROUPED_CHECKOUT
-    const mixedCart = [{ product_id: 101, qty: 1 }, { product_id: 201, qty: 1 }];
-    const mixedResolved = await resolvePaymentProfileForCart({
-      storeId: 1,
-      items: mixedCart,
-      database: mockDb,
-      profilesRepo: mockProfilesRepo,
-    });
-
-    assert.equal(mixedResolved.isGrouped, true);
-    assert.equal(mixedResolved.profile.code, 'LONG_GROUPED_CHECKOUT');
-    assert.equal(mixedResolved.rootGroups.length, 2);
-
-    // 3. Fallback: Cart with unmapped root category (Thoi Trang only) -> Falls back to Long with isFallback = true
-    const unmappedCart = [{ product_id: 201, qty: 2 }];
-    const fallbackResolved = await resolvePaymentProfileForCart({
-      storeId: 1,
-      items: unmappedCart,
-      database: mockDb,
-      profilesRepo: mockProfilesRepo,
-    });
-
-    assert.equal(fallbackResolved.isGrouped, false);
-    assert.equal(fallbackResolved.isFallback, true);
-    assert.equal(fallbackResolved.profile.code, 'LONG_GROUPED_CHECKOUT');
+    // Cleanup env
+    delete process.env.PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID;
+    delete process.env.PAYOS_PROFILE_NUOC_HIEU_API_KEY;
+    delete process.env.PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY;
   });
 
-  await t.test('Gate 4 & 7: Customer Order Service Grouped Flow and Snapshot Creation', async () => {
-    const createdOrders = [];
-    const mockRepo = {
-      async createPublicOrder(args) {
-        const order = {
-          id: createdOrders.length + 1,
-          order_code: `TP20260901${createdOrders.length + 1}`,
-          subtotal: 50000,
-          total: 50000,
-          payment_status: 'unpaid',
-          root_category_id: args.rootCategoryId,
-          payment_profile_code: args.paymentProfile?.code,
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 5: Grouped Checkout Customer Order Service Flow & Voucher Consumption
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 5: Grouped Checkout validates and consumes voucher once and creates group snapshot', async () => {
+    let orderCreateCount = 0;
+    let groupCreateCount = 0;
+    let voucherValidateCount = 0;
+    let voucherConsumeCount = 0;
+
+    const mockOrdersRepo = {
+      async createPublicOrder({ input, rootCategoryId, paymentProfile }, { tx } = {}) {
+        orderCreateCount++;
+        return {
+          id: orderCreateCount,
+          order_code: `TP20260901${orderCreateCount}`,
+          subtotal: input.items.reduce((s, it) => s + (it.price * it.qty), 0),
+          discount_amount: input.allocatedDiscount || 0,
+          total: input.items.reduce((s, it) => s + (it.price * it.qty), 0) - (input.allocatedDiscount || 0),
+          root_category_id: rootCategoryId,
+          payment_profile_code: paymentProfile?.code,
         };
-        createdOrders.push(order);
-        return order;
       },
     };
 
-    let groupCreated = null;
     const mockCheckoutGroupsRepo = {
-      async createCheckoutGroup(args) {
-        groupCreated = {
+      async createCheckoutGroup(data, { tx } = {}) {
+        groupCreateCount++;
+        return {
           id: 1,
-          group_code: 'GRP123456',
-          total_amount: args.totalAmount,
-          allocations: args.allocations,
-          payment_profile_code: args.paymentProfile.code,
+          group_code: 'GRP20260901111111',
+          total_amount: data.totalAmount,
+          voucher_code: data.voucherCode,
+          payment_profile_code: data.paymentProfile.code,
+          allocations: data.allocations,
         };
-        return groupCreated;
       },
       async reservePayOSCheckoutGroup() {
-        return { payos_order_code: 9876543210, payment_expires_at: new Date() };
+        return { payos_order_code: 999888, payment_expires_at: new Date() };
       },
-      async attachPaymentLinkToGroup(args) {
-        return {
-          payment_link_id: args.paymentLinkId,
-          payos_order_code: args.payosOrderCode,
-          payment_expires_at: args.paymentExpiresAt,
-        };
+      async attachPaymentLinkToGroup() {
+        return { payment_link_id: 'plink_123', payos_order_code: 999888, payment_expires_at: new Date() };
       },
     };
 
-    const mockResolveProfile = async () => ({
+    const mockPromotionsRepo = {
+      async validateForOrder({ code, subtotal }) {
+        voucherValidateCount++;
+        return {
+          id: 99,
+          code,
+          discount_amount: 20000,
+          phone: '0987654321',
+        };
+      },
+      async consumeForOrder({ voucher, orderId }) {
+        voucherConsumeCount++;
+      },
+    };
+
+    const mockResolvePaymentProfile = async () => ({
       isGrouped: true,
-      profile: { code: 'LONG_GROUPED_CHECKOUT', version: 1, bank_name: 'VCB' },
+      profile: {
+        id: 1,
+        code: 'LONG_GROUPED_CHECKOUT',
+        display_name: 'Long - Grouped Checkout',
+        version: 1,
+      },
       rootGroups: [
-        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc-uong', items: [{ product_id: 101, qty: 1 }] },
-        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'thoi-trang', items: [{ product_id: 201, qty: 1 }] },
+        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', items: [{ product_id: 1, price: 50000, qty: 1 }] },
+        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'ao', items: [{ product_id: 2, price: 50000, qty: 1 }] },
       ],
     });
 
-    const orderService = createCustomerOrderService({
-      repository: mockRepo,
+    const mockDb = {
+      async transaction(cb) {
+        return cb({});
+      },
+    };
+
+    const service = createCustomerOrderService({
+      repository: mockOrdersRepo,
       checkoutGroupsRepo: mockCheckoutGroupsRepo,
-      resolvePaymentProfile: mockResolveProfile,
-      checkPayOSConfigured: () => false, // COD mode
+      promotionsRepo: mockPromotionsRepo,
+      resolvePaymentProfile: mockResolvePaymentProfile,
+      checkPayOSConfigured: () => false, // COD path
+      database: mockDb,
     });
 
-    const result = await orderService.create({
+    const result = await service.create({
       input: {
         store_id: 1,
-        source: 'pos',
+        source: 'online',
         order_type: 'Take-away',
         payment_method: 'COD',
-        customer_name: 'Test Customer',
-        customer_phone: '0901234567',
-        items: [{ product_id: 101, qty: 1 }, { product_id: 201, qty: 1 }],
+        customer_name: 'Nguyen Van A',
+        customer_phone: '0987654321',
+        items: [{ product_id: 1, price: 50000, qty: 1 }, { product_id: 2, price: 50000, qty: 1 }],
+        voucher_code: 'SALE20K',
       },
+      userId: 123,
     });
 
     assert.equal(result.is_grouped, true);
-    assert.equal(result.group_code, 'GRP123456');
-    assert.equal(result.child_orders.length, 2);
-    assert.equal(createdOrders[0].payment_profile_code, 'LONG_GROUPED_CHECKOUT');
-    assert.equal(createdOrders[1].payment_profile_code, 'LONG_GROUPED_CHECKOUT');
-    assert.equal(groupCreated.payment_profile_code, 'LONG_GROUPED_CHECKOUT');
+    assert.equal(orderCreateCount, 2);
+    assert.equal(groupCreateCount, 1);
+    assert.equal(voucherValidateCount, 1);
+    assert.equal(voucherConsumeCount, 1);
+    assert.equal(result.total_amount, 80000); // 100k - 20k
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 6: Webhook Group Amount Verification & Idempotency
+  // ═════════════════════════════════════════════════════════════════
+  it('Gate 6: Webhook Group Amount Verification & CAS Idempotency', async () => {
+    let groupUpdated = false;
+    let childOrdersUpdated = false;
+    let eventLogged = false;
+
+    const mockDb = {
+      async transaction(cb) {
+        const tx = {
+          async query(sql, params) {
+            if (sql.includes('INSERT INTO payment_events')) {
+              eventLogged = true;
+              return [[{ id: 1 }]];
+            }
+            if (sql.includes('SELECT id, group_code, total_amount')) {
+              return [[{
+                id: 10,
+                group_code: 'GRP123456',
+                total_amount: 150000,
+                payment_status: 'unpaid',
+              }]];
+            }
+            if (sql.includes('UPDATE checkout_groups')) {
+              groupUpdated = true;
+              return [[{ id: 10, group_code: 'GRP123456', total_amount: 150000 }]];
+            }
+            if (sql.includes('UPDATE orders')) {
+              childOrdersUpdated = true;
+              return [[{ id: 1 }]];
+            }
+            if (sql.includes('UPDATE payment_events')) {
+              return [[]];
+            }
+            return [[]];
+          },
+        };
+        return cb(tx);
+      },
+    };
+
+    const repo = createCheckoutGroupsRepository(mockDb);
+
+    // 1. Amount mismatch test
+    const mismatchResult = await repo.processSuccessfulGroupWebhook({
+      eventKey: 'evt_1',
+      orderCode: 999111,
+      amount: 100000, // Expected is 150000
+      reference: 'ref_1',
+    });
+    assert.equal(mismatchResult.kind, 'amount_mismatch');
+    assert.equal(groupUpdated, false);
+    assert.equal(childOrdersUpdated, false);
+
+    // 2. Exact amount test
+    const exactResult = await repo.processSuccessfulGroupWebhook({
+      eventKey: 'evt_2',
+      orderCode: 999111,
+      amount: 150000,
+      reference: 'ref_2',
+    });
+    assert.equal(exactResult.kind, 'paid');
+    assert.equal(groupUpdated, true);
+    assert.equal(childOrdersUpdated, true);
   });
 });

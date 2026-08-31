@@ -24,12 +24,25 @@ export function setPayOSForTest(instance = null) {
 
 export function isPayOSConfigured(profileCode = null) {
   if (profileCode) {
-    const envPrefix = generateEnvPrefix(profileCode);
+    const normalizedCode = String(profileCode).toUpperCase().trim();
+    const envPrefix = generateEnvPrefix(normalizedCode);
     const cid = process.env[`${envPrefix}_CLIENT_ID`]?.trim();
     const key = process.env[`${envPrefix}_API_KEY`]?.trim();
     const cs = process.env[`${envPrefix}_CHECKSUM_KEY`]?.trim();
     if (cid && key && cs) return true;
+
+    // Only system profiles LONG_GROUPED_CHECKOUT / DEFAULT_LONG can fallback to legacy PAYOS_*
+    if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
+      const rootCid = process.env.PAYOS_CLIENT_ID?.trim();
+      const rootKey = process.env.PAYOS_API_KEY?.trim();
+      const rootCs = process.env.PAYOS_CHECKSUM_KEY?.trim();
+      return Boolean(rootCid && rootKey && rootCs);
+    }
+
+    // Specific industry profile missing ENV returns false (no silent fallback)
+    return false;
   }
+
   const rootCid = process.env.PAYOS_CLIENT_ID?.trim();
   const rootKey = process.env.PAYOS_API_KEY?.trim();
   const rootCs = process.env.PAYOS_CHECKSUM_KEY?.trim();
@@ -55,9 +68,25 @@ export function getPayOS(profileCode = null) {
       profileInstancesCache.set(normalizedCode, instance);
       return instance;
     }
+
+    // Only system default profiles can fallback to root PAYOS_* instance
+    if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
+      if (isPayOSConfigured()) {
+        const defaultInstance = new PayOS({
+          clientId: process.env.PAYOS_CLIENT_ID.trim(),
+          apiKey: process.env.PAYOS_API_KEY.trim(),
+          checksumKey: process.env.PAYOS_CHECKSUM_KEY.trim(),
+        });
+        profileInstancesCache.set(normalizedCode, defaultInstance);
+        return defaultInstance;
+      }
+    }
+
+    // Industry profile with missing keys returns null (never silently charges Long)
+    return null;
   }
 
-  // Fallback to default system PayOS instance
+  // Default system PayOS instance
   if (isPayOSConfigured()) {
     const defaultInstance = new PayOS({
       clientId: process.env.PAYOS_CLIENT_ID.trim(),

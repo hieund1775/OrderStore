@@ -85,12 +85,27 @@ export async function handlePayOSWebhook(req, res) {
     // Check if matching checkout group exists
     const group = await checkoutGroupsRepository.findGroupByPayOSOrderCode(orderCode);
     if (group) {
-      if (group.payment_status === 'paid') {
-        return res.json({ ok: true, message: 'Checkout group đã được xác nhận thanh toán từ trước' });
+      const groupResult = await checkoutGroupsRepository.processSuccessfulGroupWebhook({
+        eventKey: String(reference || paymentLinkId || orderCode),
+        orderCode,
+        amount: Number(amount),
+        reference,
+        paymentLinkId,
+        payload: { orderCode, amount: Number(amount), reference: reference || null, paymentLinkId: paymentLinkId || null, code },
+      });
+
+      if (groupResult.kind === 'paid') {
+        console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán Checkout Group ${group.group_code} (${amount}đ)`);
+        return res.json({ ok: true, message: 'Thanh toán thành công' });
       }
-      await checkoutGroupsRepository.markGroupPaid({ groupId: group.id, reference: reference || String(orderCode) });
-      console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán Checkout Group ${group.group_code} (${amount}đ)`);
-      return res.json({ ok: true, message: 'Thanh toán thành công' });
+      if (groupResult.kind === 'duplicate' || groupResult.kind === 'already_paid') {
+        return res.json({ ok: true, message: 'Đơn hàng đã được xác nhận thanh toán từ trước' });
+      }
+      if (groupResult.kind === 'amount_mismatch') {
+        console.warn(`⚠️ [PayOS Webhook Rejection]: Số tiền thanh toán không khớp đơn hàng gộp ${group.group_code}`);
+        return res.status(200).json({ ok: false, message: 'Số tiền thanh toán không khớp' });
+      }
+      return res.status(200).json({ ok: false, message: 'Giao dịch không hợp lệ' });
     }
 
     const result = await paymentsRepository.processSuccessfulWebhook({
@@ -127,12 +142,30 @@ router.post('/payos/webhook', handlePayOSWebhook);
 
 /**
  * Endpoint tra cứu trạng thái thanh toán đơn PayOS (Kèm chủ động đối soát Active Reconciliation)
- * GET /api/payments/payos/status?code=TPxxxxxx
+ * GET /api/payments/payos/status?code=TPxxxxxx hoặc ?code=GRPxxxxxx
  */
 router.get('/payos/status', noCache, async (req, res) => {
   try {
     const { code } = req.query;
-    if (!code) return res.status(400).json({ error: 'Thiếu mã đơn code' });
+    if (!code || typeof code !== 'string') return res.status(400).json({ error: 'Thiếu mã đơn code' });
+
+    if (code.startsWith('GRP')) {
+      const group = await checkoutGroupsRepository.findGroupByCode(code);
+      if (!group) return res.status(404).json({ error: 'Không tìm thấy đơn hàng gộp' });
+      return res.json({
+        order: {
+          order_code: group.group_code,
+          total: Number(group.total_amount),
+          payment_status: group.payment_status,
+          payment_provider: group.payment_provider,
+          payment_checkout_url: group.payment_checkout_url,
+          payment_qr_code: group.payment_qr_code,
+          payment_expires_at: group.payment_expires_at,
+          paid_at: group.paid_at,
+        },
+      });
+    }
+
     let order = await paymentsRepository.findStatusByOrderCode(code);
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
 
@@ -164,6 +197,26 @@ router.post('/payos/regenerate-qr', async (req, res) => {
     const decodedToken = extractCustomerToken(req);
     const userId = decodedToken ? Number(decodedToken.id || decodedToken.sub) : null;
     const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim() || null;
+
+    if (order_code.startsWith('GRP')) {
+      const updatedGroup = await checkoutGroupsRepository.renewGroupPayOSLink({
+        groupCode: order_code.trim(),
+        userId,
+        cancelToken: rawCancelToken,
+      });
+
+      return res.json({
+        ok: true,
+        order: {
+          order_code: updatedGroup.group_code,
+          total: Number(updatedGroup.total_amount),
+          checkout_url: updatedGroup.payment_checkout_url,
+          qr_code: updatedGroup.payment_qr_code,
+          payment_expires_at: updatedGroup.payment_expires_at,
+          payment_status: updatedGroup.payment_status,
+        },
+      });
+    }
 
     const updatedOrder = await paymentsRepository.renewPayOSOrderLink({
       orderCode: order_code.trim(),

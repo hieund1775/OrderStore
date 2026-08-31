@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
+import { createPaymentLinkForOrder } from '../../services/payos.js';
+import config from '../../config/env.js';
 
 export class CheckoutGroupError extends Error {
   constructor(message, status = 400, code = 'CHECKOUT_GROUP_ERROR') {
@@ -16,6 +18,10 @@ export function generateGroupCode(randomInt = crypto.randomInt) {
   return `GRP${Date.now().toString().slice(-6)}${rand}`;
 }
 
+function makePayOSCode(id) {
+  return Number(`${String(Date.now()).slice(-6)}${String(Number(id) % 10000).padStart(4, '0')}`);
+}
+
 export function createCheckoutGroupsRepository(database = postgresDb) {
   return {
     async createCheckoutGroup({
@@ -28,8 +34,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       voucherCode = null,
       paymentProfile,
       allocations = [],
-    }) {
-      return database.transaction(async (tx) => {
+    }, { tx: externalTx } = {}) {
+      const runner = async (tx) => {
         const groupCode = generateGroupCode();
 
         const [groupRows] = await tx.query(
@@ -45,16 +51,16 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
             groupCode,
             Number(storeId),
             userId ? Number(userId) : null,
-            paymentProfile.id ? Number(paymentProfile.id) : null,
-            paymentProfile.code,
-            Number(paymentProfile.version || 1),
-            paymentProfile.bank_name || null,
-            paymentProfile.account_number || null,
-            paymentProfile.account_holder || null,
-            Number(subtotal),
-            Number(discountAmount),
-            Number(shippingFee),
-            Number(totalAmount),
+            paymentProfile?.id ? Number(paymentProfile.id) : null,
+            paymentProfile?.code || 'LONG_GROUPED_CHECKOUT',
+            Number(paymentProfile?.version || 1),
+            paymentProfile?.bank_name || null,
+            paymentProfile?.account_number || null,
+            paymentProfile?.account_holder || null,
+            Math.round(Number(subtotal)),
+            Math.round(Number(discountAmount)),
+            Math.round(Number(shippingFee)),
+            Math.round(Number(totalAmount)),
             voucherCode || null,
           ],
         );
@@ -75,10 +81,10 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
               Number(alloc.rootCategoryId),
               alloc.rootCategoryName,
               alloc.rootCategorySlug,
-              Number(alloc.allocatedSubtotal),
-              Number(alloc.allocatedDiscount || 0),
-              Number(alloc.allocatedShippingFee || 0),
-              Number(alloc.allocatedTotal),
+              Math.round(Number(alloc.allocatedSubtotal)),
+              Math.round(Number(alloc.allocatedDiscount || 0)),
+              Math.round(Number(alloc.allocatedShippingFee || 0)),
+              Math.round(Number(alloc.allocatedTotal)),
             ],
           );
 
@@ -93,12 +99,12 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
             [
               group.id,
               Number(alloc.rootCategoryId),
-              paymentProfile.id ? Number(paymentProfile.id) : null,
-              paymentProfile.code,
-              Number(paymentProfile.version || 1),
-              paymentProfile.bank_name || null,
-              paymentProfile.account_number || null,
-              paymentProfile.account_holder || null,
+              paymentProfile?.id ? Number(paymentProfile.id) : null,
+              paymentProfile?.code || 'LONG_GROUPED_CHECKOUT',
+              Number(paymentProfile?.version || 1),
+              paymentProfile?.bank_name || null,
+              paymentProfile?.account_number || null,
+              paymentProfile?.account_holder || null,
               Number(alloc.orderId),
             ],
           );
@@ -109,11 +115,16 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
           id: Number(group.id),
           allocations,
         };
-      });
+      };
+
+      if (externalTx) {
+        return runner(externalTx);
+      }
+      return database.transaction(runner);
     },
 
-    async reservePayOSCheckoutGroup({ groupId, payosOrderCode, paymentExpiresAt }) {
-      return database.transaction(async (tx) => {
+    async reservePayOSCheckoutGroup({ groupId, payosOrderCode, paymentExpiresAt }, { tx: externalTx } = {}) {
+      const runner = async (tx) => {
         const [rows] = await tx.query(
           `SELECT id, group_code, total_amount, payment_link_id, payos_order_code,
                   payment_checkout_url, payment_qr_code, payment_expires_at,
@@ -137,7 +148,12 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
           [Number(groupId), payosOrderCode, paymentExpiresAt],
         );
         return reserved[0];
-      });
+      };
+
+      if (externalTx) {
+        return runner(externalTx);
+      }
+      return database.transaction(runner);
     },
 
     async attachPaymentLinkToGroup({
@@ -175,7 +191,13 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'allocated_subtotal', cga.allocated_subtotal,
                     'allocated_discount', cga.allocated_discount,
                     'allocated_shipping_fee', cga.allocated_shipping_fee,
-                    'allocated_total', cga.allocated_total
+                    'allocated_total', cga.allocated_total,
+                    'payment_status', o.payment_status,
+                    'status', (
+                      SELECT status FROM order_status_history osh
+                      WHERE osh.order_id = o.id
+                      ORDER BY osh.created_at DESC LIMIT 1
+                    )
                   )
                 ) AS child_orders
          FROM checkout_groups cg
@@ -214,28 +236,181 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async markGroupPaid({ groupId, reference }) {
+    async processSuccessfulGroupWebhook({ eventKey, orderCode, amount, reference, paymentLinkId, payload = {} }) {
       return database.transaction(async (tx) => {
+        // 1. Record event for idempotency
+        const [eventRows] = await tx.query(
+          `INSERT INTO payment_events (provider, provider_event_key, event_type, payload)
+           VALUES ('payos', $1, 'payment.succeeded.group', $2::jsonb)
+           ON CONFLICT (provider_event_key) DO NOTHING
+           RETURNING id`,
+          [eventKey, JSON.stringify(payload)],
+        );
+        if (!eventRows[0]) return { kind: 'duplicate' };
+        const eventId = eventRows[0].id;
+
+        const finishEvent = async ({ status, errorCode = null }) => {
+          await tx.query(
+            `UPDATE payment_events
+             SET processing_status = $1, error_code = $2, processed_at = CURRENT_TIMESTAMP
+             WHERE id = $3`,
+            [status, errorCode, eventId],
+          );
+        };
+
+        // 2. Lock checkout_groups record
         const [groupRows] = await tx.query(
+          `SELECT id, group_code, total_amount, payment_status, payment_provider
+           FROM checkout_groups
+           WHERE payos_order_code = $1 OR payment_link_id = $2
+           FOR UPDATE`,
+          [orderCode, paymentLinkId || null],
+        );
+        const group = groupRows[0];
+        if (!group) {
+          await finishEvent({ status: 'ignored', errorCode: 'NOT_FOUND' });
+          return { kind: 'not_found', eventId };
+        }
+
+        if (group.payment_status === 'paid') {
+          await finishEvent({ status: 'processed', errorCode: 'ALREADY_PAID' });
+          return { kind: 'already_paid', eventId, group };
+        }
+
+        if (group.payment_status === 'expired' || group.payment_status === 'cancelled') {
+          await finishEvent({ status: 'ignored', errorCode: group.payment_status.toUpperCase() });
+          return { kind: group.payment_status, eventId, group };
+        }
+
+        // Amount verification
+        if (Math.round(Number(group.total_amount)) !== Math.round(Number(amount))) {
+          await finishEvent({ status: 'ignored', errorCode: 'AMOUNT_MISMATCH' });
+          return { kind: 'amount_mismatch', eventId, group };
+        }
+
+        // CAS update checkout_groups
+        const [paidRows] = await tx.query(
           `UPDATE checkout_groups
            SET payment_status = 'paid', paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND payment_status = 'unpaid'
+           WHERE id = $1 AND payment_status = 'unpaid' AND total_amount = $2
            RETURNING id, group_code, total_amount`,
-          [Number(groupId)],
+          [group.id, amount],
         );
-        if (!groupRows[0]) return null;
+        if (!paidRows[0]) {
+          await finishEvent({ status: 'ignored', errorCode: 'CAS_REJECTED' });
+          return { kind: 'cas_rejected', eventId, group };
+        }
 
-        // Cascade to child orders
+        // Cascade to all child orders
         await tx.query(
           `UPDATE orders
            SET payment_status = 'paid', paid_at = CURRENT_TIMESTAMP,
                transaction_id = $2, updated_at = CURRENT_TIMESTAMP
            WHERE checkout_group_id = $1 AND payment_status = 'unpaid'`,
-          [Number(groupId), reference || null],
+          [group.id, reference || String(orderCode)],
         );
 
-        return groupRows[0];
+        await finishEvent({ status: 'processed' });
+        return { kind: 'paid', eventId, group };
       });
+    },
+
+    async renewGroupPayOSLink({ groupCode, userId = null, cancelToken = null }) {
+      return database.transaction(async (tx) => {
+        const [groupRows] = await tx.query(
+          `SELECT cg.*,
+                  JSONB_AGG(o.cancel_token_hash) AS cancel_token_hashes
+           FROM checkout_groups cg
+           LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
+           LEFT JOIN orders o ON o.id = cga.order_id
+           WHERE cg.group_code = $1
+           GROUP BY cg.id
+           FOR UPDATE`,
+          [groupCode],
+        );
+        const group = groupRows[0];
+        if (!group) throw new CheckoutGroupError('Không tìm thấy đơn hàng gộp', 404);
+
+        // Verify ownership
+        if (group.user_id) {
+          if (userId && Number(group.user_id) !== Number(userId)) {
+            throw new CheckoutGroupError('Bạn không có quyền tạo lại thanh toán cho đơn hàng này', 403);
+          }
+        } else if (cancelToken) {
+          const providedHash = crypto.createHash('sha256').update(cancelToken).digest('hex');
+          const hashes = Array.isArray(group.cancel_token_hashes) ? group.cancel_token_hashes : [];
+          if (!hashes.includes(providedHash)) {
+            throw new CheckoutGroupError('Token hủy đơn không hợp lệ', 403);
+          }
+        }
+
+        if (group.payment_status === 'paid') {
+          throw new CheckoutGroupError('Đơn hàng đã được thanh toán từ trước', 400);
+        }
+        if (group.payment_status === 'cancelled') {
+          throw new CheckoutGroupError('Đơn hàng đã bị hủy, không thể tạo lại thanh toán', 400);
+        }
+
+        const newPayosOrderCode = makePayOSCode(group.id);
+        const timeoutMinutes = parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10);
+        const newExpiresAt = new Date(Date.now() + timeoutMinutes * 60_000);
+
+        const link = await createPaymentLinkForOrder({
+          orderId: group.id,
+          orderCode: group.group_code,
+          total: Number(group.total_amount),
+          payosOrderCode: newPayosOrderCode,
+          paymentExpiresAt: newExpiresAt,
+          paymentProfileCode: group.payment_profile_code,
+        });
+
+        const [updatedRows] = await tx.query(
+          `UPDATE checkout_groups
+           SET payment_link_id = $2, payos_order_code = $3,
+               payment_checkout_url = $4, payment_qr_code = $5,
+               payment_created_at = CURRENT_TIMESTAMP, payment_expires_at = $6,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1
+           RETURNING *`,
+          [group.id, link.paymentLinkId, newPayosOrderCode, link.checkoutUrl, link.qrCode, newExpiresAt],
+        );
+
+        return updatedRows[0];
+      });
+    },
+
+    async findGroupForCustomerLookup(groupCode, { userId = null, cancelToken = null } = {}) {
+      const group = await this.findGroupByCode(groupCode);
+      if (!group) return null;
+
+      if (group.user_id) {
+        if (userId && Number(group.user_id) !== Number(userId)) {
+          throw new CheckoutGroupError('Bạn không có quyền xem đơn hàng này', 403);
+        }
+      }
+
+      return {
+        group_code: group.group_code,
+        payment_status: group.payment_status,
+        payment_provider: group.payment_provider,
+        subtotal: group.subtotal,
+        discount_amount: group.discount_amount,
+        shipping_fee: group.shipping_fee,
+        total_amount: group.total_amount,
+        payment_checkout_url: group.payment_checkout_url,
+        payment_qr_code: group.payment_qr_code,
+        payment_expires_at: group.payment_expires_at,
+        created_at: group.created_at,
+        child_orders: group.child_orders.map((co) => ({
+          order_code: co.order_code,
+          root_category_name: co.root_category_name,
+          allocated_subtotal: Number(co.allocated_subtotal),
+          allocated_discount: Number(co.allocated_discount),
+          allocated_total: Number(co.allocated_total),
+          status: co.status || 'Đang chuẩn bị',
+          payment_status: co.payment_status || group.payment_status,
+        })),
+      };
     },
   };
 }

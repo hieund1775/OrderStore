@@ -49,10 +49,10 @@ export function createOrdersRepository(
       paymentProvider = 'cod',
       rootCategoryId = null,
       paymentProfile = null,
-    }) {
+    }, { tx: externalTx } = {}) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
 
-      return database.transaction(async (tx) => {
+      const runner = async (tx) => {
         const idempotency = await claimOrderIdempotency(tx, {
           key: idempotencyKey,
           scope: idempotencyScope(userId, input),
@@ -101,22 +101,35 @@ export function createOrdersRepository(
             [item.product_id],
           );
           if (!products[0]) throw new OrderError('Sản phẩm không tồn tại hoặc đã ngừng bán');
-          if (!products[0].fulfillment_lane) {
-            throw new OrderError('Sản phẩm chưa được thiết lập luồng xử lý', 409, 'FULFILLMENT_LANE_REQUIRED');
+          if (item.variant_id != null) {
+            const [variants] = await tx.query(
+              'SELECT id, sku, price, is_active FROM product_variants WHERE id = $1 AND product_id = $2',
+              [item.variant_id, item.product_id],
+            );
+            if (!variants[0] || variants[0].is_active === false) {
+              throw new OrderError('Biến thể sản phẩm không hợp lệ hoặc đã ngừng bán');
+            }
           }
-          const [capabilities] = await tx.query(
-            `SELECT 1
-             FROM branch_fulfillment_capabilities bfc
-             JOIN fulfillment_lane_registry flr ON flr.code = bfc.lane_code
-             WHERE bfc.store_id = $1 AND bfc.lane_code = $2
-               AND bfc.is_enabled = TRUE AND flr.is_active = TRUE`,
-            [input.store_id, products[0].fulfillment_lane],
-          );
-          if (!capabilities[0]) {
+          if (products[0].fulfillment_lane) {
+            const isCapable = typeof fulfillment?.checkBranchCapability === 'function'
+              ? await fulfillment.checkBranchCapability(
+                  input.store_id,
+                  products[0].fulfillment_lane,
+                  { tx },
+                )
+              : true;
+            if (!isCapable) {
+              throw new OrderError(
+                `Chi nhánh chưa hỗ trợ luồng ${products[0].fulfillment_lane} cho sản phẩm này`,
+                409,
+                'BRANCH_CAPABILITY_REQUIRED',
+              );
+            }
+          } else {
             throw new OrderError(
-              `Chi nhánh chưa hỗ trợ luồng ${products[0].fulfillment_lane} cho sản phẩm này`,
+              'Sản phẩm chưa được cấu hình luồng chế biến (fulfillment lane)',
               409,
-              'BRANCH_CAPABILITY_REQUIRED',
+              'FULFILLMENT_LANE_MISSING',
             );
           }
           let sizeExtra = 0;
@@ -149,11 +162,18 @@ export function createOrdersRepository(
           });
         }
 
-        const voucher = await promotions.validateForOrder({
-          code: input.voucher_code, subtotal, phone: input.customer_phone, storeId: input.store_id, tx,
-        });
-        const discountAmount = Number(voucher?.discount_amount || 0);
-        const total = subtotal - discountAmount;
+        let voucher = null;
+        let discountAmount = 0;
+        if (input.allocatedDiscount != null) {
+          discountAmount = Math.round(Number(input.allocatedDiscount || 0));
+        } else {
+          voucher = await promotions.validateForOrder({
+            code: input.voucher_code, subtotal, phone: input.customer_phone, storeId: input.store_id, tx,
+          });
+          discountAmount = Number(voucher?.discount_amount || 0);
+        }
+        const total = Math.max(0, subtotal - discountAmount);
+        const pointsEarned = Math.floor(total / 1000);
         const orderInstant = clock();
 
         const profileId = paymentProfile?.id ? Number(paymentProfile.id) : null;
@@ -181,7 +201,7 @@ export function createOrdersRepository(
               [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
                 input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
                 (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
-                input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null,
+                input.delivery_addr || null, input.voucher_code || null, discountAmount, pointsEarned, subtotal, total, input.note || null,
                 rootCategoryId ? Number(rootCategoryId) : null, profileId, profileCode, profileVersion,
                 bankName, accountNumber, accountHolder],
             );
@@ -203,7 +223,9 @@ export function createOrdersRepository(
         if (!order) {
           throw new OrderError('Không thể tạo đơn hàng lúc này, vui lòng thử lại sau giây lát', 500, 'ORDER_CREATE_FAILED');
         }
-        await promotions.consumeForOrder({ voucher, orderId: order.id, tx });
+        if (voucher && !input.skipVoucherConsume) {
+          await promotions.consumeForOrder({ voucher, orderId: order.id, tx });
+        }
         const fulfillmentItems = [];
         for (const line of lines) {
           const [items] = await tx.query(
@@ -233,14 +255,16 @@ export function createOrdersRepository(
             note: line.item.note || null,
           });
         }
-        await fulfillment.createTasksForOrder({
-          orderId: order.id,
-          branchId: input.store_id,
-          laneItemsMap: {
-            kitchen: fulfillmentItems.filter((item) => item.fulfillment_lane === 'kitchen'),
-            packing: fulfillmentItems.filter((item) => item.fulfillment_lane === 'packing'),
-          },
-        }, tx);
+        if (typeof fulfillment?.createTasksForOrder === 'function') {
+          await fulfillment.createTasksForOrder({
+            orderId: order.id,
+            branchId: input.store_id,
+            laneItemsMap: {
+              kitchen: fulfillmentItems.filter((item) => item.fulfillment_lane === 'kitchen'),
+              packing: fulfillmentItems.filter((item) => item.fulfillment_lane === 'packing'),
+            },
+          }, tx);
+        }
         await tx.query("INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')", [order.id]);
 
         if (userId) {
@@ -263,7 +287,12 @@ export function createOrdersRepository(
         if (cancelToken) response.cancel_token = cancelToken;
         await completeOrderIdempotency(tx, { key: idempotencyKey, responseStatus: 201, response });
         return { replay: false, ...response };
-      });
+      };
+
+      if (externalTx) {
+        return runner(externalTx);
+      }
+      return database.transaction(runner);
     },
 
     async findPublicOrder(orderCodeValue) {

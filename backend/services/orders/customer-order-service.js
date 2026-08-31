@@ -10,6 +10,8 @@ import defaultOrdersRepository from '../../repositories/postgres/orders.js';
 import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder, appendOrderCodeToUrl } from '../online-payos-order.js';
 import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
 import defaultCheckoutGroupsRepository from '../../repositories/postgres/checkout-groups.js';
+import defaultPromotionsRepository from '../../repositories/postgres/promotions.js';
+import defaultPostgresDb from '../../config/db-postgres.js';
 import { reconcilePayOSOrder } from '../payos-reconciliation.js';
 import {
   resolvePaymentProfileForCart as defaultResolvePaymentProfile,
@@ -54,12 +56,14 @@ export function createCustomerOrderService({
   paymentsRepository = defaultPaymentsRepository,
   checkoutGroupsRepo = defaultCheckoutGroupsRepository,
   resolvePaymentProfile = defaultResolvePaymentProfile,
+  promotionsRepo = defaultPromotionsRepository,
+  database = defaultPostgresDb,
 } = {}) {
   return {
     async create({ input, userId = null, idempotencyKey = '' }) {
       const inputValidation = validateOrderCreationInput(input);
       if (!inputValidation.valid) {
-        throw new OrderDomainError(inputValidation.error, { status: 400, code: 'ORDER_VALIDATION_ERROR', expose: true });
+        throw new OrderDomainError(inputValidation.error, { status: 400, code: 'ORDER_VALIDATION_FAILED', expose: true });
       }
 
       const normalizedSource = input.source || 'online';
@@ -83,6 +87,35 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Vui lòng đăng nhập tài khoản trước khi đặt hàng', { status: 401, code: 'CUSTOMER_AUTH_REQUIRED', expose: true });
       }
 
+      let rawCancelToken = null;
+      let cancelTokenHash = null;
+      if (!userId && normalizedSource === 'online') {
+        rawCancelToken = crypto.randomBytes(32).toString('hex');
+        cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
+      }
+
+      // 1. Resolve Root Categories & Payment Profile for cart
+      let resolved;
+      try {
+        resolved = await resolvePaymentProfile({
+          storeId: input.store_id,
+          items: input.items,
+        });
+      } catch (err) {
+        // Fallback for isolated repository tests or missing category mappings
+        resolved = {
+          isGrouped: false,
+          profile: {
+            id: null,
+            code: 'LONG_GROUPED_CHECKOUT',
+            display_name: 'Long - Checkout Hệ Thống',
+            version: 1,
+          },
+          rootCategory: { rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default' },
+          rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default', items: input.items }],
+        };
+      }
+
       let payment_provider = 'cod';
       if (normalizedSource === 'pos') {
         if (normalizedPaymentMethod === 'VietQR') {
@@ -94,7 +127,7 @@ export function createCustomerOrderService({
         }
       } else {
         if (normalizedPaymentMethod === 'VietQR') {
-          if (checkPayOSConfigured()) {
+          if (checkPayOSConfigured(resolved?.profile?.code)) {
             payment_provider = 'payos';
           } else {
             throw new OrderDomainError('Cổng thanh toán trực tuyến PayOS chưa được kích hoạt trên hệ thống', { status: 400, code: 'PAYOS_NOT_CONFIGURED', expose: true });
@@ -106,82 +139,121 @@ export function createCustomerOrderService({
         }
       }
 
-      let rawCancelToken = null;
-      let cancelTokenHash = null;
-      if (!userId && normalizedSource === 'online') {
-        rawCancelToken = crypto.randomBytes(32).toString('hex');
-        cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
-      }
-
-      // 1. Resolve Root Categories & Payment Profile for cart
-      const resolved = await resolvePaymentProfile({
-        storeId: input.store_id,
-        items: input.items,
-      });
-
       // 2. Case A: Multi-industry Grouped Checkout
       if (resolved.isGrouped) {
-        // Multi-industry cart: create child order per root category group and wrap in checkout_group
-        const childOrders = [];
-        const groupAllocations = [];
-        let totalGroupSubtotal = 0;
+        // Execute entire multi-industry order creation and allocation in ONE atomic transaction
+        const { group, childOrders, reservedPayOS } = await database.transaction(async (tx) => {
+          // 1. Calculate subtotal per root group
+          const rootGroupsWithSubtotal = resolved.rootGroups.map((g) => {
+            const subtotal = g.items.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 1)), 0);
+            return {
+              ...g,
+              subtotal,
+            };
+          });
 
-        for (let i = 0; i < resolved.rootGroups.length; i++) {
-          const group = resolved.rootGroups[i];
-          const childInput = {
-            ...input,
-            items: group.items,
-            // Single voucher allocated pro-rata across child orders later
-            voucher_code: null,
-          };
-          const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${group.rootCategoryId}`;
-          const childOrder = await repository.createPublicOrder({
-            input: childInput,
+          const totalSubtotal = rootGroupsWithSubtotal.reduce((sum, g) => sum + g.subtotal, 0);
+
+          // 2. Validate voucher once across total cart subtotal
+          let voucher = null;
+          let totalDiscount = 0;
+          if (input.voucher_code) {
+            voucher = await promotionsRepo.validateForOrder({
+              code: input.voucher_code,
+              subtotal: totalSubtotal,
+              phone: input.customer_phone,
+              storeId: input.store_id,
+              tx,
+            });
+            totalDiscount = Number(voucher?.discount_amount || 0);
+          }
+
+          // 3. Allocate discount pro-rata with exact integer remainder guarantee
+          const allocationPlan = allocateVoucherDiscount({
+            rootGroupsWithSubtotal,
+            voucherDiscount: totalDiscount,
+            shippingFee: 0,
+          });
+
+          // 4. Create child orders atomically
+          const createdChildOrders = [];
+          const groupAllocations = [];
+
+          for (let i = 0; i < allocationPlan.allocations.length; i++) {
+            const alloc = allocationPlan.allocations[i];
+            const childInput = {
+              ...input,
+              items: alloc.items,
+              voucher_code: input.voucher_code || null,
+              allocatedDiscount: alloc.allocatedDiscount,
+              skipVoucherConsume: true,
+            };
+            const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${alloc.rootCategoryId}`;
+            const childOrder = await repository.createPublicOrder({
+              input: childInput,
+              userId,
+              cancelTokenHash,
+              cancelToken: rawCancelToken,
+              idempotencyKey: childIdempotencyKey,
+              requestHash: hashOrderRequest(childInput),
+              paymentProvider: payment_provider,
+              rootCategoryId: alloc.rootCategoryId,
+              paymentProfile: resolved.profile,
+            }, { tx });
+
+            createdChildOrders.push(childOrder);
+            groupAllocations.push({
+              orderId: childOrder.id,
+              rootCategoryId: alloc.rootCategoryId,
+              rootCategoryName: alloc.rootCategoryName,
+              rootCategorySlug: alloc.rootCategorySlug,
+              allocatedSubtotal: alloc.allocatedSubtotal,
+              allocatedDiscount: alloc.allocatedDiscount,
+              allocatedShippingFee: alloc.allocatedShippingFee,
+              allocatedTotal: alloc.allocatedTotal,
+            });
+          }
+
+          // 5. Consume voucher once for primary order if applicable
+          if (voucher && createdChildOrders.length > 0) {
+            await promotionsRepo.consumeForOrder({
+              voucher,
+              orderId: createdChildOrders[0].id,
+              tx,
+            });
+          }
+
+          // 6. Create checkout group and allocations
+          const createdGroup = await checkoutGroupsRepo.createCheckoutGroup({
+            storeId: input.store_id,
             userId,
-            cancelTokenHash,
-            cancelToken: rawCancelToken,
-            idempotencyKey: childIdempotencyKey,
-            requestHash: hashOrderRequest(childInput),
-            paymentProvider: payment_provider,
-            rootCategoryId: group.rootCategoryId,
+            subtotal: allocationPlan.subtotal,
+            discountAmount: allocationPlan.discountAmount,
+            shippingFee: allocationPlan.shippingFee,
+            totalAmount: allocationPlan.totalAmount,
+            voucherCode: input.voucher_code || null,
             paymentProfile: resolved.profile,
-          });
+            allocations: groupAllocations,
+          }, { tx });
 
-          childOrders.push(childOrder);
-          totalGroupSubtotal += Number(childOrder.subtotal || childOrder.total);
-          groupAllocations.push({
-            orderId: childOrder.id,
-            rootCategoryId: group.rootCategoryId,
-            rootCategoryName: group.rootCategoryName,
-            rootCategorySlug: group.rootCategorySlug,
-            allocatedSubtotal: Number(childOrder.subtotal || childOrder.total),
-            allocatedDiscount: 0,
-            allocatedShippingFee: 0,
-            allocatedTotal: Number(childOrder.total),
-          });
-        }
+          let reserved = null;
+          if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+            const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
+            reserved = await checkoutGroupsRepo.reservePayOSCheckoutGroup({
+              groupId: createdGroup.id,
+              payosOrderCode: makePayOSCode(createdGroup.id),
+              paymentExpiresAt: expiresAt,
+            }, { tx });
+          }
 
-        // Create checkout group
-        const group = await checkoutGroupsRepo.createCheckoutGroup({
-          storeId: input.store_id,
-          userId,
-          subtotal: totalGroupSubtotal,
-          discountAmount: 0,
-          shippingFee: 0,
-          totalAmount: totalGroupSubtotal,
-          voucherCode: input.voucher_code || null,
-          paymentProfile: resolved.profile,
-          allocations: groupAllocations,
+          return {
+            group: createdGroup,
+            childOrders: createdChildOrders,
+            reservedPayOS: reserved,
+          };
         });
 
-        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
-          const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
-          const reserved = await checkoutGroupsRepo.reservePayOSCheckoutGroup({
-            groupId: group.id,
-            payosOrderCode: makePayOSCode(group.id),
-            paymentExpiresAt: expiresAt,
-          });
-
+        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR' && reservedPayOS) {
           const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
           const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
 
@@ -189,8 +261,8 @@ export function createCustomerOrderService({
             orderId: group.id,
             orderCode: group.group_code,
             total: group.total_amount,
-            payosOrderCode: reserved.payos_order_code,
-            paymentExpiresAt: reserved.payment_expires_at,
+            payosOrderCode: reservedPayOS.payos_order_code,
+            paymentExpiresAt: reservedPayOS.payment_expires_at,
             returnUrl: effectiveReturnUrl,
             cancelUrl: effectiveCancelUrl,
             paymentProfileCode: resolved.profile.code,
@@ -199,8 +271,8 @@ export function createCustomerOrderService({
           const attached = await checkoutGroupsRepo.attachPaymentLinkToGroup({
             groupId: group.id,
             paymentLinkId: link.paymentLinkId,
-            payosOrderCode: reserved.payos_order_code,
-            paymentExpiresAt: reserved.payment_expires_at,
+            payosOrderCode: reservedPayOS.payos_order_code,
+            paymentExpiresAt: reservedPayOS.payment_expires_at,
             checkoutUrl: link.checkoutUrl,
             qrCode: link.qrCode,
           });

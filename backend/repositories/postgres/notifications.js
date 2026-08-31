@@ -108,6 +108,30 @@ export function createNotificationsRepository(database = postgresDb) {
       return rows;
     },
 
+    async fanOutToSuperAdmins({ type = 'system', title, body, link }, { tx } = {}) {
+      const executor = tx || database;
+      if (!title || !String(title).trim()) {
+        throw new NotificationRepositoryError('Tiêu đề thông báo không được để trống');
+      }
+
+      const [rows] = await executor.query(
+        `INSERT INTO notifications (user_id, type, title, body, link, is_read)
+         SELECT DISTINCT u.id, $1, $2, $3, $4, FALSE
+         FROM users u
+         WHERE u.is_admin = TRUE
+           AND u.is_active = TRUE
+           AND u.admin_role = 'super'
+         RETURNING id, user_id`,
+        [
+          type,
+          String(title).trim(),
+          body ? String(body).trim() : null,
+          link || null,
+        ],
+      );
+      return rows;
+    },
+
     async listForUser(userId, limit = 50) {
       const targetUserId = Number(userId);
       if (!Number.isInteger(targetUserId) || targetUserId <= 0) return [];

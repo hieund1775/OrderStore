@@ -1,5 +1,8 @@
 -- ==========================================================
 -- Rollback 0020_payment_profiles_and_grouped_checkout.rollback.sql
+-- CAUTION: Forward-only policy on Production environments.
+-- Do NOT execute this rollback on production databases with live payment group history.
+-- This rollback script is exclusively for clean test environments and local development.
 -- ==========================================================
 
 ALTER TABLE orders DROP COLUMN IF EXISTS receiver_account_holder;
