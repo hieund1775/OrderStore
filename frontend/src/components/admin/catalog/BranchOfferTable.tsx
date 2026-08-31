@@ -50,12 +50,14 @@ export type BranchOfferRow = {
 interface BranchOfferTableProps {
   offers: BranchOfferRow[];
   storeId?: number | string;
+  visibleCategoryIds?: number[];
   onRefresh: () => void;
 }
 
 export function BranchOfferTable({
   offers,
   storeId,
+  visibleCategoryIds,
   onRefresh,
 }: BranchOfferTableProps) {
   const [search, setSearch] = useState('');
@@ -70,6 +72,7 @@ export function BranchOfferTable({
   const [selectedVariantForLedger, setSelectedVariantForLedger] = useState<{ id: number; sku: string } | null>(null);
 
   const filtered = offers.filter((o) => {
+    if (visibleCategoryIds && !visibleCategoryIds.includes(Number(o.category_id))) return false;
     const term = search.toLowerCase();
     return (
       o.product_name.toLowerCase().includes(term) ||

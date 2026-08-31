@@ -45,7 +45,15 @@ function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
   return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
 }
 
-export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, cancelToken, idempotencyKey }) {
+export async function createOnlinePayOSOrder({
+  input,
+  userId,
+  cancelTokenHash,
+  cancelToken,
+  idempotencyKey,
+  rootCategoryId = null,
+  paymentProfile = null,
+}) {
   const requestHash = hashOrderRequest(input);
   let rawCancelToken = cancelToken;
   let tokenHash = cancelTokenHash;
@@ -54,7 +62,15 @@ export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, c
     tokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
   }
   const order = await ordersRepository.createPublicOrder({
-    input, userId, cancelTokenHash: tokenHash, cancelToken: rawCancelToken, idempotencyKey, requestHash, paymentProvider: 'payos',
+    input,
+    userId,
+    cancelTokenHash: tokenHash,
+    cancelToken: rawCancelToken,
+    idempotencyKey,
+    requestHash,
+    paymentProvider: 'payos',
+    rootCategoryId,
+    paymentProfile,
   });
   const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
   const reserved = await paymentsRepository.reservePayOSOrder({
@@ -90,6 +106,7 @@ export async function createOnlinePayOSOrder({ input, userId, cancelTokenHash, c
     paymentExpiresAt: reserved.payment_expires_at,
     returnUrl: effectiveReturnUrl,
     cancelUrl: effectiveCancelUrl,
+    paymentProfileCode: paymentProfile?.code || null,
   });
   if (!link.checkoutUrl && !link.qrCode) {
     const error = new Error('PayOS không trả về mã QR thanh toán');

@@ -1,9 +1,11 @@
 import { PayOS } from '@payos/node';
 import dotenv from 'dotenv';
+import { generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
 
 dotenv.config();
 
 let payOSInstance = null;
+const profileInstancesCache = new Map();
 
 function appendQueryParam(value, key, paramValue) {
   if (!value) return value;
@@ -20,26 +22,56 @@ export function setPayOSForTest(instance = null) {
   payOSInstance = instance;
 }
 
-export function isPayOSConfigured() {
-  const cid = process.env.PAYOS_CLIENT_ID?.trim();
-  const key = process.env.PAYOS_API_KEY?.trim();
-  const cs = process.env.PAYOS_CHECKSUM_KEY?.trim();
-  return Boolean(cid && key && cs);
+export function isPayOSConfigured(profileCode = null) {
+  if (profileCode) {
+    const envPrefix = generateEnvPrefix(profileCode);
+    const cid = process.env[`${envPrefix}_CLIENT_ID`]?.trim();
+    const key = process.env[`${envPrefix}_API_KEY`]?.trim();
+    const cs = process.env[`${envPrefix}_CHECKSUM_KEY`]?.trim();
+    if (cid && key && cs) return true;
+  }
+  const rootCid = process.env.PAYOS_CLIENT_ID?.trim();
+  const rootKey = process.env.PAYOS_API_KEY?.trim();
+  const rootCs = process.env.PAYOS_CHECKSUM_KEY?.trim();
+  return Boolean(rootCid && rootKey && rootCs);
 }
 
-export function getPayOS() {
-  if (!payOSInstance && isPayOSConfigured()) {
-    payOSInstance = new PayOS({
+export function getPayOS(profileCode = null) {
+  if (payOSInstance) return payOSInstance;
+
+  if (profileCode) {
+    const normalizedCode = String(profileCode).toUpperCase().trim();
+    if (profileInstancesCache.has(normalizedCode)) {
+      return profileInstancesCache.get(normalizedCode);
+    }
+
+    const envPrefix = generateEnvPrefix(normalizedCode);
+    const cid = process.env[`${envPrefix}_CLIENT_ID`]?.trim();
+    const key = process.env[`${envPrefix}_API_KEY`]?.trim();
+    const cs = process.env[`${envPrefix}_CHECKSUM_KEY`]?.trim();
+
+    if (cid && key && cs) {
+      const instance = new PayOS({ clientId: cid, apiKey: key, checksumKey: cs });
+      profileInstancesCache.set(normalizedCode, instance);
+      return instance;
+    }
+  }
+
+  // Fallback to default system PayOS instance
+  if (isPayOSConfigured()) {
+    const defaultInstance = new PayOS({
       clientId: process.env.PAYOS_CLIENT_ID.trim(),
       apiKey: process.env.PAYOS_API_KEY.trim(),
       checksumKey: process.env.PAYOS_CHECKSUM_KEY.trim(),
     });
+    return defaultInstance;
   }
-  return payOSInstance;
+
+  return null;
 }
 
 /**
- * Tạo link thanh toán PayOS cho đơn hàng
+ * Tạo link thanh toán PayOS cho đơn hàng (hoặc Grouped Checkout)
  */
 export async function createPaymentLinkForOrder({
   orderId,
@@ -49,18 +81,17 @@ export async function createPaymentLinkForOrder({
   returnUrl,
   cancelUrl,
   description,
+  paymentProfileCode = null,
 }) {
-  const instance = getPayOS();
+  const instance = getPayOS(paymentProfileCode);
   if (!instance) {
-    throw new Error('PayOS chưa được cấu hình (thiếu PAYOS_CLIENT_ID / API_KEY / CHECKSUM_KEY trong backend/.env)');
+    throw new Error(
+      `PayOS chưa được cấu hình cho profile "${paymentProfileCode || 'default'}" (thiếu CLIENT_ID / API_KEY / CHECKSUM_KEY)`,
+    );
   }
 
-  // orderCode cho PayOS phải là số nguyên dương và có giới hạn độ dài.
-  // Dùng 6 chữ số cuối timestamp + 4 chữ số cuối orderId → tương đương 10 chữ số để tránh vượt giới hạn API.
   const timePart = String(Date.now()).slice(-6);
-  const idPart = String(orderId % 10000).padStart(4, '0');
-  // PostgreSQL returns BIGINT columns as strings. PayOS requires orderCode
-  // to be a positive safe integer, so normalize it before calling the SDK.
+  const idPart = String((Number(orderId) || 1) % 10000).padStart(4, '0');
   const generatedOrderCode = Number(`${timePart}${idPart}`);
   const payosOrderCode = reservedPayosOrderCode == null
     ? generatedOrderCode
@@ -80,9 +111,6 @@ export async function createPaymentLinkForOrder({
     orderCode: payosOrderCode,
     amount: Math.round(total),
     description: desc,
-    // PayOS also appends its own `code`/`orderCode` query params. Preserve
-    // the application's order code under a separate key so the return page
-    // can load the correct order after a successful payment.
     returnUrl: appendQueryParam(rUrl, 'order_code', orderCode),
     cancelUrl: appendQueryParam(cUrl, 'order_code', orderCode),
     expiredAt: expiredAtSec,
@@ -107,12 +135,12 @@ export async function createPaymentLinkForOrder({
 }
 
 /**
- * Xác thực dữ liệu webhook từ PayOS
+ * Xác thực dữ liệu webhook từ PayOS (hỗ trợ xác thực theo Profile Snapshot)
  */
-export function verifyWebhookData(body) {
-  const instance = getPayOS();
+export function verifyWebhookData(body, { profileCode = null } = {}) {
+  const instance = getPayOS(profileCode);
   if (!instance) {
-    throw new Error('PayOS chưa được cấu hình');
+    throw new Error(`PayOS chưa được cấu hình cho profile "${profileCode || 'default'}"`);
   }
 
   if (typeof instance.webhooks?.verify === 'function') {
@@ -127,13 +155,12 @@ export function verifyWebhookData(body) {
 /**
  * Chủ động truy vấn trạng thái link thanh toán từ PayOS
  */
-export async function getPaymentLinkInformation(orderCode, paymentLinkId = null) {
-  const instance = getPayOS();
+export async function getPaymentLinkInformation(orderCode, paymentLinkId = null, profileCode = null) {
+  const instance = getPayOS(profileCode);
   if (!instance) return null;
 
   try {
     if (typeof instance.paymentRequests?.get === 'function') {
-      // PayOS Node v2 expects the paymentLinkId, not the numeric orderCode.
       const lookupId = paymentLinkId || orderCode;
       if (!lookupId) return null;
       return await instance.paymentRequests.get(String(lookupId));

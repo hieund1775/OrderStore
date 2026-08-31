@@ -672,3 +672,84 @@ export async function updateBranchCapability(
     body: JSON.stringify(data),
   });
 }
+
+export type PaymentProfile = {
+  id: number;
+  code: string;
+  display_name: string;
+  bank_name: string | null;
+  bank_bin: string | null;
+  account_number_masked: string;
+  account_holder: string | null;
+  env_prefix: string;
+  env_keys: {
+    client_id: string;
+    api_key: string;
+    checksum_key: string;
+  };
+  is_env_configured: boolean;
+  status: 'pending' | 'active' | 'disabled';
+  version: number;
+  assigned_categories: Array<{
+    category_id: number;
+    category_name: string;
+    category_slug: string;
+  }>;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchPaymentProfiles(status?: string): Promise<{ profiles: PaymentProfile[] }> {
+  const q = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiFetch<{ profiles: PaymentProfile[] }>(`/admin/payment-profiles${q}`);
+}
+
+export async function createPaymentProfile(data: {
+  code: string;
+  display_name: string;
+  bank_name?: string;
+  bank_bin?: string;
+  account_number?: string;
+  account_holder?: string;
+}): Promise<{ profile: PaymentProfile }> {
+  return apiFetch<{ profile: PaymentProfile }>('/admin/payment-profiles', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePaymentProfile(
+  id: number,
+  data: {
+    display_name?: string;
+    bank_name?: string;
+    bank_bin?: string;
+    account_number?: string;
+    account_holder?: string;
+    status?: 'pending' | 'active' | 'disabled';
+  },
+): Promise<{ profile: PaymentProfile }> {
+  return apiFetch<{ profile: PaymentProfile }>(`/admin/payment-profiles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function assignPaymentProfileToRoot(
+  profileId: number,
+  rootCategoryId: number,
+): Promise<{ mapping: any }> {
+  return apiFetch<{ mapping: any }>(`/admin/payment-profiles/${profileId}/assign-root`, {
+    method: 'POST',
+    body: JSON.stringify({ root_category_id: rootCategoryId }),
+  });
+}
+
+export async function unassignPaymentProfileFromRoot(
+  rootCategoryId: number,
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/admin/payment-profiles/assign-root/${rootCategoryId}`, {
+    method: 'DELETE',
+  });
+}
+

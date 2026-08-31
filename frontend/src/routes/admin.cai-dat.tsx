@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2, Users, History, Laptop } from "lucide-react";
+import { Loader2, Users, History, Laptop, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PaymentProfileManager } from "@/components/admin/payment-profiles/PaymentProfileManager";
 import {
   Table,
   TableBody,
@@ -21,10 +22,10 @@ import { fmtDateTime } from "@/lib/data";
 export const Route = createFileRoute("/admin/cai-dat")({
   head: () => ({
     meta: [
-      { title: "Tài khoản & Nhật ký | Admin Trà Trái Cây Tô" },
+      { title: "Tài khoản & Cài đặt | Admin Trà Trái Cây Tô" },
       {
         name: "description",
-        content: "Quản trị tài khoản nội bộ và nhật ký hoạt động hệ thống.",
+        content: "Quản trị tài khoản nội bộ, thanh toán và nhật ký hoạt động hệ thống.",
       },
       { name: "robots", content: "noindex" },
     ],
@@ -86,27 +87,38 @@ function SettingsPage() {
   return (
     <>
       <AdminPageHeader
-        title="Tài khoản & Nhật ký"
+        title="Tài khoản & Cài đặt"
         desc="Chỉ Super Admin có toàn quyền chỉnh sửa các mục dưới đây"
       />
 
-      <Tabs defaultValue="accounts">
-        <TabsList className="grid grid-cols-2 max-w-md w-full h-auto p-1.5 gap-1.5 rounded-2xl bg-muted/80">
+      <Tabs defaultValue="payment-profiles">
+        <TabsList className="grid grid-cols-3 max-w-xl w-full h-auto p-1.5 gap-1.5 rounded-2xl bg-muted/80">
+          <TabsTrigger
+            value="payment-profiles"
+            className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+          >
+            <CreditCard className="size-4 text-primary shrink-0" />
+            <span className="truncate">Kênh Thanh Toán</span>
+          </TabsTrigger>
           <TabsTrigger
             value="accounts"
             className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
           >
             <Users className="size-4 text-primary shrink-0" />
-            <span className="truncate">Tài khoản & Phân quyền</span>
+            <span className="truncate">Tài khoản</span>
           </TabsTrigger>
           <TabsTrigger
             value="logs"
             className="flex items-center justify-center gap-2 py-2.5 px-3 text-xs sm:text-sm font-semibold rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
           >
             <History className="size-4 text-primary shrink-0" />
-            <span className="truncate">Nhật ký hoạt động</span>
+            <span className="truncate">Nhật ký</span>
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="payment-profiles" className="mt-5">
+          <PaymentProfileManager />
+        </TabsContent>
 
         <TabsContent value="accounts" className="mt-5">
           <Card className="shadow-soft overflow-hidden">

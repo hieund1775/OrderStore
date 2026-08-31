@@ -289,4 +289,35 @@ test('option presets migration 0019 establishes presets, values and integrity tr
   assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS catalog_option_presets CASCADE'));
 });
 
+test('payment profiles migration 0020 establishes profiles, root mapping, checkout groups, and allocations', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0020_payment_profiles_and_grouped_checkout.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0020_payment_profiles_and_grouped_checkout.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS payment_profiles',
+    'chk_payment_profile_code_format',
+    'chk_payment_profile_status',
+    'CREATE TABLE IF NOT EXISTS category_payment_profiles',
+    'enforce_root_category_payment_profile',
+    'trg_enforce_root_category_payment_profile',
+    'CREATE TABLE IF NOT EXISTS checkout_groups',
+    'chk_checkout_group_payment_status',
+    'CREATE TABLE IF NOT EXISTS checkout_group_allocations',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_group_id',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_profile_code',
+    'LONG_GROUPED_CHECKOUT',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0020 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS checkout_group_allocations CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS checkout_groups CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS category_payment_profiles CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS payment_profiles CASCADE'));
+});
+
 

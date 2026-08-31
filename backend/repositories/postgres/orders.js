@@ -39,7 +39,17 @@ export function createOrdersRepository(
   const fulfillment = createFulfillmentRepository(database);
 
   return {
-    async createPublicOrder({ input, userId = null, cancelTokenHash = null, cancelToken = null, idempotencyKey, requestHash, paymentProvider = 'cod' }) {
+    async createPublicOrder({
+      input,
+      userId = null,
+      cancelTokenHash = null,
+      cancelToken = null,
+      idempotencyKey,
+      requestHash,
+      paymentProvider = 'cod',
+      rootCategoryId = null,
+      paymentProfile = null,
+    }) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
 
       return database.transaction(async (tx) => {
@@ -146,6 +156,13 @@ export function createOrdersRepository(
         const total = subtotal - discountAmount;
         const orderInstant = clock();
 
+        const profileId = paymentProfile?.id ? Number(paymentProfile.id) : null;
+        const profileCode = paymentProfile?.code || null;
+        const profileVersion = paymentProfile?.version ? Number(paymentProfile.version) : null;
+        const bankName = paymentProfile?.bank_name || null;
+        const accountNumber = paymentProfile?.account_number || null;
+        const accountHolder = paymentProfile?.account_holder || null;
+
         let order = null;
         const MAX_CODE_ATTEMPTS = 5;
         for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
@@ -155,13 +172,18 @@ export function createOrdersRepository(
             const [orders] = await tx.query(
               `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
                  payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
-                 delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-               RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider`,
+                 delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note,
+                 root_category_id, payment_profile_id, payment_profile_code, payment_profile_version,
+                 receiver_bank_name, receiver_account_number, receiver_account_holder)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+               RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider,
+                         root_category_id, payment_profile_code`,
               [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
                 input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
                 (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
-                input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null],
+                input.delivery_addr || null, input.voucher_code || null, discountAmount, Math.floor(total / 1000), subtotal, total, input.note || null,
+                rootCategoryId ? Number(rootCategoryId) : null, profileId, profileCode, profileVersion,
+                bankName, accountNumber, accountHolder],
             );
             order = orders[0];
             await tx.query('RELEASE SAVEPOINT order_code_attempt');

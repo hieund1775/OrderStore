@@ -27,6 +27,9 @@ function extractCustomerToken(req) {
  * Webhook PayOS tự động nhận báo tiền về
  * POST /api/payments/payos/webhook
  */
+import checkoutGroupsRepository from '../repositories/postgres/checkout-groups.js';
+import postgresDb from '../config/db-postgres.js';
+
 export async function handlePayOSWebhook(req, res) {
   // Test event từ PayOS Dashboard - chỉ cho phép ở môi trường không phải production
   if (process.env.NODE_ENV !== 'production' && (req.body?.data?.orderCode === 123 || req.body?.desc?.includes('ma giao dich thu'))) {
@@ -34,9 +37,33 @@ export async function handlePayOSWebhook(req, res) {
     return res.json({ ok: true, message: 'Test webhook ok' });
   }
 
+  const rawOrderCode = req.body?.data?.orderCode || req.body?.orderCode;
+  const rawLinkId = req.body?.data?.paymentLinkId || req.body?.paymentLinkId;
+
+  let snapshotProfileCode = null;
+  if (rawOrderCode || rawLinkId) {
+    try {
+      const [orderRows] = await postgresDb.query(
+        `SELECT payment_profile_code FROM orders WHERE payos_order_code = $1 OR payment_link_id = $2 LIMIT 1`,
+        [rawOrderCode || null, rawLinkId || null],
+      );
+      if (orderRows[0]?.payment_profile_code) {
+        snapshotProfileCode = orderRows[0].payment_profile_code;
+      } else {
+        const [groupRows] = await postgresDb.query(
+          `SELECT payment_profile_code FROM checkout_groups WHERE payos_order_code = $1 OR payment_link_id = $2 LIMIT 1`,
+          [rawOrderCode || null, rawLinkId || null],
+        );
+        if (groupRows[0]?.payment_profile_code) {
+          snapshotProfileCode = groupRows[0].payment_profile_code;
+        }
+      }
+    } catch {}
+  }
+
   let verifiedData;
   try {
-    verifiedData = verifyWebhookData(req.body);
+    verifiedData = verifyWebhookData(req.body, { profileCode: snapshotProfileCode });
   } catch (err) {
     console.error('❌ PayOS Webhook Invalid Signature:', err.message);
     const classified = classifyWebhookError({ type: 'INVALID_SIGNATURE', message: err.message });
@@ -55,6 +82,17 @@ export async function handlePayOSWebhook(req, res) {
   }
 
   try {
+    // Check if matching checkout group exists
+    const group = await checkoutGroupsRepository.findGroupByPayOSOrderCode(orderCode);
+    if (group) {
+      if (group.payment_status === 'paid') {
+        return res.json({ ok: true, message: 'Checkout group đã được xác nhận thanh toán từ trước' });
+      }
+      await checkoutGroupsRepository.markGroupPaid({ groupId: group.id, reference: reference || String(orderCode) });
+      console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán Checkout Group ${group.group_code} (${amount}đ)`);
+      return res.json({ ok: true, message: 'Thanh toán thành công' });
+    }
+
     const result = await paymentsRepository.processSuccessfulWebhook({
       eventKey: String(reference || paymentLinkId || orderCode),
       orderCode, amount: Number(amount), reference, paymentLinkId,

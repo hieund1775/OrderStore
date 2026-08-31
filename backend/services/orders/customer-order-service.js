@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { isPayOSConfigured } from '../payos.js';
+import { isPayOSConfigured, createPaymentLinkForOrder } from '../payos.js';
 import { validateOrderCreationInput, buildPublicLookupDto } from '../public-dto.js';
 import { evaluateOrderTransition } from '../order-transition-policy.js';
 import { buildPageInfo } from '../cursor-pagination.js';
@@ -7,9 +7,44 @@ import { batchLoadPostgresOrderDetails } from '../order-batch-loader.js';
 import { hashOrderRequest } from '../order-idempotency.js';
 import { OrderDomainError } from './order-errors.js';
 import defaultOrdersRepository from '../../repositories/postgres/orders.js';
-import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder } from '../online-payos-order.js';
+import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder, appendOrderCodeToUrl } from '../online-payos-order.js';
 import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
+import defaultCheckoutGroupsRepository from '../../repositories/postgres/checkout-groups.js';
 import { reconcilePayOSOrder } from '../payos-reconciliation.js';
+import {
+  resolvePaymentProfileForCart as defaultResolvePaymentProfile,
+  allocateVoucherDiscount,
+} from '../payment-profiles/payment-profile-resolver.js';
+import config from '../../config/env.js';
+
+function makePayOSCode(id) {
+  return Number(`${String(Date.now()).slice(-6)}${String(Number(id) % 10000).padStart(4, '0')}`);
+}
+
+function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
+  const candidate = requestedUrl || fallbackUrl;
+  const fallback = fallbackUrl || candidate;
+  let candidateUrl;
+  let fallbackUrlObject;
+  try {
+    candidateUrl = new URL(candidate);
+    fallbackUrlObject = new URL(fallback);
+  } catch {
+    const error = new Error('URL chuyển hướng PayOS không hợp lệ');
+    error.status = 400;
+    throw error;
+  }
+
+  const allowedOrigins = new Set(config.allowedOrigins);
+  allowedOrigins.add(fallbackUrlObject.origin);
+  if (!allowedOrigins.has(candidateUrl.origin)) {
+    const error = new Error('URL chuyển hướng PayOS không được cho phép');
+    error.status = 400;
+    throw error;
+  }
+
+  return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
+}
 
 export function createCustomerOrderService({
   repository = defaultOrdersRepository,
@@ -17,6 +52,8 @@ export function createCustomerOrderService({
   checkPayOSConfigured = isPayOSConfigured,
   batchLoader = batchLoadPostgresOrderDetails,
   paymentsRepository = defaultPaymentsRepository,
+  checkoutGroupsRepo = defaultCheckoutGroupsRepository,
+  resolvePaymentProfile = defaultResolvePaymentProfile,
 } = {}) {
   return {
     async create({ input, userId = null, idempotencyKey = '' }) {
@@ -76,6 +113,127 @@ export function createCustomerOrderService({
         cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
       }
 
+      // 1. Resolve Root Categories & Payment Profile for cart
+      const resolved = await resolvePaymentProfile({
+        storeId: input.store_id,
+        items: input.items,
+      });
+
+      // 2. Case A: Multi-industry Grouped Checkout
+      if (resolved.isGrouped) {
+        // Multi-industry cart: create child order per root category group and wrap in checkout_group
+        const childOrders = [];
+        const groupAllocations = [];
+        let totalGroupSubtotal = 0;
+
+        for (let i = 0; i < resolved.rootGroups.length; i++) {
+          const group = resolved.rootGroups[i];
+          const childInput = {
+            ...input,
+            items: group.items,
+            // Single voucher allocated pro-rata across child orders later
+            voucher_code: null,
+          };
+          const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${group.rootCategoryId}`;
+          const childOrder = await repository.createPublicOrder({
+            input: childInput,
+            userId,
+            cancelTokenHash,
+            cancelToken: rawCancelToken,
+            idempotencyKey: childIdempotencyKey,
+            requestHash: hashOrderRequest(childInput),
+            paymentProvider: payment_provider,
+            rootCategoryId: group.rootCategoryId,
+            paymentProfile: resolved.profile,
+          });
+
+          childOrders.push(childOrder);
+          totalGroupSubtotal += Number(childOrder.subtotal || childOrder.total);
+          groupAllocations.push({
+            orderId: childOrder.id,
+            rootCategoryId: group.rootCategoryId,
+            rootCategoryName: group.rootCategoryName,
+            rootCategorySlug: group.rootCategorySlug,
+            allocatedSubtotal: Number(childOrder.subtotal || childOrder.total),
+            allocatedDiscount: 0,
+            allocatedShippingFee: 0,
+            allocatedTotal: Number(childOrder.total),
+          });
+        }
+
+        // Create checkout group
+        const group = await checkoutGroupsRepo.createCheckoutGroup({
+          storeId: input.store_id,
+          userId,
+          subtotal: totalGroupSubtotal,
+          discountAmount: 0,
+          shippingFee: 0,
+          totalAmount: totalGroupSubtotal,
+          voucherCode: input.voucher_code || null,
+          paymentProfile: resolved.profile,
+          allocations: groupAllocations,
+        });
+
+        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+          const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
+          const reserved = await checkoutGroupsRepo.reservePayOSCheckoutGroup({
+            groupId: group.id,
+            payosOrderCode: makePayOSCode(group.id),
+            paymentExpiresAt: expiresAt,
+          });
+
+          const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
+          const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
+
+          const link = await createPaymentLinkForOrder({
+            orderId: group.id,
+            orderCode: group.group_code,
+            total: group.total_amount,
+            payosOrderCode: reserved.payos_order_code,
+            paymentExpiresAt: reserved.payment_expires_at,
+            returnUrl: effectiveReturnUrl,
+            cancelUrl: effectiveCancelUrl,
+            paymentProfileCode: resolved.profile.code,
+          });
+
+          const attached = await checkoutGroupsRepo.attachPaymentLinkToGroup({
+            groupId: group.id,
+            paymentLinkId: link.paymentLinkId,
+            payosOrderCode: reserved.payos_order_code,
+            paymentExpiresAt: reserved.payment_expires_at,
+            checkoutUrl: link.checkoutUrl,
+            qrCode: link.qrCode,
+          });
+
+          return {
+            ok: true,
+            is_grouped: true,
+            group_code: group.group_code,
+            checkout_url: link.checkoutUrl,
+            qr_code: link.qrCode,
+            payment_link_id: attached.payment_link_id,
+            payos_order_code: attached.payos_order_code,
+            payment_expires_at: attached.payment_expires_at,
+            total_amount: Number(group.total_amount),
+            child_orders: childOrders,
+            status: 'Đang chuẩn bị',
+          };
+        }
+
+        return {
+          ok: true,
+          is_grouped: true,
+          group_code: group.group_code,
+          total_amount: Number(group.total_amount),
+          child_orders: childOrders,
+          status: 'Đang chuẩn bị',
+        };
+      }
+
+      // 3. Case B: Single-industry Checkout
+      const rootCategoryId = resolved.rootCategory?.rootCategoryId || null;
+      const paymentProfile = resolved.profile;
+
       if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
         const payosOrder = await createPayOSOrder({
           input,
@@ -83,6 +241,8 @@ export function createCustomerOrderService({
           cancelTokenHash,
           cancelToken: rawCancelToken,
           idempotencyKey,
+          rootCategoryId,
+          paymentProfile,
         });
         return { ...payosOrder, status: 'Đang chuẩn bị' };
       }
@@ -95,6 +255,8 @@ export function createCustomerOrderService({
         idempotencyKey,
         requestHash: hashOrderRequest(input),
         paymentProvider: payment_provider,
+        rootCategoryId,
+        paymentProfile,
       });
       return { ...order, status: 'Đang chuẩn bị' };
     },
@@ -103,6 +265,15 @@ export function createCustomerOrderService({
       if (!code) {
         throw new OrderDomainError('Thiếu mã đơn', { status: 400, code: 'ORDER_LOOKUP_EMPTY', expose: true });
       }
+
+      // Support looking up by Group Code as well as Order Code
+      if (code.startsWith('GRP')) {
+        const group = await checkoutGroupsRepo.findGroupByCode(code);
+        if (group) {
+          return { group };
+        }
+      }
+
       const order = await repository.findPublicOrder(code);
       if (!order) {
         throw new OrderDomainError('Không tìm thấy đơn hàng', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
