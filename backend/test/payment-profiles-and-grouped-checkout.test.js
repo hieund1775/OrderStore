@@ -11,7 +11,7 @@ import { createCheckoutGroupsRepository, verifyGroupOwnership, generateGroupCode
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
 import { isPayOSConfigured, setPayOSForTest } from '../services/payos.js';
 
-describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 3)', () => {
+describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 4)', () => {
 
   // ═════════════════════════════════════════════════════════════════
   // Gate 1: RBAC & Canonical Role Enforcement ('super')
@@ -194,7 +194,6 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     const mockDb = {
       async query(sql, params) {
         if (sql.includes('FROM products p')) {
-          // Only returns product 101, missing product 102
           if (params[0].includes(102)) {
             return [[{ product_id: 101, product_name: 'Trà Sữa', price: 30000, category_id: 1, root_category_id: 1, root_category_name: 'Nước', root_category_slug: 'nuoc' }]];
           }
@@ -243,6 +242,45 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
   });
 
   // ═════════════════════════════════════════════════════════════════
+  // C3: DB failure during profile query must throw 500 without falling back to Long
+  // ═════════════════════════════════════════════════════════════════
+  it('C3: DB query error during profile lookup rethrows 500 and does NOT fallback to Long or log audit', async () => {
+    let auditLogInserted = false;
+    const mockDb = {
+      async query(sql) {
+        if (sql.includes('FROM products p')) {
+          return [[{ product_id: 101, product_name: 'Trà Sữa', price: 30000, category_id: 1, root_category_id: 1, root_category_name: 'Nước', root_category_slug: 'nuoc' }]];
+        }
+        if (sql.includes('INSERT INTO audit_logs')) {
+          auditLogInserted = true;
+          return [[]];
+        }
+        return [[]];
+      },
+    };
+
+    const brokenProfilesRepo = {
+      async getActiveProfileByRootCategoryId() {
+        throw new Error('Database pool connection refused ECONNREFUSED');
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await resolvePaymentProfileForCart({
+          storeId: 1,
+          items: [{ product_id: 101, qty: 1 }],
+          database: mockDb,
+          profilesRepo: brokenProfilesRepo,
+        });
+      },
+      (err) => err.message.includes('ECONNREFUSED'),
+    );
+
+    assert.equal(auditLogInserted, false);
+  });
+
+  // ═════════════════════════════════════════════════════════════════
   // R2 & R3: Group Ownership & QR Renew Security
   // ═════════════════════════════════════════════════════════════════
   it('R2 & R3: verifyGroupOwnership strictly enforces credentials for both registered users and guests', () => {
@@ -276,12 +314,13 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
   });
 
   // ═════════════════════════════════════════════════════════════════
-  // B4: Group Idempotency & PayOS Retry Resume Flow
+  // C2: Failure-First PayOS Creation and Retry with Same Idempotency Key
   // ═════════════════════════════════════════════════════════════════
-  it('B4: Group Idempotency resume returns active usable PayOS link without creating duplicate child orders', async () => {
+  it('C2: Initial PayOS failure does NOT get stuck in_progress; retry resumes exact group and returns usable link', async () => {
     let orderCreateCount = 0;
     let groupCreateCount = 0;
     let voucherConsumeCount = 0;
+    let renewCallCount = 0;
 
     const idempotencyStore = new Map();
 
@@ -344,7 +383,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         groupCreateCount++;
         return {
           id: 1,
-          group_code: 'GRP_IDEM_1',
+          group_code: 'GRP_FAIL_RETRY_1',
           total_amount: data.totalAmount,
           subtotal: data.subtotal,
           discount_amount: 0,
@@ -353,17 +392,18 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         };
       },
       async reservePayOSCheckoutGroup() {
-        return { payos_order_code: 999111, payment_expires_at: new Date(Date.now() + 900_000) };
+        return { payos_order_code: 999222, payment_expires_at: new Date(Date.now() + 900_000) };
       },
       async attachPaymentLinkToGroup() {
-        return { payment_link_id: 'link_111', payos_order_code: 999111, payment_expires_at: new Date() };
+        return { payment_link_id: 'link_222', payos_order_code: 999222, payment_expires_at: new Date() };
       },
       async renewGroupPayOSLink() {
+        renewCallCount++;
         return {
-          payment_checkout_url: 'https://payos.vn/gate/111',
-          payment_qr_code: 'qr_111',
-          payment_link_id: 'link_111',
-          payos_order_code: 999111,
+          payment_checkout_url: 'https://payos.vn/gate/222',
+          payment_qr_code: 'qr_222',
+          payment_link_id: 'link_222',
+          payos_order_code: 999222,
           payment_expires_at: new Date(),
         };
       },
@@ -407,31 +447,50 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         items: [{ product_id: 1, price: 50000, qty: 1 }, { product_id: 2, price: 50000, qty: 1 }],
       },
       userId: 123,
-      idempotencyKey: 'IDEM_PAYOS_KEY_123',
+      idempotencyKey: 'IDEM_FAILURE_FIRST_KEY',
     };
 
+    // 1. Initial attempt fails during PayOS link creation
+    setPayOSForTest({
+      paymentRequests: {
+        create: async () => {
+          throw new Error('PayOS gateway temporary outage 503');
+        },
+      },
+    });
+
+    await assert.rejects(
+      async () => {
+        await service.create(requestPayload);
+      },
+      (err) => err.status === 502 && err.message.includes('GRP_FAIL_RETRY_1'),
+    );
+
+    assert.equal(orderCreateCount, 2);
+    assert.equal(groupCreateCount, 1);
+
+    // 2. Retry with SAME idempotency key when PayOS is healthy
     setPayOSForTest({
       paymentRequests: {
         create: async () => ({
-          checkoutUrl: 'https://payos.vn/gate/111',
-          qrCode: 'qr_111',
-          paymentLinkId: 'link_111',
+          checkoutUrl: 'https://payos.vn/gate/222',
+          qrCode: 'qr_222',
+          paymentLinkId: 'link_222',
         }),
       },
     });
 
     try {
-      // First attempt creates group and orders
-      const res1 = await service.create(requestPayload);
-      assert.equal(res1.group_code, 'GRP_IDEM_1');
+      const retryResult = await service.create(requestPayload);
+      assert.equal(retryResult.replay, true);
+      assert.equal(retryResult.group_code, 'GRP_FAIL_RETRY_1');
+      assert.equal(retryResult.checkout_url, 'https://payos.vn/gate/222');
+      assert.equal(retryResult.qr_code, 'qr_222');
+
+      // Assert NO duplicate child orders or groups were created on retry
       assert.equal(orderCreateCount, 2);
       assert.equal(groupCreateCount, 1);
-
-      // Second attempt with same idempotency key: returns usable link without creating duplicate orders or groups
-      const res2 = await service.create(requestPayload);
-      assert.equal(res2.group_code, 'GRP_IDEM_1');
-      assert.equal(orderCreateCount, 2); // Unchanged!
-      assert.equal(groupCreateCount, 1); // Unchanged!
+      assert.equal(renewCallCount, 1);
     } finally {
       setPayOSForTest(null);
     }

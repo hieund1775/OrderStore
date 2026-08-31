@@ -25,17 +25,15 @@ export async function resolvePaymentProfileForCart({
     throw new PaymentResolverError('Giỏ hàng không có sản phẩm', 400);
   }
 
-  // Fallback system profile helper
+  // Fallback system profile helper (no silent DB catch)
   const getSystemLongProfile = async () => {
-    try {
-      let longProfile = await profilesRepo.getProfileByCode('LONG_GROUPED_CHECKOUT');
-      if (!longProfile) {
-        longProfile = await profilesRepo.getProfileByCode('DEFAULT_LONG');
-      }
-      if (longProfile) return longProfile;
-    } catch {}
+    let longProfile = await profilesRepo.getProfileByCode('LONG_GROUPED_CHECKOUT');
+    if (!longProfile) {
+      longProfile = await profilesRepo.getProfileByCode('DEFAULT_LONG');
+    }
+    if (longProfile) return longProfile;
 
-    // Ephemeral fallback object for system continuity
+    // Ephemeral fallback object for system continuity if DB row is not yet seeded
     return {
       id: null,
       code: 'LONG_GROUPED_CHECKOUT',
@@ -81,7 +79,7 @@ export async function resolvePaymentProfileForCart({
     });
   }
 
-  // 2. Group items by root category (strict fail-closed if product is not in database/unmapped)
+  // 2. Group items by root category (strict fail-closed if product is unmapped/missing in DB)
   const rootGroupsMap = new Map();
   for (const item of items) {
     const prodInfo = productMap.get(Number(item.product_id));
@@ -114,10 +112,7 @@ export async function resolvePaymentProfileForCart({
 
   // Case B: Cart belongs to exactly 1 root industry
   const singleRoot = rootGroups[0];
-  let mappedProfile = null;
-  try {
-    mappedProfile = await profilesRepo.getActiveProfileByRootCategoryId(singleRoot.rootCategoryId);
-  } catch {}
+  const mappedProfile = await profilesRepo.getActiveProfileByRootCategoryId(singleRoot.rootCategoryId);
 
   const isConfigured = mappedProfile ? isPayOSConfigured(mappedProfile.code) : false;
 
@@ -130,7 +125,10 @@ export async function resolvePaymentProfileForCart({
     };
   }
 
-  // Fallback to Long profile if unmapped, inactive, or missing ENV
+  // Fallback to Long profile ONLY for valid business conditions:
+  // 1. Root category has no profile mapped (mappedProfile == null)
+  // 2. Mapped profile is not active (status !== 'active')
+  // 3. Mapped profile is missing ENV (isConfigured == false)
   const reason = !mappedProfile
     ? 'chưa gán profile'
     : mappedProfile.status !== 'active'
