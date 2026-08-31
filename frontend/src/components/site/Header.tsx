@@ -58,6 +58,7 @@ import {
 } from '@/lib/api';
 import { brand, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
+import { CategoryMenu, MobileCategoryMenu } from '@/components/navigation';
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -623,10 +624,10 @@ export function Header() {
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [mobileCatOpen, setMobileCatOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const search = useRouterState({ select: (s) => s.location.search }) as { category?: string } | undefined;
+  const currentCategorySlug = search?.category;
   const categoryTreeQuery = usePublicCategoryTree();
   const categoryTree = categoryTreeQuery.data || [];
-
-  const rootCategories = categoryTree.filter((c) => Number(c.depth || 0) === 0 && !c.parent_id);
 
   return (
     <header className="bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
@@ -680,48 +681,19 @@ export function Header() {
                   aria-controls="mobile-category-navigation"
                   className="flex w-full items-center justify-between py-2 text-sm font-medium cursor-pointer hover:text-primary"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <FolderTree className="size-4 text-primary" /> Danh mục sản phẩm
-                  </span>
-                  <ChevronDown className={`size-4 transition-transform ${mobileCatOpen ? 'rotate-180' : ''}`} />
+                  <span>Danh mục sản phẩm</span>
+                  <ChevronDown className={`size-4 transition-transform ${mobileCatOpen ? 'rotate-180 text-primary' : ''}`} />
                 </button>
                 {mobileCatOpen && (
-                  <div id="mobile-category-navigation" className="pl-4 pb-2 space-y-2 text-xs">
-                    <Link
-                      to="/menu"
-                      search={(prev) => ({ ...prev, category: undefined, page: undefined })}
-                      onClick={() => setMobileSheetOpen(false)}
-                      className="block py-1 font-semibold text-primary hover:underline"
-                    >
-                      Tất cả sản phẩm
-                    </Link>
-                    {categoryTreeQuery.isLoading && (
-                      <p className="py-1 text-muted-foreground">Đang tải danh mục…</p>
-                    )}
-                    {categoryTreeQuery.isError && (
-                      <button
-                        type="button"
-                        className="py-1 font-semibold text-destructive hover:underline"
-                        onClick={() => void categoryTreeQuery.refetch()}
-                      >
-                        Tải lại danh mục
-                      </button>
-                    )}
-                    {categoryTreeQuery.isSuccess && rootCategories.length === 0 && (
-                      <p className="py-1 text-muted-foreground">Chưa có danh mục công khai.</p>
-                    )}
-                    {rootCategories.map((root) => (
-                      <div key={root.id} className="py-0.5">
-                        <Link
-                          to="/menu"
-                          search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
-                          onClick={() => setMobileSheetOpen(false)}
-                          className="block font-medium py-1 text-foreground hover:text-primary"
-                        >
-                          {root.name}
-                        </Link>
-                      </div>
-                    ))}
+                  <div id="mobile-category-navigation" className="pl-2 pb-2">
+                    <MobileCategoryMenu
+                      categoryTree={categoryTree}
+                      isLoading={categoryTreeQuery.isLoading}
+                      isError={categoryTreeQuery.isError}
+                      refetch={categoryTreeQuery.refetch}
+                      currentCategorySlug={currentCategorySlug}
+                      onNavigate={() => setMobileSheetOpen(false)}
+                    />
                   </div>
                 )}
               </div>
@@ -776,51 +748,15 @@ export function Header() {
             Giới thiệu
           </Link>
 
-          {/* Danh mục Dropdown trên Desktop */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={`hover:bg-accent rounded-full px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors flex items-center gap-1 cursor-pointer ${
-                  pathname.startsWith('/menu') ? 'bg-accent text-accent-foreground font-semibold' : ''
-                }`}
-              >
-                <span>Danh mục</span>
-                <ChevronDown className="size-3.5 opacity-60" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56 p-1.5">
-              <DropdownMenuItem asChild>
-                <Link to="/menu" search={(prev) => ({ ...prev, category: undefined, page: undefined })} className="font-bold flex items-center justify-between cursor-pointer">
-                  <span>Tất cả sản phẩm</span>
-                  <ChevronRight className="size-3.5 text-muted-foreground" />
-                </Link>
-              </DropdownMenuItem>
-              {rootCategories.length > 0 && <DropdownMenuSeparator />}
-              {categoryTreeQuery.isLoading && (
-                <DropdownMenuItem disabled>Đang tải danh mục…</DropdownMenuItem>
-              )}
-              {categoryTreeQuery.isError && (
-                <DropdownMenuItem onSelect={() => void categoryTreeQuery.refetch()}>
-                  Tải lại danh mục
-                </DropdownMenuItem>
-              )}
-              {categoryTreeQuery.isSuccess && rootCategories.length === 0 && (
-                <DropdownMenuItem disabled>Chưa có danh mục công khai</DropdownMenuItem>
-              )}
-              {rootCategories.map((root) => (
-                <DropdownMenuItem key={root.id} asChild className="cursor-pointer">
-                  <Link
-                    to="/menu"
-                    search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
-                    className="font-medium text-xs flex items-center justify-between"
-                  >
-                    <span>{root.name}</span>
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Danh mục Dropdown / Mega Menu trên Desktop */}
+          <CategoryMenu
+            categoryTree={categoryTree}
+            isLoading={categoryTreeQuery.isLoading}
+            isError={categoryTreeQuery.isError}
+            refetch={categoryTreeQuery.refetch}
+            currentCategorySlug={currentCategorySlug}
+            isMenuRouteActive={pathname.startsWith('/menu')}
+          />
 
           <Link
             to="/cua-hang"

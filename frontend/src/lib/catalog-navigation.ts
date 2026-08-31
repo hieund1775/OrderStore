@@ -20,8 +20,51 @@ export type CatalogCategoryLike = {
 };
 
 export function getRootCategories<T extends CatalogCategoryLike>(categories: T[]): T[] {
-  return categories.filter((category) => category.parent_id == null && category.depth === 0);
+  return categories.filter((category) => category.parent_id == null && Number(category.depth || 0) === 0);
 }
+
+export function getChildrenByParentId(
+  categories: PublicCategoryNode[],
+  parentId: number,
+): PublicCategoryNode[] {
+  const directMatch = categories.filter((cat) => Number(cat.parent_id) === Number(parentId));
+  if (directMatch.length > 0) return directMatch;
+  const parentNode = categories.find((cat) => Number(cat.id) === Number(parentId));
+  if (parentNode?.children && parentNode.children.length > 0) {
+    return parentNode.children;
+  }
+  return [];
+}
+
+export function shouldUseMegaMenu(categories: PublicCategoryNode[]): boolean {
+  if (!Array.isArray(categories) || categories.length === 0) return false;
+  const roots = getRootCategories(categories);
+  if (roots.length < 3) return false;
+
+  const rootsWithChildren = roots.filter((root) => {
+    if (Array.isArray(root.children) && root.children.length > 0) {
+      return true;
+    }
+    return getChildrenByParentId(categories, root.id).length > 0;
+  });
+
+  return roots.length >= 3 && rootsWithChildren.length >= 2;
+}
+
+export function isCategoryActive(slug: string, currentCategorySlug?: string): boolean {
+  if (!currentCategorySlug || !slug) return false;
+  return slug.trim().toLowerCase() === currentCategorySlug.trim().toLowerCase();
+}
+
+export function isRootCategoryActive(root: PublicCategoryNode, currentCategorySlug?: string): boolean {
+  if (!currentCategorySlug) return false;
+  if (isCategoryActive(root.slug, currentCategorySlug)) return true;
+  if (root.children && root.children.length > 0) {
+    return root.children.some((child) => isCategoryActive(child.slug, currentCategorySlug));
+  }
+  return false;
+}
+
 
 export function collectCategorySubtreeIds<T extends CatalogCategoryLike>(
   categories: T[],
