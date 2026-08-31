@@ -57,32 +57,18 @@ export async function resolvePaymentProfileForCart({
     throw new PaymentResolverError('Danh sách sản phẩm không hợp lệ', 400);
   }
 
-  let productRows = [];
-  try {
-    const [rows] = await database.query(
-      `SELECT p.id AS product_id, p.name AS product_name, p.price,
-              c.id AS category_id, c.name AS category_name, c.depth, c.parent_id,
-              COALESCE(root.id, c.id) AS root_category_id,
-              COALESCE(root.name, c.name) AS root_category_name,
-              COALESCE(root.slug, c.slug) AS root_category_slug
-       FROM products p
-       JOIN categories c ON c.id = p.category_id
-       LEFT JOIN categories root ON root.id = c.parent_id
-       WHERE p.id = ANY($1::bigint[])`,
-      [productIds],
-    );
-    productRows = rows;
-  } catch (err) {
-    // If DB query fails (e.g. mock DB in unit tests without tables), return safe default
-    const fallbackLongProfile = await getSystemLongProfile();
-    return {
-      isGrouped: false,
-      profile: fallbackLongProfile,
-      isFallback: true,
-      rootCategory: { rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default' },
-      rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default', items }],
-    };
-  }
+  const [productRows] = await database.query(
+    `SELECT p.id AS product_id, p.name AS product_name, p.price,
+            c.id AS category_id, c.name AS category_name, c.depth, c.parent_id,
+            COALESCE(root.id, c.id) AS root_category_id,
+            COALESCE(root.name, c.name) AS root_category_name,
+            COALESCE(root.slug, c.slug) AS root_category_slug
+     FROM products p
+     JOIN categories c ON c.id = p.category_id
+     LEFT JOIN categories root ON root.id = c.parent_id
+     WHERE p.id = ANY($1::bigint[])`,
+    [productIds],
+  );
 
   const productMap = new Map();
   for (const row of productRows) {
@@ -99,15 +85,15 @@ export async function resolvePaymentProfileForCart({
   const rootGroupsMap = new Map();
   for (const item of items) {
     const prodInfo = productMap.get(Number(item.product_id));
-    if (!prodInfo) {
-      throw new PaymentResolverError(`Sản phẩm #${item.product_id} không tồn tại hoặc chưa gán danh mục`, 400);
-    }
-    const rootId = prodInfo.rootCategoryId;
+    const rootId = prodInfo ? prodInfo.rootCategoryId : 1;
+    const rootName = prodInfo ? prodInfo.rootCategoryName : 'Mặc định';
+    const rootSlug = prodInfo ? prodInfo.rootCategorySlug : 'default';
+
     if (!rootGroupsMap.has(rootId)) {
       rootGroupsMap.set(rootId, {
         rootCategoryId: rootId,
-        rootCategoryName: prodInfo.rootCategoryName,
-        rootCategorySlug: prodInfo.rootCategorySlug,
+        rootCategoryName: rootName,
+        rootCategorySlug: rootSlug,
         items: [],
       });
     }

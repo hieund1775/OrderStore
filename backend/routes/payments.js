@@ -150,18 +150,25 @@ router.get('/payos/status', noCache, async (req, res) => {
     if (!code || typeof code !== 'string') return res.status(400).json({ error: 'Thiếu mã đơn code' });
 
     if (code.startsWith('GRP')) {
-      const group = await checkoutGroupsRepository.findGroupByCode(code);
-      if (!group) return res.status(404).json({ error: 'Không tìm thấy đơn hàng gộp' });
+      const decodedToken = extractCustomerToken(req);
+      const userId = decodedToken ? Number(decodedToken.id || decodedToken.sub) : null;
+      const rawCancelToken = (req.headers['x-cancel-token'] || req.query.cancel_token || '').trim() || null;
+
+      const groupDto = await checkoutGroupsRepository.findGroupForCustomerLookup(code, {
+        userId,
+        cancelToken: rawCancelToken,
+      });
+      if (!groupDto) return res.status(404).json({ error: 'Không tìm thấy đơn hàng gộp' });
       return res.json({
         order: {
-          order_code: group.group_code,
-          total: Number(group.total_amount),
-          payment_status: group.payment_status,
-          payment_provider: group.payment_provider,
-          payment_checkout_url: group.payment_checkout_url,
-          payment_qr_code: group.payment_qr_code,
-          payment_expires_at: group.payment_expires_at,
-          paid_at: group.paid_at,
+          order_code: groupDto.group_code,
+          total: Number(groupDto.total_amount),
+          payment_status: groupDto.payment_status,
+          payment_provider: groupDto.payment_provider,
+          payment_checkout_url: groupDto.payment_checkout_url,
+          payment_qr_code: groupDto.payment_qr_code,
+          payment_expires_at: groupDto.payment_expires_at,
+          paid_at: groupDto.paid_at || null,
         },
       });
     }
@@ -179,7 +186,8 @@ router.get('/payos/status', noCache, async (req, res) => {
     res.json({ order });
   } catch (err) {
     console.error('PayOS status lookup failed:', err.message);
-    res.status(500).json({ error: 'Không thể tra cứu trạng thái thanh toán lúc này' });
+    const status = err.status || (err.message.includes('quyền') ? 403 : 500);
+    res.status(status).json({ error: err.message || 'Không thể tra cứu trạng thái thanh toán lúc này' });
   }
 });
 

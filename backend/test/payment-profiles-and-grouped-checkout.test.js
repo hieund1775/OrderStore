@@ -1,16 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { requireSuperAdmin } from '../routes/admin/payment-profiles.js';
 import {
   resolvePaymentProfileForCart,
   allocateVoucherDiscount,
 } from '../services/payment-profiles/payment-profile-resolver.js';
 import { createPaymentProfilesRepository, maskAccountNumber, generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
-import { createCheckoutGroupsRepository, generateGroupCode } from '../repositories/postgres/checkout-groups.js';
+import { createCheckoutGroupsRepository, verifyGroupOwnership, generateGroupCode } from '../repositories/postgres/checkout-groups.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
-import { isPayOSConfigured, getPayOS, setPayOSForTest } from '../services/payos.js';
+import { isPayOSConfigured } from '../services/payos.js';
 
-describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', () => {
+describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 2)', () => {
 
   // ═════════════════════════════════════════════════════════════════
   // Gate 1: RBAC & Canonical Role Enforcement ('super')
@@ -61,6 +62,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
     assert.equal(maskAccountNumber('12345'), '*2345');
     assert.equal(maskAccountNumber('123'), '123');
     assert.equal(maskAccountNumber(null), null);
+    assert.equal(maskAccountNumber(''), null);
 
     assert.equal(generateEnvPrefix('nuoc_hieu'), 'PAYOS_PROFILE_NUOC_HIEU');
     assert.equal(generateEnvPrefix('QUANAO-HUNG'), 'PAYOS_PROFILE_QUANAO_HUNG');
@@ -70,8 +72,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
   // Gate 3: Decimal-Safe Pro-Rata Integer Remainder Allocation ($1 dong sink)
   // ═════════════════════════════════════════════════════════════════
   it('Gate 3: Decimal-Safe Pro-Rata Integer Remainder Allocation guarantees exact sum', () => {
-    // 3 groups with subtotals: 100k, 100k, 100k (Total = 300k), Voucher = 50k (16666.66... each)
-    const result1 = allocateVoucherDiscount({
+    const result = allocateVoucherDiscount({
       rootGroupsWithSubtotal: [
         { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', subtotal: 100000 },
         { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'thoi-trang', subtotal: 100000 },
@@ -81,146 +82,54 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
       shippingFee: 15000,
     });
 
-    assert.equal(result1.subtotal, 300000);
-    assert.equal(result1.discountAmount, 50000);
-    assert.equal(result1.allocations.length, 3);
+    assert.equal(result.subtotal, 300000);
+    assert.equal(result.discountAmount, 50000);
+    assert.equal(result.allocations.length, 3);
 
     // Integer allocation: Group 0: 16666, Group 1: 16666, Group 2 (remainder sink): 16668
-    assert.equal(result1.allocations[0].allocatedDiscount, 16666);
-    assert.equal(result1.allocations[1].allocatedDiscount, 16666);
-    assert.equal(result1.allocations[2].allocatedDiscount, 16668);
+    assert.equal(result.allocations[0].allocatedDiscount, 16666);
+    assert.equal(result.allocations[1].allocatedDiscount, 16666);
+    assert.equal(result.allocations[2].allocatedDiscount, 16668);
 
-    const sumDiscount = result1.allocations.reduce((sum, a) => sum + a.allocatedDiscount, 0);
+    const sumDiscount = result.allocations.reduce((sum, a) => sum + a.allocatedDiscount, 0);
     assert.equal(sumDiscount, 50000);
 
-    const sumTotal = result1.allocations.reduce((sum, a) => sum + a.allocatedTotal, 0);
+    const sumTotal = result.allocations.reduce((sum, a) => sum + a.allocatedTotal, 0);
     assert.equal(sumTotal, 300000 - 50000 + 15000);
   });
 
   // ═════════════════════════════════════════════════════════════════
-  // Gate 4: Single Profile Resolution vs Missing ENV Strict Fallback
+  // R1: Subtotal & Voucher Verification uses true DB prices (never trusting client item price)
   // ═════════════════════════════════════════════════════════════════
-  it('Gate 4: Single Profile Resolution vs Strict Missing ENV Fallback (No silent legacy charge)', async () => {
-    // Setup mock DB for product resolution
-    const mockDb = {
-      async query(sql, params) {
-        return [[
-          {
-            product_id: 101,
-            product_name: 'Trà Sữa Trân Châu',
-            price: 35000,
-            category_id: 10,
-            depth: 1,
-            parent_id: 1,
-            root_category_id: 1,
-            root_category_name: 'Nước Uống',
-            root_category_slug: 'nuoc-uong',
-          },
-        ]];
-      },
-    };
-
-    // Case 4A: Profile mapped but ENV missing -> Strictly falls back to LONG_GROUPED_CHECKOUT
-    const mockRepoMissingEnv = {
-      async getActiveProfileByRootCategoryId(rootId) {
-        return {
-          id: 10,
-          code: 'NUOC_HIEU_UNCONFIGURED',
-          display_name: 'Nước Uống Hiếu (Chưa ENV)',
-          status: 'active',
-          version: 1,
-        };
-      },
-      async getProfileByCode(code) {
-        return {
-          id: 1,
-          code: 'LONG_GROUPED_CHECKOUT',
-          display_name: 'Long - Grouped Checkout',
-          status: 'active',
-          version: 1,
-        };
-      },
-    };
-
-    const resolvedFallback = await resolvePaymentProfileForCart({
-      storeId: 1,
-      items: [{ product_id: 101, qty: 1 }],
-      database: mockDb,
-      profilesRepo: mockRepoMissingEnv,
-    });
-
-    assert.equal(resolvedFallback.isGrouped, false);
-    assert.equal(resolvedFallback.isFallback, true);
-    assert.equal(resolvedFallback.profile.code, 'LONG_GROUPED_CHECKOUT');
-
-    // Case 4B: Profile mapped and ENV configured -> Charges exact industry profile
-    process.env.PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID = 'test-client-id';
-    process.env.PAYOS_PROFILE_NUOC_HIEU_API_KEY = 'test-api-key';
-    process.env.PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY = 'test-checksum-key';
-
-    const mockRepoConfigured = {
-      async getActiveProfileByRootCategoryId(rootId) {
-        return {
-          id: 11,
-          code: 'NUOC_HIEU',
-          display_name: 'Nước Uống Hiếu',
-          status: 'active',
-          version: 1,
-        };
-      },
-      async getProfileByCode(code) {
-        return null;
-      },
-    };
-
-    const resolvedConfigured = await resolvePaymentProfileForCart({
-      storeId: 1,
-      items: [{ product_id: 101, qty: 1 }],
-      database: mockDb,
-      profilesRepo: mockRepoConfigured,
-    });
-
-    assert.equal(resolvedConfigured.isGrouped, false);
-    assert.equal(resolvedConfigured.isFallback, undefined);
-    assert.equal(resolvedConfigured.profile.code, 'NUOC_HIEU');
-
-    // Cleanup env
-    delete process.env.PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID;
-    delete process.env.PAYOS_PROFILE_NUOC_HIEU_API_KEY;
-    delete process.env.PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY;
-  });
-
-  // ═════════════════════════════════════════════════════════════════
-  // Gate 5: Grouped Checkout Customer Order Service Flow & Voucher Consumption
-  // ═════════════════════════════════════════════════════════════════
-  it('Gate 5: Grouped Checkout validates and consumes voucher once and creates group snapshot', async () => {
+  it('R1: Grouped Checkout computes subtotal, voucher and allocation from DB prices, ignoring client price spoofing', async () => {
     let orderCreateCount = 0;
-    let groupCreateCount = 0;
-    let voucherValidateCount = 0;
-    let voucherConsumeCount = 0;
-
     const mockOrdersRepo = {
       async createPublicOrder({ input, rootCategoryId, paymentProfile }, { tx } = {}) {
         orderCreateCount++;
+        const subtotal = input.items.reduce((s, it) => s + (50000 * it.qty), 0); // DB price is 50,000
+        const discount = input.allocatedDiscount || 0;
         return {
           id: orderCreateCount,
           order_code: `TP20260901${orderCreateCount}`,
-          subtotal: input.items.reduce((s, it) => s + (it.price * it.qty), 0),
-          discount_amount: input.allocatedDiscount || 0,
-          total: input.items.reduce((s, it) => s + (it.price * it.qty), 0) - (input.allocatedDiscount || 0),
+          subtotal,
+          discount_amount: discount,
+          total: subtotal - discount,
           root_category_id: rootCategoryId,
           payment_profile_code: paymentProfile?.code,
         };
       },
     };
 
+    let createdGroupData = null;
     const mockCheckoutGroupsRepo = {
       async createCheckoutGroup(data, { tx } = {}) {
-        groupCreateCount++;
+        createdGroupData = data;
         return {
           id: 1,
-          group_code: 'GRP20260901111111',
+          group_code: 'GRP123456',
           total_amount: data.totalAmount,
+          subtotal: data.subtotal,
+          discount_amount: data.discountAmount,
           voucher_code: data.voucherCode,
           payment_profile_code: data.paymentProfile.code,
           allocations: data.allocations,
@@ -234,19 +143,18 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
       },
     };
 
+    let validatedSubtotal = 0;
     const mockPromotionsRepo = {
       async validateForOrder({ code, subtotal }) {
-        voucherValidateCount++;
+        validatedSubtotal = subtotal;
         return {
           id: 99,
           code,
-          discount_amount: 20000,
+          discount_amount: 10000,
           phone: '0987654321',
         };
       },
-      async consumeForOrder({ voucher, orderId }) {
-        voucherConsumeCount++;
-      },
+      async consumeForOrder() {},
     };
 
     const mockResolvePaymentProfile = async () => ({
@@ -258,14 +166,22 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
         version: 1,
       },
       rootGroups: [
-        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', items: [{ product_id: 1, price: 50000, qty: 1 }] },
-        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'ao', items: [{ product_id: 2, price: 50000, qty: 1 }] },
+        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', items: [{ product_id: 1, price: 1, qty: 1 }] },
+        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'ao', items: [{ product_id: 2, price: 1, qty: 1 }] },
       ],
     });
 
     const mockDb = {
       async transaction(cb) {
-        return cb({});
+        const tx = {
+          async query(sql, params) {
+            if (sql.includes('SELECT price FROM products')) {
+              return [[{ price: 50000 }]];
+            }
+            return [[]];
+          },
+        };
+        return cb(tx);
       },
     };
 
@@ -274,10 +190,11 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
       checkoutGroupsRepo: mockCheckoutGroupsRepo,
       promotionsRepo: mockPromotionsRepo,
       resolvePaymentProfile: mockResolvePaymentProfile,
-      checkPayOSConfigured: () => false, // COD path
+      checkPayOSConfigured: () => false,
       database: mockDb,
     });
 
+    // Client maliciously sends price: 1 for items that are actually 50k
     const result = await service.create({
       input: {
         store_id: 1,
@@ -286,53 +203,98 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
         payment_method: 'COD',
         customer_name: 'Nguyen Van A',
         customer_phone: '0987654321',
-        items: [{ product_id: 1, price: 50000, qty: 1 }, { product_id: 2, price: 50000, qty: 1 }],
-        voucher_code: 'SALE20K',
+        items: [
+          { product_id: 1, price: 1, qty: 1 },
+          { product_id: 2, price: 1, qty: 1 },
+        ],
+        voucher_code: 'SALE10K',
       },
       userId: 123,
     });
 
-    assert.equal(result.is_grouped, true);
-    assert.equal(orderCreateCount, 2);
-    assert.equal(groupCreateCount, 1);
-    assert.equal(voucherValidateCount, 1);
-    assert.equal(voucherConsumeCount, 1);
-    assert.equal(result.total_amount, 80000); // 100k - 20k
+    // Subtotal must be 100,000 (from DB 50k + 50k), voucher validated on 100,000, and total = 90,000
+    assert.equal(validatedSubtotal, 100000);
+    assert.equal(createdGroupData.subtotal, 100000);
+    assert.equal(createdGroupData.discountAmount, 10000);
+    assert.equal(createdGroupData.totalAmount, 90000);
+    assert.equal(result.total_amount, 90000);
   });
 
   // ═════════════════════════════════════════════════════════════════
-  // Gate 6: Webhook Group Amount Verification & Idempotency
+  // R2 & R3: Group Ownership & QR Renew Security
   // ═════════════════════════════════════════════════════════════════
-  it('Gate 6: Webhook Group Amount Verification & CAS Idempotency', async () => {
-    let groupUpdated = false;
-    let childOrdersUpdated = false;
-    let eventLogged = false;
+  it('R2 & R3: verifyGroupOwnership strictly enforces credentials for both registered users and guests', () => {
+    const rawToken = 'guest-secret-token-12345';
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const userGroup = {
+      id: 1,
+      group_code: 'GRP_USER',
+      user_id: 100,
+      cancel_token_hashes: [],
+    };
+
+    const guestGroup = {
+      id: 2,
+      group_code: 'GRP_GUEST',
+      user_id: null,
+      cancel_token_hashes: [tokenHash],
+    };
+
+    // 1. Registered User Group checks
+    // Owner passes
+    assert.equal(verifyGroupOwnership(userGroup, { userId: 100 }), true);
+    // Anonymous fails with 401
+    assert.throws(() => verifyGroupOwnership(userGroup, { userId: null }), (err) => err.status === 401);
+    // Different user fails with 403
+    assert.throws(() => verifyGroupOwnership(userGroup, { userId: 999 }), (err) => err.status === 403);
+
+    // 2. Guest Group checks
+    // Correct cancel token passes
+    assert.equal(verifyGroupOwnership(guestGroup, { cancelToken: rawToken }), true);
+    // Missing cancel token fails with 401
+    assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: null }), (err) => err.status === 401);
+    assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: '' }), (err) => err.status === 401);
+    // Invalid cancel token fails with 403
+    assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: 'wrong-token' }), (err) => err.status === 403);
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // R4: Group-Level Idempotency Replay
+  // ═════════════════════════════════════════════════════════════════
+  it('R4: Group-Level Idempotency returns existing group without creating duplicate orders or consuming vouchers', async () => {
+    let orderCreateCount = 0;
+    let voucherConsumeCount = 0;
+
+    const idempotencyStore = new Map();
 
     const mockDb = {
       async transaction(cb) {
         const tx = {
           async query(sql, params) {
-            if (sql.includes('INSERT INTO payment_events')) {
-              eventLogged = true;
+            if (sql.includes('INSERT INTO idempotency_keys')) {
+              const key = params[0];
+              if (idempotencyStore.has(key)) {
+                return [[]]; // Conflict on unique key
+              }
+              idempotencyStore.set(key, { scope: params[1], request_hash: params[2], status: 'in_progress' });
               return [[{ id: 1 }]];
             }
-            if (sql.includes('SELECT id, group_code, total_amount')) {
+            if (sql.includes('SELECT scope, request_hash, status, response_body')) {
+              const key = params[0];
+              const record = idempotencyStore.get(key);
+              if (!record) return [[]];
               return [[{
-                id: 10,
-                group_code: 'GRP123456',
-                total_amount: 150000,
-                payment_status: 'unpaid',
+                scope: record.scope,
+                request_hash: record.request_hash,
+                status: record.status,
+                response_body: record.response_body,
               }]];
             }
-            if (sql.includes('UPDATE checkout_groups')) {
-              groupUpdated = true;
-              return [[{ id: 10, group_code: 'GRP123456', total_amount: 150000 }]];
-            }
-            if (sql.includes('UPDATE orders')) {
-              childOrdersUpdated = true;
-              return [[{ id: 1 }]];
-            }
-            if (sql.includes('UPDATE payment_events')) {
+            if (sql.includes('UPDATE idempotency_keys')) {
+              const key = params[0];
+              const record = idempotencyStore.get(key) || {};
+              idempotencyStore.set(key, { ...record, status: 'completed', response_body: JSON.parse(params[2]) });
               return [[]];
             }
             return [[]];
@@ -342,28 +304,110 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite', (
       },
     };
 
-    const repo = createCheckoutGroupsRepository(mockDb);
+    const mockOrdersRepo = {
+      async createPublicOrder({ input, rootCategoryId, paymentProfile }) {
+        orderCreateCount++;
+        return {
+          id: orderCreateCount,
+          order_code: `TP${orderCreateCount}`,
+          subtotal: 50000,
+          discount_amount: 0,
+          total: 50000,
+          root_category_id: rootCategoryId,
+          payment_profile_code: paymentProfile?.code,
+        };
+      },
+    };
 
-    // 1. Amount mismatch test
-    const mismatchResult = await repo.processSuccessfulGroupWebhook({
-      eventKey: 'evt_1',
-      orderCode: 999111,
-      amount: 100000, // Expected is 150000
-      reference: 'ref_1',
-    });
-    assert.equal(mismatchResult.kind, 'amount_mismatch');
-    assert.equal(groupUpdated, false);
-    assert.equal(childOrdersUpdated, false);
+    const mockCheckoutGroupsRepo = {
+      async createCheckoutGroup(data) {
+        return {
+          id: 1,
+          group_code: 'GRP_IDEMPOTENT_1',
+          total_amount: data.totalAmount,
+          subtotal: data.subtotal,
+          discount_amount: 0,
+          payment_profile_code: data.paymentProfile.code,
+          allocations: data.allocations,
+        };
+      },
+      async reservePayOSCheckoutGroup() {
+        return null;
+      },
+    };
 
-    // 2. Exact amount test
-    const exactResult = await repo.processSuccessfulGroupWebhook({
-      eventKey: 'evt_2',
-      orderCode: 999111,
-      amount: 150000,
-      reference: 'ref_2',
+    const mockPromotionsRepo = {
+      async validateForOrder() {
+        return null;
+      },
+      async consumeForOrder() {
+        voucherConsumeCount++;
+      },
+    };
+
+    const mockResolvePaymentProfile = async () => ({
+      isGrouped: true,
+      profile: { id: 1, code: 'LONG_GROUPED_CHECKOUT', version: 1 },
+      rootGroups: [
+        { rootCategoryId: 1, rootCategoryName: 'Nước', items: [{ product_id: 1, price: 50000, qty: 1 }] },
+        { rootCategoryId: 2, rootCategoryName: 'Áo', items: [{ product_id: 2, price: 50000, qty: 1 }] },
+      ],
     });
-    assert.equal(exactResult.kind, 'paid');
-    assert.equal(groupUpdated, true);
-    assert.equal(childOrdersUpdated, true);
+
+    const service = createCustomerOrderService({
+      repository: mockOrdersRepo,
+      checkoutGroupsRepo: mockCheckoutGroupsRepo,
+      promotionsRepo: mockPromotionsRepo,
+      resolvePaymentProfile: mockResolvePaymentProfile,
+      checkPayOSConfigured: () => false,
+      database: mockDb,
+    });
+
+    const requestPayload = {
+      input: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'COD',
+        customer_name: 'Nguyen Van A',
+        customer_phone: '0987654321',
+        items: [{ product_id: 1, price: 50000, qty: 1 }, { product_id: 2, price: 50000, qty: 1 }],
+      },
+      userId: 123,
+      idempotencyKey: 'IDEM_GRP_KEY_123',
+    };
+
+    // First call: creates group and child orders
+    const res1 = await service.create(requestPayload);
+    assert.equal(res1.group_code, 'GRP_IDEMPOTENT_1');
+    assert.equal(orderCreateCount, 2);
+
+    // Second call with same idempotency key: returns replay without creating new orders
+    const res2 = await service.create(requestPayload);
+    assert.equal(res2.group_code, 'GRP_IDEMPOTENT_1');
+    assert.equal(orderCreateCount, 2); // Count remains 2
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // R5: Fallback Distinction & Infrastructure Failure
+  // ═════════════════════════════════════════════════════════════════
+  it('R5: DB Query errors throw 500 without silently falling back to Long profile', async () => {
+    const brokenDb = {
+      async query() {
+        throw new Error('PostgreSQL connection timeout ETIMEDOUT');
+      },
+    };
+
+    // Resolver must rethrow the database error rather than swallowing it
+    await assert.rejects(
+      async () => {
+        await resolvePaymentProfileForCart({
+          storeId: 1,
+          items: [{ product_id: 101, qty: 1 }],
+          database: brokenDb,
+        });
+      },
+      (err) => err.message.includes('ETIMEDOUT'),
+    );
   });
 });

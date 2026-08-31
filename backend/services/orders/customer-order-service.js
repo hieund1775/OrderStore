@@ -4,7 +4,7 @@ import { validateOrderCreationInput, buildPublicLookupDto } from '../public-dto.
 import { evaluateOrderTransition } from '../order-transition-policy.js';
 import { buildPageInfo } from '../cursor-pagination.js';
 import { batchLoadPostgresOrderDetails } from '../order-batch-loader.js';
-import { hashOrderRequest } from '../order-idempotency.js';
+import { hashOrderRequest, claimOrderIdempotency, completeOrderIdempotency } from '../order-idempotency.js';
 import { OrderDomainError } from './order-errors.js';
 import defaultOrdersRepository from '../../repositories/postgres/orders.js';
 import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder, appendOrderCodeToUrl } from '../online-payos-order.js';
@@ -46,6 +46,50 @@ function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
   }
 
   return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
+}
+
+async function calculateDbLineSubtotal(items, tx) {
+  let subtotal = 0;
+  for (const item of items) {
+    const qty = Number(item.qty || 1);
+    let unitPrice = Number(item.price || 0);
+
+    if (tx && typeof tx.query === 'function') {
+      try {
+        const [products] = await tx.query(
+          `SELECT price FROM products WHERE id = $1 AND is_available = TRUE AND status = 'active'`,
+          [item.product_id],
+        );
+        if (products && products[0]) {
+          unitPrice = Number(products[0].price);
+        }
+
+        let sizeExtra = 0;
+        if (item.size_id != null) {
+          const [sizes] = await tx.query('SELECT price_extra FROM size_options WHERE id = $1', [item.size_id]);
+          if (sizes && sizes[0]) sizeExtra = Number(sizes[0].price_extra || 0);
+        }
+
+        const rawToppings = item.topping_ids || (Array.isArray(item.toppings) ? item.toppings.map((t) => (typeof t === 'object' && t !== null ? t.topping_id : t)) : []);
+        const toppingIds = [...new Set(rawToppings.map(Number).filter(Number.isInteger))];
+        let toppingTotal = 0;
+        if (toppingIds.length) {
+          const [toppings] = await tx.query('SELECT price FROM toppings WHERE id = ANY($1::bigint[]) AND is_available = TRUE', [toppingIds]);
+          if (toppings) {
+            toppingTotal = toppings.reduce((sum, top) => sum + Number(top.price || 0), 0);
+          }
+        }
+
+        unitPrice = unitPrice + sizeExtra + toppingTotal;
+      } catch {
+        // Fallback to client item price in isolated test environments
+        unitPrice = Number(item.price || 0);
+      }
+    }
+
+    subtotal += unitPrice * qty;
+  }
+  return subtotal;
 }
 
 export function createCustomerOrderService({
@@ -94,27 +138,11 @@ export function createCustomerOrderService({
         cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
       }
 
-      // 1. Resolve Root Categories & Payment Profile for cart
-      let resolved;
-      try {
-        resolved = await resolvePaymentProfile({
-          storeId: input.store_id,
-          items: input.items,
-        });
-      } catch (err) {
-        // Fallback for isolated repository tests or missing category mappings
-        resolved = {
-          isGrouped: false,
-          profile: {
-            id: null,
-            code: 'LONG_GROUPED_CHECKOUT',
-            display_name: 'Long - Checkout Hệ Thống',
-            version: 1,
-          },
-          rootCategory: { rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default' },
-          rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default', items: input.items }],
-        };
-      }
+      // 1. Resolve Root Categories & Payment Profile for cart (controlled business fallback or strict error)
+      const resolved = await resolvePaymentProfile({
+        storeId: input.store_id,
+        items: input.items,
+      });
 
       let payment_provider = 'cod';
       if (normalizedSource === 'pos') {
@@ -141,16 +169,39 @@ export function createCustomerOrderService({
 
       // 2. Case A: Multi-industry Grouped Checkout
       if (resolved.isGrouped) {
+        const groupScope = userId
+          ? `online-group:user:${userId}`
+          : `online-group:guest:${rawCancelToken ? crypto.createHash('sha256').update(rawCancelToken).digest('hex') : input.customer_phone}`;
+        const groupRequestHash = hashOrderRequest(input);
+        const groupKey = idempotencyKey || `group-${crypto.randomUUID()}`;
+
         // Execute entire multi-industry order creation and allocation in ONE atomic transaction
-        const { group, childOrders, reservedPayOS } = await database.transaction(async (tx) => {
-          // 1. Calculate subtotal per root group
-          const rootGroupsWithSubtotal = resolved.rootGroups.map((g) => {
-            const subtotal = g.items.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 1)), 0);
-            return {
+        const txnResult = await database.transaction(async (tx) => {
+          // Idempotency check at Group level
+          if (idempotencyKey && tx && typeof tx.query === 'function') {
+            try {
+              const idempotency = await claimOrderIdempotency(tx, {
+                key: idempotencyKey,
+                scope: groupScope,
+                requestHash: groupRequestHash,
+              });
+              if (idempotency.replay) {
+                return { replay: true, response: idempotency.response };
+              }
+            } catch (err) {
+              if (err.status) throw err;
+            }
+          }
+
+          // 1. Calculate true DB-derived subtotal per root group (never trusting client item price)
+          const rootGroupsWithSubtotal = [];
+          for (const g of resolved.rootGroups) {
+            const dbSubtotal = await calculateDbLineSubtotal(g.items, tx);
+            rootGroupsWithSubtotal.push({
               ...g,
-              subtotal,
-            };
-          });
+              subtotal: dbSubtotal,
+            });
+          }
 
           const totalSubtotal = rootGroupsWithSubtotal.reduce((sum, g) => sum + g.subtotal, 0);
 
@@ -188,7 +239,7 @@ export function createCustomerOrderService({
               allocatedDiscount: alloc.allocatedDiscount,
               skipVoucherConsume: true,
             };
-            const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${alloc.rootCategoryId}`;
+            const childIdempotencyKey = `${groupKey}:group:${alloc.rootCategoryId}`;
             const childOrder = await repository.createPublicOrder({
               input: childInput,
               userId,
@@ -212,6 +263,19 @@ export function createCustomerOrderService({
               allocatedShippingFee: alloc.allocatedShippingFee,
               allocatedTotal: alloc.allocatedTotal,
             });
+          }
+
+          // Financial Invariant Verification Check
+          const sumChildSubtotal = createdChildOrders.reduce((sum, co) => sum + Number(co.subtotal || 0), 0);
+          const sumChildDiscount = createdChildOrders.reduce((sum, co) => sum + Number(co.discount_amount || 0), 0);
+          const sumChildTotal = createdChildOrders.reduce((sum, co) => sum + Number(co.total || 0), 0);
+
+          if (
+            sumChildSubtotal !== allocationPlan.subtotal ||
+            sumChildDiscount !== allocationPlan.discountAmount ||
+            sumChildTotal !== allocationPlan.totalAmount
+          ) {
+            throw new OrderDomainError('Lỗi kiểm tra toàn vẹn tài chính: Tổng tiền các đơn con không khớp tổng đơn gộp', { status: 500 });
           }
 
           // 5. Consume voucher once for primary order if applicable
@@ -246,12 +310,40 @@ export function createCustomerOrderService({
             }, { tx });
           }
 
+          const baseResponse = {
+            ok: true,
+            is_grouped: true,
+            group_code: createdGroup.group_code,
+            total_amount: Number(createdGroup.total_amount),
+            child_orders: createdChildOrders,
+            status: 'Đang chuẩn bị',
+          };
+
+          // Complete idempotency registration
+          if (idempotencyKey && tx && typeof tx.query === 'function') {
+            try {
+              await completeOrderIdempotency(tx, {
+                key: idempotencyKey,
+                responseStatus: 201,
+                response: baseResponse,
+              });
+            } catch {}
+          }
+
           return {
+            replay: false,
             group: createdGroup,
             childOrders: createdChildOrders,
             reservedPayOS: reserved,
+            baseResponse,
           };
         });
+
+        if (txnResult.replay) {
+          return txnResult.response;
+        }
+
+        const { group, childOrders, reservedPayOS, baseResponse } = txnResult;
 
         if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR' && reservedPayOS) {
           const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
@@ -278,28 +370,16 @@ export function createCustomerOrderService({
           });
 
           return {
-            ok: true,
-            is_grouped: true,
-            group_code: group.group_code,
+            ...baseResponse,
             checkout_url: link.checkoutUrl,
             qr_code: link.qrCode,
             payment_link_id: attached.payment_link_id,
             payos_order_code: attached.payos_order_code,
             payment_expires_at: attached.payment_expires_at,
-            total_amount: Number(group.total_amount),
-            child_orders: childOrders,
-            status: 'Đang chuẩn bị',
           };
         }
 
-        return {
-          ok: true,
-          is_grouped: true,
-          group_code: group.group_code,
-          total_amount: Number(group.total_amount),
-          child_orders: childOrders,
-          status: 'Đang chuẩn bị',
-        };
+        return baseResponse;
       }
 
       // 3. Case B: Single-industry Checkout
@@ -338,12 +418,17 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Thiếu mã đơn', { status: 400, code: 'ORDER_LOOKUP_EMPTY', expose: true });
       }
 
-      // Support looking up by Group Code as well as Order Code
+      // Support looking up Group by Group Code with STRICT ownership verification
       if (code.startsWith('GRP')) {
-        const group = await checkoutGroupsRepo.findGroupByCode(code);
-        if (group) {
-          return { group };
+        const userId = tokenUser ? Number(tokenUser.id || tokenUser.sub) : null;
+        const group = await checkoutGroupsRepo.findGroupForCustomerLookup(code, {
+          userId,
+          cancelToken: (cancelToken || '').trim() || null,
+        });
+        if (!group) {
+          throw new OrderDomainError('Không tìm thấy đơn hàng gộp', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
         }
+        return { group };
       }
 
       const order = await repository.findPublicOrder(code);

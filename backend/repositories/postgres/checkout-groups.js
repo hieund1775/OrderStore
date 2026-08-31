@@ -22,6 +22,37 @@ function makePayOSCode(id) {
   return Number(`${String(Date.now()).slice(-6)}${String(Number(id) % 10000).padStart(4, '0')}`);
 }
 
+export function verifyGroupOwnership(group, { userId = null, cancelToken = null } = {}) {
+  if (!group) {
+    throw new CheckoutGroupError('Không tìm thấy đơn hàng gộp', 404, 'GROUP_NOT_FOUND');
+  }
+
+  // 1. Group created by logged-in user
+  if (group.user_id != null) {
+    if (!userId) {
+      throw new CheckoutGroupError('Vui lòng đăng nhập để xem đơn hàng này', 401, 'CUSTOMER_AUTH_REQUIRED');
+    }
+    if (Number(group.user_id) !== Number(userId)) {
+      throw new CheckoutGroupError('Bạn không có quyền truy cập đơn hàng này', 403, 'GROUP_FORBIDDEN');
+    }
+    return true;
+  }
+
+  // 2. Group created by guest
+  if (!cancelToken || typeof cancelToken !== 'string' || !cancelToken.trim()) {
+    throw new CheckoutGroupError('Yêu cầu token xác thực cho đơn hàng khách vãng lai', 401, 'GUEST_TOKEN_REQUIRED');
+  }
+
+  const providedHash = crypto.createHash('sha256').update(cancelToken.trim()).digest('hex');
+  const hashes = Array.isArray(group.cancel_token_hashes) ? group.cancel_token_hashes : [];
+
+  if (!hashes.includes(providedHash)) {
+    throw new CheckoutGroupError('Token xác thực đơn hàng không hợp lệ', 403, 'GUEST_TOKEN_INVALID');
+  }
+
+  return true;
+}
+
 export function createCheckoutGroupsRepository(database = postgresDb) {
   return {
     async createCheckoutGroup({
@@ -182,6 +213,10 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
     async findGroupByCode(groupCode) {
       const [rows] = await database.query(
         `SELECT cg.*,
+                COALESCE(
+                  JSONB_AGG(o.cancel_token_hash) FILTER (WHERE o.cancel_token_hash IS NOT NULL),
+                  '[]'::jsonb
+                ) AS cancel_token_hashes,
                 JSONB_AGG(
                   JSONB_BUILD_OBJECT(
                     'order_id', cga.order_id,
@@ -216,6 +251,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
         discount_amount: Number(r.discount_amount),
         shipping_fee: Number(r.shipping_fee),
         total_amount: Number(r.total_amount),
+        cancel_token_hashes: Array.isArray(r.cancel_token_hashes) ? r.cancel_token_hashes : [],
         child_orders: Array.isArray(r.child_orders) ? r.child_orders : [],
       };
     },
@@ -319,7 +355,10 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       return database.transaction(async (tx) => {
         const [groupRows] = await tx.query(
           `SELECT cg.*,
-                  JSONB_AGG(o.cancel_token_hash) AS cancel_token_hashes
+                  COALESCE(
+                    JSONB_AGG(o.cancel_token_hash) FILTER (WHERE o.cancel_token_hash IS NOT NULL),
+                    '[]'::jsonb
+                  ) AS cancel_token_hashes
            FROM checkout_groups cg
            LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
            LEFT JOIN orders o ON o.id = cga.order_id
@@ -331,18 +370,11 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
         const group = groupRows[0];
         if (!group) throw new CheckoutGroupError('Không tìm thấy đơn hàng gộp', 404);
 
-        // Verify ownership
-        if (group.user_id) {
-          if (userId && Number(group.user_id) !== Number(userId)) {
-            throw new CheckoutGroupError('Bạn không có quyền tạo lại thanh toán cho đơn hàng này', 403);
-          }
-        } else if (cancelToken) {
-          const providedHash = crypto.createHash('sha256').update(cancelToken).digest('hex');
-          const hashes = Array.isArray(group.cancel_token_hashes) ? group.cancel_token_hashes : [];
-          if (!hashes.includes(providedHash)) {
-            throw new CheckoutGroupError('Token hủy đơn không hợp lệ', 403);
-          }
-        }
+        // Strict ownership verification
+        verifyGroupOwnership({
+          ...group,
+          cancel_token_hashes: Array.isArray(group.cancel_token_hashes) ? group.cancel_token_hashes : [],
+        }, { userId, cancelToken });
 
         if (group.payment_status === 'paid') {
           throw new CheckoutGroupError('Đơn hàng đã được thanh toán từ trước', 400);
@@ -383,11 +415,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       const group = await this.findGroupByCode(groupCode);
       if (!group) return null;
 
-      if (group.user_id) {
-        if (userId && Number(group.user_id) !== Number(userId)) {
-          throw new CheckoutGroupError('Bạn không có quyền xem đơn hàng này', 403);
-        }
-      }
+      // Strict ownership verification
+      verifyGroupOwnership(group, { userId, cancelToken });
 
       return {
         group_code: group.group_code,
