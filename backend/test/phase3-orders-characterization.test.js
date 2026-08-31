@@ -47,6 +47,24 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
     postgresDb.setMockAdapter({
       async query(sql) {
         if (sql.includes('audit_logs')) return [[], 1];
+        if (sql.includes('FROM products')) {
+          return [[{
+            id: 1,
+            product_id: 1,
+            name: 'Milk tea',
+            product_name: 'Milk tea',
+            price: 50000,
+            category_id: 1,
+            depth: 1,
+            parent_id: null,
+            root_category_id: 1,
+            root_category_name: 'Nước Uống',
+            root_category_slug: 'nuoc-uong',
+            fulfillment_lane: 'kitchen',
+            is_available: true,
+            status: 'active',
+          }], 1];
+        }
         if (sql.includes('FROM order_items')) return [[{ id: 101, order_id: 11, product_name: 'Milk tea', qty: 1, size_label: 'M', unit_price: 50000, line_total: 50000 }], 1];
         if (sql.includes('FROM order_item_toppings')) return [[], 0];
         return [[], 0];

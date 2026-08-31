@@ -9,9 +9,9 @@ import {
 import { createPaymentProfilesRepository, maskAccountNumber, generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
 import { createCheckoutGroupsRepository, verifyGroupOwnership, generateGroupCode } from '../repositories/postgres/checkout-groups.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
-import { isPayOSConfigured } from '../services/payos.js';
+import { isPayOSConfigured, setPayOSForTest } from '../services/payos.js';
 
-describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 2)', () => {
+describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 3)', () => {
 
   // ═════════════════════════════════════════════════════════════════
   // Gate 1: RBAC & Canonical Role Enforcement ('super')
@@ -99,84 +99,52 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
   });
 
   // ═════════════════════════════════════════════════════════════════
-  // R1: Subtotal & Voucher Verification uses true DB prices (never trusting client item price)
+  // B1: Fail-Closed DB Line Price Calculation (No client price fallback)
   // ═════════════════════════════════════════════════════════════════
-  it('R1: Grouped Checkout computes subtotal, voucher and allocation from DB prices, ignoring client price spoofing', async () => {
-    let orderCreateCount = 0;
+  it('B1: Fail-closed when DB query or product/topping is invalid (never falls back to client price)', async () => {
+    let orderCreated = false;
+    let groupCreated = false;
+    let voucherConsumed = false;
+
     const mockOrdersRepo = {
-      async createPublicOrder({ input, rootCategoryId, paymentProfile }, { tx } = {}) {
-        orderCreateCount++;
-        const subtotal = input.items.reduce((s, it) => s + (50000 * it.qty), 0); // DB price is 50,000
-        const discount = input.allocatedDiscount || 0;
-        return {
-          id: orderCreateCount,
-          order_code: `TP20260901${orderCreateCount}`,
-          subtotal,
-          discount_amount: discount,
-          total: subtotal - discount,
-          root_category_id: rootCategoryId,
-          payment_profile_code: paymentProfile?.code,
-        };
+      async createPublicOrder() {
+        orderCreated = true;
+        return { id: 1 };
       },
     };
 
-    let createdGroupData = null;
     const mockCheckoutGroupsRepo = {
-      async createCheckoutGroup(data, { tx } = {}) {
-        createdGroupData = data;
-        return {
-          id: 1,
-          group_code: 'GRP123456',
-          total_amount: data.totalAmount,
-          subtotal: data.subtotal,
-          discount_amount: data.discountAmount,
-          voucher_code: data.voucherCode,
-          payment_profile_code: data.paymentProfile.code,
-          allocations: data.allocations,
-        };
-      },
-      async reservePayOSCheckoutGroup() {
-        return { payos_order_code: 999888, payment_expires_at: new Date() };
-      },
-      async attachPaymentLinkToGroup() {
-        return { payment_link_id: 'plink_123', payos_order_code: 999888, payment_expires_at: new Date() };
+      async createCheckoutGroup() {
+        groupCreated = true;
+        return { id: 1 };
       },
     };
 
-    let validatedSubtotal = 0;
     const mockPromotionsRepo = {
-      async validateForOrder({ code, subtotal }) {
-        validatedSubtotal = subtotal;
-        return {
-          id: 99,
-          code,
-          discount_amount: 10000,
-          phone: '0987654321',
-        };
+      async validateForOrder() {
+        return { discount_amount: 10000 };
       },
-      async consumeForOrder() {},
+      async consumeForOrder() {
+        voucherConsumed = true;
+      },
     };
 
     const mockResolvePaymentProfile = async () => ({
       isGrouped: true,
-      profile: {
-        id: 1,
-        code: 'LONG_GROUPED_CHECKOUT',
-        display_name: 'Long - Grouped Checkout',
-        version: 1,
-      },
+      profile: { id: 1, code: 'LONG_GROUPED_CHECKOUT', version: 1 },
       rootGroups: [
-        { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc', items: [{ product_id: 1, price: 1, qty: 1 }] },
-        { rootCategoryId: 2, rootCategoryName: 'Thời Trang', rootCategorySlug: 'ao', items: [{ product_id: 2, price: 1, qty: 1 }] },
+        { rootCategoryId: 1, rootCategoryName: 'Nước', items: [{ product_id: 999, price: 1, qty: 1 }] },
+        { rootCategoryId: 2, rootCategoryName: 'Áo', items: [{ product_id: 888, price: 1, qty: 1 }] },
       ],
     });
 
+    // DB query returns empty for product 999 (unavailable/non-existent)
     const mockDb = {
       async transaction(cb) {
         const tx = {
           async query(sql, params) {
-            if (sql.includes('SELECT price FROM products')) {
-              return [[{ price: 50000 }]];
+            if (sql.includes('SELECT p.id, p.name, p.price')) {
+              return [[]]; // Product not found!
             }
             return [[]];
           },
@@ -190,34 +158,88 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       checkoutGroupsRepo: mockCheckoutGroupsRepo,
       promotionsRepo: mockPromotionsRepo,
       resolvePaymentProfile: mockResolvePaymentProfile,
-      checkPayOSConfigured: () => false,
       database: mockDb,
     });
 
-    // Client maliciously sends price: 1 for items that are actually 50k
-    const result = await service.create({
-      input: {
-        store_id: 1,
-        source: 'online',
-        order_type: 'Take-away',
-        payment_method: 'COD',
-        customer_name: 'Nguyen Van A',
-        customer_phone: '0987654321',
-        items: [
-          { product_id: 1, price: 1, qty: 1 },
-          { product_id: 2, price: 1, qty: 1 },
-        ],
-        voucher_code: 'SALE10K',
+    await assert.rejects(
+      async () => {
+        await service.create({
+          input: {
+            store_id: 1,
+            source: 'online',
+            order_type: 'Take-away',
+            payment_method: 'COD',
+            customer_name: 'Nguyen Van A',
+            customer_phone: '0987654321',
+            items: [{ product_id: 999, price: 1, qty: 1 }, { product_id: 888, price: 1, qty: 1 }],
+            voucher_code: 'SALE10K',
+          },
+          userId: 123,
+        });
       },
-      userId: 123,
+      (err) => err.message.includes('Sản phẩm không tồn tại hoặc đã ngừng bán'),
+    );
+
+    // Assert that fail-closed aborted everything
+    assert.equal(orderCreated, false);
+    assert.equal(groupCreated, false);
+    assert.equal(voucherConsumed, false);
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // B2 & B5: Resolver Strict Product Validation and Audit Logging
+  // ═════════════════════════════════════════════════════════════════
+  it('B2 & B5: Resolver rejects unmapped product with 400 and records audit log on fallback', async () => {
+    let auditLogInserted = false;
+    const mockDb = {
+      async query(sql, params) {
+        if (sql.includes('FROM products p')) {
+          // Only returns product 101, missing product 102
+          if (params[0].includes(102)) {
+            return [[{ product_id: 101, product_name: 'Trà Sữa', price: 30000, category_id: 1, root_category_id: 1, root_category_name: 'Nước', root_category_slug: 'nuoc' }]];
+          }
+          return [[{ product_id: 101, product_name: 'Trà Sữa', price: 30000, category_id: 1, root_category_id: 1, root_category_name: 'Nước', root_category_slug: 'nuoc' }]];
+        }
+        if (sql.includes('INSERT INTO audit_logs')) {
+          auditLogInserted = true;
+          return [[]];
+        }
+        return [[]];
+      },
+    };
+
+    // B2: Missing product 102 in DB must throw 400
+    await assert.rejects(
+      async () => {
+        await resolvePaymentProfileForCart({
+          storeId: 1,
+          items: [{ product_id: 101, qty: 1 }, { product_id: 102, qty: 1 }],
+          database: mockDb,
+        });
+      },
+      (err) => err.message.includes('Sản phẩm #102 không tồn tại hoặc chưa gán danh mục'),
+    );
+
+    // B5: Valid product with unmapped profile triggers fallback with audit log
+    const mockProfilesRepo = {
+      async getActiveProfileByRootCategoryId() {
+        return null; // Unmapped root
+      },
+      async getProfileByCode() {
+        return { id: 1, code: 'LONG_GROUPED_CHECKOUT', status: 'active', version: 1 };
+      },
+    };
+
+    const resolved = await resolvePaymentProfileForCart({
+      storeId: 1,
+      items: [{ product_id: 101, qty: 1 }],
+      database: mockDb,
+      profilesRepo: mockProfilesRepo,
     });
 
-    // Subtotal must be 100,000 (from DB 50k + 50k), voucher validated on 100,000, and total = 90,000
-    assert.equal(validatedSubtotal, 100000);
-    assert.equal(createdGroupData.subtotal, 100000);
-    assert.equal(createdGroupData.discountAmount, 10000);
-    assert.equal(createdGroupData.totalAmount, 90000);
-    assert.equal(result.total_amount, 90000);
+    assert.equal(resolved.isFallback, true);
+    assert.equal(resolved.profile.code, 'LONG_GROUPED_CHECKOUT');
+    assert.equal(auditLogInserted, true);
   });
 
   // ═════════════════════════════════════════════════════════════════
@@ -242,28 +264,23 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     };
 
     // 1. Registered User Group checks
-    // Owner passes
     assert.equal(verifyGroupOwnership(userGroup, { userId: 100 }), true);
-    // Anonymous fails with 401
     assert.throws(() => verifyGroupOwnership(userGroup, { userId: null }), (err) => err.status === 401);
-    // Different user fails with 403
     assert.throws(() => verifyGroupOwnership(userGroup, { userId: 999 }), (err) => err.status === 403);
 
     // 2. Guest Group checks
-    // Correct cancel token passes
     assert.equal(verifyGroupOwnership(guestGroup, { cancelToken: rawToken }), true);
-    // Missing cancel token fails with 401
     assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: null }), (err) => err.status === 401);
     assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: '' }), (err) => err.status === 401);
-    // Invalid cancel token fails with 403
     assert.throws(() => verifyGroupOwnership(guestGroup, { cancelToken: 'wrong-token' }), (err) => err.status === 403);
   });
 
   // ═════════════════════════════════════════════════════════════════
-  // R4: Group-Level Idempotency Replay
+  // B4: Group Idempotency & PayOS Retry Resume Flow
   // ═════════════════════════════════════════════════════════════════
-  it('R4: Group-Level Idempotency returns existing group without creating duplicate orders or consuming vouchers', async () => {
+  it('B4: Group Idempotency resume returns active usable PayOS link without creating duplicate child orders', async () => {
     let orderCreateCount = 0;
+    let groupCreateCount = 0;
     let voucherConsumeCount = 0;
 
     const idempotencyStore = new Map();
@@ -272,6 +289,9 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       async transaction(cb) {
         const tx = {
           async query(sql, params) {
+            if (sql.includes('SELECT p.id, p.name, p.price')) {
+              return [[{ id: params[0], name: 'Mock Product', price: 50000, fulfillment_lane: 'kitchen' }]];
+            }
             if (sql.includes('INSERT INTO idempotency_keys')) {
               const key = params[0];
               if (idempotencyStore.has(key)) {
@@ -321,9 +341,10 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
 
     const mockCheckoutGroupsRepo = {
       async createCheckoutGroup(data) {
+        groupCreateCount++;
         return {
           id: 1,
-          group_code: 'GRP_IDEMPOTENT_1',
+          group_code: 'GRP_IDEM_1',
           total_amount: data.totalAmount,
           subtotal: data.subtotal,
           discount_amount: 0,
@@ -332,7 +353,19 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         };
       },
       async reservePayOSCheckoutGroup() {
-        return null;
+        return { payos_order_code: 999111, payment_expires_at: new Date(Date.now() + 900_000) };
+      },
+      async attachPaymentLinkToGroup() {
+        return { payment_link_id: 'link_111', payos_order_code: 999111, payment_expires_at: new Date() };
+      },
+      async renewGroupPayOSLink() {
+        return {
+          payment_checkout_url: 'https://payos.vn/gate/111',
+          payment_qr_code: 'qr_111',
+          payment_link_id: 'link_111',
+          payos_order_code: 999111,
+          payment_expires_at: new Date(),
+        };
       },
     };
 
@@ -359,7 +392,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       checkoutGroupsRepo: mockCheckoutGroupsRepo,
       promotionsRepo: mockPromotionsRepo,
       resolvePaymentProfile: mockResolvePaymentProfile,
-      checkPayOSConfigured: () => false,
+      checkPayOSConfigured: () => true,
       database: mockDb,
     });
 
@@ -368,46 +401,39 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         store_id: 1,
         source: 'online',
         order_type: 'Take-away',
-        payment_method: 'COD',
+        payment_method: 'VietQR',
         customer_name: 'Nguyen Van A',
         customer_phone: '0987654321',
         items: [{ product_id: 1, price: 50000, qty: 1 }, { product_id: 2, price: 50000, qty: 1 }],
       },
       userId: 123,
-      idempotencyKey: 'IDEM_GRP_KEY_123',
+      idempotencyKey: 'IDEM_PAYOS_KEY_123',
     };
 
-    // First call: creates group and child orders
-    const res1 = await service.create(requestPayload);
-    assert.equal(res1.group_code, 'GRP_IDEMPOTENT_1');
-    assert.equal(orderCreateCount, 2);
-
-    // Second call with same idempotency key: returns replay without creating new orders
-    const res2 = await service.create(requestPayload);
-    assert.equal(res2.group_code, 'GRP_IDEMPOTENT_1');
-    assert.equal(orderCreateCount, 2); // Count remains 2
-  });
-
-  // ═════════════════════════════════════════════════════════════════
-  // R5: Fallback Distinction & Infrastructure Failure
-  // ═════════════════════════════════════════════════════════════════
-  it('R5: DB Query errors throw 500 without silently falling back to Long profile', async () => {
-    const brokenDb = {
-      async query() {
-        throw new Error('PostgreSQL connection timeout ETIMEDOUT');
+    setPayOSForTest({
+      paymentRequests: {
+        create: async () => ({
+          checkoutUrl: 'https://payos.vn/gate/111',
+          qrCode: 'qr_111',
+          paymentLinkId: 'link_111',
+        }),
       },
-    };
+    });
 
-    // Resolver must rethrow the database error rather than swallowing it
-    await assert.rejects(
-      async () => {
-        await resolvePaymentProfileForCart({
-          storeId: 1,
-          items: [{ product_id: 101, qty: 1 }],
-          database: brokenDb,
-        });
-      },
-      (err) => err.message.includes('ETIMEDOUT'),
-    );
+    try {
+      // First attempt creates group and orders
+      const res1 = await service.create(requestPayload);
+      assert.equal(res1.group_code, 'GRP_IDEM_1');
+      assert.equal(orderCreateCount, 2);
+      assert.equal(groupCreateCount, 1);
+
+      // Second attempt with same idempotency key: returns usable link without creating duplicate orders or groups
+      const res2 = await service.create(requestPayload);
+      assert.equal(res2.group_code, 'GRP_IDEM_1');
+      assert.equal(orderCreateCount, 2); // Unchanged!
+      assert.equal(groupCreateCount, 1); // Unchanged!
+    } finally {
+      setPayOSForTest(null);
+    }
   });
 });

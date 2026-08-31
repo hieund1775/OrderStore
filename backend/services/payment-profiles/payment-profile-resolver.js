@@ -81,19 +81,19 @@ export async function resolvePaymentProfileForCart({
     });
   }
 
-  // 2. Group items by root category
+  // 2. Group items by root category (strict fail-closed if product is not in database/unmapped)
   const rootGroupsMap = new Map();
   for (const item of items) {
     const prodInfo = productMap.get(Number(item.product_id));
-    const rootId = prodInfo ? prodInfo.rootCategoryId : 1;
-    const rootName = prodInfo ? prodInfo.rootCategoryName : 'Mặc định';
-    const rootSlug = prodInfo ? prodInfo.rootCategorySlug : 'default';
-
+    if (!prodInfo) {
+      throw new PaymentResolverError(`Sản phẩm #${item.product_id} không tồn tại hoặc chưa gán danh mục`, 400, 'PRODUCT_CATEGORY_MISSING');
+    }
+    const rootId = prodInfo.rootCategoryId;
     if (!rootGroupsMap.has(rootId)) {
       rootGroupsMap.set(rootId, {
         rootCategoryId: rootId,
-        rootCategoryName: rootName,
-        rootCategorySlug: rootSlug,
+        rootCategoryName: prodInfo.rootCategoryName,
+        rootCategorySlug: prodInfo.rootCategorySlug,
         items: [],
       });
     }
@@ -137,14 +137,32 @@ export async function resolvePaymentProfileForCart({
       ? 'profile chưa kích hoạt'
       : 'chưa cấu hình đủ biến môi trường ENV';
 
-  console.warn(
-    `⚠️ [Payment Profile Fallback]: Ngành "${singleRoot.rootCategoryName}" (ID: ${singleRoot.rootCategoryId}) ${reason}, fallback về LONG_GROUPED_CHECKOUT`,
-  );
+  const auditPayload = {
+    event: 'PAYMENT_PROFILE_FALLBACK',
+    rootCategoryId: singleRoot.rootCategoryId,
+    rootCategoryName: singleRoot.rootCategoryName,
+    reason,
+    targetProfileCode: 'LONG_GROUPED_CHECKOUT',
+    timestamp: new Date().toISOString(),
+  };
+  console.info(`⚠️ [Payment Profile Fallback]: ${JSON.stringify(auditPayload)}`);
+
+  try {
+    if (database && typeof database.query === 'function') {
+      await database.query(
+        `INSERT INTO audit_logs (action, target_type, target_id, details)
+         VALUES ('PAYMENT_PROFILE_FALLBACK', 'root_category', $1, $2::jsonb)`,
+        [singleRoot.rootCategoryId, JSON.stringify(auditPayload)],
+      );
+    }
+  } catch {}
+
   const fallbackLongProfile = await getSystemLongProfile();
   return {
     isGrouped: false,
     profile: fallbackLongProfile,
     isFallback: true,
+    fallbackReason: reason,
     rootCategory: singleRoot,
     rootGroups,
   };

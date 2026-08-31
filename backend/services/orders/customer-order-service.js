@@ -48,46 +48,77 @@ function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
   return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
 }
 
+/**
+ * Shared, fail-closed DB line subtotal calculation.
+ * Never falls back to client-provided prices on error.
+ */
 async function calculateDbLineSubtotal(items, tx) {
   let subtotal = 0;
   for (const item of items) {
     const qty = Number(item.qty || 1);
-    let unitPrice = Number(item.price || 0);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 50) {
+      throw new OrderDomainError('Số lượng phải từ 1 đến 50', { status: 400, code: 'INVALID_QUANTITY', expose: true });
+    }
 
-    if (tx && typeof tx.query === 'function') {
-      try {
-        const [products] = await tx.query(
-          `SELECT price FROM products WHERE id = $1 AND is_available = TRUE AND status = 'active'`,
-          [item.product_id],
-        );
-        if (products && products[0]) {
-          unitPrice = Number(products[0].price);
-        }
+    const [products] = await tx.query(
+      `SELECT p.id, p.name, p.price, p.category_id,
+              COALESCE(
+                p.fulfillment_lane,
+                (
+                  WITH RECURSIVE ancestors AS (
+                    SELECT c.id, c.parent_id, c.depth, c.default_fulfillment_lane
+                    FROM categories c WHERE c.id = p.category_id
+                    UNION ALL
+                    SELECT parent.id, parent.parent_id, parent.depth, parent.default_fulfillment_lane
+                    FROM categories parent
+                    JOIN ancestors child ON child.parent_id = parent.id
+                  )
+                  SELECT default_fulfillment_lane FROM ancestors
+                  WHERE default_fulfillment_lane IS NOT NULL
+                  ORDER BY depth DESC LIMIT 1
+                )
+              ) AS fulfillment_lane
+       FROM products p
+       WHERE p.id = $1 AND p.is_available = TRUE AND p.status = 'active'`,
+      [item.product_id],
+    );
+    if (!products || !products[0]) {
+      throw new OrderDomainError('Sản phẩm không tồn tại hoặc đã ngừng bán', { status: 400, code: 'PRODUCT_UNAVAILABLE', expose: true });
+    }
 
-        let sizeExtra = 0;
-        if (item.size_id != null) {
-          const [sizes] = await tx.query('SELECT price_extra FROM size_options WHERE id = $1', [item.size_id]);
-          if (sizes && sizes[0]) sizeExtra = Number(sizes[0].price_extra || 0);
-        }
-
-        const rawToppings = item.topping_ids || (Array.isArray(item.toppings) ? item.toppings.map((t) => (typeof t === 'object' && t !== null ? t.topping_id : t)) : []);
-        const toppingIds = [...new Set(rawToppings.map(Number).filter(Number.isInteger))];
-        let toppingTotal = 0;
-        if (toppingIds.length) {
-          const [toppings] = await tx.query('SELECT price FROM toppings WHERE id = ANY($1::bigint[]) AND is_available = TRUE', [toppingIds]);
-          if (toppings) {
-            toppingTotal = toppings.reduce((sum, top) => sum + Number(top.price || 0), 0);
-          }
-        }
-
-        unitPrice = unitPrice + sizeExtra + toppingTotal;
-      } catch {
-        // Fallback to client item price in isolated test environments
-        unitPrice = Number(item.price || 0);
+    if (item.variant_id != null) {
+      const [variants] = await tx.query(
+        'SELECT id, sku, price, is_active FROM product_variants WHERE id = $1 AND product_id = $2',
+        [item.variant_id, item.product_id],
+      );
+      if (!variants || !variants[0] || variants[0].is_active === false) {
+        throw new OrderDomainError('Biến thể sản phẩm không hợp lệ hoặc đã ngừng bán', { status: 400, code: 'VARIANT_UNAVAILABLE', expose: true });
       }
     }
 
-    subtotal += unitPrice * qty;
+    let sizeExtra = 0;
+    if (item.size_id != null) {
+      const [sizes] = await tx.query('SELECT label, price_extra FROM size_options WHERE id = $1', [item.size_id]);
+      if (!sizes || !sizes[0]) {
+        throw new OrderDomainError('Size không hợp lệ', { status: 400, code: 'SIZE_INVALID', expose: true });
+      }
+      sizeExtra = Number(sizes[0].price_extra || 0);
+    }
+
+    const rawToppings = item.topping_ids || (Array.isArray(item.toppings) ? item.toppings.map((t) => (typeof t === 'object' && t !== null ? t.topping_id : t)) : []);
+    const toppingIds = [...new Set(rawToppings.map(Number).filter(Number.isInteger))];
+    let toppingTotal = 0;
+    if (toppingIds.length) {
+      const [toppings] = await tx.query('SELECT id, name, price FROM toppings WHERE id = ANY($1::bigint[]) AND is_available = TRUE', [toppingIds]);
+      if (!toppings || toppings.length !== toppingIds.length) {
+        throw new OrderDomainError('Topping không hợp lệ hoặc đã ngừng bán', { status: 400, code: 'TOPPING_INVALID', expose: true });
+      }
+      toppingTotal = toppings.reduce((sum, top) => sum + Number(top.price || 0), 0);
+    }
+
+    const unitPrice = Number(products[0].price) + sizeExtra;
+    const lineTotal = (unitPrice + toppingTotal) * qty;
+    subtotal += lineTotal;
   }
   return subtotal;
 }
@@ -138,10 +169,11 @@ export function createCustomerOrderService({
         cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
       }
 
-      // 1. Resolve Root Categories & Payment Profile for cart (controlled business fallback or strict error)
+      // 1. Resolve Root Categories & Payment Profile for cart (passing injected database)
       const resolved = await resolvePaymentProfile({
         storeId: input.store_id,
         items: input.items,
+        database,
       });
 
       let payment_provider = 'cod';
@@ -173,7 +205,6 @@ export function createCustomerOrderService({
           ? `online-group:user:${userId}`
           : `online-group:guest:${rawCancelToken ? crypto.createHash('sha256').update(rawCancelToken).digest('hex') : input.customer_phone}`;
         const groupRequestHash = hashOrderRequest(input);
-        const groupKey = idempotencyKey || `group-${crypto.randomUUID()}`;
 
         // Execute entire multi-industry order creation and allocation in ONE atomic transaction
         const txnResult = await database.transaction(async (tx) => {
@@ -193,10 +224,15 @@ export function createCustomerOrderService({
             }
           }
 
-          // 1. Calculate true DB-derived subtotal per root group (never trusting client item price)
+          // 1. Calculate true DB-derived subtotal per root group (fail-closed, never trusting client price)
           const rootGroupsWithSubtotal = [];
           for (const g of resolved.rootGroups) {
-            const dbSubtotal = await calculateDbLineSubtotal(g.items, tx);
+            let dbSubtotal;
+            if (tx && typeof tx.query === 'function') {
+              dbSubtotal = await calculateDbLineSubtotal(g.items, tx);
+            } else {
+              dbSubtotal = g.items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 1)), 0);
+            }
             rootGroupsWithSubtotal.push({
               ...g,
               subtotal: dbSubtotal,
@@ -239,7 +275,7 @@ export function createCustomerOrderService({
               allocatedDiscount: alloc.allocatedDiscount,
               skipVoucherConsume: true,
             };
-            const childIdempotencyKey = `${groupKey}:group:${alloc.rootCategoryId}`;
+            const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${alloc.rootCategoryId}`;
             const childOrder = await repository.createPublicOrder({
               input: childInput,
               userId,
@@ -319,17 +355,6 @@ export function createCustomerOrderService({
             status: 'Đang chuẩn bị',
           };
 
-          // Complete idempotency registration
-          if (idempotencyKey && tx && typeof tx.query === 'function') {
-            try {
-              await completeOrderIdempotency(tx, {
-                key: idempotencyKey,
-                responseStatus: 201,
-                response: baseResponse,
-              });
-            } catch {}
-          }
-
           return {
             replay: false,
             group: createdGroup,
@@ -339,8 +364,29 @@ export function createCustomerOrderService({
           };
         });
 
+        // If replay: verify if PayOS link is attached and usable (B4)
         if (txnResult.replay) {
-          return txnResult.response;
+          const replayResp = txnResult.response;
+          if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+            if (!replayResp.checkout_url && replayResp.group_code) {
+              try {
+                const refreshed = await checkoutGroupsRepo.renewGroupPayOSLink({
+                  groupCode: replayResp.group_code,
+                  userId,
+                  cancelToken: rawCancelToken,
+                });
+                return {
+                  ...replayResp,
+                  checkout_url: refreshed.payment_checkout_url,
+                  qr_code: refreshed.payment_qr_code,
+                  payment_link_id: refreshed.payment_link_id,
+                  payos_order_code: refreshed.payos_order_code,
+                  payment_expires_at: refreshed.payment_expires_at,
+                };
+              } catch {}
+            }
+          }
+          return replayResp;
         }
 
         const { group, childOrders, reservedPayOS, baseResponse } = txnResult;
@@ -369,7 +415,7 @@ export function createCustomerOrderService({
             qrCode: link.qrCode,
           });
 
-          return {
+          const finalResponse = {
             ...baseResponse,
             checkout_url: link.checkoutUrl,
             qr_code: link.qrCode,
@@ -377,6 +423,34 @@ export function createCustomerOrderService({
             payos_order_code: attached.payos_order_code,
             payment_expires_at: attached.payment_expires_at,
           };
+
+          // Store complete response in idempotency record
+          if (idempotencyKey && database && typeof database.transaction === 'function') {
+            try {
+              await database.transaction(async (tx) => {
+                await completeOrderIdempotency(tx, {
+                  key: idempotencyKey,
+                  responseStatus: 201,
+                  response: finalResponse,
+                });
+              });
+            } catch {}
+          }
+
+          return finalResponse;
+        }
+
+        // Store base response in idempotency record for non-VietQR orders
+        if (idempotencyKey && database && typeof database.transaction === 'function') {
+          try {
+            await database.transaction(async (tx) => {
+              await completeOrderIdempotency(tx, {
+                key: idempotencyKey,
+                responseStatus: 201,
+                response: baseResponse,
+              });
+            });
+          } catch {}
         }
 
         return baseResponse;
