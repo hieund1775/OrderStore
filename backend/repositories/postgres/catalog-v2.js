@@ -47,8 +47,8 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (!parent) {
           throw new CatalogV2Error('Danh mục cha không tồn tại', 404);
         }
-        if (parent.depth >= 2) {
-          throw new CatalogV2Error('Cây danh mục tối đa 3 cấp (depth 0, 1, 2)', 400);
+        if (parent.depth >= 1) {
+          throw new CatalogV2Error('Cây danh mục chuẩn 2 tầng (chỉ gồm Danh mục Gốc và Danh mục Con trực tiếp)', 400);
         }
         depth = parent.depth + 1;
       }
@@ -100,8 +100,8 @@ export function createCatalogV2Repository(database = postgresDb) {
           if (!parent) {
             throw new CatalogV2Error('Danh mục cha không tồn tại', 404);
           }
-          if (parent.depth >= 2) {
-            throw new CatalogV2Error('Cây danh mục tối đa 3 cấp', 400);
+          if (parent.depth >= 1) {
+            throw new CatalogV2Error('Cây danh mục chuẩn 2 tầng (chỉ gồm Danh mục Gốc và Danh mục Con trực tiếp)', 400);
           }
           depth = parent.depth + 1;
         } else {
@@ -119,8 +119,8 @@ export function createCatalogV2Repository(database = postgresDb) {
            SELECT COALESCE(MAX(relative_depth), 0)::int AS max_relative_depth FROM subtree`,
           [id],
         );
-        if (depth + Number(subtreeRows[0]?.max_relative_depth || 0) > 2) {
-          throw new CatalogV2Error('Thao tác này làm cây danh mục vượt quá 3 cấp', 400);
+        if (depth + Number(subtreeRows[0]?.max_relative_depth || 0) > 1) {
+          throw new CatalogV2Error('Thao tác này làm cây danh mục vượt quá 2 cấp', 400);
         }
       }
 
@@ -219,6 +219,16 @@ export function createCatalogV2Repository(database = postgresDb) {
          FROM product_types pt
          WHERE pt.id = $1`,
         [id],
+      );
+      return rows[0] || null;
+    },
+
+    async getPublishedSchemaByProductType(productTypeId) {
+      const [rows] = await database.query(
+        `SELECT * FROM product_type_schemas
+         WHERE product_type_id = $1 AND status = 'published'
+         ORDER BY version DESC LIMIT 1`,
+        [Number(productTypeId)],
       );
       return rows[0] || null;
     },

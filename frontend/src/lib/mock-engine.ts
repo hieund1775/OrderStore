@@ -654,5 +654,202 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     return Promise.resolve(notifList as T);
   }
 
+  // 15. Public Catalog V2 Mock
+  if (path.startsWith('/api/catalog/categories/tree')) {
+    const tree = [
+      {
+        id: 1,
+        name: 'Nước uống',
+        slug: 'nuoc-uong',
+        parent_id: null,
+        depth: 0,
+        sort_order: 1,
+        children: [
+          { id: 10, name: 'Trà Trái Cây Tươi', slug: 'tra-trai-cay-tuoi', parent_id: 1, depth: 1, sort_order: 1, children: [] },
+          { id: 11, name: 'Trà Sữa & Macchiato', slug: 'tra-sua-macchiato', parent_id: 1, depth: 1, sort_order: 2, children: [] },
+          { id: 12, name: 'Cà Phê & Đá Xay', slug: 'ca-phe-da-xay', parent_id: 1, depth: 1, sort_order: 3, children: [] },
+        ],
+      },
+      {
+        id: 2,
+        name: 'Quần áo & Merch',
+        slug: 'quan-ao-merch',
+        parent_id: null,
+        depth: 0,
+        sort_order: 2,
+        children: [
+          { id: 20, name: 'Áo Thun & Hoodie', slug: 'ao-thun-hoodie', parent_id: 2, depth: 1, sort_order: 1, children: [] },
+          { id: 21, name: 'Ly Giữ Nhiệt & Bình Nước', slug: 'ly-giu-nhiet', parent_id: 2, depth: 1, sort_order: 2, children: [] },
+        ],
+      },
+    ];
+    return Promise.resolve(tree as T);
+  }
+
+  if (path.startsWith('/api/catalog/sections')) {
+    const mockProds = getMockCatalogProducts();
+    const sections = [
+      {
+        root_id: 1,
+        root_name: 'Nước uống',
+        root_slug: 'nuoc-uong',
+        total_products: mockProds.length,
+        children: [
+          { id: 10, name: 'Trà Trái Cây Tươi', slug: 'tra-trai-cay-tuoi' },
+          { id: 11, name: 'Trà Sữa & Macchiato', slug: 'tra-sua-macchiato' },
+        ],
+        products: mockProds.map((p) => ({
+          ...p,
+          fulfillment_lane: 'kitchen' as const,
+          stock_mode: 'made_to_order' as const,
+          variants_count: 1,
+        })),
+      },
+    ];
+    return Promise.resolve({ sections } as T);
+  }
+
+  if (path.startsWith('/api/catalog/products') && !path.includes('/resolve-configuration')) {
+    const parts = path.split('?')[0].split('/');
+    const slug = parts[parts.length - 1];
+    const mockProds = getMockCatalogProducts();
+
+    if (slug !== 'products' && slug) {
+      const p = mockProds.find((prod) => prod.slug === slug || String(prod.id) === slug) || mockProds[0];
+      const productDetails = {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        description: p.description,
+        price: p.price,
+        image_url: p.image_url,
+        category_id: p.category_id,
+        fulfillment_lane: 'kitchen' as const,
+        stock_mode: 'made_to_order' as const,
+        variants: [
+          {
+            id: p.id,
+            sku: `SKU-${p.id}-M`,
+            variant_signature: 'size_m',
+            name_suffix: 'Size M',
+            price: p.price,
+            compare_at_price: null,
+            is_available: p.is_available,
+            available_stock: null,
+          },
+        ],
+        attributes: [
+          {
+            id: 101,
+            code: 'ice_level',
+            name: 'Mức Đá',
+            role: 'modifier' as const,
+            input_type: 'single_select' as const,
+            is_required: true,
+            min_selections: 1,
+            max_selections: 1,
+            sort_order: 1,
+            is_locked: false,
+            values: [
+              { id: 1011, code: '100_ice', label: '100% Đá', price_adjustment: 0, sort_order: 1, is_active: true },
+              { id: 1012, code: '70_ice', label: '70% Đá', price_adjustment: 0, sort_order: 2, is_active: true },
+              { id: 1013, code: '0_ice', label: 'Không Đá', price_adjustment: 0, sort_order: 3, is_active: true },
+            ],
+          },
+          {
+            id: 102,
+            code: 'sugar_level',
+            name: 'Mức Đường',
+            role: 'modifier' as const,
+            input_type: 'single_select' as const,
+            is_required: true,
+            min_selections: 1,
+            max_selections: 1,
+            sort_order: 2,
+            is_locked: false,
+            values: [
+              { id: 1021, code: '100_sugar', label: '100% Đường', price_adjustment: 0, sort_order: 1, is_active: true },
+              { id: 1022, code: '70_sugar', label: '70% Đường', price_adjustment: 0, sort_order: 2, is_active: true },
+              { id: 1023, code: '0_sugar', label: 'Không Đường', price_adjustment: 0, sort_order: 3, is_active: true },
+            ],
+          },
+          {
+            id: 103,
+            code: 'toppings',
+            name: 'Topping',
+            role: 'modifier' as const,
+            input_type: 'multi_select' as const,
+            is_required: false,
+            min_selections: 0,
+            max_selections: 5,
+            sort_order: 3,
+            is_locked: false,
+            values: [
+              { id: 1031, code: 'black_pearl', label: 'Trân Châu Đen', price_adjustment: 5000, sort_order: 1, is_active: true },
+              { id: 1032, code: 'cheese_pudding', label: 'Pudding Trứng', price_adjustment: 8000, sort_order: 2, is_active: true },
+            ],
+          },
+        ],
+      };
+      return Promise.resolve(productDetails as T);
+    }
+
+    return Promise.resolve({
+      products: mockProds.map((p) => ({
+        ...p,
+        fulfillment_lane: 'kitchen' as const,
+        stock_mode: 'made_to_order' as const,
+        variants_count: 1,
+      })),
+      total: mockProds.length,
+    } as T);
+  }
+
+  if (path.startsWith('/api/catalog/resolve-configuration')) {
+    const mockProds = getMockCatalogProducts();
+    const p = mockProds.find((prod) => prod.slug === body.product_slug) || mockProds[0];
+    const modifierExtra = (body.modifier_value_ids || []).reduce((sum: number, id: number) => {
+      if (id === 1031) return sum + 5000;
+      if (id === 1032) return sum + 8000;
+      return sum;
+    }, 0);
+    const finalPrice = p.price + modifierExtra;
+    const resolvedConfig = {
+      product: {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        fulfillment_lane: 'kitchen' as const,
+        stock_mode: 'made_to_order' as const,
+      },
+      variant: {
+        id: p.id,
+        sku: `SKU-${p.id}-M`,
+        variant_signature: 'size_m',
+        name_suffix: 'Size M',
+        base_price: p.price,
+        compare_at_price: null,
+        is_available: true,
+        available_stock: null,
+      },
+      applied_modifiers: (body.modifier_value_ids || []).map((id: number) => ({
+        attribute_definition_id: id >= 1030 ? 103 : 101,
+        attribute_name: id >= 1030 ? 'Topping' : 'Mức Đá',
+        attribute_value_id: id,
+        attribute_label: id === 1031 ? 'Trân Châu Đen' : id === 1032 ? 'Pudding Trứng' : '100% Đá',
+        price_adjustment: id === 1031 ? 5000 : id === 1032 ? 8000 : 0,
+      })),
+      pricing: {
+        variant_base_price: p.price,
+        modifiers_extra_total: modifierExtra,
+        final_price: finalPrice,
+      },
+      base_price: p.price,
+      modifier_extra: modifierExtra,
+      unit_price: finalPrice,
+    };
+    return Promise.resolve(resolvedConfig as T);
+  }
+
   return Promise.resolve({} as T);
 }

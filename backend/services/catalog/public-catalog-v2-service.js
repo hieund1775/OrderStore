@@ -38,10 +38,17 @@ export function createPublicCatalogV2Service(options = {}) {
     const schemaAttributes = (product.attributes || []).filter((attribute) => attribute.is_active !== false);
     let attributes = schemaAttributes;
 
-    if (scopeData && (scopeData.categoryAssignments.length > 0 || scopeData.productOverrides.length > 0)) {
+    if (scopeData && (
+      (scopeData.categoryAssignments && scopeData.categoryAssignments.length > 0) ||
+      (scopeData.productOverrides && scopeData.productOverrides.length > 0) ||
+      (scopeData.categoryPresets && scopeData.categoryPresets.length > 0) ||
+      (scopeData.productPresets && scopeData.productPresets.length > 0)
+    )) {
       const resolvedScopes = resolveProductOptions({
         categoryAssignments: scopeData.categoryAssignments,
         productOverrides: scopeData.productOverrides,
+        categoryPresets: scopeData.categoryPresets,
+        productPresets: scopeData.productPresets,
       });
       const attributesById = new Map(schemaAttributes.map((attribute) => [Number(attribute.id), attribute]));
       attributes = resolvedScopes
@@ -54,6 +61,8 @@ export function createPublicCatalogV2Service(options = {}) {
             min_selections: scope.min_selected == null ? attribute.min_selections : Number(scope.min_selected),
             max_selections: scope.max_selected == null ? attribute.max_selections : Number(scope.max_selected),
             sort_order: scope.sort_order,
+            preset_value_ids: scope.preset_value_ids || [],
+            is_locked: Boolean(scope.is_locked),
             source: {
               type: scope.source_type,
               id: scope.source_id,
@@ -69,6 +78,8 @@ export function createPublicCatalogV2Service(options = {}) {
     } else {
       attributes = schemaAttributes.map((attribute) => ({
         ...attribute,
+        preset_value_ids: attribute.preset_value_ids || [],
+        is_locked: Boolean(attribute.is_locked),
         values: includeInactiveValues
           ? (attribute.values || [])
           : (attribute.values || []).filter((value) => value.is_active !== false),
@@ -87,8 +98,9 @@ export function createPublicCatalogV2Service(options = {}) {
   }
 
   return {
-    async getCategoryTree() {
-      const rows = await catalogRepository.getCategoryTree();
+    async getCategoryTree({ storeId } = {}) {
+      const normalizedStoreId = storeId ? Number(storeId) : null;
+      const rows = await catalogRepository.getCategoryTree(normalizedStoreId);
       // Build nested hierarchy
       const roots = rows.filter((r) => !r.parent_id);
       const getChildren = (parentId) =>
@@ -179,6 +191,31 @@ export function createPublicCatalogV2Service(options = {}) {
       const attributes = product.attributes || [];
       const variantAttributes = attributes.filter((attr) => attr.role === 'variant' && attr.is_active !== false);
       const modifierAttributes = attributes.filter((attr) => attr.role === 'modifier' && attr.is_active !== false);
+
+      // Check locked attributes and validate / auto-inject full preset values
+      for (const attr of attributes) {
+        if (attr.is_locked && Array.isArray(attr.preset_value_ids) && attr.preset_value_ids.length > 0) {
+          const lockedValueIds = attr.preset_value_ids.map(Number);
+          if (attr.role === 'modifier') {
+            const userSelectedForThisAttr = (attr.values || [])
+              .filter((v) => modifierValueIds.includes(Number(v.id)))
+              .map((v) => Number(v.id));
+
+            // 1. Reject if client sent any value outside the locked preset
+            const invalidSelection = userSelectedForThisAttr.some((id) => !lockedValueIds.includes(id));
+            if (invalidSelection) {
+              throw new CatalogV2Error(`Tùy chọn "${attr.name}" đã bị khóa cố định theo công thức của món`, 400);
+            }
+
+            // 2. Always ensure full locked preset values are applied (auto-complete partial selection)
+            for (const lId of lockedValueIds) {
+              if (!modifierValueIds.includes(lId)) {
+                modifierValueIds.push(lId);
+              }
+            }
+          }
+        }
+      }
 
       // Check if user selected any value belonging to inactive modifier values
       for (const attr of attributes) {

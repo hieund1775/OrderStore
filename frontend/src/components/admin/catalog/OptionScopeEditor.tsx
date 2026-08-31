@@ -151,7 +151,7 @@ export function OptionScopeEditor({
                 key={val.id}
                 className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-medium"
               >
-                {val.value_label}
+                {val.label || val.value_label}
                 {val.price_adjustment && val.price_adjustment > 0
                   ? ` (+${new Intl.NumberFormat('vi-VN').format(val.price_adjustment)}đ)`
                   : ''}

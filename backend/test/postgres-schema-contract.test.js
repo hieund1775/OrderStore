@@ -263,4 +263,30 @@ test('hardening migration 0018 enforces DB constraints, restrict policy and task
   assert.ok(rollbackSql.includes('DROP FUNCTION IF EXISTS enforce_fulfillment_task_item_order()'));
 });
 
+test('option presets migration 0019 establishes presets, values and integrity triggers', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0019_category_product_option_presets.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0019_category_product_option_presets.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'CREATE TABLE IF NOT EXISTS catalog_option_presets',
+    'chk_preset_target_type',
+    'uq_catalog_option_preset',
+    'CREATE TABLE IF NOT EXISTS catalog_option_preset_values',
+    'uq_catalog_option_preset_value',
+    'trg_catalog_option_preset_target',
+    'enforce_catalog_option_preset_target',
+    'trg_preset_value_attribute_match',
+    'enforce_preset_value_attribute_match',
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0019 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS catalog_option_preset_values CASCADE'));
+  assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS catalog_option_presets CASCADE'));
+});
+
 

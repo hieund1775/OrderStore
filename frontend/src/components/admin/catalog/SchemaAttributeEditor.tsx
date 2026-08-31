@@ -24,6 +24,8 @@ export type AttributeValue = {
   id: number;
   code: string;
   label: string;
+  value_code?: string;
+  value_label?: string;
   sort_order: number;
   is_active: boolean;
   price_adjustment: number;
@@ -36,12 +38,14 @@ export type AttributeDef = {
   role: 'variant' | 'modifier';
   input_type: 'single_select' | 'multi_select' | 'text' | 'number';
   is_required: boolean;
-  is_filterable: boolean;
+  is_filterable?: boolean;
   sort_order: number;
-  min_selections: number;
+  min_selections: number | null;
   max_selections: number | null;
   values: AttributeValue[];
 };
+
+export type AttributeDefinition = AttributeDef;
 
 export type SchemaDetails = {
   id: number;

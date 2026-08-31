@@ -2,14 +2,39 @@ import postgresDb from '../../config/db-postgres.js';
 
 export function createPublicCatalogV2Repository(database = postgresDb) {
   return {
-    async getCategoryTree() {
+    async getCategoryTree(storeId = null) {
+      const params = [];
+      let storeFilter = '';
+      if (storeId) {
+        params.push(Number(storeId));
+        storeFilter = `
+          AND (
+            EXISTS (
+              SELECT 1 FROM products p
+              JOIN product_variants pv ON pv.product_id = p.id AND pv.status = 'active'
+              JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
+                AND bvo.is_available = TRUE AND bvo.price IS NOT NULL
+              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
+              WHERE (p.category_id = c.id OR p.category_id IN (SELECT id FROM categories WHERE parent_id = c.id))
+                AND p.status = 'active' AND p.is_available = TRUE
+                AND (
+                  p.stock_mode <> 'tracked'
+                  OR bvi.on_hand IS NULL
+                  OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
+                )
+            )
+          )
+        `;
+      }
       const [rows] = await database.query(
         `SELECT c.id, c.name, c.slug, c.parent_id, c.depth, c.sort_order,
                 pt.code AS product_type_code, pt.name AS product_type_name
          FROM categories c
          LEFT JOIN product_types pt ON pt.id = c.product_type_id
          WHERE c.is_visible = TRUE AND c.archived_at IS NULL
+         ${storeFilter}
          ORDER BY c.depth ASC, c.sort_order ASC, c.name ASC`,
+        params,
       );
       return rows;
     },
@@ -86,7 +111,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
            FROM category_tree tree
            JOIN products p ON p.category_id = tree.category_id
            JOIN categories c ON c.id = p.category_id
-           LEFT JOIN LATERAL (
+           JOIN LATERAL (
              SELECT MIN(bvo.price) AS price,
                     MIN(bvo.compare_at_price) AS compare_at_price,
                     BOOL_OR(
@@ -99,14 +124,13 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
              WHERE pv.product_id = p.id
                AND pv.status = 'active'
-               AND (bvo.is_available IS NULL OR bvo.is_available = TRUE)
                AND (
                  p.stock_mode <> 'tracked'
                  OR bvi.on_hand IS NULL
                  OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
                )
-           ) branch_offer ON TRUE
-           WHERE p.status = 'active' AND p.is_available = TRUE AND (branch_offer.is_available IS NULL OR branch_offer.is_available = TRUE)
+           ) branch_offer ON branch_offer.price IS NOT NULL AND branch_offer.is_available = TRUE
+           WHERE p.status = 'active' AND p.is_available = TRUE
          ),
          ranked_products AS (
            SELECT scoped_products.*,
@@ -155,7 +179,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       if (storeId) {
         params.push(Number(storeId));
         storeJoin = `
-          LEFT JOIN LATERAL (
+          JOIN LATERAL (
             SELECT MIN(bvo.price) AS price,
                    MIN(bvo.compare_at_price) AS compare_at_price,
                    BOOL_OR(
@@ -164,22 +188,21 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
                    ) AS is_available,
                    MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
             FROM product_variants pv
-            LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length}
+            JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length} AND bvo.is_available = TRUE
             LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $${params.length}
             WHERE pv.product_id = p.id
               AND pv.status = 'active'
-              AND (bvo.is_available IS NULL OR bvo.is_available = TRUE)
               AND (
                 p.stock_mode <> 'tracked'
                 OR bvi.on_hand IS NULL
                 OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
               )
-          ) branch_offer ON TRUE
+          ) branch_offer ON branch_offer.price IS NOT NULL AND branch_offer.is_available = TRUE
         `;
         priceSelect = `
-          COALESCE(branch_offer.price, p.price) AS price,
+          branch_offer.price AS price,
           branch_offer.compare_at_price,
-          COALESCE(branch_offer.is_available, p.is_available, TRUE) AS is_available,
+          branch_offer.is_available,
           branch_offer.available_stock
         `;
       }

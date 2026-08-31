@@ -36,11 +36,12 @@ export type CategoryNode = {
   product_type_id: number | null;
   product_type_name?: string | null;
   product_type_code?: string | null;
+  default_fulfillment_lane?: 'kitchen' | 'packing';
   sort_order: number;
   is_visible: boolean;
   archived_at: string | null;
-  children_count: number;
-  products_count: number;
+  children_count?: number;
+  products_count?: number;
 };
 
 interface CategoryTreeEditorProps {
@@ -188,7 +189,7 @@ export function CategoryTreeEditor({
               </span>
             )}
 
-            {cat.products_count > 0 && (
+            {(cat.products_count || 0) > 0 && (
               <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                 {cat.products_count} SP
               </span>

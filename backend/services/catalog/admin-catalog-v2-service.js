@@ -117,6 +117,16 @@ export function createAdminCatalogV2Service({
         throw new CatalogV2Error('Vui lòng chọn danh mục hợp lệ', 400);
       }
 
+      if (schemaRepository?.getCategoryById) {
+        const cat = await schemaRepository.getCategoryById(Number(input.category_id));
+        if (!cat || cat.archived_at != null) {
+          throw new CatalogV2Error('Danh mục sản phẩm không tồn tại hoặc đã bị lưu trữ', 404);
+        }
+        if (cat.parent_id == null || cat.depth === 0) {
+          throw new CatalogV2Error('Sản phẩm chỉ được thuộc về danh mục con, không được gán trực tiếp vào danh mục gốc', 400);
+        }
+      }
+
       const slug = String(input.slug || '')
         .trim()
         .toLowerCase();
@@ -171,6 +181,15 @@ export function createAdminCatalogV2Service({
         const categoryId = Number(input.category_id);
         if (!Number.isInteger(categoryId) || categoryId <= 0) {
           throw new CatalogV2Error('Danh mục sản phẩm không hợp lệ', 400);
+        }
+        if (schemaRepository?.getCategoryById) {
+          const cat = await schemaRepository.getCategoryById(categoryId);
+          if (!cat || cat.archived_at != null) {
+            throw new CatalogV2Error('Danh mục sản phẩm không tồn tại hoặc đã bị lưu trữ', 404);
+          }
+          if (cat.parent_id == null || cat.depth === 0) {
+            throw new CatalogV2Error('Sản phẩm chỉ được thuộc về danh mục con, không được gán trực tiếp vào danh mục gốc', 400);
+          }
         }
         normalized.category_id = categoryId;
       }
@@ -321,6 +340,71 @@ export function createAdminCatalogV2Service({
 
     async deleteProductOverride(productId, attrDefId) {
       return await optionScopesRepository.deleteProductOverride(Number(productId), Number(attrDefId));
+    },
+
+    // -------------------------------------------------------------
+    // OPTION PRESETS (BLOCK 3)
+    // -------------------------------------------------------------
+    async listPresets({ targetType, targetId }) {
+      if (!['category', 'product'].includes(targetType)) {
+        throw new CatalogV2Error('Loại đối tượng preset không hợp lệ', 400);
+      }
+      return await optionScopesRepository.listPresets({
+        targetType,
+        targetId: Number(targetId),
+      });
+    },
+
+    async upsertPreset({ targetType, targetId, attributeDefinitionId, valueIds = [], isLocked = false, userId = null }) {
+      if (!['category', 'product'].includes(targetType)) {
+        throw new CatalogV2Error('Loại đối tượng preset không hợp lệ', 400);
+      }
+
+      if (targetType === 'category') {
+        const context = await optionScopesRepository.getCategoryAssignmentContext(
+          Number(targetId),
+          Number(attributeDefinitionId),
+        );
+        if (!context) {
+          throw new CatalogV2Error('Danh mục hoặc tùy chọn không tồn tại', 404);
+        }
+        if (context.category_product_type_id != null
+          && Number(context.category_product_type_id) !== Number(context.attribute_product_type_id)) {
+          throw new CatalogV2Error('Tùy chọn không thuộc loại sản phẩm/ngành của danh mục', 409);
+        }
+      } else if (targetType === 'product') {
+        const context = await optionScopesRepository.getProductOverrideContext(
+          Number(targetId),
+          Number(attributeDefinitionId),
+        );
+        if (!context) {
+          throw new CatalogV2Error('Sản phẩm hoặc tùy chọn không tồn tại', 404);
+        }
+        if (context.product_type_schema_id != null
+          && Number(context.product_type_schema_id) !== Number(context.attribute_schema_id)) {
+          throw new CatalogV2Error('Tùy chọn không thuộc schema ngành của sản phẩm', 409);
+        }
+      }
+
+      return await optionScopesRepository.upsertPreset({
+        targetType,
+        targetId: Number(targetId),
+        attributeDefinitionId: Number(attributeDefinitionId),
+        valueIds: Array.isArray(valueIds) ? valueIds.map(Number) : [],
+        isLocked: Boolean(isLocked),
+        userId,
+      });
+    },
+
+    async deletePreset({ targetType, targetId, attributeDefinitionId }) {
+      if (!['category', 'product'].includes(targetType)) {
+        throw new CatalogV2Error('Loại đối tượng preset không hợp lệ', 400);
+      }
+      return await optionScopesRepository.deletePreset({
+        targetType,
+        targetId: Number(targetId),
+        attributeDefinitionId: Number(attributeDefinitionId),
+      });
     },
   };
 }

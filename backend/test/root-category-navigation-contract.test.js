@@ -35,7 +35,25 @@ test('Grouped sections repository keeps empty roots and filters unavailable cata
   const productSql = queries[0].sql;
   assert.match(productSql, /p\.is_available = TRUE/);
   assert.match(productSql, /bvo\.is_available = TRUE/);
+  assert.match(productSql, /JOIN LATERAL \(/);
+  assert.doesNotMatch(productSql, /LEFT JOIN LATERAL \(/);
   assert.match(productSql, /COALESCE\(bvi\.on_hand, 0\) - COALESCE\(bvi\.reserved, 0\) > 0/);
+});
+
+test('Branch-aware category tree requires an available offer with a branch price', async () => {
+  const queries = [];
+  const repository = createPublicCatalogV2Repository({
+    async query(sql, params) {
+      queries.push({ sql, params });
+      return [[]];
+    },
+  });
+
+  await repository.getCategoryTree(7);
+
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0].params, [7]);
+  assert.match(queries[0].sql, /bvo\.is_available = TRUE AND bvo\.price IS NOT NULL/);
 });
 
 test('Public product details require branch context', async () => {

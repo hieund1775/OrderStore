@@ -113,12 +113,41 @@ export function CatalogTabBlocksView({
     return activeRootCategory ? activeRootCategory.name : 'Danh mục';
   }, [activeRootCategory, selectedRootId]);
 
-  // Danh mục khả dụng để cấu hình tùy chọn trong Tab 3
+  // Danh mục khả dụng để cấu hình tùy chọn trong Tab 3 (Ngành gốc dùng chung + Danh mục con cục bộ)
   const optionEligibleCategories = useMemo(() => {
-    if (subcategories.length > 0) return subcategories;
-    if (activeRootCategory) return [activeRootCategory];
-    return categories;
-  }, [subcategories, activeRootCategory, categories]);
+    const list: (CategoryNode & { scopeLabel?: string; isRootScope?: boolean })[] = [];
+    if (activeRootCategory) {
+      list.push({
+        ...activeRootCategory,
+        isRootScope: true,
+        scopeLabel: `👑 ${activeRootCategory.name} (Ngành Gốc — Dùng chung/Kế thừa)`,
+      });
+      for (const sub of subcategories) {
+        list.push({
+          ...sub,
+          isRootScope: false,
+          scopeLabel: `📁 ${sub.name} (Danh mục con)`,
+        });
+      }
+    } else {
+      for (const root of rootCategories) {
+        list.push({
+          ...root,
+          isRootScope: true,
+          scopeLabel: `👑 ${root.name} (Ngành Gốc — Dùng chung/Kế thừa)`,
+        });
+        const children = categories.filter((c) => Number(c.parent_id) === Number(root.id));
+        for (const child of children) {
+          list.push({
+            ...child,
+            isRootScope: false,
+            scopeLabel: `  ↳ 📁 ${child.name} (Danh mục con)`,
+          });
+        }
+      }
+    }
+    return list;
+  }, [activeRootCategory, subcategories, rootCategories, categories]);
 
   // Danh mục đang được cấu hình tùy chọn ở Tab 3
   const currentOptionCategory = useMemo(() => {
@@ -682,20 +711,22 @@ export function CatalogTabBlocksView({
 
             {/* Category selector pills */}
             <div className="flex flex-wrap items-center gap-1.5 bg-muted/60 p-1.5 rounded-xl border">
-              <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Chọn danh mục:</span>
+              <span className="text-xs font-bold text-muted-foreground pl-1.5 pr-1">Phạm vi áp dụng:</span>
               {optionEligibleCategories.map((cat) => {
                 const isSelected = currentOptionCategory?.id === cat.id;
                 return (
                   <button
                     key={cat.id}
                     onClick={() => setOptionTargetCatId(Number(cat.id))}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                       isSelected
                         ? 'bg-primary text-primary-foreground shadow-xs'
+                        : cat.isRootScope
+                        ? 'bg-amber-500/10 text-amber-900 dark:text-amber-300 hover:bg-amber-500/20 border border-amber-500/30'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {cat.name}
+                    {cat.scopeLabel || cat.name}
                   </button>
                 );
               })}

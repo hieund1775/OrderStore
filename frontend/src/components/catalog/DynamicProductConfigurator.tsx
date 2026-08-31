@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Plus, Minus, ShoppingBag, Store, AlertCircle } from 'lucide-react';
-import { fetchPublicProductDetails, resolveProductConfiguration } from '@/lib/api';
+import { Check, Plus, Minus, ShoppingBag, AlertCircle, Lock } from 'lucide-react';
+import {
+  fetchPublicProductDetails,
+  resolveProductConfiguration,
+  type PublicProductDetails,
+  type ResolvedProductConfiguration,
+  type AppliedModifier,
+} from '@/lib/api';
 import { vnd } from '@/lib/data';
 import { toast } from 'sonner';
 
@@ -27,7 +30,7 @@ export interface DynamicProductConfiguratorProps {
     variantName?: string | null;
     quantity: number;
     unitPrice: number;
-    appliedModifiers: any[];
+    appliedModifiers: AppliedModifier[];
     stockMode: 'tracked' | 'made_to_order';
     fulfillmentLane: 'kitchen' | 'packing';
     image?: string;
@@ -42,11 +45,11 @@ export function DynamicProductConfigurator({
   onAddToCart,
 }: DynamicProductConfiguratorProps) {
   const [loading, setLoading] = useState(true);
-  const [product, setProduct] = useState<any | null>(null);
+  const [product, setProduct] = useState<PublicProductDetails | null>(null);
   const [selectedVariantValueIds, setSelectedVariantValueIds] = useState<number[]>([]);
   const [selectedModifierValueIds, setSelectedModifierValueIds] = useState<number[]>([]);
   const [quantity, setQuantity] = useState(1);
-  const [resolvedConfig, setResolvedConfig] = useState<any | null>(null);
+  const [resolvedConfig, setResolvedConfig] = useState<ResolvedProductConfiguration | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -68,7 +71,7 @@ export function DynamicProductConfigurator({
         const initialVarValIds: number[] = [];
         const initialModValIds: number[] = [];
 
-        (data.attributes || []).forEach((attr: any) => {
+        (data.attributes || []).forEach((attr) => {
           if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
             if (attr.role === 'variant') {
               initialVarValIds.push(attr.values[0].id);
@@ -128,8 +131,9 @@ export function DynamicProductConfigurator({
 
   if (!open) return null;
 
-  const handleSelectSingle = (role: 'variant' | 'modifier', attr: any, valId: number) => {
-    const existingValIds = attr.values.map((v: any) => v.id);
+  const handleSelectSingle = (role: 'variant' | 'modifier', attr: PublicProductDetails['attributes'][number], valId: number) => {
+    if (attr.is_locked) return;
+    const existingValIds = attr.values.map((v) => v.id);
     if (role === 'variant') {
       const filtered = selectedVariantValueIds.filter((id) => !existingValIds.includes(id));
       setSelectedVariantValueIds([...filtered, valId]);
@@ -139,7 +143,8 @@ export function DynamicProductConfigurator({
     }
   };
 
-  const handleToggleMulti = (valId: number) => {
+  const handleToggleMulti = (attr: PublicProductDetails['attributes'][number], valId: number) => {
+    if (attr.is_locked) return;
     if (selectedModifierValueIds.includes(valId)) {
       setSelectedModifierValueIds(selectedModifierValueIds.filter((id) => id !== valId));
     } else {
@@ -149,35 +154,39 @@ export function DynamicProductConfigurator({
 
   const handleConfirmAddToCart = () => {
     if (!resolvedConfig) return;
-    if (resolvedConfig.is_available === false) {
+    const resolvedProduct = resolvedConfig.product;
+    const resolvedVariant = resolvedConfig.variant;
+
+    if (resolvedVariant.is_available === false) {
       toast.error('Biến thể món này hiện đang tạm hết tại chi nhánh');
       return;
     }
     if (
-      resolvedConfig.stock_mode === 'tracked' &&
-      resolvedConfig.available_stock !== null &&
-      resolvedConfig.available_stock < quantity
+      resolvedProduct.stock_mode === 'tracked' &&
+      resolvedVariant.available_stock !== null &&
+      resolvedVariant.available_stock !== undefined &&
+      resolvedVariant.available_stock < quantity
     ) {
-      toast.error(`Chỉ còn ${resolvedConfig.available_stock} sản phẩm khả dụng trong kho`);
+      toast.error(`Chỉ còn ${resolvedVariant.available_stock} sản phẩm khả dụng trong kho`);
       return;
     }
 
     onAddToCart({
-      productId: resolvedConfig.product_id,
-      productName: resolvedConfig.product_name,
-      productSlug: resolvedConfig.product_slug,
-      variantId: resolvedConfig.variant_id,
-      sku: resolvedConfig.sku,
-      variantName: resolvedConfig.variant_name,
+      productId: resolvedProduct.id,
+      productName: resolvedProduct.name,
+      productSlug: resolvedProduct.slug,
+      variantId: resolvedVariant.id,
+      sku: resolvedVariant.sku,
+      variantName: resolvedVariant.name_suffix || null,
       quantity,
       unitPrice: resolvedConfig.unit_price,
       appliedModifiers: resolvedConfig.applied_modifiers,
-      stockMode: resolvedConfig.stock_mode,
-      fulfillmentLane: resolvedConfig.fulfillment_lane,
-      image: product?.image_url,
+      stockMode: resolvedProduct.stock_mode,
+      fulfillmentLane: resolvedProduct.fulfillment_lane,
+      image: product?.image_url || undefined,
     });
 
-    toast.success(`Đã thêm ${quantity}x ${resolvedConfig.product_name} vào giỏ hàng`);
+    toast.success(`Đã thêm ${quantity}x ${resolvedProduct.name} vào giỏ hàng`);
     onOpenChange(false);
   };
 
@@ -201,9 +210,6 @@ export function DynamicProductConfigurator({
                   />
                 )}
                 <div className="flex-1 min-w-0">
-                  <Badge variant="outline" className="text-[10px] mb-1 font-mono">
-                    {product.category_name}
-                  </Badge>
                   <h3 className="font-display font-bold text-lg leading-tight text-foreground truncate">
                     {product.name}
                   </h3>
@@ -216,15 +222,21 @@ export function DynamicProductConfigurator({
 
             {/* Attributes Body */}
             <div className="p-5 space-y-5">
-              {(product.attributes || []).map((attr: any) => {
+              {(product.attributes || []).map((attr) => {
                 const isVariant = attr.role === 'variant';
                 const isMulti = attr.input_type === 'multi_select';
 
                 return (
                   <div key={attr.id} className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-foreground">
-                        {attr.name} {attr.is_required && <span className="text-destructive">*</span>}
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>{attr.name}</span>
+                        {attr.is_required && <span className="text-destructive">*</span>}
+                        {attr.is_locked && (
+                          <Badge variant="outline" className="text-[9px] py-0 px-1 font-normal text-muted-foreground">
+                            <Lock className="size-2.5 mr-0.5" /> Cố định
+                          </Badge>
+                        )}
                       </label>
                       <span className="text-[10px] text-muted-foreground">
                         {isMulti ? 'Chọn nhiều' : 'Chọn 1'}
@@ -232,7 +244,7 @@ export function DynamicProductConfigurator({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {(attr.values || []).map((val: any) => {
+                      {(attr.values || []).map((val) => {
                         const isSelected = isVariant
                           ? selectedVariantValueIds.includes(val.id)
                           : selectedModifierValueIds.includes(val.id);
@@ -241,15 +253,20 @@ export function DynamicProductConfigurator({
                           <button
                             key={val.id}
                             type="button"
+                            disabled={attr.is_locked}
                             onClick={() =>
                               isMulti
-                                ? handleToggleMulti(val.id)
+                                ? handleToggleMulti(attr, val.id)
                                 : handleSelectSingle(attr.role, attr, val.id)
                             }
                             className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
-                              isSelected
-                                ? 'border-primary bg-primary text-primary-foreground shadow-glow'
-                                : 'border-border bg-card text-foreground hover:bg-muted/40'
+                              attr.is_locked
+                                ? isSelected
+                                  ? 'border-muted-foreground/30 bg-muted text-foreground opacity-90 cursor-not-allowed'
+                                  : 'border-border bg-muted/30 text-muted-foreground opacity-50 cursor-not-allowed'
+                                : isSelected
+                                  ? 'border-primary bg-primary text-primary-foreground shadow-glow'
+                                  : 'border-border bg-card text-foreground hover:bg-muted/40'
                             }`}
                           >
                             {isSelected && <Check className="size-3.5" />}
@@ -298,7 +315,7 @@ export function DynamicProductConfigurator({
                 </div>
               </div>
 
-              {resolvedConfig?.is_available === false && (
+              {resolvedConfig?.variant.is_available === false && (
                 <div className="flex items-center gap-2 rounded-xl bg-destructive/10 p-3 text-destructive text-xs">
                   <AlertCircle className="size-4 shrink-0" />
                   <span>Sản phẩm hoặc biến thể này hiện không có sẵn tại chi nhánh đang chọn.</span>
@@ -317,7 +334,7 @@ export function DynamicProductConfigurator({
 
               <Button
                 onClick={handleConfirmAddToCart}
-                disabled={calculating || !resolvedConfig || resolvedConfig.is_available === false}
+                disabled={calculating || !resolvedConfig || resolvedConfig.variant.is_available === false}
                 className="gap-2 px-6 rounded-2xl"
               >
                 <ShoppingBag className="size-4" />

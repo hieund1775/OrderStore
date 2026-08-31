@@ -280,12 +280,57 @@ export async function archiveCatalogProduct(id: number | string) {
   });
 }
 
-export async function fetchCategoryOptionAssignments(categoryId: number | string) {
-  return apiFetch<any[]>(`/admin/catalog/categories/${categoryId}/option-assignments`);
+export type CategoryOptionAssignment = {
+  attribute_definition_id: number;
+  attribute_name?: string;
+  is_enabled: boolean;
+  inherit_to_descendants: boolean;
+  sort_order: number;
+  is_required: boolean | null;
+  min_selected: number | null;
+  max_selected: number | null;
+  source_category_id?: number;
+  source_category_name?: string;
+};
+
+export type CategoryOptionAssignmentInput = {
+  attribute_definition_id: number;
+  is_enabled?: boolean;
+  inherit_to_descendants?: boolean;
+  sort_order?: number;
+  is_required?: boolean | null;
+  min_selected?: number | null;
+  max_selected?: number | null;
+};
+
+export type ProductOptionOverride = {
+  attribute_definition_id: number;
+  attribute_name?: string;
+  is_enabled: boolean;
+  sort_order: number;
+  is_required: boolean | null;
+  min_selected: number | null;
+  max_selected: number | null;
+};
+
+export type ProductOptionOverrideInput = {
+  attribute_definition_id: number;
+  is_enabled?: boolean;
+  sort_order?: number;
+  is_required?: boolean | null;
+  min_selected?: number | null;
+  max_selected?: number | null;
+};
+
+export async function fetchCategoryOptionAssignments(categoryId: number | string): Promise<CategoryOptionAssignment[]> {
+  return apiFetch<CategoryOptionAssignment[]>(`/admin/catalog/categories/${categoryId}/option-assignments`);
 }
 
-export async function updateCategoryOptionAssignment(categoryId: number | string, data: any) {
-  return apiFetch<any>(`/admin/catalog/categories/${categoryId}/option-assignments`, {
+export async function updateCategoryOptionAssignment(
+  categoryId: number | string,
+  data: CategoryOptionAssignmentInput,
+): Promise<CategoryOptionAssignment> {
+  return apiFetch<CategoryOptionAssignment>(`/admin/catalog/categories/${categoryId}/option-assignments`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -294,19 +339,22 @@ export async function updateCategoryOptionAssignment(categoryId: number | string
 export async function deleteCategoryOptionAssignment(
   categoryId: number | string,
   attributeDefinitionId: number | string,
-) {
+): Promise<{ removed: boolean }> {
   return apiFetch<{ removed: boolean }>(
     `/admin/catalog/categories/${categoryId}/option-assignments/${attributeDefinitionId}`,
     { method: 'DELETE' },
   );
 }
 
-export async function fetchProductOptionOverrides(productId: number | string) {
-  return apiFetch<any[]>(`/admin/catalog/products/${productId}/option-overrides`);
+export async function fetchProductOptionOverrides(productId: number | string): Promise<ProductOptionOverride[]> {
+  return apiFetch<ProductOptionOverride[]>(`/admin/catalog/products/${productId}/option-overrides`);
 }
 
-export async function updateProductOptionOverride(productId: number | string, data: any) {
-  return apiFetch<any>(`/admin/catalog/products/${productId}/option-overrides`, {
+export async function updateProductOptionOverride(
+  productId: number | string,
+  data: ProductOptionOverrideInput,
+): Promise<ProductOptionOverride> {
+  return apiFetch<ProductOptionOverride>(`/admin/catalog/products/${productId}/option-overrides`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -315,9 +363,61 @@ export async function updateProductOptionOverride(productId: number | string, da
 export async function deleteProductOptionOverride(
   productId: number | string,
   attributeDefinitionId: number | string,
-) {
+): Promise<{ removed: boolean }> {
   return apiFetch<{ removed: boolean }>(
     `/admin/catalog/products/${productId}/option-overrides/${attributeDefinitionId}`,
+    { method: 'DELETE' },
+  );
+}
+
+export type CatalogOptionPreset = {
+  id: number;
+  target_type: 'category' | 'product';
+  target_id: number;
+  attribute_definition_id: number;
+  attribute_name?: string;
+  attribute_code?: string;
+  is_locked: boolean;
+  attribute_value_ids: number[];
+  values?: {
+    id: number;
+    code: string;
+    label: string;
+    price_adjustment: number;
+  }[];
+};
+
+export type CatalogOptionPresetInput = {
+  target_type: 'category' | 'product';
+  target_id: number;
+  attribute_definition_id: number;
+  attribute_value_ids: number[];
+  is_locked?: boolean;
+};
+
+export async function fetchCatalogPresets(
+  targetType: 'category' | 'product',
+  targetId: number | string,
+): Promise<CatalogOptionPreset[]> {
+  return apiFetch<CatalogOptionPreset[]>(`/admin/catalog/presets?target_type=${targetType}&target_id=${targetId}`);
+}
+
+export async function saveCatalogPreset(
+  data: CatalogOptionPresetInput,
+): Promise<CatalogOptionPreset> {
+  return apiFetch<CatalogOptionPreset>('/admin/catalog/presets', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCatalogPreset(
+  targetType: 'category' | 'product',
+  targetId: number | string,
+  attributeId: number | string,
+): Promise<{ removed: boolean }> {
+  return apiFetch<{ removed: boolean }>(
+    `/admin/catalog/presets/${targetType}/${targetId}/${attributeId}`,
     { method: 'DELETE' },
   );
 }
@@ -411,12 +511,13 @@ export type PublicCatalogProduct = {
   slug: string;
   description: string | null;
   price: number;
+  compare_at_price?: number | null;
   image_url: string | null;
   category_id: number;
   category_name?: string;
   category_slug?: string;
-  fulfillment_lane?: string;
-  stock_mode?: string;
+  fulfillment_lane?: 'kitchen' | 'packing';
+  stock_mode?: 'tracked' | 'made_to_order';
   variants_count?: number;
   is_available?: boolean;
   available_stock?: number | null;
@@ -427,8 +528,103 @@ export type PublicCatalogProductsResponse = {
   total: number;
 };
 
-export async function fetchPublicCategoryTree(): Promise<PublicCategoryNode[]> {
-  return apiFetch<PublicCategoryNode[]>('/api/catalog/categories/tree');
+export type PublicAttributeValue = {
+  id: number;
+  code: string;
+  label: string;
+  price_adjustment: number;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type PublicAttributeDefinition = {
+  id: number;
+  code: string;
+  name: string;
+  role: 'variant' | 'modifier';
+  input_type: 'single_select' | 'multi_select';
+  is_required: boolean;
+  min_selections: number | null;
+  max_selections: number | null;
+  sort_order: number;
+  is_locked?: boolean;
+  values: PublicAttributeValue[];
+  source?: {
+    type: 'root' | 'category' | 'product';
+    id: number;
+    name: string;
+    is_overridden: boolean;
+  };
+};
+
+export type PublicProductVariant = {
+  id: number;
+  sku: string;
+  variant_signature: string;
+  name_suffix?: string;
+  price: number;
+  compare_at_price?: number | null;
+  is_available: boolean;
+  available_stock?: number | null;
+};
+
+export type PublicProductDetails = {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  category_id: number;
+  fulfillment_lane: 'kitchen' | 'packing';
+  stock_mode: 'tracked' | 'made_to_order';
+  variants: PublicProductVariant[];
+  attributes: PublicAttributeDefinition[];
+};
+
+export type AppliedModifier = {
+  attribute_definition_id?: number;
+  attribute_code?: string;
+  attribute_name: string;
+  attribute_value_id?: number;
+  value_code?: string;
+  value_label?: string;
+  attribute_label?: string;
+  price_adjustment: number;
+};
+
+export type ResolvedProductConfiguration = {
+  product: {
+    id: number;
+    name: string;
+    slug: string;
+    fulfillment_lane: 'kitchen' | 'packing';
+    stock_mode: 'tracked' | 'made_to_order';
+  };
+  variant: {
+    id: number;
+    sku: string;
+    variant_signature: string;
+    name_suffix?: string;
+    base_price: number;
+    compare_at_price?: number | null;
+    is_available: boolean;
+    available_stock?: number | null;
+  };
+  applied_modifiers: AppliedModifier[];
+  pricing: {
+    variant_base_price: number;
+    modifiers_extra_total: number;
+    final_price: number;
+  };
+  base_price: number;
+  modifier_extra: number;
+  unit_price: number;
+};
+
+export async function fetchPublicCategoryTree(storeId?: number | string | null): Promise<PublicCategoryNode[]> {
+  const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : '';
+  return apiFetch<PublicCategoryNode[]>(`/api/catalog/categories/tree${query}`);
 }
 
 export async function fetchPublicCatalogSections(storeId: number | string, limitPerRoot = 12): Promise<{ sections: PublicCatalogSection[] }> {
@@ -446,9 +642,9 @@ export async function fetchPublicProducts(params?: { store_id?: number | string;
   return apiFetch<PublicCatalogProductsResponse>(`/api/catalog/products${query}`);
 }
 
-export async function fetchPublicProductDetails(slug: string, storeId?: number | string) {
+export async function fetchPublicProductDetails(slug: string, storeId?: number | string): Promise<PublicProductDetails> {
   const query = storeId ? `?store_id=${storeId}` : '';
-  return apiFetch<any>(`/api/catalog/products/${slug}${query}`);
+  return apiFetch<PublicProductDetails>(`/api/catalog/products/${slug}${query}`);
 }
 
 export async function resolveProductConfiguration(data: {
@@ -456,8 +652,8 @@ export async function resolveProductConfiguration(data: {
   product_slug: string;
   variant_value_ids?: number[];
   modifier_value_ids?: number[];
-}) {
-  return apiFetch<any>('/api/catalog/resolve-configuration', {
+}): Promise<ResolvedProductConfiguration> {
+  return apiFetch<ResolvedProductConfiguration>('/api/catalog/resolve-configuration', {
     method: 'POST',
     body: JSON.stringify(data),
   });

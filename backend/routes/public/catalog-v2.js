@@ -8,7 +8,8 @@ const router = Router();
 const service = createPublicCatalogV2Service();
 
 router.get('/categories/tree', asyncHandler(async (req, res) => {
-  const tree = await service.getCategoryTree();
+  const storeId = req.query.store_id ? Number(req.query.store_id) : null;
+  const tree = await service.getCategoryTree({ storeId });
   res.json(tree);
 }));
 

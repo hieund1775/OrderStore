@@ -1,6 +1,8 @@
 export function resolveProductOptions({
   categoryAssignments = [],
   productOverrides = [],
+  categoryPresets = [],
+  productPresets = [],
 } = {}) {
   // 1. Process category assignments in topological order (root -> leaf)
   const effectiveMap = new Map();
@@ -22,10 +24,24 @@ export function resolveProductOptions({
       source_id: assign.category_id,
       source_name: assign.category_name || 'Category',
       is_overridden: false,
+      preset_value_ids: [],
+      is_locked: false,
     });
   }
 
-  // 2. Apply product-level overrides
+  // 2. Apply category presets
+  for (const preset of categoryPresets) {
+    const attrId = Number(preset.attribute_definition_id);
+    const existing = effectiveMap.get(attrId);
+    if (existing) {
+      existing.preset_value_ids = Array.isArray(preset.attribute_value_ids)
+        ? preset.attribute_value_ids.map(Number)
+        : [];
+      existing.is_locked = Boolean(preset.is_locked);
+    }
+  }
+
+  // 3. Apply product-level overrides
   for (const override of productOverrides) {
     const attrId = Number(override.attribute_definition_id);
     const existing = effectiveMap.get(attrId);
@@ -54,10 +70,24 @@ export function resolveProductOptions({
       source_id: override.product_id,
       source_name: 'Sản phẩm',
       is_overridden: true,
+      preset_value_ids: existing?.preset_value_ids || [],
+      is_locked: existing?.is_locked || false,
     });
   }
 
-  // 3. Filter only enabled attributes and sort by sort_order
+  // 4. Apply product-level presets (Product preset wins over category preset for configured groups)
+  for (const preset of productPresets) {
+    const attrId = Number(preset.attribute_definition_id);
+    const existing = effectiveMap.get(attrId);
+    if (existing) {
+      existing.preset_value_ids = Array.isArray(preset.attribute_value_ids)
+        ? preset.attribute_value_ids.map(Number)
+        : [];
+      existing.is_locked = Boolean(preset.is_locked);
+    }
+  }
+
+  // 5. Filter only enabled attributes and sort by sort_order
   const resolved = Array.from(effectiveMap.values())
     .filter((item) => item.is_enabled)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));

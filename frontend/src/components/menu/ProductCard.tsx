@@ -161,14 +161,20 @@ export function ProductCard({ product }: { product: Product }) {
               variantName: configured.variantName,
               stockMode: configured.stockMode,
               fulfillmentLane: configured.fulfillmentLane,
-              size: configured.appliedModifiers.find((m) => m.attribute_code === 'size')?.value_code?.toUpperCase() || 'M',
-              base: configured.appliedModifiers.find((m) => m.attribute_code === 'base')?.value_label || product.base,
-              sugar: configured.appliedModifiers.find((m) => m.attribute_code === 'sugar')?.value_label || '100%',
-              ice: configured.appliedModifiers.find((m) => m.attribute_code === 'ice')?.value_label || '100%',
+              size: configured.appliedModifiers.find((m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size'))?.value_label || configured.variantName || 'M',
+              base: configured.appliedModifiers.find((m) => m.attribute_code === 'base' || m.attribute_name.toLowerCase().includes('nền') || m.attribute_name.toLowerCase().includes('base'))?.value_label || product.base,
+              sugar: configured.appliedModifiers.find((m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường'))?.value_label || '100%',
+              ice: configured.appliedModifiers.find((m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá'))?.value_label || '100%',
               toppings: configured.appliedModifiers
-                .filter((m) => m.attribute_code === 'toppings')
-                .map((m) => m.value_label),
-              appliedModifiers: configured.appliedModifiers,
+                .filter((m) => m.attribute_code === 'toppings' || m.attribute_name.toLowerCase().includes('topping'))
+                .map((m) => m.value_label || m.attribute_label || m.attribute_name),
+              appliedModifiers: configured.appliedModifiers.map((m) => ({
+                attribute_code: m.attribute_code || `attr_${m.attribute_definition_id || 0}`,
+                attribute_name: m.attribute_name,
+                value_code: m.value_code || `val_${m.attribute_value_id || 0}`,
+                value_label: m.value_label || m.attribute_label || m.attribute_name,
+                price_adjustment: m.price_adjustment,
+              })),
               unitPrice: configured.unitPrice,
               qty: configured.quantity,
             });

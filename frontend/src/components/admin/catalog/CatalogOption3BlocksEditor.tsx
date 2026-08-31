@@ -1,16 +1,13 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
-  CheckCircle2,
-  Tag,
   Settings2,
   Trash2,
-  Sliders,
-  Check,
-  ShoppingBag,
+  Lock,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -34,6 +31,11 @@ import {
   fetchCategoryOptionAssignments,
   updateCategoryOptionAssignment,
   deleteCategoryOptionAssignment,
+  fetchCatalogPresets,
+  saveCatalogPreset,
+  deleteCatalogPreset,
+  type CategoryOptionAssignment,
+  type CatalogOptionPreset,
 } from '@/lib/api';
 import type { SchemaDetails, AttributeDefinition } from './SchemaAttributeEditor';
 import type { ProductV2 } from './ProductEditor';
@@ -46,13 +48,6 @@ interface CatalogOption3BlocksEditorProps {
   onRefresh: () => Promise<void>;
 }
 
-interface ProductPresetConfig {
-  productId: number;
-  productName: string;
-  defaultFreeOptions: Record<string, string>; // { "Mức Đá": "70% Đá", "Mức Đường": "70% Đường" }
-  defaultPaidOptions: string[]; // ["Trân châu đen", "Thạch củ năng"]
-}
-
 export function CatalogOption3BlocksEditor({
   categoryId,
   categoryName,
@@ -60,7 +55,8 @@ export function CatalogOption3BlocksEditor({
   categoryProducts,
   onRefresh,
 }: CatalogOption3BlocksEditorProps) {
-  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<CategoryOptionAssignment[]>([]);
+  const [loading, setLoading] = useState(false);
 
   // Dialog Tạo Nhóm Tùy Chọn (Block 1 hoặc Block 2)
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -69,20 +65,16 @@ export function CatalogOption3BlocksEditor({
   const [groupValuesStr, setGroupValuesStr] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
 
-  // State Cấu Hình Sản Phẩm Riêng (Block 3)
+  // State Cấu Hình Block 3 (Preset cho Danh Mục Con hoặc Sản Phẩm Riêng)
+  const [presetTargetType, setPresetTargetType] = useState<'category' | 'product'>('category');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedFreeDefaults, setSelectedFreeDefaults] = useState<Record<string, string>>({});
   const [selectedPaidDefaults, setSelectedPaidDefaults] = useState<string[]>([]);
-  const [productPresets, setProductPresets] = useState<ProductPresetConfig[]>([
-    {
-      productId: 1,
-      productName: 'Trà Sữa Thập Cẩm',
-      defaultFreeOptions: { 'Mức Đá': '70% Đá', 'Mức Đường': '70% Đường' },
-      defaultPaidOptions: ['Trân châu đen', 'Thạch củ năng'],
-    },
-  ]);
+  const [lockedByAttr, setLockedByAttr] = useState<Record<number, boolean>>({});
+  const [categoryPresets, setCategoryPresets] = useState<CatalogOptionPreset[]>([]);
+  const [productPresets, setProductPresets] = useState<CatalogOptionPreset[]>([]);
+  const [savingPreset, setSavingPreset] = useState(false);
 
-  // Tự sinh slug code ngầm
   const generateCode = (name: string) => {
     return name
       .toLowerCase()
@@ -97,102 +89,99 @@ export function CatalogOption3BlocksEditor({
   const loadAssignments = async () => {
     if (!categoryId) return;
     try {
+      setLoading(true);
       const data = await fetchCategoryOptionAssignments(categoryId);
-      setAssignments(data || []);
+      setAssignments(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      toast.error(err.message || 'Không thể tải cấu hình tùy chọn của danh mục');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadPresets = async () => {
+    if (!categoryId) return;
+    try {
+      // 1. Load category presets
+      const catPresets = await fetchCatalogPresets('category', categoryId);
+      setCategoryPresets(Array.isArray(catPresets) ? catPresets : []);
+
+      // 2. Load product presets for each product in this category
+      if (categoryProducts && categoryProducts.length > 0) {
+        const allProdPresets: CatalogOptionPreset[] = [];
+        for (const prod of categoryProducts) {
+          const presets = await fetchCatalogPresets('product', prod.id);
+          if (Array.isArray(presets)) {
+            allProdPresets.push(...presets);
+          }
+        }
+        setProductPresets(allProdPresets);
+      } else {
+        setProductPresets([]);
+      }
     } catch {
-      // Ignore assignment fetch error if category is new
+      // ignore
     }
   };
 
   useEffect(() => {
     void loadAssignments();
-  }, [categoryId]);
+    void loadPresets();
+  }, [categoryId, categoryProducts]);
 
   const rawAttributes = schema?.attributes || [];
 
-  // Default fallback sample attributes if schema is empty
-  const sampleFreeAttributes: AttributeDefinition[] = [
-    {
-      id: 901,
-      code: 'ice_level',
-      name: 'Mức Đá',
-      role: 'modifier',
-      input_type: 'single_select',
-      is_required: true,
-      sort_order: 1,
-      values: [
-        { id: 9011, value_code: '100_ice', value_label: '100% Đá', price_adjustment: 0, sort_order: 1, is_active: true },
-        { id: 9012, value_code: '70_ice', value_label: '70% Đá', price_adjustment: 0, sort_order: 2, is_active: true },
-        { id: 9013, value_code: '50_ice', value_label: '50% Đá', price_adjustment: 0, sort_order: 3, is_active: true },
-        { id: 9014, value_code: '0_ice', value_label: 'Không Đá', price_adjustment: 0, sort_order: 4, is_active: true },
-      ],
-    },
-    {
-      id: 902,
-      code: 'sugar_level',
-      name: 'Mức Đường',
-      role: 'modifier',
-      input_type: 'single_select',
-      is_required: true,
-      sort_order: 2,
-      values: [
-        { id: 9021, value_code: '100_sugar', value_label: '100% Đường', price_adjustment: 0, sort_order: 1, is_active: true },
-        { id: 9022, value_code: '70_sugar', value_label: '70% Đường', price_adjustment: 0, sort_order: 2, is_active: true },
-        { id: 9023, value_code: '50_sugar', value_label: '50% Đường', price_adjustment: 0, sort_order: 3, is_active: true },
-        { id: 9024, value_code: '0_sugar', value_label: 'Không Đường', price_adjustment: 0, sort_order: 4, is_active: true },
-      ],
-    },
-  ];
-
-  const samplePaidAttributes: AttributeDefinition[] = [
-    {
-      id: 903,
-      code: 'topping_extra',
-      name: 'Topping Thêm',
-      role: 'variant',
-      input_type: 'multi_select',
-      is_required: false,
-      sort_order: 1,
-      values: [
-        { id: 9031, value_code: 'black_pearl', value_label: 'Trân châu đen', price_adjustment: 5000, sort_order: 1, is_active: true },
-        { id: 9032, value_code: 'jelly_water_chestnut', value_label: 'Thạch củ năng', price_adjustment: 3000, sort_order: 2, is_active: true },
-        { id: 9033, value_code: 'egg_pudding', value_label: 'Pudding trứng', price_adjustment: 8000, sort_order: 3, is_active: true },
-        { id: 9034, value_code: 'cheese_fresh', value_label: 'Phô mai tươi', price_adjustment: 10000, sort_order: 4, is_active: true },
-      ],
-    },
-    {
-      id: 904,
-      code: 'cup_size',
-      name: 'Size Ly',
-      role: 'variant',
-      input_type: 'single_select',
-      is_required: true,
-      sort_order: 2,
-      values: [
-        { id: 9041, value_code: 'size_m', value_label: 'Size M', price_adjustment: 0, sort_order: 1, is_active: true },
-        { id: 9042, value_code: 'size_l', value_label: 'Size L', price_adjustment: 7000, sort_order: 2, is_active: true },
-      ],
-    },
-  ];
-
-  // Phân loại thuộc tính
-  const schemaFreeAttributes = rawAttributes.filter((attr) => {
+  // Phân loại thuộc tính từ Schema thật
+  const freeAttributes = rawAttributes.filter((attr) => {
     const hasPaidValues = attr.values?.some((v) => Number(v.price_adjustment || 0) > 0);
     return !hasPaidValues;
   });
 
-  const schemaPaidAttributes = rawAttributes.filter((attr) => {
+  const paidAttributes = rawAttributes.filter((attr) => {
     const hasPaidValues = attr.values?.some((v) => Number(v.price_adjustment || 0) > 0);
     return hasPaidValues || attr.role === 'variant';
   });
 
-  const freeAttributes = schemaFreeAttributes.length > 0 ? schemaFreeAttributes : sampleFreeAttributes;
-  const paidAttributes = schemaPaidAttributes.length > 0 ? schemaPaidAttributes : samplePaidAttributes;
+  // Khi thay đổi target (category hoặc product cụ thể), load lại form defaults
+  useEffect(() => {
+    const activePresets =
+      presetTargetType === 'category'
+        ? categoryPresets
+        : selectedProductId
+          ? productPresets.filter((p) => Number(p.target_id) === Number(selectedProductId))
+          : [];
+
+    const freeDefs: Record<string, string> = {};
+    const paidDefs: string[] = [];
+    const locks: Record<number, boolean> = {};
+
+    for (const preset of activePresets) {
+      locks[Number(preset.attribute_definition_id)] = Boolean(preset.is_locked);
+      const attr = rawAttributes.find((a) => Number(a.id) === Number(preset.attribute_definition_id));
+      if (!attr) continue;
+
+      for (const valId of preset.attribute_value_ids || []) {
+        const val = attr.values?.find((v) => Number(v.id) === Number(valId));
+        if (val) {
+          const valLabel = val.label || (val as any).value_label;
+          const isFree = !attr.values?.some((v) => Number(v.price_adjustment || 0) > 0);
+          if (isFree) {
+            freeDefs[attr.name] = valLabel;
+          } else {
+            paidDefs.push(valLabel);
+          }
+        }
+      }
+    }
+    setSelectedFreeDefaults(freeDefs);
+    setSelectedPaidDefaults(paidDefs);
+    setLockedByAttr(locks);
+  }, [presetTargetType, selectedProductId, categoryPresets, productPresets, rawAttributes]);
 
   const isAttrAssigned = (attrId: number) => {
-    if (assignments.length === 0) return true; // Default enabled
+    if (assignments.length === 0) return false;
     const found = assignments.find((a) => Number(a.attribute_definition_id) === Number(attrId));
-    return found ? Boolean(found.is_enabled) : true;
+    return found ? Boolean(found.is_enabled) : false;
   };
 
   const handleToggleAssignment = async (attr: AttributeDefinition) => {
@@ -203,22 +192,19 @@ export function CatalogOption3BlocksEditor({
         toast.success(`Đã tắt nhóm "${attr.name}" cho danh mục ${categoryName}`);
       } else {
         await updateCategoryOptionAssignment(categoryId, {
-          assignments: [
-            {
-              attribute_definition_id: attr.id,
-              is_enabled: true,
-              is_required: attr.is_required,
-              min_selected: attr.min_selections,
-              max_selected: attr.max_selections,
-              sort_order: attr.sort_order,
-            },
-          ],
+          attribute_definition_id: attr.id,
+          is_enabled: true,
+          inherit_to_descendants: true,
+          is_required: attr.is_required,
+          min_selected: attr.min_selections,
+          max_selected: attr.max_selections,
+          sort_order: attr.sort_order || 0,
         });
         toast.success(`Đã bật nhóm "${attr.name}" cho danh mục ${categoryName}`);
       }
       await loadAssignments();
-    } catch {
-      toast.success(`Đã cập nhật nhóm "${attr.name}"`);
+    } catch (err: any) {
+      toast.error(err.message || `Lỗi cập nhật nhóm "${attr.name}"`);
     }
   };
 
@@ -239,18 +225,21 @@ export function CatalogOption3BlocksEditor({
       toast.error('Vui lòng nhập tên nhóm tùy chọn');
       return;
     }
+    if (!schema?.id) {
+      toast.error('Chưa có thông tin schema ngành để thêm nhóm tùy chọn');
+      return;
+    }
 
     try {
       setModalSaving(true);
       const code = generateCode(groupName);
       const isFree = modalType === 'free';
-      const targetSchemaId = schema?.id || 1;
 
       // 1. Thêm thuộc tính vào Schema
-      const createdAttr = await addAttributeToSchema(targetSchemaId, {
+      const createdAttr = await addAttributeToSchema(schema.id, {
         code,
         name: groupName.trim(),
-        role: isFree ? 'modifier' : 'variant',
+        role: 'modifier',
         input_type: isFree ? 'single_select' : 'multi_select',
         is_required: isFree,
         min_selections: isFree ? 1 : 0,
@@ -280,59 +269,102 @@ export function CatalogOption3BlocksEditor({
 
       // 3. Tự động bật gán cho danh mục này
       await updateCategoryOptionAssignment(categoryId, {
-        assignments: [
-          {
-            attribute_definition_id: createdAttr.id,
-            is_enabled: true,
-            is_required: isFree,
-            min_selected: isFree ? 1 : 0,
-            max_selected: isFree ? 1 : null,
-            sort_order: 1,
-          },
-        ],
+        attribute_definition_id: createdAttr.id,
+        is_enabled: true,
+        inherit_to_descendants: true,
+        is_required: isFree,
+        min_selected: isFree ? 1 : 0,
+        max_selected: isFree ? 1 : null,
+        sort_order: 1,
       });
 
       toast.success(`Đã tạo nhóm tùy chọn "${groupName}" thành công!`);
       setCreateModalOpen(false);
       await onRefresh();
       await loadAssignments();
-    } catch {
-      toast.success(`Đã lưu nhóm tùy chọn "${groupName}" thành công!`);
-      setCreateModalOpen(false);
-      await onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || `Lỗi khi lưu nhóm tùy chọn "${groupName}"`);
     } finally {
       setModalSaving(false);
     }
   };
 
-  // Block 3: Lưu cấu hình mặc định riêng cho sản phẩm
-  const handleSaveProductPreset = (e: React.FormEvent) => {
+  // Block 3: Lưu snapshot cấu hình mặc định (ghi đè hoàn toàn & xóa nhóm bỏ chọn)
+  const handleSavePreset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProductId) {
+    const targetType = presetTargetType;
+    const targetId = targetType === 'category' ? categoryId : Number(selectedProductId);
+
+    if (targetType === 'product' && !selectedProductId) {
       toast.error('Vui lòng chọn sản phẩm cần áp dụng');
       return;
     }
-    const prod = categoryProducts.find((p) => String(p.id) === selectedProductId);
-    const prodName = prod?.name || `Sản phẩm #${selectedProductId}`;
 
-    const newPreset: ProductPresetConfig = {
-      productId: Number(selectedProductId),
-      productName: prodName,
-      defaultFreeOptions: { ...selectedFreeDefaults },
-      defaultPaidOptions: [...selectedPaidDefaults],
-    };
+    const targetLabel =
+      targetType === 'category'
+        ? `danh mục "${categoryName}"`
+        : `món "${categoryProducts.find((p) => String(p.id) === selectedProductId)?.name || selectedProductId}"`;
 
-    setProductPresets((prev) => [
-      ...prev.filter((p) => p.productId !== Number(selectedProductId)),
-      newPreset,
-    ]);
+    try {
+      setSavingPreset(true);
 
-    toast.success(`Đã lưu cấu hình riêng cố định cho món "${prodName}"!`);
+      // 1. Process free attributes (Single select)
+      for (const attr of freeAttributes) {
+        const selectedValLabel = selectedFreeDefaults[attr.name];
+        if (selectedValLabel) {
+          const val = attr.values?.find((v) => (v.label || (v as any).value_label) === selectedValLabel);
+          if (val) {
+            await saveCatalogPreset({
+              target_type: targetType,
+              target_id: targetId,
+              attribute_definition_id: attr.id,
+              attribute_value_ids: [val.id],
+              is_locked: Boolean(lockedByAttr[attr.id]),
+            });
+          }
+        } else {
+          // If deselected/empty, delete old preset from DB
+          await deleteCatalogPreset(targetType, targetId, attr.id);
+        }
+      }
+
+      // 2. Process paid attributes (Multi select)
+      for (const attr of paidAttributes) {
+        const selectedValIds = (attr.values || [])
+          .filter((v) => selectedPaidDefaults.includes(v.label || (v as any).value_label))
+          .map((v) => v.id);
+
+        if (selectedValIds.length > 0) {
+          await saveCatalogPreset({
+            target_type: targetType,
+            target_id: targetId,
+            attribute_definition_id: attr.id,
+            attribute_value_ids: selectedValIds,
+            is_locked: Boolean(lockedByAttr[attr.id]),
+          });
+        } else {
+          // If deselected/empty, delete old preset from DB
+          await deleteCatalogPreset(targetType, targetId, attr.id);
+        }
+      }
+
+      toast.success(`Đã lưu cấu hình preset cho ${targetLabel} vào CSDL!`);
+      await loadPresets();
+    } catch (err: any) {
+      toast.error(err.message || `Lỗi khi lưu cấu hình cho ${targetLabel}`);
+    } finally {
+      setSavingPreset(false);
+    }
   };
 
-  const handleDeletePreset = (productId: number) => {
-    setProductPresets((prev) => prev.filter((p) => p.productId !== productId));
-    toast.success('Đã xóa cấu hình riêng của món');
+  const handleDeletePreset = async (targetType: 'category' | 'product', targetId: number, attrId: number) => {
+    try {
+      await deleteCatalogPreset(targetType, targetId, attrId);
+      toast.success(`Đã xóa cấu hình preset (${targetType === 'category' ? 'danh mục' : 'món'})`);
+      await loadPresets();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi khi xóa cấu hình');
+    }
   };
 
   return (
@@ -360,57 +392,68 @@ export function CatalogOption3BlocksEditor({
 
             {/* List free attributes */}
             <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-              {freeAttributes.map((attr) => {
-                const assigned = isAttrAssigned(attr.id);
-                return (
-                  <div
-                    key={attr.id}
-                    className={`p-3 rounded-lg border transition-all ${
-                      assigned ? 'bg-primary/5 border-primary/20' : 'bg-background hover:bg-muted/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-foreground">{attr.name}</p>
-                        <div className="flex flex-wrap gap-1">
-                          {attr.values?.map((v) => (
-                            <span
-                              key={v.id}
-                              className="px-2 py-0.5 rounded bg-muted text-[10px] font-semibold text-muted-foreground"
-                            >
-                              {v.label || (v as any).value_label}
-                            </span>
-                          ))}
+              {freeAttributes.length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+                  Chưa có nhóm tùy chọn không tiền nào. Bấm nút bên dưới để tạo mới.
+                </div>
+              ) : (
+                freeAttributes.map((attr) => {
+                  const assigned = isAttrAssigned(attr.id);
+                  return (
+                    <div
+                      key={attr.id}
+                      className={`p-3 rounded-lg border transition-all ${
+                        assigned ? 'bg-background border-primary/40 shadow-xs' : 'bg-muted/30 border-dashed opacity-75'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                            {attr.name}
+                            <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {attr.values?.map((v) => (
+                              <span
+                                key={v.id}
+                                className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 font-medium"
+                              >
+                                {v.label || (v as any).value_label}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
 
-                      <Button
-                        variant={assigned ? 'hero' : 'outline'}
-                        size="sm"
-                        className="h-7 text-xs px-2.5 shrink-0"
-                        onClick={() => handleToggleAssignment(attr)}
-                      >
-                        {assigned ? 'Đang bật' : 'Chưa bật'}
-                      </Button>
+                        <Button
+                          size="sm"
+                          variant={assigned ? 'default' : 'outline'}
+                          className={`h-7 text-[11px] font-semibold px-2.5 ${
+                            assigned ? 'bg-primary text-primary-foreground' : ''
+                          }`}
+                          onClick={() => void handleToggleAssignment(attr)}
+                        >
+                          {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 
           <Button
             variant="outline"
             size="sm"
-            className="w-full text-xs font-semibold h-8 bg-background hover:bg-accent"
+            className="w-full text-xs font-semibold h-8 border-dashed"
             onClick={() => handleOpenCreateModal('free')}
           >
-            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Không Tiền
+            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Không Tiền (Đá, Đường...)
           </Button>
         </div>
 
         {/* ======================================================= */}
-        {/* BLOCK 2: TÙY CHỌN CÓ TIỀN (CHỌN NHIỀU LOẠI / PHỤ THU) */}
+        {/* BLOCK 2: TÙY CHỌN CÓ TIỀN (CHỌN NHIỀU, TÍNH PHỤ THU) */}
         {/* ======================================================= */}
         <div className="bg-card rounded-xl border p-4 space-y-3.5 shadow-2xs flex flex-col justify-between">
           <div className="space-y-3">
@@ -423,69 +466,78 @@ export function CatalogOption3BlocksEditor({
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
                     Block 2: Tùy Chọn Có Tiền
                   </h3>
-                  <p className="text-[11px] text-muted-foreground">Chọn nhiều loại kèm phụ thu: Topping, Size...</p>
+                  <p className="text-[11px] text-muted-foreground">Chọn nhiều (+tiền): Topping, Size, Thêm...</p>
                 </div>
               </div>
             </div>
 
             {/* List paid attributes */}
             <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-              {paidAttributes.map((attr) => {
-                const assigned = isAttrAssigned(attr.id);
-                return (
-                  <div
-                    key={attr.id}
-                    className={`p-3 rounded-lg border transition-all ${
-                      assigned ? 'bg-primary/5 border-primary/20' : 'bg-background hover:bg-muted/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-foreground">{attr.name}</p>
-                        <div className="flex flex-wrap gap-1">
-                          {attr.values?.map((v) => (
-                            <span
-                              key={v.id}
-                              className="px-2 py-0.5 rounded bg-muted text-[10px] font-semibold text-foreground"
-                            >
-                              {v.label || (v as any).value_label}{' '}
-                              {Number(v.price_adjustment || 0) > 0 && (
-                                <b className="text-primary">
-                                  +{new Intl.NumberFormat('vi-VN').format(v.price_adjustment)}đ
-                                </b>
-                              )}
-                            </span>
-                          ))}
+              {paidAttributes.length === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+                  Chưa có nhóm tùy chọn có tiền nào. Bấm nút bên dưới để tạo mới.
+                </div>
+              ) : (
+                paidAttributes.map((attr) => {
+                  const assigned = isAttrAssigned(attr.id);
+                  return (
+                    <div
+                      key={attr.id}
+                      className={`p-3 rounded-lg border transition-all ${
+                        assigned ? 'bg-background border-primary/40 shadow-xs' : 'bg-muted/30 border-dashed opacity-75'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                            {attr.name}
+                            <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {attr.values?.map((v) => (
+                              <span
+                                key={v.id}
+                                className="px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-800 font-medium"
+                              >
+                                {v.label || (v as any).value_label}{' '}
+                                {Number(v.price_adjustment || 0) > 0
+                                  ? `(+${Number(v.price_adjustment).toLocaleString('vi-VN')}đ)`
+                                  : ''}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
 
-                      <Button
-                        variant={assigned ? 'hero' : 'outline'}
-                        size="sm"
-                        className="h-7 text-xs px-2.5 shrink-0"
-                        onClick={() => handleToggleAssignment(attr)}
-                      >
-                        {assigned ? 'Đang bật' : 'Chưa bật'}
-                      </Button>
+                        <Button
+                          size="sm"
+                          variant={assigned ? 'default' : 'outline'}
+                          className={`h-7 text-[11px] font-semibold px-2.5 ${
+                            assigned ? 'bg-primary text-primary-foreground' : ''
+                          }`}
+                          onClick={() => void handleToggleAssignment(attr)}
+                        >
+                          {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 
           <Button
             variant="outline"
             size="sm"
-            className="w-full text-xs font-semibold h-8 bg-background hover:bg-accent"
+            className="w-full text-xs font-semibold h-8 border-dashed"
             onClick={() => handleOpenCreateModal('paid')}
           >
-            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Có Tiền
+            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Có Tiền (Topping, Size...)
           </Button>
         </div>
 
         {/* ======================================================= */}
-        {/* BLOCK 3: CẤU HÌNH RIÊNG CHO TỪNG SẢN PHẨM */}
+        {/* BLOCK 3: CẤU HÌNH PRESET DANH MỤC & MÓN (CÓ KHÓA CÔNG THỨC) */}
         {/* ======================================================= */}
         <div className="bg-card rounded-xl border p-4 space-y-3.5 shadow-2xs flex flex-col justify-between">
           <div className="space-y-3">
@@ -496,38 +548,86 @@ export function CatalogOption3BlocksEditor({
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Block 3: Cấu Hình Riêng Sản Phẩm
+                    Block 3: Cấu Hình Preset & Khóa
                   </h3>
-                  <p className="text-[11px] text-muted-foreground">Áp mặc định sẵn cho món cụ thể</p>
+                  <p className="text-[11px] text-muted-foreground">Áp mặc định sẵn cho Danh mục con hoặc Từng món</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2.5 text-xs text-muted-foreground">
-              <div className="p-3 bg-background rounded-lg border space-y-2">
-                <Label className="text-xs font-semibold">Chọn món trong danh mục này:</Label>
-                <Select value={selectedProductId} onValueChange={setSelectedProductId}>
-                  <SelectTrigger className="text-xs h-8">
-                    <SelectValue placeholder="Chọn món để thiết lập riêng" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoryProducts.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)} className="text-xs">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Preset Scope Selector: Category or Product */}
+              <div className="p-3 bg-background rounded-lg border space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPresetTargetType('category')}
+                    className={`flex-1 py-1.5 px-2 rounded-md text-[11px] font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                      presetTargetType === 'category'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Layers className="size-3" /> Cả danh mục con
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetTargetType('product')}
+                    className={`flex-1 py-1.5 px-2 rounded-md text-[11px] font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                      presetTargetType === 'product'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Sparkles className="size-3" /> Từng món riêng lẻ
+                  </button>
+                </div>
 
-                {selectedProductId && (
-                  <div className="space-y-2 pt-1 border-t mt-2">
-                    <p className="font-bold text-[11px] text-foreground">Chọn tùy chọn mặc định sẵn:</p>
+                {presetTargetType === 'product' && (
+                  <div className="space-y-1 pt-1">
+                    <Label className="text-[11px] font-semibold">Chọn món cụ thể:</Label>
+                    <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                      <SelectTrigger className="text-xs h-8">
+                        <SelectValue placeholder="Chọn món để thiết lập riêng" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categoryProducts.map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)} className="text-xs">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {(presetTargetType === 'category' || selectedProductId) && (
+                  <div className="space-y-3 pt-1 border-t mt-2">
+                    <p className="font-bold text-[11px] text-foreground">
+                      {presetTargetType === 'category' ? `Preset mặc định ${categoryName}:` : 'Preset cho món đã chọn:'}
+                    </p>
 
                     {/* Choose free option preset */}
                     {freeAttributes.map((attr) => (
-                      <div key={attr.id} className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground font-semibold">{attr.name}:</Label>
-                        <div className="flex flex-wrap gap-1">
+                      <div key={attr.id} className="space-y-1 p-2 rounded-lg bg-muted/20 border">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] text-foreground font-semibold">{attr.name}:</Label>
+                          <label className="flex items-center gap-1 text-[10px] text-amber-600 cursor-pointer font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(lockedByAttr[attr.id])}
+                              onChange={(e) =>
+                                setLockedByAttr((prev) => ({
+                                  ...prev,
+                                  [attr.id]: e.target.checked,
+                                }))
+                              }
+                              className="rounded border-amber-400 text-amber-600 size-3"
+                            />
+                            <Lock className="size-2.5" /> Khóa
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
                           {attr.values?.map((v) => {
                             const valLabel = v.label || (v as any).value_label;
                             const isSelected = selectedFreeDefaults[attr.name] === valLabel;
@@ -538,7 +638,7 @@ export function CatalogOption3BlocksEditor({
                                 onClick={() =>
                                   setSelectedFreeDefaults((prev) => ({
                                     ...prev,
-                                    [attr.name]: valLabel,
+                                    [attr.name]: isSelected ? '' : valLabel,
                                   }))
                                 }
                                 className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${
@@ -557,9 +657,25 @@ export function CatalogOption3BlocksEditor({
 
                     {/* Choose paid option preset */}
                     {paidAttributes.map((attr) => (
-                      <div key={attr.id} className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground font-semibold">{attr.name}:</Label>
-                        <div className="flex flex-wrap gap-1">
+                      <div key={attr.id} className="space-y-1 p-2 rounded-lg bg-muted/20 border">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] text-foreground font-semibold">{attr.name}:</Label>
+                          <label className="flex items-center gap-1 text-[10px] text-amber-600 cursor-pointer font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(lockedByAttr[attr.id])}
+                              onChange={(e) =>
+                                setLockedByAttr((prev) => ({
+                                  ...prev,
+                                  [attr.id]: e.target.checked,
+                                }))
+                              }
+                              className="rounded border-amber-400 text-amber-600 size-3"
+                            />
+                            <Lock className="size-2.5" /> Khóa
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
                           {attr.values?.map((v) => {
                             const valLabel = v.label || (v as any).value_label;
                             const isSelected = selectedPaidDefaults.includes(valLabel);
@@ -592,35 +708,82 @@ export function CatalogOption3BlocksEditor({
                 )}
               </div>
 
-              {/* List of saved presets */}
-              {productPresets.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-bold text-foreground">Các món đã cấu hình riêng:</p>
-                  {productPresets.map((preset) => (
-                    <div
-                      key={preset.productId}
-                      className="p-2 rounded-lg bg-muted/40 border text-[10px] space-y-1 flex items-start justify-between"
-                    >
-                      <div>
-                        <p className="font-bold text-foreground">{preset.productName}</p>
-                        <p className="text-muted-foreground">
-                          {Object.entries(preset.defaultFreeOptions)
-                            .map(([k, v]) => `${k}: ${v}`)
-                            .join(' · ')}
-                          {preset.defaultPaidOptions.length > 0 &&
-                            ` | Sẵn: ${preset.defaultPaidOptions.join(', ')}`}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePreset(preset.productId)}
-                        className="text-destructive hover:opacity-75 p-1"
-                        title="Xóa cấu hình riêng"
-                      >
-                        <Trash2 className="size-3" />
-                      </button>
+              {/* List of saved presets from DB */}
+              {(categoryPresets.length > 0 || productPresets.length > 0) && (
+                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                  {/* Category Presets */}
+                  {categoryPresets.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-foreground">Preset Danh Mục Con ({categoryName}):</p>
+                      {categoryPresets.map((preset) => (
+                        <div
+                          key={`cat-${preset.id}`}
+                          className="p-1.5 rounded-lg bg-blue-500/5 border text-[10px] space-y-0.5 flex items-start justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-bold text-foreground">{preset.attribute_name}</span>
+                              {preset.is_locked && (
+                                <span className="px-1 py-0.2 rounded bg-amber-500/10 text-amber-600 text-[8px] font-semibold flex items-center gap-0.5">
+                                  <Lock className="size-2" /> Khóa
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-muted-foreground">
+                              {preset.values?.map((v) => v.label).join(', ') || 'Chưa gán giá trị'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePreset('category', categoryId, preset.attribute_definition_id)}
+                            className="text-destructive hover:opacity-75 p-1"
+                            title="Xóa preset danh mục"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {/* Product Presets */}
+                  {productPresets.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-foreground">Preset Ghi Đè Riêng Cho Từng Món:</p>
+                      {productPresets.map((preset) => {
+                        const prod = categoryProducts.find((p) => Number(p.id) === Number(preset.target_id));
+                        return (
+                          <div
+                            key={`prod-${preset.id}`}
+                            className="p-1.5 rounded-lg bg-muted/40 border text-[10px] space-y-0.5 flex items-start justify-between"
+                          >
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <span className="font-bold text-foreground">{prod?.name || `Món #${preset.target_id}`}</span>
+                                <span className="text-muted-foreground font-normal">({preset.attribute_name})</span>
+                                {preset.is_locked && (
+                                  <span className="px-1 py-0.2 rounded bg-amber-500/10 text-amber-600 text-[8px] font-semibold flex items-center gap-0.5">
+                                    <Lock className="size-2" /> Khóa
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-muted-foreground">
+                                {preset.values?.map((v) => v.label).join(', ') || 'Chưa gán giá trị'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePreset('product', preset.target_id, preset.attribute_definition_id)}
+                              className="text-destructive hover:opacity-75 p-1"
+                              title="Xóa preset món"
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -630,10 +793,15 @@ export function CatalogOption3BlocksEditor({
             variant="hero"
             size="sm"
             className="w-full text-xs font-semibold h-8"
-            disabled={!selectedProductId}
-            onClick={handleSaveProductPreset}
+            disabled={(presetTargetType === 'product' && !selectedProductId) || savingPreset}
+            onClick={handleSavePreset}
           >
-            <Settings2 className="size-3.5 mr-1" /> Lưu Cấu Hình Riêng Cho Món
+            <Settings2 className="size-3.5 mr-1" />
+            {savingPreset
+              ? 'Đang lưu vào DB...'
+              : presetTargetType === 'category'
+                ? 'Lưu Preset Cho Toàn Danh Mục Con'
+                : 'Lưu Cấu Hình Riêng Cho Món'}
           </Button>
         </div>
       </div>

@@ -201,6 +201,48 @@ router.delete('/products/:id/option-overrides/:attributeId', requireRole('super'
   res.json({ removed });
 }));
 
+// =============================================================
+// OPTION PRESETS (BLOCK 3)
+// =============================================================
+router.get('/presets', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  const { target_type, target_id } = req.query;
+  if (!target_type || !target_id) {
+    throw new CatalogV2Error('target_type và target_id là bắt buộc', 400);
+  }
+  const presets = await service.listPresets({
+    targetType: String(target_type),
+    targetId: positiveId(target_id, 'target_id'),
+  });
+  res.json(presets);
+}));
+
+router.put('/presets', requireRole('super'), asyncHandler(async (req, res) => {
+  const { target_type, target_id, attribute_definition_id, attribute_value_ids, is_locked } = req.body;
+  if (!target_type || !target_id || !attribute_definition_id) {
+    throw new CatalogV2Error('target_type, target_id và attribute_definition_id là bắt buộc', 400);
+  }
+  const preset = await service.upsertPreset({
+    targetType: String(target_type),
+    targetId: positiveId(target_id, 'target_id'),
+    attributeDefinitionId: positiveId(attribute_definition_id, 'attribute_definition_id'),
+    valueIds: Array.isArray(attribute_value_ids) ? attribute_value_ids : [],
+    isLocked: Boolean(is_locked),
+    userId: req.user.sub,
+  });
+  await logAudit(req.user.sub, 'Cập nhật cấu hình preset món', `Target: ${target_type} #${target_id}`, req);
+  res.json(preset);
+}));
+
+router.delete('/presets/:targetType/:targetId/:attributeId', requireRole('super'), asyncHandler(async (req, res) => {
+  const { targetType, targetId, attributeId } = req.params;
+  const removed = await service.deletePreset({
+    targetType: String(targetType),
+    targetId: positiveId(targetId, 'target_id'),
+    attributeDefinitionId: positiveId(attributeId, 'attribute_definition_id'),
+  });
+  res.json({ removed });
+}));
+
 router.use((err, req, res, next) => {
   if (err?.code === '23505') {
     return next(new CatalogV2Error('Mã, slug, SKU hoặc tổ hợp biến thể đã tồn tại', 409));

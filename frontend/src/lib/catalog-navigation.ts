@@ -3,10 +3,10 @@ import { fetchPublicCategoryTree, type PublicCategoryNode } from '@/lib/api';
 
 export const publicCategoryTreeQueryKey = ['public-catalog', 'category-tree'] as const;
 
-export function usePublicCategoryTree() {
+export function usePublicCategoryTree(storeId?: number | string | null) {
   return useQuery<PublicCategoryNode[], Error>({
-    queryKey: publicCategoryTreeQueryKey,
-    queryFn: fetchPublicCategoryTree,
+    queryKey: ['public-catalog', 'category-tree', storeId ? String(storeId) : 'all'],
+    queryFn: () => fetchPublicCategoryTree(storeId),
     staleTime: 5 * 60 * 1000,
     retry: (failureCount) => failureCount < 2,
   });

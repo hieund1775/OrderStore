@@ -115,6 +115,8 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
   const sampleSchema: SchemaDetails = {
     id: 1,
     product_type_id: 1,
+    product_type_code: 'beverage',
+    product_type_name: 'Nước uống',
     version: 1,
     status: 'published',
     attributes: [
@@ -126,9 +128,11 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
         input_type: 'single_select',
         is_required: true,
         sort_order: 1,
+        min_selections: 1,
+        max_selections: 1,
         values: [
-          { id: 1, value_code: 'm', value_label: 'M', price_adjustment: 0, sort_order: 1, is_active: true },
-          { id: 2, value_code: 'l', value_label: 'L', price_adjustment: 7000, sort_order: 2, is_active: true },
+          { id: 1, code: 'm', label: 'M', price_adjustment: 0, sort_order: 1, is_active: true },
+          { id: 2, code: 'l', label: 'L', price_adjustment: 7000, sort_order: 2, is_active: true },
         ],
       },
       {
@@ -139,9 +143,11 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
         input_type: 'single_select',
         is_required: false,
         sort_order: 2,
+        min_selections: 0,
+        max_selections: 1,
         values: [
-          { id: 3, value_code: '100', value_label: '100% đường', price_adjustment: 0, sort_order: 1, is_active: true },
-          { id: 4, value_code: '50', value_label: '50% đường', price_adjustment: 0, sort_order: 2, is_active: true },
+          { id: 3, code: '100', label: '100% đường', price_adjustment: 0, sort_order: 1, is_active: true },
+          { id: 4, code: '50', label: '50% đường', price_adjustment: 0, sort_order: 2, is_active: true },
         ],
       },
     ],

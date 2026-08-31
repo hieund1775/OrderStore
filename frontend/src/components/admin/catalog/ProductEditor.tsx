@@ -46,10 +46,12 @@ export type ProductV2 = {
   product_type_name?: string;
   name: string;
   slug: string;
+  base_tea?: string | null;
   description: string | null;
   price: number;
   image_url: string | null;
-  status: 'draft' | 'active' | 'archived';
+  status: 'draft' | 'active' | 'archived' | 'inactive';
+  is_available?: boolean;
   fulfillment_lane: 'kitchen' | 'packing';
   stock_mode: 'tracked' | 'made_to_order';
   variants_count: number;
