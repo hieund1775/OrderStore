@@ -693,7 +693,7 @@ export function Header() {
                       onClick={() => setMobileSheetOpen(false)}
                       className="block py-1 font-semibold text-primary hover:underline"
                     >
-                      🌐 Xem tất cả sản phẩm
+                      Tất cả sản phẩm
                     </Link>
                     {categoryTreeQuery.isLoading && (
                       <p className="py-1 text-muted-foreground">Đang tải danh mục…</p>
@@ -711,30 +711,15 @@ export function Header() {
                       <p className="py-1 text-muted-foreground">Chưa có danh mục công khai.</p>
                     )}
                     {rootCategories.map((root) => (
-                      <div key={root.id} className="space-y-1">
+                      <div key={root.id} className="py-0.5">
                         <Link
                           to="/menu"
                           search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
                           onClick={() => setMobileSheetOpen(false)}
                           className="block font-medium py-1 text-foreground hover:text-primary"
                         >
-                          📁 {root.name}
+                          {root.name}
                         </Link>
-                        {root.children && root.children.length > 0 && (
-                          <div className="pl-3 space-y-1 border-l border-border/60">
-                            {root.children.map((child) => (
-                              <Link
-                                key={child.id}
-                                to="/menu"
-                                search={(prev) => ({ ...prev, category: child.slug, page: undefined })}
-                                onClick={() => setMobileSheetOpen(false)}
-                                className="block text-muted-foreground hover:text-primary py-0.5"
-                              >
-                                • {child.name}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -807,7 +792,7 @@ export function Header() {
             <DropdownMenuContent align="start" className="w-56 p-1.5">
               <DropdownMenuItem asChild>
                 <Link to="/menu" search={(prev) => ({ ...prev, category: undefined, page: undefined })} className="font-bold flex items-center justify-between cursor-pointer">
-                  <span>🌐 Tất cả sản phẩm</span>
+                  <span>Tất cả sản phẩm</span>
                   <ChevronRight className="size-3.5 text-muted-foreground" />
                 </Link>
               </DropdownMenuItem>
@@ -824,28 +809,15 @@ export function Header() {
                 <DropdownMenuItem disabled>Chưa có danh mục công khai</DropdownMenuItem>
               )}
               {rootCategories.map((root) => (
-                <div key={root.id} className="py-1">
-                  <DropdownMenuItem asChild>
-                    <Link
-                      to="/menu"
-                      search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
-                      className="font-semibold text-xs flex items-center justify-between cursor-pointer"
-                    >
-                      <span>📁 {root.name}</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  {root.children && root.children.length > 0 && (
-                    <div className="pl-4 pr-1 py-0.5 space-y-0.5">
-                      {root.children.map((child) => (
-                        <DropdownMenuItem key={child.id} asChild className="text-[11px] py-1 text-muted-foreground hover:text-foreground cursor-pointer">
-                          <Link to="/menu" search={(prev) => ({ ...prev, category: child.slug, page: undefined })}>
-                            • {child.name}
-                          </Link>
-                        </DropdownMenuItem>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <DropdownMenuItem key={root.id} asChild className="cursor-pointer">
+                  <Link
+                    to="/menu"
+                    search={(prev) => ({ ...prev, category: root.slug, page: undefined })}
+                    className="font-medium text-xs flex items-center justify-between"
+                  >
+                    <span>{root.name}</span>
+                  </Link>
+                </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>

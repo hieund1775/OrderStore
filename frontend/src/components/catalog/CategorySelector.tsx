@@ -1,11 +1,4 @@
 import { useNavigate } from '@tanstack/react-router';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { PublicCategoryNode } from '@/lib/api';
 
 interface CategorySelectorProps {
@@ -21,47 +14,49 @@ export function CategorySelector({
 }: CategorySelectorProps) {
   const navigate = useNavigate();
 
-  // Tìm kiếm root category đang chọn
-  const activeRoot = categoryTree.find(
-    (root) =>
-      root.slug === activeCategorySlug ||
-      root.children?.some((c) => c.slug === activeCategorySlug),
-  );
-
-  const handleSelectRoot = (rootSlug: string) => {
-    if (rootSlug === 'all') {
-      navigate({
-        to: '/menu',
-        search: { ...searchParams, category: undefined, page: undefined },
-      });
-    } else {
-      navigate({
-        to: '/menu',
-        search: { ...searchParams, category: rootSlug, page: undefined },
-      });
-    }
+  const handleSelectRoot = (rootSlug?: string) => {
+    navigate({
+      to: '/menu',
+      search: {
+        ...searchParams,
+        category: rootSlug || undefined,
+        page: undefined,
+      },
+    });
   };
 
-  const selectedRootValue = activeRoot ? activeRoot.slug : (activeCategorySlug || 'all');
+  const isAllActive = !activeCategorySlug;
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-bold text-muted-foreground whitespace-nowrap">Danh mục:</span>
-      <Select value={selectedRootValue} onValueChange={handleSelectRoot}>
-        <SelectTrigger className="w-[190px] sm:w-[220px] h-9 text-xs font-semibold bg-background shadow-2xs">
-          <SelectValue placeholder="Tất cả danh mục" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all" className="text-xs font-semibold">
-            Tất cả danh mục
-          </SelectItem>
-          {categoryTree.map((root) => (
-            <SelectItem key={root.id} value={root.slug} className="text-xs font-semibold">
-              {root.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 max-w-full">
+      <button
+        type="button"
+        onClick={() => handleSelectRoot(undefined)}
+        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+          isAllActive
+            ? 'bg-primary text-primary-foreground shadow-xs'
+            : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+        }`}
+      >
+        Tất cả sản phẩm
+      </button>
+      {categoryTree.map((root) => {
+        const isSelected = activeCategorySlug === root.slug;
+        return (
+          <button
+            key={root.id}
+            type="button"
+            onClick={() => handleSelectRoot(root.slug)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+              isSelected
+                ? 'bg-primary text-primary-foreground shadow-xs'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            {root.name}
+          </button>
+        );
+      })}
     </div>
   );
 }

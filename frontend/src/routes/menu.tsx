@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, MapPin, Search, AlertCircle, RefreshCw, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -90,23 +90,6 @@ function MenuPage() {
   const totalPages = Math.max(1, Math.ceil(categoryProductsTotal / pageSize));
   const categoryTreeQuery = usePublicCategoryTree(effectiveStoreId);
   const categoryTree = categoryTreeQuery.data || [];
-
-  const categoryGroups = useMemo(() => {
-    if (categoryProducts.length === 0) return [];
-    const groups: { name: string; products: Product[] }[] = [];
-    const map = new Map<string, Product[]>();
-    for (const p of categoryProducts) {
-      const catName = p.line || 'Sản phẩm';
-      if (!map.has(catName)) {
-        map.set(catName, []);
-      }
-      map.get(catName)!.push(p);
-    }
-    for (const [name, prods] of map.entries()) {
-      groups.push({ name, products: prods });
-    }
-    return groups;
-  }, [categoryProducts]);
 
   // 2. Resolve table if present in URL
   useEffect(() => {
@@ -321,25 +304,6 @@ function MenuPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Vui lòng chọn danh mục khác hoặc quay lại danh mục gốc.
                 </p>
-              </div>
-            ) : categoryGroups.length > 1 ? (
-              <div className="space-y-8">
-                {categoryGroups.map((group) => (
-                  <div key={group.name} className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3.5 w-1 bg-primary rounded-full" />
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        {group.name}
-                      </h3>
-                      <span className="text-[11px] text-muted-foreground/70 font-medium">({group.products.length})</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {group.products.map((product) => (
-                        <ProductCard key={product.id} product={product} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
