@@ -1,6 +1,5 @@
-import React from 'react';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, Sparkles, FolderTree } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductCard } from '@/components/menu/ProductCard';
@@ -21,9 +20,6 @@ export function CatalogSection({ section, searchParams }: CatalogSectionProps) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="bg-primary/10 text-primary p-1.5 rounded-lg">
-              <FolderTree className="size-5" />
-            </span>
             <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-foreground">
               {section.root_name}
             </h2>
@@ -31,22 +27,6 @@ export function CatalogSection({ section, searchParams }: CatalogSectionProps) {
               {section.total_products} sản phẩm
             </Badge>
           </div>
-
-          {/* Child Category Quick Filter Chips */}
-          {section.children && section.children.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-              {section.children.map((child) => (
-                <Link
-                  key={child.id}
-                  to="/menu"
-                  search={{ ...searchParams, category: child.slug }}
-                  className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-muted hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20"
-                >
-                  {child.name}
-                </Link>
-              ))}
-            </div>
-          )}
         </div>
 
         {hasMore && (
@@ -78,4 +58,5 @@ export function CatalogSection({ section, searchParams }: CatalogSectionProps) {
     </section>
   );
 }
+
 export default CatalogSection;

@@ -707,11 +707,6 @@ export function CatalogTabBlocksView({
             <div className="p-12 text-center text-muted-foreground space-y-2">
               <p className="text-xs">Vui lòng tạo hoặc chọn một danh mục để cấu hình tùy chọn.</p>
             </div>
-          ) : !activeSchema ? (
-            <div className="p-8 text-center text-muted-foreground space-y-2">
-              <AlertCircle className="size-8 mx-auto text-amber-500/60" />
-              <p className="text-xs">Chưa có Schema tùy chọn nào được định nghĩa cho ngành này.</p>
-            </div>
           ) : (
             <div className="space-y-4">
               <div className="p-3 bg-primary/5 border border-primary/10 rounded-xl text-xs text-muted-foreground flex items-center gap-2">

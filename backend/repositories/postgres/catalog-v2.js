@@ -416,8 +416,8 @@ export function createCatalogV2Repository(database = postgresDb) {
       if (!schema) {
         throw new CatalogV2Error('Schema không tồn tại', 404);
       }
-      if (schema.status !== 'draft') {
-        throw new CatalogV2Error('Chỉ schema nháp mới được phép chỉnh sửa. Vui lòng tạo phiên bản mới.', 400);
+      if (schema.status === 'retired') {
+        throw new CatalogV2Error('Không thể thêm thuộc tính vào schema đã ngừng sử dụng', 400);
       }
 
       const [rows] = await database.query(
@@ -453,8 +453,8 @@ export function createCatalogV2Repository(database = postgresDb) {
       if (!attributeRows[0]) {
         throw new CatalogV2Error('Thuộc tính không tồn tại', 404);
       }
-      if (attributeRows[0].status !== 'draft') {
-        throw new CatalogV2Error('Không thể sửa giá trị của schema đã xuất bản hoặc ngừng sử dụng', 400);
+      if (attributeRows[0].status === 'retired') {
+        throw new CatalogV2Error('Không thể sửa giá trị của schema đã ngừng sử dụng', 400);
       }
       const [rows] = await database.query(
         `INSERT INTO attribute_values (

@@ -76,9 +76,9 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
            SELECT p.id, p.name, p.slug, p.description, p.image_url, p.fulfillment_lane, p.stock_mode,
                   p.category_id, c.name AS category_name, c.slug AS category_slug,
                   tree.root_id,
-                  branch_offer.price,
+                  COALESCE(branch_offer.price, p.price) AS price,
                   branch_offer.compare_at_price,
-                  COALESCE(branch_offer.is_available, FALSE) AS is_available,
+                  COALESCE(branch_offer.is_available, p.is_available, TRUE) AS is_available,
                   branch_offer.available_stock,
                   (SELECT COUNT(*)::int
                    FROM product_variants pv
@@ -86,7 +86,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
            FROM category_tree tree
            JOIN products p ON p.category_id = tree.category_id
            JOIN categories c ON c.id = p.category_id
-           JOIN LATERAL (
+           LEFT JOIN LATERAL (
              SELECT MIN(bvo.price) AS price,
                     MIN(bvo.compare_at_price) AS compare_at_price,
                     BOOL_OR(
@@ -95,17 +95,18 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
                     ) AS is_available,
                     MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
              FROM product_variants pv
-             JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
+             LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
              WHERE pv.product_id = p.id
                AND pv.status = 'active'
-               AND bvo.is_available = TRUE
+               AND (bvo.is_available IS NULL OR bvo.is_available = TRUE)
                AND (
                  p.stock_mode <> 'tracked'
+                 OR bvi.on_hand IS NULL
                  OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
                )
-           ) branch_offer ON branch_offer.price IS NOT NULL
-           WHERE p.status = 'active' AND p.is_available = TRUE
+           ) branch_offer ON TRUE
+           WHERE p.status = 'active' AND p.is_available = TRUE AND (branch_offer.is_available IS NULL OR branch_offer.is_available = TRUE)
          ),
          ranked_products AS (
            SELECT scoped_products.*,
@@ -154,7 +155,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       if (storeId) {
         params.push(Number(storeId));
         storeJoin = `
-          JOIN LATERAL (
+          LEFT JOIN LATERAL (
             SELECT MIN(bvo.price) AS price,
                    MIN(bvo.compare_at_price) AS compare_at_price,
                    BOOL_OR(
@@ -163,21 +164,22 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
                    ) AS is_available,
                    MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
             FROM product_variants pv
-            JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length}
+            LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length}
             LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $${params.length}
             WHERE pv.product_id = p.id
               AND pv.status = 'active'
-              AND bvo.is_available = TRUE
+              AND (bvo.is_available IS NULL OR bvo.is_available = TRUE)
               AND (
                 p.stock_mode <> 'tracked'
+                OR bvi.on_hand IS NULL
                 OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
               )
-          ) branch_offer ON branch_offer.price IS NOT NULL
+          ) branch_offer ON TRUE
         `;
         priceSelect = `
-          branch_offer.price,
+          COALESCE(branch_offer.price, p.price) AS price,
           branch_offer.compare_at_price,
-          COALESCE(branch_offer.is_available, FALSE) AS is_available,
+          COALESCE(branch_offer.is_available, p.is_available, TRUE) AS is_available,
           branch_offer.available_stock
         `;
       }

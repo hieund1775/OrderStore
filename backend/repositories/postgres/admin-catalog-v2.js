@@ -217,11 +217,22 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
 
         if (varAttrs.length === 0) {
           const defaultSku = `SKU-${product.id}-DEF`;
-          await tx.query(
+          const [pvRows] = await tx.query(
             `INSERT INTO product_variants (product_id, sku, variant_signature, name_suffix, status)
-             VALUES ($1, $2, 'default', 'Tiêu chuẩn', 'active')`,
+             VALUES ($1, $2, 'default', 'Tiêu chuẩn', 'active')
+             RETURNING id`,
             [product.id, defaultSku],
           );
+          if (pvRows[0]) {
+            await tx.query(
+              `INSERT INTO branch_variant_offers (store_id, variant_id, price, compare_at_price, is_available)
+               SELECT s.id, $1, $2, NULL, TRUE
+               FROM stores s
+               WHERE s.is_active = TRUE
+               ON CONFLICT (store_id, variant_id) DO UPDATE SET price = EXCLUDED.price, is_available = EXCLUDED.is_available`,
+              [pvRows[0].id, Number(product.price) || 0],
+            );
+          }
         }
 
         // Insert media if provided
