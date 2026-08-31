@@ -7,6 +7,7 @@ import { JWT_SECRET } from '../config/env.js';
 import adminOrdersRepository from '../repositories/postgres/admin-orders.js';
 import ordersRepository, { OrderError } from '../repositories/postgres/orders.js';
 import { asyncHandler } from '../middleware/async-handler.js';
+import { setResolvePaymentProfileForTest } from '../services/orders/customer-order-service.js';
 
 const managerToken = jwt.sign({ sub: 1, role: 'manager' }, JWT_SECRET);
 const validPosOrder = {
@@ -24,6 +25,12 @@ describe('Phase 3 order error and validation HTTP contract', () => {
   let originals;
 
   before(async () => {
+    setResolvePaymentProfileForTest(async ({ items }) => ({
+      isGrouped: false,
+      profile: { id: 1, code: 'DEFAULT_LONG', version: 1 },
+      rootCategory: { rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', rootCategorySlug: 'tra-trai-cay-tuoi' },
+      rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', items }],
+    }));
     originals = {
       detail: adminOrdersRepository.detail,
       transition: adminOrdersRepository.transition,
@@ -35,6 +42,7 @@ describe('Phase 3 order error and validation HTTP contract', () => {
   });
 
   after(async () => {
+    setResolvePaymentProfileForTest(null);
     Object.assign(adminOrdersRepository, { detail: originals.detail, transition: originals.transition });
     ordersRepository.createPublicOrder = originals.createPublicOrder;
     await new Promise((resolve) => server.close(resolve));

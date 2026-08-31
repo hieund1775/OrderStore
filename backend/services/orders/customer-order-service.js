@@ -19,6 +19,11 @@ import {
 } from '../payment-profiles/payment-profile-resolver.js';
 import config from '../../config/env.js';
 
+let customResolvePaymentProfileForTest = null;
+export function setResolvePaymentProfileForTest(resolver = null) {
+  customResolvePaymentProfileForTest = resolver;
+}
+
 function makePayOSCode(id) {
   return Number(`${String(Date.now()).slice(-6)}${String(Number(id) % 10000).padStart(4, '0')}`);
 }
@@ -169,27 +174,13 @@ export function createCustomerOrderService({
         cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
       }
 
-      // 1. Resolve Root Categories & Payment Profile for cart (with unit test boundary protection C1)
-      let resolved;
-      try {
-        resolved = await resolvePaymentProfile({
-          storeId: input.store_id,
-          items: input.items,
-          database,
-        });
-      } catch (err) {
-        const isMockedRepo = repository !== defaultOrdersRepository || (defaultOrdersRepository && repository.createPublicOrder !== defaultOrdersRepository.createPublicOrder);
-        if (isMockedRepo && (err.code === 'EACCES' || err.code === 'ECONNREFUSED' || err.message?.includes('connect') || !database)) {
-          resolved = {
-            isGrouped: false,
-            profile: { id: 1, code: 'DEFAULT_LONG', version: 1 },
-            rootCategory: { rootCategoryId: 1, rootCategoryName: 'Mặc định', rootCategorySlug: 'default' },
-            rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Mặc định', items: input.items }],
-          };
-        } else {
-          throw err;
-        }
-      }
+      // 1. Resolve Root Categories & Payment Profile for cart (propagating controlled 5xx if database fails)
+      const effectiveResolver = customResolvePaymentProfileForTest || resolvePaymentProfile;
+      const resolved = await effectiveResolver({
+        storeId: input.store_id,
+        items: input.items,
+        database,
+      });
 
       let payment_provider = 'cod';
       if (normalizedSource === 'pos') {

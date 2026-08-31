@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import app from '../app.js';
 import { JWT_SECRET } from '../config/env.js';
 import ordersRepository from '../repositories/postgres/orders.js';
+import { setResolvePaymentProfileForTest } from '../services/orders/customer-order-service.js';
 
 describe('Orders Auth Gate & Ownership Suite', () => {
   let server;
@@ -16,6 +17,12 @@ describe('Orders Auth Gate & Ownership Suite', () => {
   const adminToken = jwt.sign({ sub: 1, role: 'super', branch_id: null }, JWT_SECRET);
 
   before(async () => {
+    setResolvePaymentProfileForTest(async ({ items }) => ({
+      isGrouped: false,
+      profile: { id: 1, code: 'DEFAULT_LONG', version: 1 },
+      rootCategory: { rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', rootCategorySlug: 'tra-trai-cay-tuoi' },
+      rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', items }],
+    }));
     originalCreatePublicOrder = ordersRepository.createPublicOrder;
     ordersRepository.createPublicOrder = async ({ input, userId, source, customerPhone, customerName }) => {
       lastCreateInput = { input, userId, source, customerPhone, customerName };
@@ -37,6 +44,7 @@ describe('Orders Auth Gate & Ownership Suite', () => {
   });
 
   after(async () => {
+    setResolvePaymentProfileForTest(null);
     ordersRepository.createPublicOrder = originalCreatePublicOrder;
     await new Promise((resolve) => server.close(resolve));
   });

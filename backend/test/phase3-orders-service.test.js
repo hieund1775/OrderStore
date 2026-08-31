@@ -1,9 +1,10 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAdminOrderService } from '../services/orders/admin-order-service.js';
-import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
+import { createCustomerOrderService, setResolvePaymentProfileForTest } from '../services/orders/customer-order-service.js';
 
 describe('Phase 3 admin order read service', () => {
+
   it('preserves legacy array mode and builds cursor DTOs from repository rows', async () => {
     const calls = [];
     const rows = [
@@ -91,6 +92,19 @@ describe('Phase 3 admin order read service', () => {
 });
 
 describe('Phase 3 customer order service', () => {
+  before(() => {
+    setResolvePaymentProfileForTest(async ({ items }) => ({
+      isGrouped: false,
+      profile: { id: 1, code: 'DEFAULT_LONG', version: 1 },
+      rootCategory: { rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', rootCategorySlug: 'tra-trai-cay-tuoi' },
+      rootGroups: [{ rootCategoryId: 1, rootCategoryName: 'Trà Trái Cây Tươi', items }],
+    }));
+  });
+
+  after(() => {
+    setResolvePaymentProfileForTest(null);
+  });
+
   it('preserves legacy array mode and builds cursor DTOs for customer history', async () => {
     const rows = [
       { id: 30, created_at: new Date('2026-08-18T12:00:00Z') },
