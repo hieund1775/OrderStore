@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet } from "@/lib/api";
+import { apiGet, getUser } from "@/lib/api";
 import { fmtDateTime } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/cai-dat")({
@@ -84,7 +84,9 @@ function SettingsPage() {
     };
   }, []);
 
-  const currentUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('auth_user') || 'null') : null;
+  // Keep role source consistent with admin login, route guard and sidebar.
+  // `auth_user` belongs to a legacy/customer session and must never grant admin UI access.
+  const currentUser = getUser();
   const isSuper = currentUser?.role === 'super';
 
   return (
