@@ -20,6 +20,12 @@ import { useCart } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
 import { vnd } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
+import { getOrderRequestHeaders } from "@/lib/order-access";
+import {
+  PendingPayOSPayment,
+  normalizePendingPayment,
+  parsePendingPaymentFromSession,
+} from "@/lib/pending-payment";
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
@@ -53,15 +59,6 @@ type TableInfo = {
   table: { id: number; name: string; store_id: number; store_name: string; store_address: string };
 };
 
-type PendingPayOSOrder = {
-  order_code: string;
-  order_id: number;
-  total: number;
-  checkout_url?: string;
-  qr_code?: string;
-  payment_expires_at?: string;
-};
-
 type ProductCatalogMeta = {
   id: number;
   slug: string;
@@ -69,6 +66,23 @@ type ProductCatalogMeta = {
   root_category_id?: number;
   root_category_name?: string;
   root_category_slug?: string;
+};
+
+type CreateOrderResponse = {
+  order_code?: string;
+  group_code?: string;
+  order_id?: number;
+  subtotal?: number;
+  discount_amount?: number;
+  shipping_fee?: number;
+  total?: number;
+  total_amount?: number;
+  is_grouped?: boolean;
+  cancel_token?: string;
+  checkout_url?: string;
+  qr_code?: string;
+  payment_expires_at?: string;
+  payment_summary?: PaymentSummary;
 };
 
 function Checkout() {
@@ -98,7 +112,7 @@ function Checkout() {
   const [appliedCode, setAppliedCode] = useState("");
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [pendingOrder, setPendingOrder] = useState<PendingPayOSOrder | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<PendingPayOSPayment | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [regeneratingQr, setRegeneratingQr] = useState(false);
   const [cancellingOrder, setCancellingOrder] = useState(false);
@@ -139,10 +153,8 @@ function Checkout() {
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("teaplus_pending_payment");
-      if (raw) {
-        const stored = JSON.parse(raw) as PendingPayOSOrder;
-        if (stored?.order_code) setPendingOrder(stored);
-      }
+      const stored = parsePendingPaymentFromSession(raw);
+      if (stored?.payment_code) setPendingOrder(stored);
     } catch {}
   }, []);
   const [countdownSec, setCountdownSec] = useState<number>(900);
@@ -192,23 +204,26 @@ function Checkout() {
 
       isRequestInFlight = true;
       try {
-        const res = await apiGet<{ order: { payment_status: string } }>(
-          `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
+        const res = await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
+          `/api/payments/payos/status?code=${encodeURIComponent(pendingOrder.payment_code)}`,
+          { headers: getOrderRequestHeaders(pendingOrder.payment_code) }
         );
 
         if (!isMounted) return;
 
-        if (res.order?.payment_status === "paid") {
+        const paymentStatus = res.order?.payment_status || res.group?.payment_status;
+
+        if (paymentStatus === "paid") {
           shouldStop = true;
           sessionStorage.removeItem("teaplus_pending_payment");
           toast.success("Thanh toán thành công!", {
-            description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
+            description: `Đơn hàng ${pendingOrder.payment_code} đã được xác nhận thanh toán.`,
           });
-          navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+          navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
           return;
         }
 
-        if (res.order?.payment_status === "expired") {
+        if (paymentStatus === "expired") {
           shouldStop = true;
           return;
         }
@@ -240,7 +255,7 @@ function Checkout() {
       if (timerId) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [pendingOrder?.order_code, countdownSec <= 0, navigate]);
+  }, [pendingOrder?.payment_code, countdownSec <= 0, navigate]);
 
   // Countdown timer
   useEffect(() => {
@@ -268,15 +283,17 @@ function Checkout() {
     if (!pendingOrder) return;
     setCheckingPayment(true);
     try {
-      const res = await apiGet<{ order: { payment_status: string } }>(
-        `/api/orders/lookup?code=${encodeURIComponent(pendingOrder.order_code)}`
+      const res = await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
+        `/api/payments/payos/status?code=${encodeURIComponent(pendingOrder.payment_code)}`,
+        { headers: getOrderRequestHeaders(pendingOrder.payment_code) }
       );
-      if (res.order?.payment_status === "paid") {
+      const paymentStatus = res.order?.payment_status || res.group?.payment_status;
+      if (paymentStatus === "paid") {
         sessionStorage.removeItem("teaplus_pending_payment");
         toast.success("Thanh toán thành công!", {
-          description: `Đơn hàng ${pendingOrder.order_code} đã được xác nhận thanh toán.`,
+          description: `Đơn hàng ${pendingOrder.payment_code} đã được xác nhận thanh toán.`,
         });
-        navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+        navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
       } else {
         toast.info("Hệ thống chưa nhận được tín hiệu tiền về từ ngân hàng. Vui lòng đợi trong giây lát.");
       }
@@ -292,8 +309,8 @@ function Checkout() {
     setRegeneratingQr(true);
     try {
       const cancelToken =
-        sessionStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
-        localStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        sessionStorage.getItem(`cancel_token_${pendingOrder.payment_code}`) ||
+        localStorage.getItem(`cancel_token_${pendingOrder.payment_code}`) ||
         undefined;
       const res = await apiPost<{
         ok: boolean;
@@ -305,23 +322,25 @@ function Checkout() {
           payment_expires_at?: string;
         };
       }>("/api/payments/payos/regenerate-qr", {
-        order_code: pendingOrder.order_code,
+        order_code: pendingOrder.payment_code,
         cancel_token: cancelToken,
         return_url: `${window.location.origin}/theo-doi-don`,
         cancel_url: `${window.location.origin}/thanh-toan`,
+      }, {
+        headers: getOrderRequestHeaders(pendingOrder.payment_code),
       });
 
-      const updated = {
-        order_code: res.order.order_code,
+      const updated = normalizePendingPayment({
+        ...res.order,
+        is_grouped: pendingOrder.is_grouped,
         order_id: pendingOrder.order_id,
-        total: res.order.total || pendingOrder.total,
-        checkout_url: res.order.checkout_url,
-        qr_code: res.order.qr_code,
-        payment_expires_at: res.order.payment_expires_at,
-      };
-      setPendingOrder(updated);
-      sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(updated));
-      toast.success("Đã tạo mã QR thanh toán mới (thời hạn 15 phút)!");
+      });
+
+      if (updated) {
+        setPendingOrder(updated);
+        sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(updated));
+        toast.success("Đã tạo mã QR thanh toán mới (thời hạn 15 phút)!");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không thể tạo lại mã QR lúc này");
     } finally {
@@ -334,13 +353,15 @@ function Checkout() {
     setCancellingOrder(true);
     try {
       const cancelToken =
-        sessionStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
-        localStorage.getItem(`cancel_token_${pendingOrder.order_code}`) ||
+        sessionStorage.getItem(`cancel_token_${pendingOrder.payment_code}`) ||
+        localStorage.getItem(`cancel_token_${pendingOrder.payment_code}`) ||
         undefined;
       await apiPost("/api/orders/cancel", {
-        order_code: pendingOrder.order_code,
+        order_code: pendingOrder.payment_code,
         reason: "Khách hàng hủy đơn khi chưa thanh toán",
         cancel_token: cancelToken,
+      }, {
+        headers: getOrderRequestHeaders(pendingOrder.payment_code),
       });
       sessionStorage.removeItem("teaplus_pending_payment");
       setPendingOrder(null);
@@ -356,7 +377,7 @@ function Checkout() {
     if (!pendingOrder) return;
     try {
       await apiPost("/api/payments/payos/simulate-success", {
-        order_code: pendingOrder.order_code,
+        order_code: pendingOrder.payment_code,
       });
       toast.success("Đã kích hoạt giả lập thanh toán!");
       await checkPaymentNow();
@@ -567,28 +588,18 @@ function Checkout() {
         : createIdempotencyKey();
       orderRequestRef.current = { signature, key: idempotencyKey };
 
-      const res = await apiPost<{
-        order_code: string;
-        order_id: number;
-        subtotal: number;
-        discount_amount: number;
-        total: number;
-        cancel_token?: string;
-        checkout_url?: string;
-        qr_code?: string;
-        payment_expires_at?: string;
-      }>("/api/orders", payload, { headers: { "Idempotency-Key": idempotencyKey } });
+      const res = await apiPost<CreateOrderResponse>("/api/orders", payload, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
 
       orderRequestRef.current = null;
-      const responseTotal = Number(res.total);
-      const orderTotal = Number.isFinite(responseTotal) ? responseTotal : total;
+      const createdPaymentCode = res.group_code || res.order_code;
 
-      if (res.cancel_token) {
+      if (res.cancel_token && createdPaymentCode) {
         try {
-          sessionStorage.setItem(`cancel_token_${res.order_code}`, res.cancel_token);
+          sessionStorage.setItem(`cancel_token_${createdPaymentCode}`, res.cancel_token);
         } catch {}
       }
-
 
       if (res.checkout_url) {
         removeItems(checkoutItems.map((item) => item.key));
@@ -600,16 +611,11 @@ function Checkout() {
         return;
       } else if (res.qr_code) {
         removeItems(checkoutItems.map((item) => item.key));
-        const pending = {
-          order_code: res.order_code,
-          order_id: res.order_id,
-          total: orderTotal,
-          checkout_url: res.checkout_url,
-          qr_code: res.qr_code,
-          payment_expires_at: res.payment_expires_at,
-        };
-        setPendingOrder(pending);
-        sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
+        const pending = normalizePendingPayment(res);
+        if (pending) {
+          setPendingOrder(pending);
+          sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
+        }
         toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
       } else {
         toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
@@ -641,7 +647,8 @@ function Checkout() {
                 {isExpired ? "Mã thanh toán đã hết hạn" : "Vui lòng thanh toán đơn hàng"}
               </h2>
               <p className="text-muted-foreground text-sm mt-1">
-                Mã đơn: <span className="font-mono font-bold text-foreground">{pendingOrder.order_code}</span>
+                {pendingOrder.is_grouped ? "Mã thanh toán chung: " : "Mã đơn: "}
+                <span className="font-mono font-bold text-foreground">{pendingOrder.payment_code}</span>
               </p>
               <p className="text-primary font-display text-3xl font-extrabold mt-2">
                 {vnd(pendingOrder.total)}
@@ -732,7 +739,7 @@ function Checkout() {
                     variant="outline"
                     className="flex-1"
                     onClick={() => {
-                      navigate({ to: "/theo-doi-don", search: { code: pendingOrder.order_code } });
+                      navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
                     }}
                   >
                     Theo dõi đơn hàng

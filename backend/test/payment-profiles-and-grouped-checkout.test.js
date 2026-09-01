@@ -711,5 +711,163 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
 
       assert.equal(res.payment_summary.industries[0].root_category_name, 'Chưa phân loại');
     });
+
+    it('Public Group Lookup via customerOrderService returns payment_summary with child orders by industry and sum invariants', async () => {
+      const mockCheckoutGroupsRepo = {
+        async findGroupForCustomerLookup(groupCode, { userId, cancelToken }) {
+          if (groupCode !== 'GRP2609010001') return null;
+          return {
+            group_code: 'GRP2609010001',
+            payment_status: 'unpaid',
+            payment_provider: 'payos',
+            subtotal: 100000,
+            discount_amount: 15000,
+            shipping_fee: 0,
+            total_amount: 85000,
+            payment_checkout_url: 'https://payos.vn/gate/grp',
+            payment_qr_code: 'qr_grp',
+            created_at: new Date().toISOString(),
+            child_orders: [
+              {
+                order_id: '101',
+                order_code: 'TP_CHILD_01',
+                root_category_id: '1',
+                root_category_name: 'Nước Uống',
+                allocated_subtotal: 50000,
+                allocated_discount: 7500,
+                allocated_shipping_fee: 0,
+                allocated_total: 42500,
+                status: 'Đang chuẩn bị',
+                payment_status: 'unpaid',
+                items: [{ product_id: '1', product_name: 'Trà Sữa', quantity: 1, unit_price: 50000, line_total: 50000 }],
+              },
+              {
+                order_id: '102',
+                order_code: 'TP_CHILD_02',
+                root_category_id: null,
+                root_category_name: 'Chưa phân loại',
+                allocated_subtotal: 50000,
+                allocated_discount: 7500,
+                allocated_shipping_fee: 0,
+                allocated_total: 42500,
+                status: 'Đang chuẩn bị',
+                payment_status: 'unpaid',
+                items: [{ product_id: '2', product_name: 'Bánh Mì', quantity: 1, unit_price: 50000, line_total: 50000 }],
+              },
+            ],
+            payment_summary: {
+              is_grouped: true,
+              group_code: 'GRP2609010001',
+              subtotal: 100000,
+              discount_amount: 15000,
+              shipping_fee: 0,
+              total_amount: 85000,
+              industries: [
+                {
+                  root_category_id: '1',
+                  root_category_name: 'Nước Uống',
+                  order_id: '101',
+                  order_code: 'TP_CHILD_01',
+                  subtotal: 50000,
+                  discount_amount: 7500,
+                  shipping_fee: 0,
+                  total_amount: 42500,
+                  status: 'Đang chuẩn bị',
+                  payment_status: 'unpaid',
+                  items: [{ product_id: '1', product_name: 'Trà Sữa', quantity: 1, unit_price: 50000, line_total: 50000 }],
+                },
+                {
+                  root_category_id: null,
+                  root_category_name: 'Chưa phân loại',
+                  order_id: '102',
+                  order_code: 'TP_CHILD_02',
+                  subtotal: 50000,
+                  discount_amount: 7500,
+                  shipping_fee: 0,
+                  total_amount: 42500,
+                  status: 'Đang chuẩn bị',
+                  payment_status: 'unpaid',
+                  items: [{ product_id: '2', product_name: 'Bánh Mì', quantity: 1, unit_price: 50000, line_total: 50000 }],
+                },
+              ],
+            },
+          };
+        },
+      };
+
+      const service = createCustomerOrderService({
+        checkoutGroupsRepo: mockCheckoutGroupsRepo,
+        repository: {},
+      });
+
+      const res = await service.lookup({ code: 'GRP2609010001', userId: 123 });
+      assert.ok(res.group, 'Must return group object');
+      assert.equal(res.group.group_code, 'GRP2609010001');
+      assert.ok(res.group.payment_summary, 'Must return payment_summary');
+      assert.equal(res.group.payment_summary.is_grouped, true);
+      assert.equal(res.group.payment_summary.industries.length, 2);
+
+      // Verify industries fallback and items
+      const ind1 = res.group.payment_summary.industries[0];
+      assert.equal(ind1.root_category_name, 'Nước Uống');
+      assert.equal(ind1.items[0].product_name, 'Trà Sữa');
+
+      const ind2 = res.group.payment_summary.industries[1];
+      assert.equal(ind2.root_category_name, 'Chưa phân loại');
+      assert.equal(ind2.items[0].product_name, 'Bánh Mì');
+
+      // Verify sum invariants
+      const sumSubtotal = res.group.payment_summary.industries.reduce((s, i) => s + i.subtotal, 0);
+      const sumDiscount = res.group.payment_summary.industries.reduce((s, i) => s + i.discount_amount, 0);
+      const sumTotal = res.group.payment_summary.industries.reduce((s, i) => s + i.total_amount, 0);
+      assert.equal(sumSubtotal, res.group.payment_summary.subtotal);
+      assert.equal(sumDiscount, res.group.payment_summary.discount_amount);
+      assert.equal(sumTotal, res.group.payment_summary.total_amount);
+    });
+
+    it('Public lookup boundary strictly protects bank accounts, profile codes and PayOS keys', async () => {
+      const mockOrdersRepo = {
+        async findPublicOrder(code) {
+          return {
+            id: 888,
+            order_code: code,
+            store_name: 'Store 1',
+            order_type: 'Take-away',
+            payment_method: 'VietQR',
+            payment_status: 'paid',
+            payment_provider: 'payos',
+            subtotal: 60000,
+            discount_amount: 0,
+            total: 60000,
+            root_category_id: 1,
+            root_category_name: 'Nước Uống',
+            secret_bank_account: '999988887777',
+            payment_profile_code: 'SECRET_PROFILE_CODE',
+            payos_api_key: 'PAYOS_API_SECRET_KEY',
+          };
+        },
+        async loadPublicDetails() {
+          return [{ product_id: '1', product_name: 'Trà Đào', unit_price: 60000, qty: 1, line_total: 60000 }];
+        },
+        async loadStatusHistory() {
+          return [{ status: 'Hoàn thành', note: null, created_at: new Date().toISOString() }];
+        },
+      };
+
+      const service = createCustomerOrderService({
+        repository: mockOrdersRepo,
+      });
+
+      const res = await service.lookup({ code: 'TP2609018888', userId: 123 });
+      assert.ok(res.order);
+      assert.ok(res.order.payment_summary);
+      assert.equal(res.order.payment_summary.industries.length, 1);
+      assert.equal(res.order.payment_summary.industries[0].root_category_name, 'Nước Uống');
+
+      const jsonStr = JSON.stringify(res);
+      assert.equal(jsonStr.includes('999988887777'), false, 'Bank account must not be present in public lookup');
+      assert.equal(jsonStr.includes('SECRET_PROFILE_CODE'), false, 'Profile code must not be present in public lookup');
+      assert.equal(jsonStr.includes('PAYOS_API_SECRET_KEY'), false, 'PayOS API keys must not be present in public lookup');
+    });
   });
 });
