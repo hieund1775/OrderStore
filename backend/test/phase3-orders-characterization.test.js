@@ -67,6 +67,17 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
         }
         if (sql.includes('FROM order_items')) return [[{ id: 101, order_id: 11, product_name: 'Milk tea', qty: 1, size_label: 'M', unit_price: 50000, line_total: 50000 }], 1];
         if (sql.includes('FROM order_item_toppings')) return [[], 0];
+        if (sql.includes('category_payment_profiles') || sql.includes('payment_profiles')) {
+          return [[{
+            id: 1,
+            code: 'DEFAULT_LONG',
+            display_name: 'Default PayOS',
+            purpose: 'industry',
+            status: 'active',
+            env_prefix: 'PAYOS',
+            version: 1,
+          }], 1];
+        }
         return [[], 0];
       },
     });

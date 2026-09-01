@@ -216,6 +216,7 @@ export function createCustomerOrderService({
       const resolved = await effectiveResolver({
         storeId: input.store_id,
         items: input.items,
+        paymentMethod: normalizedPaymentMethod,
         database,
       });
 

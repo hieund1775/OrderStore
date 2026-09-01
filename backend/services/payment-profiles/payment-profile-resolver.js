@@ -18,6 +18,7 @@ export class PaymentResolverError extends Error {
 export async function resolvePaymentProfileForCart({
   storeId,
   items = [],
+  paymentMethod = 'VietQR',
   database = postgresDb,
   profilesRepo = paymentProfilesRepository,
 }) {
@@ -25,29 +26,7 @@ export async function resolvePaymentProfileForCart({
     throw new PaymentResolverError('Giỏ hàng không có sản phẩm', 400);
   }
 
-  // Fallback system profile helper (no silent DB catch)
-  const getSystemLongProfile = async () => {
-    let longProfile = await profilesRepo.getProfileByCode('LONG_GROUPED_CHECKOUT');
-    if (!longProfile) {
-      longProfile = await profilesRepo.getProfileByCode('DEFAULT_LONG');
-    }
-    if (longProfile) return longProfile;
-
-    // Ephemeral fallback object for system continuity if DB row is not yet seeded
-    return {
-      id: null,
-      code: 'LONG_GROUPED_CHECKOUT',
-      display_name: 'Long - Checkout Hệ Thống',
-      bank_name: null,
-      bank_bin: null,
-      account_number: null,
-      account_holder: null,
-      env_prefix: 'PAYOS_PROFILE_LONG_GROUPED_CHECKOUT',
-      status: 'active',
-      version: 1,
-      is_env_configured: true,
-    };
-  };
+  const isOnlineDigitalPayment = paymentMethod === 'VietQR';
 
   // 1. Load product root categories for all items
   const productIds = [...new Set(items.map((it) => Number(it.product_id)).filter(Number.isInteger))];
@@ -102,10 +81,23 @@ export async function resolvePaymentProfileForCart({
 
   // Case A: Cart spans multiple root industries
   if (rootGroups.length > 1) {
-    const longProfile = await getSystemLongProfile();
+    const groupedProfile = typeof profilesRepo.getActiveGroupedProfile === 'function'
+      ? await profilesRepo.getActiveGroupedProfile()
+      : await profilesRepo.getProfileByCode('LONG_GROUPED_CHECKOUT');
+
+    const isGroupedConfigured = groupedProfile ? isPayOSConfigured(groupedProfile.code) : false;
+
+    if (isOnlineDigitalPayment && (!groupedProfile || groupedProfile.status !== 'active' || !isGroupedConfigured)) {
+      throw new PaymentResolverError(
+        'Chưa có tài khoản thanh toán gộp (grouped checkout) đang hoạt động hoặc chưa cấu hình đủ biến môi trường ENV trên server',
+        400,
+        'GROUPED_PAYMENT_PROFILE_UNAVAILABLE',
+      );
+    }
+
     return {
       isGrouped: true,
-      profile: longProfile,
+      profile: groupedProfile || { id: null, code: 'OFFLINE_GROUPED', display_name: 'Offline Group', purpose: 'grouped_checkout', status: 'active', is_env_configured: true },
       rootGroups,
     };
   }
@@ -116,7 +108,7 @@ export async function resolvePaymentProfileForCart({
 
   const isConfigured = mappedProfile ? isPayOSConfigured(mappedProfile.code) : false;
 
-  if (mappedProfile && mappedProfile.status === 'active' && isConfigured) {
+  if (mappedProfile && mappedProfile.status === 'active' && (!isOnlineDigitalPayment || isConfigured)) {
     return {
       isGrouped: false,
       profile: mappedProfile,
@@ -125,45 +117,27 @@ export async function resolvePaymentProfileForCart({
     };
   }
 
-  // Fallback to Long profile ONLY for valid business conditions:
-  // 1. Root category has no profile mapped (mappedProfile == null)
-  // 2. Mapped profile is not active (status !== 'active')
-  // 3. Mapped profile is missing ENV (isConfigured == false)
+  if (!isOnlineDigitalPayment) {
+    return {
+      isGrouped: false,
+      profile: mappedProfile || { id: null, code: 'OFFLINE', display_name: 'Offline' },
+      rootCategory: singleRoot,
+      rootGroups,
+    };
+  }
+
+  // Fail-closed for online digital payment (VietQR)
   const reason = !mappedProfile
-    ? 'chưa gán profile'
+    ? 'chưa được gán tài khoản thanh toán'
     : mappedProfile.status !== 'active'
-      ? 'profile chưa kích hoạt'
-      : 'chưa cấu hình đủ biến môi trường ENV';
+      ? 'tài khoản thanh toán chưa được kích hoạt'
+      : 'tài khoản thanh toán chưa cấu hình đủ biến môi trường ENV';
 
-  const auditPayload = {
-    event: 'PAYMENT_PROFILE_FALLBACK',
-    rootCategoryId: singleRoot.rootCategoryId,
-    rootCategoryName: singleRoot.rootCategoryName,
-    reason,
-    targetProfileCode: 'LONG_GROUPED_CHECKOUT',
-    timestamp: new Date().toISOString(),
-  };
-  console.info(`⚠️ [Payment Profile Fallback]: ${JSON.stringify(auditPayload)}`);
-
-  try {
-    if (database && typeof database.query === 'function') {
-      await database.query(
-        `INSERT INTO audit_logs (action, target_type, target_id, details)
-         VALUES ('PAYMENT_PROFILE_FALLBACK', 'root_category', $1, $2::jsonb)`,
-        [singleRoot.rootCategoryId, JSON.stringify(auditPayload)],
-      );
-    }
-  } catch {}
-
-  const fallbackLongProfile = await getSystemLongProfile();
-  return {
-    isGrouped: false,
-    profile: fallbackLongProfile,
-    isFallback: true,
-    fallbackReason: reason,
-    rootCategory: singleRoot,
-    rootGroups,
-  };
+  throw new PaymentResolverError(
+    `Ngành hàng "${singleRoot.rootCategoryName}" ${reason}. Vui lòng liên hệ quản trị viên để cấu hình kênh thanh toán.`,
+    400,
+    'PAYMENT_PROFILE_UNAVAILABLE',
+  );
 }
 
 /**

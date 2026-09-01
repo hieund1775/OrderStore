@@ -320,4 +320,35 @@ test('payment profiles migration 0020 establishes profiles, root mapping, checko
   assert.ok(rollbackSql.includes('DROP TABLE IF EXISTS payment_profiles CASCADE'));
 });
 
+test('payment profile purpose migration 0021 establishes purpose check, partial unique index, and industry-only category mapping', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0021_payment_profile_purpose_and_status.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0021_payment_profile_purpose_and_status.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  const requiredFragments = [
+    'ADD COLUMN IF NOT EXISTS purpose VARCHAR(30)',
+    "purpose = 'grouped_checkout'",
+    "code = 'LONG_GROUPED_CHECKOUT'",
+    "purpose = 'industry'",
+    'chk_payment_profile_purpose',
+    "purpose IN ('industry', 'grouped_checkout')",
+    "SET DEFAULT 'disabled'",
+    'uq_active_grouped_checkout_profile',
+    "WHERE purpose = 'grouped_checkout' AND status = 'active'",
+    'enforce_root_category_payment_profile',
+    "prof_purpose <> 'industry'",
+  ];
+
+  for (const fragment of requiredFragments) {
+    assert.ok(sql.includes(fragment), `missing migration 0021 contract: ${fragment}`);
+  }
+
+  assert.ok(rollbackSql.includes('DROP INDEX IF EXISTS uq_active_grouped_checkout_profile'));
+  assert.ok(rollbackSql.includes('DROP CONSTRAINT IF EXISTS chk_payment_profile_purpose'));
+  assert.ok(rollbackSql.includes('DROP COLUMN IF EXISTS purpose'));
+  assert.ok(rollbackSql.includes("ALTER COLUMN status SET DEFAULT 'pending'"));
+});
+
+
 

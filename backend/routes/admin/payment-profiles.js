@@ -38,22 +38,31 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 /**
  * POST /api/admin/payment-profiles
- * Tạo mới payment profile
+ * Tạo mới payment profile (Yêu cầu purpose; không nhận thông tin ngân hàng nhập tay)
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { code, display_name, bank_name, bank_bin, account_number, account_holder } = req.body || {};
+  const { code, display_name, purpose, bank_name, bank_bin, account_number, account_holder } = req.body || {};
   if (!code || !display_name) {
     return res.status(400).json({ error: 'Mã code và tên hiển thị là bắt buộc' });
+  }
+
+  if (bank_name || bank_bin || account_number || account_holder) {
+    return res.status(400).json({
+      error: 'API không còn nhận thông tin ngân hàng nhập tay. Nguồn sự thật thanh toán dựa trên bộ key PayOS (ENV) trên server.',
+    });
+  }
+
+  if (!purpose || !['industry', 'grouped_checkout'].includes(purpose)) {
+    return res.status(400).json({
+      error: 'Mục đích profile (purpose) là bắt buộc và phải là "industry" hoặc "grouped_checkout"',
+    });
   }
 
   try {
     const profile = await paymentProfilesRepository.createProfile({
       code,
       displayName: display_name,
-      bankName: bank_name,
-      bankBin: bank_bin,
-      accountNumber: account_number,
-      accountHolder: account_holder,
+      purpose,
       createdBy: req.user.id,
     });
 
@@ -62,7 +71,7 @@ router.post('/', asyncHandler(async (req, res) => {
       await notificationsRepository.fanOutToSuperAdmins({
         type: 'system',
         title: 'Payment Profile mới được tạo',
-        body: `Profile ${profile.display_name} (${profile.code}) đã được tạo. Vui lòng cấu hình ENV: ${profile.env_keys.client_id}, ${profile.env_keys.api_key}, ${profile.env_keys.checksum_key} trên server.`,
+        body: `Profile ${profile.display_name} (${profile.code}) - [${profile.purpose}] đã được tạo. Vui lòng cấu hình ENV: ${profile.env_keys.client_id}, ${profile.env_keys.api_key}, ${profile.env_keys.checksum_key} trên server.`,
       });
     } catch (err) {
       console.warn('Không thể gửi thông báo tạo payment profile:', err.message);
@@ -79,18 +88,21 @@ router.post('/', asyncHandler(async (req, res) => {
 
 /**
  * PUT /api/admin/payment-profiles/:id
- * Cập nhật payment profile
+ * Cập nhật payment profile (Không nhận thông tin ngân hàng)
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { display_name, bank_name, bank_bin, account_number, account_holder, status } = req.body || {};
+  const { display_name, purpose, status, bank_name, bank_bin, account_number, account_holder } = req.body || {};
+
+  if (bank_name !== undefined || bank_bin !== undefined || account_number !== undefined || account_holder !== undefined) {
+    return res.status(400).json({
+      error: 'API không còn nhận thông tin ngân hàng nhập tay. Nguồn sự thật thanh toán dựa trên bộ key PayOS (ENV) trên server.',
+    });
+  }
 
   try {
     const updated = await paymentProfilesRepository.updateProfile(req.params.id, {
       displayName: display_name,
-      bankName: bank_name,
-      bankBin: bank_bin,
-      accountNumber: account_number,
-      accountHolder: account_holder,
+      purpose,
       status,
       updatedBy: req.user.id,
     });

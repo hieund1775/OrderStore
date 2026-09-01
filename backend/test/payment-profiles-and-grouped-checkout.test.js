@@ -219,26 +219,24 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       (err) => err.message.includes('Sản phẩm #102 không tồn tại hoặc chưa gán danh mục'),
     );
 
-    // B5: Valid product with unmapped profile triggers fallback with audit log
+    // B5: Valid product with unmapped profile throws explicit fail-closed error (no silent fallback)
     const mockProfilesRepo = {
       async getActiveProfileByRootCategoryId() {
         return null; // Unmapped root
       },
-      async getProfileByCode() {
-        return { id: 1, code: 'LONG_GROUPED_CHECKOUT', status: 'active', version: 1 };
-      },
     };
 
-    const resolved = await resolvePaymentProfileForCart({
-      storeId: 1,
-      items: [{ product_id: 101, qty: 1 }],
-      database: mockDb,
-      profilesRepo: mockProfilesRepo,
-    });
-
-    assert.equal(resolved.isFallback, true);
-    assert.equal(resolved.profile.code, 'LONG_GROUPED_CHECKOUT');
-    assert.equal(auditLogInserted, true);
+    await assert.rejects(
+      async () => {
+        await resolvePaymentProfileForCart({
+          storeId: 1,
+          items: [{ product_id: 101, qty: 1 }],
+          database: mockDb,
+          profilesRepo: mockProfilesRepo,
+        });
+      },
+      (err) => err.message.includes('chưa được gán tài khoản thanh toán'),
+    );
   });
 
   // ═════════════════════════════════════════════════════════════════
@@ -868,6 +866,210 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       assert.equal(jsonStr.includes('999988887777'), false, 'Bank account must not be present in public lookup');
       assert.equal(jsonStr.includes('SECRET_PROFILE_CODE'), false, 'Profile code must not be present in public lookup');
       assert.equal(jsonStr.includes('PAYOS_API_SECRET_KEY'), false, 'PayOS API keys must not be present in public lookup');
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Gate 10: Payment Profile Purpose, ENV Status & Disabled Defaults Suite
+  // ═════════════════════════════════════════════════════════════════
+  describe('Gate 10: Payment Profile Purpose, ENV Status & Disabled Defaults Contract', () => {
+    it('createProfile creates profile with status=disabled, stores purpose, and rejects active without ENV', async () => {
+      const mockDatabase = {
+        async query(sql, params) {
+          if (sql.includes('SELECT id FROM payment_profiles WHERE code')) {
+            return [[]]; // Not exists
+          }
+          if (sql.includes('INSERT INTO payment_profiles')) {
+            return [[{
+              id: 501,
+              code: params[0],
+              display_name: params[1],
+              purpose: params[2],
+              env_prefix: params[3],
+              status: 'disabled',
+              version: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }]];
+          }
+          return [[]];
+        },
+      };
+
+      const repo = createPaymentProfilesRepository(mockDatabase);
+      const created = await repo.createProfile({
+        code: 'THOI_TRANG',
+        displayName: 'Thời Trang Hưng',
+        purpose: 'industry',
+      });
+
+      assert.equal(created.status, 'disabled', 'New profile must default to disabled status');
+      assert.equal(created.purpose, 'industry');
+      assert.equal(created.code, 'THOI_TRANG');
+
+      // Attempt to activate without configured ENV must throw ENV_NOT_CONFIGURED error
+      const mockTxDb = {
+        async transaction(cb) {
+          return cb({
+            async query(sql) {
+              if (sql.includes('SELECT * FROM payment_profiles WHERE id')) {
+                return [[{
+                  id: 501,
+                  code: 'THOI_TRANG',
+                  display_name: 'Thời Trang Hưng',
+                  purpose: 'industry',
+                  env_prefix: 'PAYOS_PROFILE_THOI_TRANG',
+                  status: 'disabled',
+                  version: 1,
+                }]];
+              }
+              return [[]];
+            },
+          });
+        },
+      };
+
+      const repoTx = createPaymentProfilesRepository(mockTxDb);
+      await assert.rejects(
+        async () => {
+          await repoTx.updateProfile(501, { status: 'active' });
+        },
+        (err) => err.code === 'ENV_NOT_CONFIGURED' || err.message.includes('chưa cấu hình đủ 3 biến môi trường'),
+      );
+    });
+
+    it('Industry profile can be assigned to root category; grouped profile is strictly rejected', async () => {
+      const mockTxDb = {
+        async transaction(cb) {
+          return cb({
+            async query(sql, params) {
+              if (sql.includes('SELECT id, parent_id, depth, name FROM categories')) {
+                return [[{ id: 1, parent_id: null, depth: 0, name: 'Thời Trang' }]];
+              }
+              if (sql.includes('SELECT id, code, display_name, purpose, status FROM payment_profiles')) {
+                const profileId = params[0];
+                if (profileId === 10) {
+                  return [[{ id: 10, code: 'IND_01', display_name: 'Industry Profile', purpose: 'industry', status: 'active' }]];
+                }
+                if (profileId === 20) {
+                  return [[{ id: 20, code: 'GRP_01', display_name: 'Group Profile', purpose: 'grouped_checkout', status: 'active' }]];
+                }
+              }
+              if (sql.includes('INSERT INTO category_payment_profiles')) {
+                return [[{ id: 99, root_category_id: 1, payment_profile_id: 10, is_active: true }]];
+              }
+              return [[]];
+            },
+          });
+        },
+      };
+
+      const repo = createPaymentProfilesRepository(mockTxDb);
+
+      // Industry profile succeeds
+      const assigned = await repo.assignProfileToRootCategory({ rootCategoryId: 1, profileId: 10 });
+      assert.equal(assigned.profile_code, 'IND_01');
+
+      // Grouped profile fails with INVALID_PROFILE_PURPOSE
+      await assert.rejects(
+        async () => {
+          await repo.assignProfileToRootCategory({ rootCategoryId: 1, profileId: 20 });
+        },
+        (err) => err.code === 'INVALID_PROFILE_PURPOSE' || err.message.includes('Chỉ payment profile có mục đích "industry"'),
+      );
+    });
+
+    it('Multi-industry checkout uses active grouped profile and fails closed when unavailable', async () => {
+      const mockDb = {
+        async query(sql) {
+          if (sql.includes('FROM products p')) {
+            return [[
+              { product_id: 1, product_name: 'Trà', price: 30000, category_id: 1, root_category_id: 1, root_category_name: 'Nước', root_category_slug: 'nuoc' },
+              { product_id: 2, product_name: 'Áo', price: 150000, category_id: 2, root_category_id: 2, root_category_name: 'Thời Trang', root_category_slug: 'thoi-trang' },
+            ]];
+          }
+          return [[]];
+        },
+      };
+
+      // 1. When active grouped profile is present and configured
+      const mockProfilesRepoSuccess = {
+        async getActiveGroupedProfile() {
+          return {
+            id: 2,
+            code: 'LONG_GROUPED_CHECKOUT',
+            display_name: 'Long Grouped Checkout',
+            purpose: 'grouped_checkout',
+            status: 'active',
+            is_env_configured: true,
+          };
+        },
+      };
+
+      const resolved = await resolvePaymentProfileForCart({
+        storeId: 1,
+        items: [{ product_id: 1, qty: 1 }, { product_id: 2, qty: 1 }],
+        database: mockDb,
+        profilesRepo: mockProfilesRepoSuccess,
+      });
+
+      assert.equal(resolved.isGrouped, true);
+      assert.equal(resolved.profile.code, 'LONG_GROUPED_CHECKOUT');
+      assert.equal(resolved.rootGroups.length, 2);
+
+      // 2. When no active grouped profile is present
+      const mockProfilesRepoMissing = {
+        async getActiveGroupedProfile() {
+          return null;
+        },
+        async getProfileByCode() {
+          return null;
+        },
+      };
+
+      await assert.rejects(
+        async () => {
+          await resolvePaymentProfileForCart({
+            storeId: 1,
+            items: [{ product_id: 1, qty: 1 }, { product_id: 2, qty: 1 }],
+            database: mockDb,
+            profilesRepo: mockProfilesRepoMissing,
+          });
+        },
+        (err) => err.code === 'GROUPED_PAYMENT_PROFILE_UNAVAILABLE' || err.message.includes('Chưa có tài khoản thanh toán gộp'),
+      );
+    });
+
+    it('Strictly prohibits disabling the last active grouped profile', async () => {
+      const mockTxDb = {
+        async transaction(cb) {
+          return cb({
+            async query(sql) {
+              if (sql.includes('SELECT * FROM payment_profiles WHERE id = $1 FOR UPDATE')) {
+                return [[{
+                  id: 1,
+                  code: 'LONG_GROUPED_CHECKOUT',
+                  display_name: 'Long Grouped',
+                  purpose: 'grouped_checkout',
+                  status: 'active',
+                }]];
+              }
+              if (sql.includes('SELECT id FROM payment_profiles WHERE purpose = \'grouped_checkout\' AND status = \'active\' AND id <> $1')) {
+                return [[]]; // No other active grouped profile exists!
+              }
+              return [[]];
+            },
+          });
+        },
+      };
+
+      const repo = createPaymentProfilesRepository(mockTxDb);
+      await assert.rejects(
+        async () => {
+          await repo.updateProfile(1, { status: 'disabled' });
+        },
+        (err) => err.code === 'CANNOT_DISABLE_LAST_GROUPED_PROFILE' || err.message.includes('Không thể tắt tài khoản thanh toán gộp duy nhất'),
+      );
     });
   });
 });

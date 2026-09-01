@@ -677,10 +677,11 @@ export type PaymentProfile = {
   id: number;
   code: string;
   display_name: string;
-  bank_name: string | null;
-  bank_bin: string | null;
-  account_number_masked: string;
-  account_holder: string | null;
+  purpose: 'industry' | 'grouped_checkout';
+  bank_name?: string | null;
+  bank_bin?: string | null;
+  account_number_masked?: string | null;
+  account_holder?: string | null;
   env_prefix: string;
   env_keys: {
     client_id: string;
@@ -688,7 +689,7 @@ export type PaymentProfile = {
     checksum_key: string;
   };
   is_env_configured: boolean;
-  status: 'pending' | 'active' | 'disabled';
+  status: 'active' | 'disabled' | 'pending';
   version: number;
   assigned_categories: Array<{
     category_id: number;
@@ -707,10 +708,7 @@ export async function fetchPaymentProfiles(status?: string): Promise<{ profiles:
 export async function createPaymentProfile(data: {
   code: string;
   display_name: string;
-  bank_name?: string;
-  bank_bin?: string;
-  account_number?: string;
-  account_holder?: string;
+  purpose: 'industry' | 'grouped_checkout';
 }): Promise<{ profile: PaymentProfile }> {
   return apiFetch<{ profile: PaymentProfile }>('/admin/payment-profiles', {
     method: 'POST',
@@ -722,11 +720,8 @@ export async function updatePaymentProfile(
   id: number,
   data: {
     display_name?: string;
-    bank_name?: string;
-    bank_bin?: string;
-    account_number?: string;
-    account_holder?: string;
-    status?: 'pending' | 'active' | 'disabled';
+    purpose?: 'industry' | 'grouped_checkout';
+    status?: 'active' | 'disabled';
   },
 ): Promise<{ profile: PaymentProfile }> {
   return apiFetch<{ profile: PaymentProfile }>(`/admin/payment-profiles/${id}`, {

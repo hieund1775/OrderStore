@@ -37,10 +37,7 @@ describe('PaymentProfileManager Super Admin Suite', () => {
       id: 1,
       code: 'NUOC_HIEU',
       display_name: 'Nước Uống - Hiếu',
-      bank_name: 'MB Bank',
-      bank_bin: '970422',
-      account_number_masked: '******4321',
-      account_holder: 'NGUYEN VAN HIEU',
+      purpose: 'industry',
       env_prefix: 'PAYOS_PROFILE_NUOC_HIEU',
       env_keys: {
         client_id: 'PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID',
@@ -48,7 +45,7 @@ describe('PaymentProfileManager Super Admin Suite', () => {
         checksum_key: 'PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY',
       },
       is_env_configured: false,
-      status: 'pending',
+      status: 'disabled',
       version: 1,
       assigned_categories: [{ category_id: 1, category_name: 'Nước Uống', category_slug: 'nuoc-uong' }],
       created_at: '2026-09-01T00:00:00Z',
@@ -58,10 +55,7 @@ describe('PaymentProfileManager Super Admin Suite', () => {
       id: 2,
       code: 'LONG_GROUPED_CHECKOUT',
       display_name: 'Long - Grouped Checkout & Hệ Thống Chung',
-      bank_name: 'Vietcombank',
-      bank_bin: '970436',
-      account_number_masked: '******8888',
-      account_holder: 'NGUYEN VAN LONG',
+      purpose: 'grouped_checkout',
       env_prefix: 'PAYOS_PROFILE_LONG_GROUPED_CHECKOUT',
       env_keys: {
         client_id: 'PAYOS_PROFILE_LONG_GROUPED_CHECKOUT_CLIENT_ID',
@@ -77,7 +71,7 @@ describe('PaymentProfileManager Super Admin Suite', () => {
     },
   ];
 
-  it('renders payment profile list with masked accounts, versions, and no raw secrets', async () => {
+  it('renders payment profile list with purpose badges, independent ENV / status badges, and no bank inputs', async () => {
     vi.mocked(api.fetchPaymentProfiles).mockResolvedValue({ profiles: sampleProfiles });
     vi.mocked(api.fetchPublicCategoryTree).mockResolvedValue([
       { id: 1, name: 'Nước Uống', slug: 'nuoc-uong', depth: 0, parent_id: null, sort_order: 1, children: [] },
@@ -99,20 +93,70 @@ describe('PaymentProfileManager Super Admin Suite', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
+    // Content checks
     expect(container.textContent).toContain('Nước Uống - Hiếu');
     expect(container.textContent).toContain('NUOC_HIEU');
-    expect(container.textContent).toContain('MB Bank • ******4321');
-    expect(container.textContent).toContain('v1');
-    expect(container.textContent).toContain('PAYOS_PROFILE_NUOC_HIEU_CLIENT_ID');
-    expect(container.textContent).toContain('PAYOS_PROFILE_NUOC_HIEU_API_KEY');
-    expect(container.textContent).toContain('PAYOS_PROFILE_NUOC_HIEU_CHECKSUM_KEY');
-    expect(container.textContent).toContain('Long - Grouped Checkout');
+    expect(container.textContent).toContain('Nhận tiền ngành hàng');
+    expect(container.textContent).toContain('Chờ cấu hình ENV');
+    expect(container.textContent).toContain('Đã tắt');
+    expect(container.textContent).toContain('Gán ngành hàng');
 
-    // Confirm that secret input fields are not rendered
+    expect(container.textContent).toContain('Long - Grouped Checkout');
+    expect(container.textContent).toContain('Tài khoản thanh toán gộp');
+    expect(container.textContent).toContain('ENV đã sẵn sàng trên server');
+    expect(container.textContent).toContain('Đang bật');
+    expect(container.textContent).toContain('Dùng khi khách mua từ nhiều ngành hàng');
+
+    // Confirm that secret input fields and bank input fields are not rendered
     const inputs = container.querySelectorAll('input');
     for (const input of inputs) {
       expect(input.placeholder).not.toMatch(/API Key/i);
       expect(input.placeholder).not.toMatch(/Checksum/i);
+      expect(input.placeholder).not.toMatch(/MB Bank/i);
     }
+  });
+
+  it('form create dialog does not render bank/account inputs and provides purpose selection', async () => {
+    vi.mocked(api.fetchPaymentProfiles).mockResolvedValue({ profiles: sampleProfiles });
+    vi.mocked(api.fetchPublicCategoryTree).mockResolvedValue([]);
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <PaymentProfileManager />
+        </QueryClientProvider>,
+      );
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Click "Thêm Profile" button
+    const addButtons = Array.from(container.querySelectorAll('button')).filter((b) =>
+      b.textContent?.includes('Thêm Profile'),
+    );
+    expect(addButtons.length).toBeGreaterThan(0);
+
+    await act(async () => {
+      addButtons[0].click();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Dialog content in document body
+    expect(document.body.textContent).toContain('Tạo Payment Profile Mới');
+    expect(document.body.textContent).toContain('Mục Đích Sử Dụng');
+
+    // Ensure no bank inputs exist in document body
+    expect(document.body.textContent).not.toContain('Tên Ngân Hàng');
+    expect(document.body.textContent).not.toContain('Số Tài Khoản');
+    expect(document.body.textContent).not.toContain('Chủ Tài Khoản');
   });
 });

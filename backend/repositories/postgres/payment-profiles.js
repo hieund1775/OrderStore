@@ -54,7 +54,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       }
 
       const [rows] = await database.query(
-        `SELECT pp.id, pp.code, pp.display_name, pp.bank_name, pp.bank_bin,
+        `SELECT pp.id, pp.code, pp.display_name, pp.purpose, pp.bank_name, pp.bank_bin,
                 pp.account_number, pp.account_holder, pp.env_prefix, pp.status,
                 pp.version, pp.created_at, pp.updated_at,
                 JSONB_AGG(
@@ -79,10 +79,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
           id: Number(r.id),
           code: r.code,
           display_name: r.display_name,
-          bank_name: r.bank_name || null,
-          bank_bin: r.bank_bin || null,
-          account_number_masked: maskAccountNumber(r.account_number),
-          account_holder: r.account_holder || null,
+          purpose: r.purpose || 'industry',
           env_prefix: r.env_prefix,
           env_keys: {
             client_id: `${r.env_prefix}_CLIENT_ID`,
@@ -122,10 +119,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
         id: Number(r.id),
         code: r.code,
         display_name: r.display_name,
-        bank_name: r.bank_name || null,
-        bank_bin: r.bank_bin || null,
-        account_number_masked: maskAccountNumber(r.account_number),
-        account_holder: r.account_holder || null,
+        purpose: r.purpose || 'industry',
         env_prefix: r.env_prefix,
         env_keys: {
           client_id: `${r.env_prefix}_CLIENT_ID`,
@@ -152,6 +146,24 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       return {
         ...r,
         id: Number(r.id),
+        purpose: r.purpose || 'industry',
+        version: Number(r.version),
+        is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
+      };
+    },
+
+    async getActiveGroupedProfile() {
+      const [rows] = await database.query(
+        `SELECT * FROM payment_profiles
+         WHERE purpose = 'grouped_checkout' AND status = 'active'
+         LIMIT 1`,
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        id: Number(r.id),
+        purpose: r.purpose || 'grouped_checkout',
         version: Number(r.version),
         is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
       };
@@ -165,6 +177,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
          WHERE cpp.root_category_id = $1
            AND cpp.is_active = TRUE
            AND pp.status = 'active'
+           AND pp.purpose = 'industry'
          LIMIT 1`,
         [Number(rootCategoryId)],
       );
@@ -173,17 +186,24 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       return {
         ...r,
         id: Number(r.id),
+        purpose: r.purpose || 'industry',
         version: Number(r.version),
         is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
       };
     },
 
-    async createProfile({ code, displayName, bankName = null, bankBin = null, accountNumber = null, accountHolder = null, createdBy = null }) {
+    async createProfile({ code, displayName, purpose = 'industry', createdBy = null }) {
       if (!code || !String(code).trim()) {
         throw new PaymentProfileError('Mã code profile không được để trống');
       }
       if (!displayName || !String(displayName).trim()) {
         throw new PaymentProfileError('Tên hiển thị profile không được để trống');
+      }
+
+      const validPurposes = ['industry', 'grouped_checkout'];
+      const normalizedPurpose = String(purpose || 'industry').trim();
+      if (!validPurposes.includes(normalizedPurpose)) {
+        throw new PaymentProfileError('Mục đích profile phải là "industry" hoặc "grouped_checkout"', 400, 'INVALID_PURPOSE');
       }
 
       const normalizedCode = String(code).toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
@@ -196,83 +216,131 @@ export function createPaymentProfilesRepository(database = postgresDb) {
 
       const [rows] = await database.query(
         `INSERT INTO payment_profiles
-           (code, display_name, bank_name, bank_bin, account_number, account_holder, env_prefix, status, version, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 1, $8)
+           (code, display_name, purpose, env_prefix, status, version, created_by)
+         VALUES ($1, $2, $3, $4, 'disabled', 1, $5)
          RETURNING *`,
-        [normalizedCode, displayName.trim(), bankName?.trim() || null, bankBin?.trim() || null, accountNumber?.trim() || null, accountHolder?.trim() || null, envPrefix, createdBy],
+        [normalizedCode, displayName.trim(), normalizedPurpose, envPrefix, createdBy],
       );
 
       const r = rows[0];
       return {
-        ...r,
         id: Number(r.id),
-        account_number: undefined,
-        account_number_masked: maskAccountNumber(r.account_number),
+        code: r.code,
+        display_name: r.display_name,
+        purpose: r.purpose,
+        env_prefix: r.env_prefix,
         env_keys: {
           client_id: `${r.env_prefix}_CLIENT_ID`,
           api_key: `${r.env_prefix}_API_KEY`,
           checksum_key: `${r.env_prefix}_CHECKSUM_KEY`,
         },
         is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
+        status: r.status,
+        version: Number(r.version),
+        assigned_categories: [],
+        created_at: r.created_at,
+        updated_at: r.updated_at,
       };
     },
 
-    async updateProfile(id, { displayName, bankName, bankBin, accountNumber, accountHolder, status, updatedBy = null }) {
-      const [existing] = await database.query('SELECT * FROM payment_profiles WHERE id = $1', [Number(id)]);
-      if (!existing[0]) {
-        throw new PaymentProfileError('Payment profile không tồn tại', 404);
-      }
-
-      const current = existing[0];
-      const newDisplayName = displayName !== undefined ? displayName.trim() : current.display_name;
-      const newBankName = bankName !== undefined ? (bankName?.trim() || null) : current.bank_name;
-      const newBankBin = bankBin !== undefined ? (bankBin?.trim() || null) : current.bank_bin;
-      const newAccountNumber = accountNumber !== undefined ? (accountNumber?.trim() || null) : current.account_number;
-      const newAccountHolder = accountHolder !== undefined ? (accountHolder?.trim() || null) : current.account_holder;
-      const newStatus = status !== undefined ? status : current.status;
-
-      if (newStatus === 'active') {
-        const isConfigured = checkEnvConfigured(current.env_prefix, current.code);
-        if (!isConfigured) {
-          throw new PaymentProfileError(
-            'Không thể kích hoạt profile khi chưa cấu hình đủ 3 biến môi trường trên server',
-            400,
-            'ENV_NOT_CONFIGURED',
-          );
+    async updateProfile(id, { displayName, purpose, status, updatedBy = null }) {
+      return database.transaction(async (tx) => {
+        const [existing] = await tx.query('SELECT * FROM payment_profiles WHERE id = $1 FOR UPDATE', [Number(id)]);
+        if (!existing[0]) {
+          throw new PaymentProfileError('Payment profile không tồn tại', 404);
         }
-      }
 
-      // Version increments when banking details change
-      const bankChanged =
-        newBankName !== current.bank_name ||
-        newBankBin !== current.bank_bin ||
-        newAccountNumber !== current.account_number ||
-        newAccountHolder !== current.account_holder;
+        const current = existing[0];
+        const newDisplayName = displayName !== undefined ? displayName.trim() : current.display_name;
+        const newPurpose = purpose !== undefined ? purpose.trim() : current.purpose;
+        const newStatus = status !== undefined ? status : current.status;
 
-      const nextVersion = bankChanged ? Number(current.version) + 1 : Number(current.version);
+        // Purpose change validations
+        if (purpose !== undefined && newPurpose !== current.purpose) {
+          const validPurposes = ['industry', 'grouped_checkout'];
+          if (!validPurposes.includes(newPurpose)) {
+            throw new PaymentProfileError('Mục đích profile phải là "industry" hoặc "grouped_checkout"', 400, 'INVALID_PURPOSE');
+          }
+          if (current.status === 'active') {
+            throw new PaymentProfileError('Không thể thay đổi mục đích khi profile đang bật. Vui lòng tắt profile trước khi đổi mục đích.', 400);
+          }
+          const [catMappings] = await tx.query(
+            'SELECT id FROM category_payment_profiles WHERE payment_profile_id = $1 AND is_active = TRUE LIMIT 1',
+            [Number(id)],
+          );
+          if (catMappings[0]) {
+            throw new PaymentProfileError('Không thể thay đổi mục đích khi profile đang được gán cho ngành hàng. Vui lòng bỏ gán trước.', 400);
+          }
+        }
 
-      const [rows] = await database.query(
-        `UPDATE payment_profiles
-         SET display_name = $2, bank_name = $3, bank_bin = $4,
-             account_number = $5, account_holder = $6, status = $7,
-             version = $8, updated_by = $9, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING *`,
-        [Number(id), newDisplayName, newBankName, newBankBin, newAccountNumber, newAccountHolder, newStatus, nextVersion, updatedBy],
-      );
+        // Active status validations
+        if (newStatus === 'active') {
+          const isConfigured = checkEnvConfigured(current.env_prefix, current.code);
+          if (!isConfigured) {
+            throw new PaymentProfileError(
+              'Không thể kích hoạt profile khi chưa cấu hình đủ 3 biến môi trường trên server',
+              400,
+              'ENV_NOT_CONFIGURED',
+            );
+          }
 
-      const r = rows[0];
-      return {
-        ...r,
-        id: Number(r.id),
-        account_number_masked: maskAccountNumber(r.account_number),
-        env_keys: {
-          client_id: `${r.env_prefix}_CLIENT_ID`,
-          api_key: `${r.env_prefix}_API_KEY`,
-          checksum_key: `${r.env_prefix}_CHECKSUM_KEY`,
-        },
-        is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
-      };
+          // If activating a grouped profile, ensure any other active grouped profile is disabled
+          if (newPurpose === 'grouped_checkout') {
+            await tx.query(
+              `UPDATE payment_profiles
+               SET status = 'disabled', updated_at = CURRENT_TIMESTAMP
+               WHERE purpose = 'grouped_checkout' AND id <> $1 AND status = 'active'`,
+              [Number(id)],
+            );
+          }
+        }
+
+        // Disable grouped profile validation: must not disable last active grouped profile
+        if (newStatus === 'disabled' && current.status === 'active' && current.purpose === 'grouped_checkout') {
+          const [otherActive] = await tx.query(
+            `SELECT id FROM payment_profiles
+             WHERE purpose = 'grouped_checkout' AND status = 'active' AND id <> $1
+             LIMIT 1`,
+            [Number(id)],
+          );
+          if (!otherActive[0]) {
+            throw new PaymentProfileError(
+              'Không thể tắt tài khoản thanh toán gộp duy nhất đang hoạt động. Vui lòng kích hoạt tài khoản thanh toán gộp thay thế trước khi tắt tài khoản này.',
+              400,
+              'CANNOT_DISABLE_LAST_GROUPED_PROFILE',
+            );
+          }
+        }
+
+        const [rows] = await tx.query(
+          `UPDATE payment_profiles
+           SET display_name = $2, purpose = $3, status = $4,
+               updated_by = $5, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1
+           RETURNING *`,
+          [Number(id), newDisplayName, newPurpose, newStatus, updatedBy],
+        );
+
+        const r = rows[0];
+        return {
+          id: Number(r.id),
+          code: r.code,
+          display_name: r.display_name,
+          purpose: r.purpose,
+          env_prefix: r.env_prefix,
+          env_keys: {
+            client_id: `${r.env_prefix}_CLIENT_ID`,
+            api_key: `${r.env_prefix}_API_KEY`,
+            checksum_key: `${r.env_prefix}_CHECKSUM_KEY`,
+          },
+          is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
+          status: r.status,
+          version: Number(r.version),
+          assigned_categories: [],
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        };
+      });
     },
 
     async assignProfileToRootCategory({ rootCategoryId, profileId, createdBy = null }) {
@@ -289,13 +357,21 @@ export function createPaymentProfilesRepository(database = postgresDb) {
           throw new PaymentProfileError('Chỉ danh mục gốc (ngành hàng depth = 0) mới được gán payment profile', 400);
         }
 
-        // 2. Verify profile
+        // 2. Verify profile and purpose
         const [profRows] = await tx.query(
-          `SELECT id, code, display_name, status FROM payment_profiles WHERE id = $1`,
+          `SELECT id, code, display_name, purpose, status FROM payment_profiles WHERE id = $1`,
           [Number(profileId)],
         );
         if (!profRows[0]) {
           throw new PaymentProfileError('Payment profile không tồn tại', 404);
+        }
+
+        if (profRows[0].purpose !== 'industry') {
+          throw new PaymentProfileError(
+            'Chỉ payment profile có mục đích "industry" (nhận tiền ngành hàng) mới được gán cho ngành hàng',
+            400,
+            'INVALID_PROFILE_PURPOSE',
+          );
         }
 
         // 3. Upsert mapping (1 root category only has 1 active mapping)
