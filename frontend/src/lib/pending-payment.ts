@@ -59,3 +59,9 @@ export function parsePendingPaymentFromSession(raw: string | null | undefined): 
     return null;
   }
 }
+
+export function canCancelPendingPayment(payment: PendingPayOSPayment | null | undefined): boolean {
+  if (!payment) return false;
+  return !payment.is_grouped && Boolean(payment.payment_code && !payment.payment_code.startsWith('GRP'));
+}
+

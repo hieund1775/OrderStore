@@ -25,6 +25,7 @@ import {
   PendingPayOSPayment,
   normalizePendingPayment,
   parsePendingPaymentFromSession,
+  canCancelPendingPayment,
 } from "@/lib/pending-payment";
 import type { PaymentSummary } from "@/types/payment-summary";
 
@@ -350,6 +351,11 @@ function Checkout() {
 
   async function cancelPendingOrder() {
     if (!pendingOrder) return;
+    if (!canCancelPendingPayment(pendingOrder)) {
+      toast.info("Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.");
+      navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
+      return;
+    }
     setCancellingOrder(true);
     try {
       const cancelToken =
@@ -715,43 +721,71 @@ function Checkout() {
               )}
 
               {isExpired ? (
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Button
-                    variant="hero"
-                    className="flex-1 py-5 font-bold"
-                    disabled={regeneratingQr}
-                    onClick={regeneratePayOSQr}
-                  >
-                    {regeneratingQr ? "Đang tạo mã..." : "🔄 Tạo mã QR thanh toán mới"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 text-berry border-berry/30 hover:bg-berry/10"
-                    disabled={cancellingOrder}
-                    onClick={cancelPendingOrder}
-                  >
-                    {cancellingOrder ? "Đang hủy..." : "🗑️ Hủy / Xóa đơn này"}
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button
+                      variant="hero"
+                      className="flex-1 py-5 font-bold"
+                      disabled={regeneratingQr}
+                      onClick={regeneratePayOSQr}
+                    >
+                      {regeneratingQr ? "Đang tạo mã..." : "🔄 Tạo mã QR thanh toán mới"}
+                    </Button>
+                    {canCancelPendingPayment(pendingOrder) ? (
+                      <Button
+                        variant="outline"
+                        className="flex-1 text-berry border-berry/30 hover:bg-berry/10"
+                        disabled={cancellingOrder}
+                        onClick={cancelPendingOrder}
+                      >
+                        {cancellingOrder ? "Đang hủy..." : "🗑️ Hủy / Xóa đơn này"}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
+                        }}
+                      >
+                        Xem các đơn theo ngành hàng ↗
+                      </Button>
+                    )}
+                  </div>
+                  {pendingOrder.is_grouped && (
+                    <p className="text-muted-foreground text-xs text-center">
+                      Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.
+                    </p>
+                  )}
                 </div>
               ) : (
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
-                    }}
-                  >
-                    Theo dõi đơn hàng
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="flex-1 text-berry hover:bg-berry/10"
-                    disabled={cancellingOrder}
-                    onClick={cancelPendingOrder}
-                  >
-                    {cancellingOrder ? "Đang hủy..." : "Hủy đơn này"}
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
+                      }}
+                    >
+                      {pendingOrder.is_grouped ? "Xem các đơn theo ngành hàng ↗" : "Theo dõi đơn hàng"}
+                    </Button>
+                    {canCancelPendingPayment(pendingOrder) && (
+                      <Button
+                        variant="ghost"
+                        className="flex-1 text-berry hover:bg-berry/10"
+                        disabled={cancellingOrder}
+                        onClick={cancelPendingOrder}
+                      >
+                        {cancellingOrder ? "Đang hủy..." : "Hủy đơn này"}
+                      </Button>
+                    )}
+                  </div>
+                  {pendingOrder.is_grouped && (
+                    <p className="text-muted-foreground text-xs text-center">
+                      Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.
+                    </p>
+                  )}
                 </div>
               )}
 

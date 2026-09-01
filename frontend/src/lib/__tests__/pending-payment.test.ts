@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePendingPayment, parsePendingPaymentFromSession } from '../pending-payment';
+import {
+  normalizePendingPayment,
+  parsePendingPaymentFromSession,
+  canCancelPendingPayment,
+} from '../pending-payment';
 
 describe('Pending Payment Normalization & Recovery (G1)', () => {
   it('normalizes single order response with order_code and total', () => {
@@ -82,3 +86,40 @@ describe('Pending Payment Normalization & Recovery (G1)', () => {
     expect(parsePendingPaymentFromSession('{}')).toBeNull();
   });
 });
+
+describe('Pending Payment Cancellation Policy (H1)', () => {
+  it('permits cancellation for single orders', () => {
+    const singlePayment = {
+      payment_code: 'TP2609010001',
+      order_code: 'TP2609010001',
+      order_id: 10,
+      total: 50000,
+      is_grouped: false,
+    };
+    expect(canCancelPendingPayment(singlePayment)).toBe(true);
+  });
+
+  it('strictly prohibits cancellation for grouped orders (must cancel child orders individually)', () => {
+    const groupPayment1 = {
+      payment_code: 'GRP2609019999',
+      order_code: 'GRP2609019999',
+      order_id: null,
+      total: 100000,
+      is_grouped: true,
+    };
+    expect(canCancelPendingPayment(groupPayment1)).toBe(false);
+
+    const groupPayment2 = {
+      payment_code: 'GRP2609018888',
+      total: 100000,
+      is_grouped: false, // defensive check on code prefix
+    };
+    expect(canCancelPendingPayment(groupPayment2)).toBe(false);
+  });
+
+  it('returns false for null or undefined payment', () => {
+    expect(canCancelPendingPayment(null)).toBe(false);
+    expect(canCancelPendingPayment(undefined)).toBe(false);
+  });
+});
+
