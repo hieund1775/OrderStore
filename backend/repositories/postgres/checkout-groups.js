@@ -222,7 +222,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'order_id', cga.order_id,
                     'order_code', o.order_code,
                     'root_category_id', cga.root_category_id,
-                    'root_category_name', cga.root_category_name,
+                    'root_category_name', COALESCE(cga.root_category_name, 'Chưa phân loại'),
                     'allocated_subtotal', cga.allocated_subtotal,
                     'allocated_discount', cga.allocated_discount,
                     'allocated_shipping_fee', cga.allocated_shipping_fee,
@@ -231,8 +231,19 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'status', (
                       SELECT status FROM order_status_history osh
                       WHERE osh.order_id = o.id
-                      ORDER BY osh.created_at DESC LIMIT 1
-                    )
+                      ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1
+                    ),
+                    'items', COALESCE((
+                      SELECT JSONB_AGG(
+                        JSONB_BUILD_OBJECT(
+                          'product_id', oi.product_id,
+                          'product_name', oi.product_name,
+                          'quantity', oi.qty,
+                          'unit_price', oi.unit_price,
+                          'line_total', oi.line_total
+                        )
+                      ) FROM order_items oi WHERE oi.order_id = o.id
+                    ), '[]'::jsonb)
                   )
                 ) AS child_orders
          FROM checkout_groups cg
@@ -418,6 +429,26 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       // Strict ownership verification
       verifyGroupOwnership(group, { userId, cancelToken });
 
+      const industries = (group.child_orders || []).map((co) => ({
+        root_category_id: co.root_category_id ? String(co.root_category_id) : null,
+        root_category_name: co.root_category_name || 'Chưa phân loại',
+        order_id: String(co.order_id || ''),
+        order_code: co.order_code || '',
+        subtotal: Number(co.allocated_subtotal || 0),
+        discount_amount: Number(co.allocated_discount || 0),
+        shipping_fee: Number(co.allocated_shipping_fee || 0),
+        total_amount: Number(co.allocated_total || 0),
+        status: co.status || 'Đang chuẩn bị',
+        payment_status: co.payment_status || group.payment_status || 'unpaid',
+        items: Array.isArray(co.items) ? co.items.map((it) => ({
+          product_id: String(it.product_id || ''),
+          product_name: it.product_name || '',
+          quantity: Number(it.quantity || it.qty || 1),
+          unit_price: Number(it.unit_price || 0),
+          line_total: Number(it.line_total || 0),
+        })) : [],
+      }));
+
       return {
         group_code: group.group_code,
         payment_status: group.payment_status,
@@ -430,15 +461,28 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
         payment_qr_code: group.payment_qr_code,
         payment_expires_at: group.payment_expires_at,
         created_at: group.created_at,
-        child_orders: group.child_orders.map((co) => ({
-          order_code: co.order_code,
-          root_category_name: co.root_category_name,
-          allocated_subtotal: Number(co.allocated_subtotal),
-          allocated_discount: Number(co.allocated_discount),
-          allocated_total: Number(co.allocated_total),
-          status: co.status || 'Đang chuẩn bị',
-          payment_status: co.payment_status || group.payment_status,
+        child_orders: industries.map((ind) => ({
+          order_id: ind.order_id,
+          order_code: ind.order_code,
+          root_category_id: ind.root_category_id,
+          root_category_name: ind.root_category_name,
+          allocated_subtotal: ind.subtotal,
+          allocated_discount: ind.discount_amount,
+          allocated_shipping_fee: ind.shipping_fee,
+          allocated_total: ind.total_amount,
+          status: ind.status,
+          payment_status: ind.payment_status,
+          items: ind.items,
         })),
+        payment_summary: {
+          is_grouped: true,
+          group_code: group.group_code,
+          subtotal: Number(group.subtotal),
+          discount_amount: Number(group.discount_amount),
+          shipping_fee: Number(group.shipping_fee),
+          total_amount: Number(group.total_amount),
+          industries,
+        },
       };
     },
   };

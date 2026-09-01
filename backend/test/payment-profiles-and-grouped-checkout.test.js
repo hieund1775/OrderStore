@@ -495,4 +495,221 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       setPayOSForTest(null);
     }
   });
+
+  describe('Gate 9: Customer Industry Payment Summary Contract', () => {
+    it('Single-industry order returns payment_summary with 1 industry and matching totals', async () => {
+      const mockOrdersRepo = {
+        async createPublicOrder({ input, rootCategoryId }) {
+          return {
+            id: 101,
+            order_code: 'TP_SINGLE_1',
+            subtotal: 50000,
+            discount_amount: 0,
+            shipping_fee: 0,
+            total: 50000,
+            payment_status: 'unpaid',
+            status: 'Đang chuẩn bị',
+          };
+        },
+      };
+
+      const mockResolvePaymentProfile = async () => ({
+        mode: 'single',
+        profile: { code: 'TEAPLUS_PROFILE', bankAccount: '00001', secretKey: 'SECRET_1' },
+        rootCategory: { rootCategoryId: 1, rootCategoryName: 'Nước Uống', rootCategorySlug: 'nuoc-uong' },
+      });
+
+      const service = createCustomerOrderService({
+        repository: mockOrdersRepo,
+        resolvePaymentProfile: mockResolvePaymentProfile,
+        checkPayOSConfigured: () => false,
+      });
+
+      const res = await service.create({
+        userId: 123,
+        input: {
+          store_id: 1,
+          order_type: 'Take-away',
+          payment_method: 'COD',
+          customer_name: 'Nguyen Van Single',
+          customer_phone: '0987654321',
+          items: [{ product_id: 1, product_name: 'Trà Đào', unit_price: 50000, qty: 1 }],
+        },
+      });
+
+      assert.ok(res.payment_summary, 'payment_summary must be present');
+      assert.equal(res.payment_summary.is_grouped, false);
+      assert.equal(res.payment_summary.group_code, null);
+      assert.equal(res.payment_summary.subtotal, 50000);
+      assert.equal(res.payment_summary.discount_amount, 0);
+      assert.equal(res.payment_summary.total_amount, 50000);
+      assert.equal(res.payment_summary.industries.length, 1);
+
+      const ind = res.payment_summary.industries[0];
+      assert.equal(ind.root_category_id, '1');
+      assert.equal(ind.root_category_name, 'Nước Uống');
+      assert.equal(ind.order_code, 'TP_SINGLE_1');
+      assert.equal(ind.subtotal, 50000);
+      assert.equal(ind.total_amount, 50000);
+      assert.equal(ind.items.length, 1);
+      assert.equal(ind.items[0].product_name, 'Trà Đào');
+
+      // Zero secret leakage check
+      const jsonStr = JSON.stringify(res);
+      assert.equal(jsonStr.includes('00001'), false, 'Bank account must not be leaked');
+      assert.equal(jsonStr.includes('SECRET_1'), false, 'Secret key must not be leaked');
+      assert.equal(jsonStr.includes('TEAPLUS_PROFILE'), false, 'Profile code must not be leaked');
+    });
+
+    it('Grouped multi-industry checkout returns payment_summary.is_grouped === true and sum invariants', async () => {
+      const mockCheckoutGroupsRepo = {
+        async createCheckoutGroup({ subtotal, discountAmount, shippingFee, totalAmount }) {
+          return {
+            id: 999,
+            group_code: 'GRP_SUMMARY_TEST',
+            subtotal,
+            discount_amount: discountAmount,
+            shipping_fee: shippingFee || 0,
+            total_amount: totalAmount,
+            payment_status: 'unpaid',
+          };
+        },
+      };
+
+      const mockOrdersRepo = {
+        async createPublicOrder({ input, rootCategoryId }) {
+          return {
+            id: rootCategoryId === 1 ? 201 : 202,
+            order_code: rootCategoryId === 1 ? 'TP_CHILD_1' : 'TP_CHILD_2',
+            subtotal: 50000,
+            discount_amount: 10000,
+            shipping_fee: 0,
+            total: 40000,
+            payment_status: 'unpaid',
+            status: 'Đang chuẩn bị',
+          };
+        },
+      };
+
+      const mockResolvePaymentProfile = async () => ({
+        isGrouped: true,
+        profile: { code: 'PARENT_PROFILE', bankAccount: 'SECRET_BANK', secretKey: 'SECRET_PAYOS' },
+        rootGroups: [
+          {
+            rootCategoryId: 1,
+            rootCategoryName: 'Nước Uống',
+            rootCategorySlug: 'nuoc-uong',
+            items: [{ product_id: 1, product_name: 'Trà Lài', price: 50000, qty: 1 }],
+          },
+          {
+            rootCategoryId: 2,
+            rootCategoryName: 'Thời Trang',
+            rootCategorySlug: 'thoi-trang',
+            items: [{ product_id: 2, product_name: 'Áo Thun', price: 50000, qty: 1 }],
+          },
+        ],
+      });
+
+      const service = createCustomerOrderService({
+        repository: mockOrdersRepo,
+        checkoutGroupsRepo: mockCheckoutGroupsRepo,
+        promotionsRepo: {
+          async validateForOrder() {
+            return { valid: true, discount_amount: 20000 };
+          },
+          async consumeForOrder() {
+            return true;
+          },
+        },
+        resolvePaymentProfile: mockResolvePaymentProfile,
+        checkPayOSConfigured: () => false,
+        database: {
+          async transaction(fn) {
+            return await fn({});
+          },
+        },
+      });
+
+      const res = await service.create({
+        userId: 123,
+        input: {
+          store_id: 1,
+          order_type: 'Take-away',
+          payment_method: 'COD',
+          voucher_code: 'SALE20',
+          customer_name: 'Nguyen Van Group',
+          customer_phone: '0987654321',
+          items: [
+            { product_id: 1, price: 50000, qty: 1 },
+            { product_id: 2, price: 50000, qty: 1 },
+          ],
+        },
+      });
+
+      assert.ok(res.payment_summary, 'payment_summary must be present');
+      assert.equal(res.payment_summary.is_grouped, true);
+      assert.equal(res.payment_summary.group_code, 'GRP_SUMMARY_TEST');
+      assert.equal(res.payment_summary.subtotal, 100000);
+      assert.equal(res.payment_summary.discount_amount, 20000);
+      assert.equal(res.payment_summary.total_amount, 80000);
+      assert.equal(res.payment_summary.industries.length, 2);
+
+      // Verify sum invariants
+      const sumSubtotal = res.payment_summary.industries.reduce((s, ind) => s + ind.subtotal, 0);
+      const sumDiscount = res.payment_summary.industries.reduce((s, ind) => s + ind.discount_amount, 0);
+      const sumTotal = res.payment_summary.industries.reduce((s, ind) => s + ind.total_amount, 0);
+      assert.equal(sumSubtotal, res.payment_summary.subtotal);
+      assert.equal(sumDiscount, res.payment_summary.discount_amount);
+      assert.equal(sumTotal, res.payment_summary.total_amount);
+
+      // Zero secret leakage check
+      const jsonStr = JSON.stringify(res);
+      assert.equal(jsonStr.includes('SECRET_BANK'), false);
+      assert.equal(jsonStr.includes('SECRET_PAYOS'), false);
+      assert.equal(jsonStr.includes('PARENT_PROFILE'), false);
+    });
+
+    it('Missing root category name defaults to Chưa phân loại fallback', async () => {
+      const mockOrdersRepo = {
+        async createPublicOrder({ input }) {
+          return {
+            id: 301,
+            order_code: 'TP_NO_CAT',
+            subtotal: 30000,
+            discount_amount: 0,
+            shipping_fee: 0,
+            total: 30000,
+            payment_status: 'unpaid',
+            status: 'Đang chuẩn bị',
+          };
+        },
+      };
+
+      const mockResolvePaymentProfile = async () => ({
+        mode: 'single',
+        profile: { code: 'DEFAULT_PROFILE' },
+        rootCategory: null,
+      });
+
+      const service = createCustomerOrderService({
+        repository: mockOrdersRepo,
+        resolvePaymentProfile: mockResolvePaymentProfile,
+        checkPayOSConfigured: () => false,
+      });
+
+      const res = await service.create({
+        userId: 123,
+        input: {
+          store_id: 1,
+          order_type: 'Take-away',
+          payment_method: 'COD',
+          customer_name: 'Nguyen Fallback',
+          customer_phone: '0987654321',
+          items: [{ product_id: 99, price: 30000, qty: 1 }],
+        },
+      });
+
+      assert.equal(res.payment_summary.industries[0].root_category_name, 'Chưa phân loại');
+    });
+  });
 });

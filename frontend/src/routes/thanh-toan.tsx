@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Bike, MapPin, QrCode, Store, Ticket } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { useCart } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
 import { vnd } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
+import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
   validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
@@ -61,6 +62,15 @@ type PendingPayOSOrder = {
   payment_expires_at?: string;
 };
 
+type ProductCatalogMeta = {
+  id: number;
+  slug: string;
+  name: string;
+  root_category_id?: number;
+  root_category_name?: string;
+  root_category_slug?: string;
+};
+
 function Checkout() {
   const { removeItems, selectedItems, selectedSubtotal } = useCart();
   const checkoutItems = selectedItems;
@@ -92,6 +102,30 @@ function Checkout() {
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [regeneratingQr, setRegeneratingQr] = useState(false);
   const [cancellingOrder, setCancellingOrder] = useState(false);
+  const [productMetaList, setProductMetaList] = useState<ProductCatalogMeta[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    apiGet<ProductCatalogMeta[]>("/api/products")
+      .then((data) => {
+        if (active && Array.isArray(data)) {
+          setProductMetaList(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const productMetaMap = useMemo(() => {
+    const map = new Map<string, ProductCatalogMeta>();
+    for (const p of productMetaList) {
+      map.set(String(p.id), p);
+      if (p.slug) map.set(p.slug, p);
+    }
+    return map;
+  }, [productMetaList]);
 
   useEffect(() => {
     const user = getCustomerUser();
@@ -361,6 +395,64 @@ function Checkout() {
 
   const discount = Math.min(voucherDiscount, checkoutSubtotal);
   const total = Math.max(0, checkoutSubtotal - discount);
+
+  const industryGroups = useMemo(() => {
+    const groupMap = new Map<string, {
+      rootCategoryId: string;
+      rootCategoryName: string;
+      rootCategorySlug: string;
+      items: typeof checkoutItems;
+      subtotal: number;
+    }>();
+
+    for (const item of checkoutItems) {
+      const meta = productMetaMap.get(item.productId);
+      const rootId = meta?.root_category_id != null
+        ? String(meta.root_category_id)
+        : (item.rootCategoryId != null ? String(item.rootCategoryId) : "default");
+      const rootName = meta?.root_category_name || item.rootCategoryName || "Chưa phân loại";
+      const rootSlug = meta?.root_category_slug || item.rootCategorySlug || "chua-phan-loai";
+
+      if (!groupMap.has(rootId)) {
+        groupMap.set(rootId, {
+          rootCategoryId: rootId,
+          rootCategoryName: rootName,
+          rootCategorySlug: rootSlug,
+          items: [],
+          subtotal: 0,
+        });
+      }
+      const group = groupMap.get(rootId)!;
+      group.items.push(item);
+      group.subtotal += item.unitPrice * item.qty;
+    }
+
+    const groups = Array.from(groupMap.values());
+    const totalSubtotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
+    const totalDiscount = Math.min(voucherDiscount, totalSubtotal);
+
+    let remainingDiscount = totalDiscount;
+    return groups.map((g, idx) => {
+      const isLast = idx === groups.length - 1;
+      let allocatedDiscount = 0;
+      if (totalSubtotal > 0 && totalDiscount > 0) {
+        if (isLast) {
+          allocatedDiscount = remainingDiscount;
+        } else {
+          allocatedDiscount = Math.floor((g.subtotal * totalDiscount) / totalSubtotal);
+          remainingDiscount -= allocatedDiscount;
+        }
+      }
+      const allocatedShipping = 0;
+      const allocatedTotal = Math.max(0, g.subtotal - allocatedDiscount + allocatedShipping);
+      return {
+        ...g,
+        allocatedDiscount,
+        allocatedShipping,
+        allocatedTotal,
+      };
+    });
+  }, [checkoutItems, productMetaMap, voucherDiscount]);
 
   async function applyVoucher() {
     if (!voucherCode.trim()) return toast.error("Nhập mã ưu đãi trước");
@@ -709,46 +801,92 @@ function Checkout() {
 
       <div className="container-page grid gap-6 py-10 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          {/* Items */}
-          <section className="bg-card rounded-2xl border p-5">
-            <h2 className="font-display mb-4 text-lg font-bold">Món đã chọn ({checkoutItems.length})</h2>
-            {checkoutItems.length === 0 && (
+          {/* Items by Industry */}
+          <section className="bg-card rounded-2xl border p-5 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-lg font-bold">Chi tiết ngành hàng & Món chọn ({checkoutItems.length})</h2>
+              {industryGroups.length > 1 && (
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-xs font-semibold">
+                  Đơn gộp {industryGroups.length} ngành hàng
+                </Badge>
+              )}
+            </div>
+
+            {checkoutItems.length === 0 ? (
               <div className="py-8 text-center">
                 <p className="text-muted-foreground text-sm">Giỏ hàng trống.</p>
                 <Button asChild variant="hero" size="sm" className="mt-3">
                   <Link to="/menu">Chọn món ngay</Link>
                 </Button>
               </div>
-            )}
-            <div className="space-y-4">
-              {checkoutItems.map((i) => (
-                <div key={i.key} className="flex gap-3 border-b pb-4 last:border-0 last:pb-0">
-                  <img
-                    src={i.image}
-                    alt={i.name}
-                    loading="lazy"
-                    className="size-16 rounded-xl object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{i.name}</p>
-                    <p className="text-muted-foreground text-xs">
-                      Size {i.size} · {i.base} · {i.sugar} đường · {i.ice} đá
-                    </p>
-                    {i.toppings && i.toppings.length > 0 && (
-                      <p className="text-muted-foreground text-xs">
-                        Topping: {i.toppings.join(", ")}
-                      </p>
-                    )}
-                    {i.note && (
-                      <p className="text-muted-foreground text-xs italic">Ghi chú: {i.note}</p>
-                    )}
-                    <p className="text-primary mt-1 font-bold text-sm">
-                      {vnd(i.unitPrice)} × {i.qty}
-                    </p>
+            ) : (
+              <div className="space-y-6">
+                {industryGroups.map((group) => (
+                  <div key={group.rootCategoryId} className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-base font-bold text-foreground">
+                          {group.rootCategoryName}
+                        </span>
+                        <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
+                          {group.items.reduce((s, it) => s + it.qty, 0)} món
+                        </Badge>
+                      </div>
+                      <span className="text-sm font-semibold text-primary">
+                        {vnd(group.allocatedTotal)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 pt-1">
+                      {group.items.map((i) => (
+                        <div key={i.key} className="flex gap-3 border-b border-border/50 pb-3 last:border-0 last:pb-0">
+                          <img
+                            src={i.image}
+                            alt={i.name}
+                            loading="lazy"
+                            className="size-14 rounded-lg object-cover shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm">{i.name}</p>
+                            <p className="text-muted-foreground text-xs">
+                              Size {i.size} · {i.base} · {i.sugar} đường · {i.ice} đá
+                            </p>
+                            {i.toppings && i.toppings.length > 0 && (
+                              <p className="text-muted-foreground text-xs">
+                                Topping: {i.toppings.join(", ")}
+                              </p>
+                            )}
+                            {i.note && (
+                              <p className="text-muted-foreground text-xs italic">Ghi chú: {i.note}</p>
+                            )}
+                            <p className="text-primary mt-1 font-bold text-xs">
+                              {vnd(i.unitPrice)} × {i.qty} = {vnd(i.unitPrice * i.qty)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="bg-background/80 rounded-lg p-2.5 text-xs space-y-1 border border-border/40">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Tạm tính ngành:</span>
+                        <span className="font-medium text-foreground">{vnd(group.subtotal)}</span>
+                      </div>
+                      {group.allocatedDiscount > 0 && (
+                        <div className="flex justify-between text-leaf font-medium">
+                          <span>Giảm giá phân bổ:</span>
+                          <span>− {vnd(group.allocatedDiscount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-bold text-foreground border-t pt-1">
+                        <span>Thành tiền ngành:</span>
+                        <span className="text-primary font-bold">{vnd(group.allocatedTotal)}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Fulfilment */}
@@ -905,9 +1043,32 @@ function Checkout() {
 
             <Separator />
 
+            {/* Chi tiết theo ngành hàng */}
+            <div className="space-y-2 text-xs">
+              <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
+                Chi tiết theo ngành hàng
+              </p>
+              {industryGroups.map((g) => (
+                <div key={g.rootCategoryId} className="space-y-0.5">
+                  <div className="flex justify-between text-sm font-medium">
+                    <span className="truncate pr-2">{g.rootCategoryName}</span>
+                    <span className="font-bold text-foreground shrink-0">{vnd(g.allocatedTotal)}</span>
+                  </div>
+                  {g.allocatedDiscount > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Tạm tính: {vnd(g.subtotal)} · Giảm: −{vnd(g.allocatedDiscount)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <Separator />
+
             <div className="space-y-2 text-sm">
-              <Row label="Tiền món" value={vnd(checkoutSubtotal)} />
-              <Row label="Giảm giá" value={discount ? `− ${vnd(discount)}` : "0₫"} />
+              <Row label="Tạm tính chung (Tiền món)" value={vnd(checkoutSubtotal)} />
+              <Row label="Giảm giá chung" value={discount ? `− ${vnd(discount)}` : "0₫"} />
+              <Row label="Phí giao hàng" value="0₫" />
             </div>
 
             <Separator />

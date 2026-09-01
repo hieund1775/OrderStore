@@ -32,6 +32,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
+import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/theo-doi-don")({
   validateSearch: (search: Record<string, unknown>): { code?: string; order_code?: string } => ({
@@ -74,6 +75,7 @@ function getStepIndex(status: string): number {
 }
 
 type LookupItem = {
+  product_id?: string;
   product_name: string;
   qty: number;
   size_label: string;
@@ -108,11 +110,50 @@ type LookupOrder = {
   shipping_driver_name?: string | null;
   shipping_driver_phone?: string | null;
   shipping_tracking_url?: string | null;
+  root_category_id?: string | null;
+  root_category_name?: string;
+  payment_summary?: PaymentSummary;
   note: string | null;
   created_at: string;
   current_status: OrderStatus;
   items: LookupItem[];
   status_history: { status: OrderStatus; note: string | null; created_at: string }[];
+};
+
+type LookupGroupChildOrder = {
+  order_id: string;
+  order_code: string;
+  root_category_id: string | null;
+  root_category_name: string;
+  allocated_subtotal: number;
+  allocated_discount: number;
+  allocated_shipping_fee: number;
+  allocated_total: number;
+  status: OrderStatus;
+  payment_status: string;
+  items: Array<{
+    product_id: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+  }>;
+};
+
+type LookupGroup = {
+  group_code: string;
+  payment_status: string;
+  payment_provider: string;
+  subtotal: number;
+  discount_amount: number;
+  shipping_fee: number;
+  total_amount: number;
+  payment_checkout_url?: string | null;
+  payment_qr_code?: string | null;
+  payment_expires_at?: string | null;
+  created_at: string;
+  child_orders: LookupGroupChildOrder[];
+  payment_summary: PaymentSummary;
 };
 
 function itemOptions(it: LookupItem) {
@@ -121,7 +162,7 @@ function itemOptions(it: LookupItem) {
     it.base_tea ? it.base_tea : null,
     it.sugar_level ? `${it.sugar_level} đường` : null,
     it.ice_level ? `${it.ice_level} đá` : null,
-    it.toppings.length > 0 ? it.toppings.map((t) => t.name).join(", ") : null,
+    it.toppings && it.toppings.length > 0 ? it.toppings.map((t) => t.name).join(", ") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -132,6 +173,7 @@ function Tracking() {
   const resolvedSearchCode = returnOrderCode || searchCode;
   const [input, setInput] = useState(resolvedSearchCode ?? "");
   const [order, setOrder] = useState<LookupOrder | null>(null);
+  const [group, setGroup] = useState<LookupGroup | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -167,6 +209,36 @@ function Tracking() {
       setRepaying(false);
     }
   }
+
+  async function handleRepayGroupPayOS() {
+    if (!group) return;
+    if (
+      group.payment_checkout_url
+      && isSafePayOSCheckoutUrl(group.payment_checkout_url)
+    ) {
+      window.location.assign(group.payment_checkout_url);
+      return;
+    }
+    setRepaying(true);
+    try {
+      const res = await apiPost<{ ok: boolean; group?: { payment_checkout_url: string }; order?: { checkout_url: string } }>(
+        "/api/payments/payos/regenerate-qr",
+        { group_code: group.group_code, order_code: group.group_code },
+        { headers: getOrderRequestHeaders(group.group_code) }
+      );
+      const targetUrl = res.group?.payment_checkout_url || res.order?.checkout_url;
+      if (targetUrl && isSafePayOSCheckoutUrl(targetUrl)) {
+        window.location.assign(targetUrl);
+      } else {
+        toast.error("Không thể mở lại trang thanh toán lúc này");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Lỗi kết nối cổng thanh toán");
+    } finally {
+      setRepaying(false);
+    }
+  }
+
   const load = useCallback(
     async (c: string, silent = false): Promise<{ ok: boolean; status?: number }> => {
       if (!c.trim()) return { ok: false };
@@ -175,16 +247,29 @@ function Tracking() {
         setError("");
       }
       try {
-        const res = await apiGet<{ order: LookupOrder }>(
+        const res = await apiGet<{ order?: LookupOrder; group?: LookupGroup }>(
           `/api/orders/lookup?code=${encodeURIComponent(c.trim())}`,
           { headers: getOrderRequestHeaders(c.trim()) }
         );
-        setOrder(res.order);
-        setError("");
-        return { ok: true };
+        if (res.group) {
+          setGroup(res.group);
+          setOrder(null);
+          setError("");
+          return { ok: true };
+        }
+        if (res.order) {
+          setOrder(res.order);
+          setGroup(null);
+          setError("");
+          return { ok: true };
+        }
+        throw new Error("Không tìm thấy đơn hàng");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Không tìm thấy đơn hàng");
-        if (!silent) setOrder(null);
+        if (!silent) {
+          setOrder(null);
+          setGroup(null);
+        }
         const status = typeof err === "object" && err !== null && "status" in err
           ? Number((err as { status?: unknown }).status)
           : undefined;
@@ -202,11 +287,13 @@ function Tracking() {
 
   // Smart Chained Timeout Polling real-time (mỗi 5 giây, dừng khi terminal state)
   useEffect(() => {
-    if (!order) return;
+    const currentCode = group?.group_code || order?.order_code;
+    if (!currentCode) return;
 
     // Terminal states: stop polling completely
-    const isTerminal = order.current_status === "Hoàn thành" || order.current_status === "Đã hủy";
-    if (isTerminal) return;
+    const isOrderTerminal = order ? (order.current_status === "Hoàn thành" || order.current_status === "Đã hủy") : false;
+    const isGroupTerminal = group ? (group.payment_status === "paid" && group.child_orders.every(co => co.status === "Hoàn thành" || co.status === "Đã hủy")) : false;
+    if (isOrderTerminal || isGroupTerminal) return;
 
     let isMounted = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
@@ -215,12 +302,12 @@ function Tracking() {
     let shouldStop = false;
 
     const poll = async () => {
-      if (!isMounted || !order || isRequestInFlight) return;
+      if (!isMounted || (!order && !group) || isRequestInFlight) return;
       if (document.visibilityState === "hidden") return;
 
       isRequestInFlight = true;
       try {
-        const result = await load(order.order_code, true);
+        const result = await load(currentCode, true);
         if (!result.ok && (result.status === 403 || result.status === 404)) {
           shouldStop = true;
         } else if (!result.ok) {
@@ -231,7 +318,7 @@ function Tracking() {
         }
       } finally {
         isRequestInFlight = false;
-        if (isMounted && !shouldStop && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+        if (isMounted && !shouldStop && (order || group)) {
           timerId = setTimeout(poll, currentDelay);
         }
       }
@@ -240,7 +327,7 @@ function Tracking() {
     timerId = setTimeout(poll, 5000);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isMounted && !shouldStop && order && order.current_status !== "Hoàn thành" && order.current_status !== "Đã hủy") {
+      if (document.visibilityState === "visible" && isMounted && !shouldStop && (order || group)) {
         if (timerId) clearTimeout(timerId);
         poll();
       }
@@ -253,7 +340,7 @@ function Tracking() {
       if (timerId) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [order?.order_code, order?.current_status, load]);
+  }, [order?.order_code, order?.current_status, group?.group_code, group?.payment_status, load]);
 
   async function handleCancel() {
     if (!order) return;
@@ -282,8 +369,7 @@ function Tracking() {
     }
   }
 
-
-  if (loading && !order) {
+  if (loading && !order && !group) {
     return (
       <>
         <PageHeader eyebrow="Tracking" title="Theo dõi đơn hàng" desc="Đang tải thông tin đơn…" />
@@ -294,7 +380,7 @@ function Tracking() {
     );
   }
 
-  if (!order) {
+  if (!order && !group) {
     return (
       <>
         <PageHeader eyebrow="Tracking" title="Theo dõi đơn hàng" desc="Nhập mã đơn để xem trạng thái" />
@@ -302,7 +388,7 @@ function Tracking() {
           <Card className="mx-auto max-w-md">
             <CardContent className="space-y-4 p-6">
               <p className="text-muted-foreground text-sm">
-                {error || "Quét mã QR trên hóa đơn hoặc nhập mã đơn (VD: TP2608051234) để theo dõi."}
+                {error || "Quét mã QR trên hóa đơn hoặc nhập mã đơn (VD: TP2608051234) hoặc mã gộp để theo dõi."}
               </p>
               <form
                 className="flex gap-2"
@@ -314,7 +400,7 @@ function Tracking() {
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Nhập mã đơn"
+                  placeholder="Nhập mã đơn hoặc mã gộp"
                   className="uppercase"
                 />
                 <Button type="submit" variant="hero">
@@ -326,6 +412,180 @@ function Tracking() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+      </>
+    );
+  }
+
+  if (group) {
+    const isGroupPaid = group.payment_status === "paid";
+    return (
+      <>
+        <PageHeader
+          eyebrow="Tracking"
+          title={`Đơn thanh toán gộp ${group.group_code}`}
+          desc={`Bao gồm ${group.child_orders.length} ngành hàng · Cập nhật mỗi 5 giây`}
+        />
+
+        <div className="container-page grid gap-6 py-10 lg:grid-cols-[1fr_360px]">
+          <section className="bg-card rounded-2xl border p-6 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-muted-foreground text-xs">Mã thanh toán chung</p>
+                <p className="font-display text-xl font-extrabold">{group.group_code}</p>
+              </div>
+              {isGroupPaid ? (
+                <Badge className="bg-leaf/15 text-leaf font-semibold">Đã thanh toán gộp</Badge>
+              ) : (
+                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-semibold animate-pulse">
+                  Chờ thanh toán gộp
+                </Badge>
+              )}
+            </div>
+
+            {/* Payment Banner if Unpaid */}
+            {!isGroupPaid && (
+              <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-xl border p-4">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(group.total_amount)})
+                </div>
+                <p className="mt-1 text-xs opacity-90">
+                  Thanh toán 1 lần duy nhất qua PayOS để kích hoạt toàn bộ các đơn con thuộc các ngành hàng.
+                </p>
+                <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayGroupPayOS}>
+                  {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
+                  {group.payment_checkout_url ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới"}
+                </Button>
+              </div>
+            )}
+
+            {/* List Child Orders by Industry */}
+            <div className="space-y-4 pt-2">
+              <h3 className="font-display text-base font-bold text-foreground">
+                Danh sách đơn con theo từng ngành hàng ({group.child_orders.length})
+              </h3>
+
+              {group.child_orders.map((co) => (
+                <div key={co.order_code} className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-sm text-foreground">{co.order_code}</span>
+                      <Badge variant="secondary" className="text-xs font-semibold">
+                        {co.root_category_name}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={co.status === "Hoàn thành" ? "bg-leaf/15 text-leaf" : co.status === "Đã hủy" ? "bg-berry/15 text-berry" : "bg-primary/15 text-primary"}>
+                        {co.status}
+                      </Badge>
+                      <Badge variant="outline" className={co.payment_status === "paid" ? "border-leaf text-leaf text-[11px]" : "border-amber-500/40 text-amber-700 dark:text-amber-400 text-[11px]"}>
+                        {co.payment_status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Child order items */}
+                  {Array.isArray(co.items) && co.items.length > 0 && (
+                    <div className="space-y-2 text-xs">
+                      {co.items.map((it, idx) => (
+                        <div key={idx} className="flex justify-between text-muted-foreground">
+                          <span>{it.quantity}× {it.product_name}</span>
+                          <span className="font-medium text-foreground">{vnd(it.line_total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Financial breakdown for child order */}
+                  <div className="bg-background/80 rounded-lg p-2.5 text-xs space-y-1 border border-border/40">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Tạm tính ngành:</span>
+                      <span className="font-medium text-foreground">{vnd(co.allocated_subtotal)}</span>
+                    </div>
+                    {co.allocated_discount > 0 && (
+                      <div className="flex justify-between text-leaf font-medium">
+                        <span>Giảm giá phân bổ:</span>
+                        <span>− {vnd(co.allocated_discount)}</span>
+                      </div>
+                    )}
+                    {co.allocated_shipping_fee > 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Phí giao hàng:</span>
+                        <span className="font-medium text-foreground">{vnd(co.allocated_shipping_fee)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-foreground border-t pt-1">
+                      <span>Thành tiền đơn con:</span>
+                      <span className="text-primary font-bold">{vnd(co.allocated_total)}</span>
+                    </div>
+                  </div>
+
+                  {/* Link to single tracking */}
+                  <div className="pt-1 flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7 px-2.5"
+                      onClick={() => load(co.order_code)}
+                    >
+                      Theo dõi chi tiết đơn này ↗
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <Card className="shadow-soft">
+              <CardContent className="p-5 space-y-3">
+                <p className="font-display text-lg font-bold">Tổng kết thanh toán gộp</p>
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  {group.child_orders.map((co) => (
+                    <div key={co.order_code} className="flex justify-between">
+                      <span className="truncate pr-2">{co.root_category_name} ({co.order_code})</span>
+                      <span className="font-semibold text-foreground shrink-0">{vnd(co.allocated_total)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t pt-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Tạm tính chung</span>
+                    <span className="font-medium text-foreground">{vnd(group.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Giảm giá chung</span>
+                    <span className={group.discount_amount ? "text-leaf font-medium" : ""}>
+                      {group.discount_amount ? `− ${vnd(group.discount_amount)}` : "0₫"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Phí giao hàng</span>
+                    <span>{group.shipping_fee ? vnd(group.shipping_fee) : "0₫"}</span>
+                  </div>
+                  <div className="flex justify-between font-bold border-t pt-2 text-base">
+                    <span>Tổng thanh toán</span>
+                    <span className="text-primary font-extrabold">{vnd(group.total_amount)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-soft">
+              <CardContent className="space-y-2 p-5 text-sm">
+                <p className="font-display text-base font-bold">Thông tin giao dịch gộp</p>
+                <p className="text-muted-foreground flex gap-2">
+                  <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
+                  Giao dịch thanh toán PayOS tập trung
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {group.group_code} · {group.payment_provider.toUpperCase()} ·{" "}
+                  <CustomerDateTime value={group.created_at} />
+                </p>
+              </CardContent>
+            </Card>
+          </aside>
         </div>
       </>
     );
@@ -360,7 +620,12 @@ function Tracking() {
         <section className="bg-card rounded-2xl border p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-muted-foreground text-xs">Mã đơn</p>
+              <div className="flex items-center gap-2">
+                <p className="text-muted-foreground text-xs">Mã đơn</p>
+                <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
+                  {order.root_category_name || order.payment_summary?.industries?.[0]?.root_category_name || "Chưa phân loại"}
+                </Badge>
+              </div>
               <p className="font-display text-xl font-extrabold">{order.order_code}</p>
             </div>
             {cancelled ? (

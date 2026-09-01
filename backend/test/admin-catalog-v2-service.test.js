@@ -65,6 +65,11 @@ test('Admin Catalog V2 Service: createProduct validates input constraints', asyn
         return { id: 99, ...data };
       },
     },
+    schemaRepository: {
+      async getCategoryById(id) {
+        return id > 0 ? { id, parent_id: 10, depth: 1 } : null;
+      },
+    },
   });
 
   // Rejects invalid slug

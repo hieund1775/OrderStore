@@ -302,9 +302,11 @@ export function createOrdersRepository(
                 o.payment_link_id, o.payos_order_code, o.payment_checkout_url, o.customer_name, o.customer_phone, o.delivery_addr,
                 o.discount_amount, o.subtotal, o.total, o.payment_expires_at, o.created_at,
                 o.shipping_driver_name, o.shipping_driver_phone, o.shipping_tracking_url, o.cancel_token_hash,
+                o.root_category_id, COALESCE(rc.name, 'Chưa phân loại') AS root_category_name,
                 s.name AS store_name, latest.status AS current_status
          FROM orders o
          JOIN stores s ON s.id = o.store_id
+         LEFT JOIN categories rc ON rc.id = o.root_category_id
          LEFT JOIN LATERAL (
            SELECT status FROM order_status_history WHERE order_id = o.id
            ORDER BY created_at DESC, id DESC LIMIT 1

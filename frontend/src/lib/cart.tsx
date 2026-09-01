@@ -24,6 +24,9 @@ export type CartItem = {
   variantName?: string | null;
   stockMode?: 'tracked' | 'made_to_order';
   fulfillmentLane?: 'kitchen' | 'packing';
+  rootCategoryId?: number | string;
+  rootCategoryName?: string;
+  rootCategorySlug?: string;
   size?: string;
   base?: string;
   sugar?: string;

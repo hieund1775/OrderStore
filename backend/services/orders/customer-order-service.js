@@ -53,6 +53,43 @@ function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
   return appendOrderCodeToUrl(candidateUrl.toString(), orderCode);
 }
 
+function buildSingleIndustryPaymentSummary({ order, rootCategoryId, rootCategoryName, items = [] }) {
+  const subtotal = Number(order.subtotal || 0);
+  const discountAmount = Number(order.discount_amount || 0);
+  const shippingFee = Number(order.shipping_fee || 0);
+  const totalAmount = Number(order.total || 0);
+
+  return {
+    is_grouped: false,
+    group_code: null,
+    subtotal,
+    discount_amount: discountAmount,
+    shipping_fee: shippingFee,
+    total_amount: totalAmount,
+    industries: [
+      {
+        root_category_id: rootCategoryId ? String(rootCategoryId) : null,
+        root_category_name: rootCategoryName || 'Chưa phân loại',
+        order_id: String(order.id || ''),
+        order_code: order.order_code || '',
+        subtotal,
+        discount_amount: discountAmount,
+        shipping_fee: shippingFee,
+        total_amount: totalAmount,
+        status: order.current_status || order.status || 'Đang chuẩn bị',
+        payment_status: order.payment_status || 'unpaid',
+        items: items.map((it) => ({
+          product_id: String(it.product_id || it.id || ''),
+          product_name: it.product_name || it.name || '',
+          quantity: Number(it.quantity || it.qty || 1),
+          unit_price: Number(it.unit_price || it.price || 0),
+          line_total: Number(it.line_total != null ? it.line_total : (Number(it.unit_price || it.price || 0) * Number(it.quantity || it.qty || 1))),
+        })),
+      },
+    ],
+  };
+}
+
 /**
  * Shared, fail-closed DB line subtotal calculation.
  * Never falls back to client-provided prices on error.
@@ -352,6 +389,37 @@ export function createCustomerOrderService({
             }, { tx });
           }
 
+          const paymentSummary = {
+            is_grouped: true,
+            group_code: createdGroup.group_code,
+            subtotal: Number(createdGroup.subtotal || allocationPlan.subtotal),
+            discount_amount: Number(createdGroup.discount_amount || allocationPlan.discountAmount),
+            shipping_fee: Number(createdGroup.shipping_fee || allocationPlan.shippingFee || 0),
+            total_amount: Number(createdGroup.total_amount || allocationPlan.totalAmount),
+            industries: allocationPlan.allocations.map((alloc, idx) => {
+              const co = createdChildOrders[idx] || {};
+              return {
+                root_category_id: alloc.rootCategoryId ? String(alloc.rootCategoryId) : null,
+                root_category_name: alloc.rootCategoryName || 'Chưa phân loại',
+                order_id: String(co.id || ''),
+                order_code: co.order_code || '',
+                subtotal: Number(co.subtotal ?? alloc.allocatedSubtotal),
+                discount_amount: Number(co.discount_amount ?? alloc.allocatedDiscount),
+                shipping_fee: Number(alloc.allocatedShippingFee || 0),
+                total_amount: Number(co.total ?? alloc.allocatedTotal),
+                status: co.status || 'Đang chuẩn bị',
+                payment_status: co.payment_status || 'unpaid',
+                items: (alloc.items || []).map((it) => ({
+                  product_id: String(it.product_id || it.id || ''),
+                  product_name: it.product_name || it.name || '',
+                  quantity: Number(it.quantity || it.qty || 1),
+                  unit_price: Number(it.price || it.unit_price || 0),
+                  line_total: Number((it.price || it.unit_price || 0) * (it.quantity || it.qty || 1)),
+                })),
+              };
+            }),
+          };
+
           const baseResponse = {
             ok: true,
             is_grouped: true,
@@ -359,6 +427,7 @@ export function createCustomerOrderService({
             total_amount: Number(createdGroup.total_amount),
             child_orders: createdChildOrders,
             status: 'Đang chuẩn bị',
+            payment_summary: paymentSummary,
           };
 
           return {
@@ -509,7 +578,13 @@ export function createCustomerOrderService({
           rootCategoryId,
           paymentProfile,
         });
-        return { ...payosOrder, status: 'Đang chuẩn bị' };
+        const paymentSummary = buildSingleIndustryPaymentSummary({
+          order: payosOrder,
+          rootCategoryId,
+          rootCategoryName: resolved.rootCategory?.rootCategoryName || 'Chưa phân loại',
+          items: input.items,
+        });
+        return { ...payosOrder, status: 'Đang chuẩn bị', payment_summary: paymentSummary };
       }
 
       const order = await repository.createPublicOrder({
@@ -523,7 +598,13 @@ export function createCustomerOrderService({
         rootCategoryId,
         paymentProfile,
       });
-      return { ...order, status: 'Đang chuẩn bị' };
+      const paymentSummary = buildSingleIndustryPaymentSummary({
+        order,
+        rootCategoryId,
+        rootCategoryName: resolved.rootCategory?.rootCategoryName || 'Chưa phân loại',
+        items: input.items,
+      });
+      return { ...order, status: 'Đang chuẩn bị', payment_summary: paymentSummary };
     },
 
     async lookup({ code, tokenUser = null, cancelToken = '' }) {

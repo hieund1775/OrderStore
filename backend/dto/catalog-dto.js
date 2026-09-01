@@ -30,6 +30,9 @@ export function toProductDto(product) {
     is_available: product.is_available !== false,
     category_name: product.category_name || undefined,
     category_slug: product.category_slug || undefined,
+    root_category_id: product.root_category_id != null ? Number(product.root_category_id) : (product.category_id != null ? Number(product.category_id) : undefined),
+    root_category_name: product.root_category_name || product.category_name || undefined,
+    root_category_slug: product.root_category_slug || product.category_slug || undefined,
     created_at: product.created_at,
     updated_at: product.updated_at,
   };

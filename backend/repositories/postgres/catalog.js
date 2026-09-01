@@ -11,8 +11,13 @@ const OPTION_QUERIES = Object.freeze({
 export function createCatalogRepository(database = postgresDb) {
   return {
     async listProducts({ category, search, tag } = {}) {
-      let sql = `SELECT p.*, c.name AS category_name, c.slug AS category_slug
-        FROM products p JOIN categories c ON p.category_id = c.id
+      let sql = `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
+                        COALESCE(root.id, c.id) AS root_category_id,
+                        COALESCE(root.name, c.name) AS root_category_name,
+                        COALESCE(root.slug, c.slug) AS root_category_slug
+        FROM products p
+        JOIN categories c ON p.category_id = c.id
+        LEFT JOIN categories root ON root.id = c.parent_id
         WHERE p.is_available = TRUE AND c.is_visible = TRUE`;
       const params = [];
       if (category) {
@@ -35,8 +40,13 @@ export function createCatalogRepository(database = postgresDb) {
 
     async findProductBySlug(slug) {
       const [rows] = await database.query(
-        `SELECT p.*, c.name AS category_name
-         FROM products p JOIN categories c ON p.category_id = c.id
+        `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
+                COALESCE(root.id, c.id) AS root_category_id,
+                COALESCE(root.name, c.name) AS root_category_name,
+                COALESCE(root.slug, c.slug) AS root_category_slug
+         FROM products p
+         JOIN categories c ON p.category_id = c.id
+         LEFT JOIN categories root ON root.id = c.parent_id
          WHERE p.slug = $1 LIMIT 1`,
         [slug],
       );

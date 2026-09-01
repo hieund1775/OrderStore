@@ -102,6 +102,39 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     && order.current_status !== 'Hoàn thành'
   );
 
+  const rootCategoryId = order.root_category_id ? String(order.root_category_id) : null;
+  const rootCategoryName = order.root_category_name || 'Chưa phân loại';
+
+  const paymentSummary = {
+    is_grouped: false,
+    group_code: null,
+    subtotal: Number(order.subtotal || 0),
+    discount_amount: Number(order.discount_amount || 0),
+    shipping_fee: Number(order.shipping_fee || 0),
+    total_amount: Number(order.total || 0),
+    industries: [
+      {
+        root_category_id: rootCategoryId,
+        root_category_name: rootCategoryName,
+        order_id: String(order.id || ''),
+        order_code: order.order_code,
+        subtotal: Number(order.subtotal || 0),
+        discount_amount: Number(order.discount_amount || 0),
+        shipping_fee: Number(order.shipping_fee || 0),
+        total_amount: Number(order.total || 0),
+        status: order.current_status || order.status || 'Đang chuẩn bị',
+        payment_status: order.payment_status || 'unpaid',
+        items: items.map((it) => ({
+          product_id: String(it.product_id || it.id || ''),
+          product_name: it.product_name || it.name || '',
+          quantity: Number(it.quantity || it.qty || 1),
+          unit_price: Number(it.unit_price || it.price || 0),
+          line_total: Number(it.line_total != null ? it.line_total : (Number(it.unit_price || it.price || 0) * Number(it.quantity || it.qty || 1))),
+        })),
+      },
+    ],
+  };
+
   return {
     order_code: order.order_code,
     order_type: order.order_type,
@@ -126,6 +159,9 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     shipping_driver_name: maskedDriverName,
     shipping_driver_phone: maskedDriverPhone,
     shipping_tracking_url: isCustomerOwner ? (order.shipping_tracking_url || null) : null,
+    root_category_id: rootCategoryId,
+    root_category_name: rootCategoryName,
+    payment_summary: paymentSummary,
     items,
     status_history: history,
   };
