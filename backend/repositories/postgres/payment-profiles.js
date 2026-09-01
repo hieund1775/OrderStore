@@ -30,17 +30,7 @@ export function checkEnvConfigured(envPrefix, code) {
   const cid = process.env[`${envPrefix}_CLIENT_ID`]?.trim();
   const key = process.env[`${envPrefix}_API_KEY`]?.trim();
   const cs = process.env[`${envPrefix}_CHECKSUM_KEY`]?.trim();
-  if (cid && key && cs) return true;
-
-  // Fallback check for system default profiles if standard root PAYOS_* is configured
-  if (code === 'LONG_GROUPED_CHECKOUT' || code === 'DEFAULT_LONG') {
-    const rootCid = process.env.PAYOS_CLIENT_ID?.trim();
-    const rootKey = process.env.PAYOS_API_KEY?.trim();
-    const rootCs = process.env.PAYOS_CHECKSUM_KEY?.trim();
-    return Boolean(rootCid && rootKey && rootCs);
-  }
-
-  return false;
+  return Boolean(cid && key && cs);
 }
 
 export function createPaymentProfilesRepository(database = postgresDb) {
@@ -192,7 +182,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       };
     },
 
-    async createProfile({ code, displayName, purpose = 'industry', createdBy = null }) {
+    async createProfile({ code, displayName, purpose = 'industry', rootCategoryId = null, createdBy = null }) {
       if (!code || !String(code).trim()) {
         throw new PaymentProfileError('Mã code profile không được để trống');
       }
@@ -209,12 +199,38 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       const normalizedCode = String(code).toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
       const envPrefix = generateEnvPrefix(normalizedCode);
 
-      const [existing] = await database.query('SELECT id FROM payment_profiles WHERE code = $1', [normalizedCode]);
+      if (normalizedPurpose === 'industry' && !rootCategoryId) {
+        throw new PaymentProfileError('Profile nganh hang phai chon nganh hang goc', 400, 'ROOT_CATEGORY_REQUIRED');
+      }
+      if (normalizedPurpose === 'grouped_checkout' && rootCategoryId) {
+        throw new PaymentProfileError('Tai khoan thanh toan gop khong duoc gan nganh hang', 400, 'GROUPED_PROFILE_CANNOT_ASSIGN_ROOT');
+      }
+
+      const execute = typeof database.transaction === 'function'
+        ? database.transaction.bind(database)
+        : async (callback) => callback(database);
+
+      return execute(async (tx) => {
+      let rootCategory = null;
+      if (rootCategoryId) {
+        const [categoryRows] = await tx.query(
+          `SELECT id, name, slug, parent_id, depth
+           FROM categories
+           WHERE id = $1 AND archived_at IS NULL`,
+          [Number(rootCategoryId)],
+        );
+        rootCategory = categoryRows[0];
+        if (!rootCategory || rootCategory.parent_id != null || Number(rootCategory.depth) !== 0) {
+          throw new PaymentProfileError('Chi duoc chon danh muc goc dang hoat dong', 400, 'INVALID_ROOT_CATEGORY');
+        }
+      }
+
+      const [existing] = await tx.query('SELECT id FROM payment_profiles WHERE code = $1', [normalizedCode]);
       if (existing[0]) {
         throw new PaymentProfileError(`Payment profile với mã code "${normalizedCode}" đã tồn tại`, 409);
       }
 
-      const [rows] = await database.query(
+      const [rows] = await tx.query(
         `INSERT INTO payment_profiles
            (code, display_name, purpose, env_prefix, status, version, created_by)
          VALUES ($1, $2, $3, $4, 'disabled', 1, $5)
@@ -223,6 +239,19 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       );
 
       const r = rows[0];
+      if (rootCategory) {
+        await tx.query(
+          `INSERT INTO category_payment_profiles
+             (root_category_id, payment_profile_id, is_active, created_by, updated_at)
+           VALUES ($1, $2, TRUE, $3, CURRENT_TIMESTAMP)
+           ON CONFLICT (root_category_id)
+           DO UPDATE SET
+             payment_profile_id = EXCLUDED.payment_profile_id,
+             is_active = TRUE,
+             updated_at = CURRENT_TIMESTAMP`,
+          [Number(rootCategory.id), Number(r.id), createdBy],
+        );
+      }
       return {
         id: Number(r.id),
         code: r.code,
@@ -237,10 +266,15 @@ export function createPaymentProfilesRepository(database = postgresDb) {
         is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
         status: r.status,
         version: Number(r.version),
-        assigned_categories: [],
+        assigned_categories: rootCategory ? [{
+          category_id: Number(rootCategory.id),
+          category_name: rootCategory.name,
+          category_slug: rootCategory.slug,
+        }] : [],
         created_at: r.created_at,
         updated_at: r.updated_at,
       };
+      });
     },
 
     async updateProfile(id, { displayName, purpose, status, updatedBy = null }) {

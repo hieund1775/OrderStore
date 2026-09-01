@@ -67,6 +67,10 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       allocations = [],
     }, { tx: externalTx } = {}) {
       const runner = async (tx) => {
+        const paymentProfileCode = String(paymentProfile?.code || '').trim();
+        if (!paymentProfileCode) {
+          throw new CheckoutGroupError('Thiếu payment profile cho nhóm thanh toán', 400, 'PAYMENT_PROFILE_REQUIRED');
+        }
         const groupCode = generateGroupCode();
 
         const [groupRows] = await tx.query(
@@ -83,7 +87,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
             Number(storeId),
             userId ? Number(userId) : null,
             paymentProfile?.id ? Number(paymentProfile.id) : null,
-            paymentProfile?.code || 'LONG_GROUPED_CHECKOUT',
+            paymentProfileCode,
             Number(paymentProfile?.version || 1),
             paymentProfile?.bank_name || null,
             paymentProfile?.account_number || null,
@@ -131,7 +135,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
               group.id,
               Number(alloc.rootCategoryId),
               paymentProfile?.id ? Number(paymentProfile.id) : null,
-              paymentProfile?.code || 'LONG_GROUPED_CHECKOUT',
+              paymentProfileCode,
               Number(paymentProfile?.version || 1),
               paymentProfile?.bank_name || null,
               paymentProfile?.account_number || null,

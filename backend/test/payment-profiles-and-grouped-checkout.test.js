@@ -879,6 +879,9 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
           if (sql.includes('SELECT id FROM payment_profiles WHERE code')) {
             return [[]]; // Not exists
           }
+          if (sql.includes('FROM categories')) {
+            return [[{ id: 7, name: 'Thoi Trang', slug: 'thoi-trang', parent_id: null, depth: 0 }]];
+          }
           if (sql.includes('INSERT INTO payment_profiles')) {
             return [[{
               id: 501,
@@ -898,14 +901,16 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
 
       const repo = createPaymentProfilesRepository(mockDatabase);
       const created = await repo.createProfile({
-        code: 'THOI_TRANG',
+        code: 'THOI_TRANG_DEFAULT',
         displayName: 'Thời Trang Hưng',
         purpose: 'industry',
+        rootCategoryId: 7,
       });
 
       assert.equal(created.status, 'disabled', 'New profile must default to disabled status');
       assert.equal(created.purpose, 'industry');
-      assert.equal(created.code, 'THOI_TRANG');
+      assert.equal(created.code, 'THOI_TRANG_DEFAULT');
+      assert.equal(created.assigned_categories[0].category_id, 7);
 
       // Attempt to activate without configured ENV must throw ENV_NOT_CONFIGURED error
       const mockTxDb = {
@@ -980,6 +985,10 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     });
 
     it('Multi-industry checkout uses active grouped profile and fails closed when unavailable', async () => {
+      process.env.PAYOS_PROFILE_GROUP_CHECKOUT_CLIENT_ID = 'test-client';
+      process.env.PAYOS_PROFILE_GROUP_CHECKOUT_API_KEY = 'test-api-key';
+      process.env.PAYOS_PROFILE_GROUP_CHECKOUT_CHECKSUM_KEY = 'test-checksum-key';
+
       const mockDb = {
         async query(sql) {
           if (sql.includes('FROM products p')) {
@@ -997,8 +1006,8 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
         async getActiveGroupedProfile() {
           return {
             id: 2,
-            code: 'LONG_GROUPED_CHECKOUT',
-            display_name: 'Long Grouped Checkout',
+            code: 'GROUP_CHECKOUT',
+            display_name: 'Grouped Checkout',
             purpose: 'grouped_checkout',
             status: 'active',
             is_env_configured: true,
@@ -1014,7 +1023,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       });
 
       assert.equal(resolved.isGrouped, true);
-      assert.equal(resolved.profile.code, 'LONG_GROUPED_CHECKOUT');
+      assert.equal(resolved.profile.code, 'GROUP_CHECKOUT');
       assert.equal(resolved.rootGroups.length, 2);
 
       // 2. When no active grouped profile is present

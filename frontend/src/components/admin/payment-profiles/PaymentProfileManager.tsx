@@ -42,6 +42,7 @@ export function PaymentProfileManager() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<PaymentProfile | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<number | null>(null);
+  const [selectedCreateRootId, setSelectedCreateRootId] = useState<number | null>(null);
   const [assigningProfileId, setAssigningProfileId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -62,6 +63,7 @@ export function PaymentProfileManager() {
   });
 
   const rootCategories = (categoryTree || []).filter((c) => !c.parent_id || Number(c.depth) === 0);
+  const selectedCreateRoot = rootCategories.find((root) => root.id === selectedCreateRootId) || null;
 
   const createMutation = useMutation({
     mutationFn: createPaymentProfile,
@@ -116,7 +118,32 @@ export function PaymentProfileManager() {
     setDisplayName('');
     setPurpose('industry');
     setIsActive(false);
+    setSelectedCreateRootId(null);
     setErrorMessage(null);
+  };
+
+  const getIndustryDefaultCode = (slug: string) => `${String(slug || '')
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9_]/g, '_')}_DEFAULT`;
+
+  const handleCreatePurposeChange = (nextPurpose: 'industry' | 'grouped_checkout') => {
+    setPurpose(nextPurpose);
+    if (nextPurpose === 'grouped_checkout') {
+      setSelectedCreateRootId(null);
+      setCode('GROUP_CHECKOUT');
+      return;
+    }
+    setCode(selectedCreateRoot ? getIndustryDefaultCode(selectedCreateRoot.slug) : '');
+  };
+
+  const handleCreateRootChange = (rootId: number | null) => {
+    setSelectedCreateRootId(rootId);
+    const root = rootCategories.find((item) => item.id === rootId);
+    setCode(root ? getIndustryDefaultCode(root.slug) : '');
+    if (root && !displayName.trim()) {
+      setDisplayName(`${root.name} - Mặc định`);
+    }
   };
 
   const handleCopy = (text: string, keyName: string) => {
@@ -145,6 +172,7 @@ export function PaymentProfileManager() {
       code: code.toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_'),
       display_name: displayName.trim(),
       purpose,
+      root_category_id: purpose === 'industry' ? selectedCreateRootId || undefined : undefined,
     });
   };
 
@@ -397,6 +425,7 @@ export function PaymentProfileManager() {
                   placeholder="Ví dụ: NUOC_HIEU, DO_AN_LAN"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
+                  readOnly={purpose === 'grouped_checkout'}
                   required
                 />
               </div>
@@ -413,13 +442,34 @@ export function PaymentProfileManager() {
                 <label className="text-xs font-semibold">Mục Đích Sử Dụng *</label>
                 <select
                   value={purpose}
-                  onChange={(e) => setPurpose(e.target.value as any)}
+                  onChange={(e) => handleCreatePurposeChange(e.target.value as 'industry' | 'grouped_checkout')}
                   className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
                 >
                   <option value="industry">Nhận tiền ngành hàng (Đơn thuộc 1 ngành)</option>
                   <option value="grouped_checkout">Tài khoản thanh toán gộp (Đơn gộp nhiều ngành)</option>
                 </select>
               </div>
+              {purpose === 'industry' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold">Ngành Hàng Gốc *</label>
+                  <select
+                    value={selectedCreateRootId || ''}
+                    onChange={(e) => handleCreateRootChange(Number(e.target.value) || null)}
+                    className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                    required
+                  >
+                    <option value="">-- Chọn ngành hàng --</option>
+                    {rootCategories.map((root) => (
+                      <option key={root.id} value={root.id}>
+                        {root.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Mã được gợi ý theo quy ước {selectedCreateRoot ? getIndustryDefaultCode(selectedCreateRoot.slug) : 'TEN_NGANH_DEFAULT'}.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>

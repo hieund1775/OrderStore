@@ -689,7 +689,7 @@ export type PaymentProfile = {
     checksum_key: string;
   };
   is_env_configured: boolean;
-  status: 'active' | 'disabled' | 'pending';
+  status: 'active' | 'disabled';
   version: number;
   assigned_categories: Array<{
     category_id: number;
@@ -709,6 +709,7 @@ export async function createPaymentProfile(data: {
   code: string;
   display_name: string;
   purpose: 'industry' | 'grouped_checkout';
+  root_category_id?: number;
 }): Promise<{ profile: PaymentProfile }> {
   return apiFetch<{ profile: PaymentProfile }>('/admin/payment-profiles', {
     method: 'POST',

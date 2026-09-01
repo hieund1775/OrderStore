@@ -361,5 +361,19 @@ test('payment profile status migration 0022 normalizes legacy pending rows to di
   assert.match(rollbackSql, /cannot be restored safely/);
 });
 
+test('payment profile code convention migration 0023 creates GROUP_CHECKOUT and retires legacy profiles', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0023_payment_profile_code_convention.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0023_payment_profile_code_convention.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  assert.match(sql, /'GROUP_CHECKOUT'/);
+  assert.match(sql, /'PAYOS_PROFILE_GROUP_CHECKOUT'/);
+  assert.match(sql, /'grouped_checkout'/);
+  assert.match(sql, /'disabled'/);
+  assert.match(sql, /'LONG_GROUPED_CHECKOUT', 'DEFAULT_LONG'/);
+  assert.match(rollbackSql, /Forward-only migration/);
+});
+
 
 

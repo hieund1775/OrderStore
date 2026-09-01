@@ -1,0 +1,3 @@
+-- Forward-only migration. GROUP_CHECKOUT and disabled legacy profiles may be
+-- referenced by payment snapshots, so automatic rollback must not delete or
+-- reactivate records.

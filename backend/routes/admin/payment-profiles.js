@@ -41,7 +41,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Tạo mới payment profile (Yêu cầu purpose; không nhận thông tin ngân hàng nhập tay)
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { code, display_name, purpose, bank_name, bank_bin, account_number, account_holder } = req.body || {};
+  const { code, display_name, purpose, root_category_id, bank_name, bank_bin, account_number, account_holder } = req.body || {};
   if (!code || !display_name) {
     return res.status(400).json({ error: 'Mã code và tên hiển thị là bắt buộc' });
   }
@@ -63,6 +63,7 @@ router.post('/', asyncHandler(async (req, res) => {
       code,
       displayName: display_name,
       purpose,
+      rootCategoryId: root_category_id,
       createdBy: req.user.id,
     });
 

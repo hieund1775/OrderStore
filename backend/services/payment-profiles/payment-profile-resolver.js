@@ -81,9 +81,7 @@ export async function resolvePaymentProfileForCart({
 
   // Case A: Cart spans multiple root industries
   if (rootGroups.length > 1) {
-    const groupedProfile = typeof profilesRepo.getActiveGroupedProfile === 'function'
-      ? await profilesRepo.getActiveGroupedProfile()
-      : await profilesRepo.getProfileByCode('LONG_GROUPED_CHECKOUT');
+    const groupedProfile = await profilesRepo.getActiveGroupedProfile();
 
     const isGroupedConfigured = groupedProfile ? isPayOSConfigured(groupedProfile.code) : false;
 
