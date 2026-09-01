@@ -1,0 +1,5 @@
+-- ==========================================================
+-- Rollback 0022_normalize_legacy_payment_profile_status.rollback.sql
+-- The previous `pending` values cannot be restored safely because the
+-- migration deliberately removes that business state. No data action.
+-- ==========================================================

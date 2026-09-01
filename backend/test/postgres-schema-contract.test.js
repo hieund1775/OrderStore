@@ -350,5 +350,16 @@ test('payment profile purpose migration 0021 establishes purpose check, partial 
   assert.ok(rollbackSql.includes("ALTER COLUMN status SET DEFAULT 'pending'"));
 });
 
+test('payment profile status migration 0022 normalizes legacy pending rows to disabled', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0022_normalize_legacy_payment_profile_status.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0022_normalize_legacy_payment_profile_status.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  assert.match(sql, /UPDATE payment_profiles\s+SET status = 'disabled'/s);
+  assert.match(sql, /WHERE status = 'pending'/);
+  assert.match(rollbackSql, /cannot be restored safely/);
+});
+
 
 

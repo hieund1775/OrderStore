@@ -252,7 +252,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
 
         const current = existing[0];
         const newDisplayName = displayName !== undefined ? displayName.trim() : current.display_name;
-        const newPurpose = purpose !== undefined ? purpose.trim() : current.purpose;
+        const newPurpose = purpose !== undefined ? String(purpose).trim() : current.purpose;
         const newStatus = status !== undefined ? status : current.status;
 
         // Purpose change validations
