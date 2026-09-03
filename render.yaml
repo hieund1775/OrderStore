@@ -76,25 +76,5 @@ services:
         value: "false"
 
   # ═══════════════════════════════════════════════════════════════════
-  # 3. PayOS Order Expiry Cron Job (Runs every 5 minutes)
+  # PayOS expiry cron intentionally disabled while using Render free setup.
   # ═══════════════════════════════════════════════════════════════════
-  - type: cron
-    name: teaplus-payos-expiry-cron
-    runtime: node
-    plan: free
-    region: singapore
-    rootDir: backend
-    schedule: "*/5 * * * *"
-    buildCommand: npm install --omit=dev
-    startCommand: node commands/expire-payos-orders.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DB_DIALECT
-        value: postgres
-      - key: DATABASE_URL
-        sync: false
-      - key: PGSSLMODE
-        value: require
-      - key: PG_SSL_REJECT_UNAUTHORIZED
-        value: "false"
