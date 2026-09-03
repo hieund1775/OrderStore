@@ -2,9 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import http from 'node:http';
+import jwt from 'jsonwebtoken';
 import publicRoutes from '../routes/public.js';
 import ordersRepository from '../repositories/postgres/orders.js';
 import { claimOrderIdempotency, hashOrderRequest } from '../services/order-idempotency.js';
+import { setResolvePaymentProfileForTest } from '../services/orders/customer-order-service.js';
+import { JWT_SECRET } from '../config/env.js';
 
 describe('Public order idempotency conflict contract', () => {
   it('rejects the same key when the canonical request payload differs', async () => {
@@ -38,6 +41,12 @@ describe('Public order idempotency conflict contract', () => {
       error.status = 409;
       throw error;
     };
+    setResolvePaymentProfileForTest(async () => ({
+      isGrouped: false,
+      profile: { id: 1, code: 'TEST_PROFILE', status: 'active', purpose: 'industry', version: 1 },
+      rootCategory: { rootCategoryId: 1, rootCategoryName: 'Test', rootCategorySlug: 'test' },
+      rootGroups: [],
+    }));
     const app = express();
     app.use(express.json());
     app.use('/api', publicRoutes);
@@ -46,15 +55,20 @@ describe('Public order idempotency conflict contract', () => {
       await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
       const response = await fetch(`http://127.0.0.1:${server.address().port}/api/orders`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'idempotency-key': 'same-key' },
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'same-key',
+          authorization: `Bearer ${jwt.sign({ id: 1, role: 'customer' }, JWT_SECRET)}`,
+        },
         body: JSON.stringify({
-          source: 'pos', payment_method: 'COD', store_id: 1, customer_name: 'Khách Hàng', customer_phone: '0900000000',
+          source: 'online', order_type: 'Take-away', payment_method: 'COD', store_id: 1, customer_name: 'Khách Hàng', customer_phone: '0900000000',
           items: [{ product_id: 1, qty: 1 }],
         }),
       });
       assert.equal(response.status, 409);
     } finally {
       ordersRepository.createPublicOrder = originalCreate;
+      setResolvePaymentProfileForTest();
       await new Promise((resolve) => server.close(resolve));
     }
   });

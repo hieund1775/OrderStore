@@ -12,34 +12,34 @@ export function isMockAdapterActive() {
 /**
  * Builds pg.Pool configuration from environment
  */
-export function getPostgresPoolConfig(customUrl = null) {
+export function getPostgresPoolConfig(customUrl = null, { env = process.env } = {}) {
   // Tests must never silently prefer an application DATABASE_URL over their
   // explicit dedicated target.
-  const connectionString = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  const connectionString = customUrl || env.TEST_DATABASE_URL || env.DATABASE_URL;
 
   const config = {
-    max: parseInt(process.env.PG_POOL_MAX || '10', 10),
-    idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000', 10),
-    connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000', 10),
+    max: parseInt(env.PG_POOL_MAX || '10', 10),
+    idleTimeoutMillis: parseInt(env.PG_IDLE_TIMEOUT || '30000', 10),
+    connectionTimeoutMillis: parseInt(env.PG_CONNECT_TIMEOUT || '5000', 10),
   };
 
   if (connectionString) {
     config.connectionString = connectionString;
   } else {
-    config.host = process.env.PGHOST || 'localhost';
-    config.port = parseInt(process.env.PGPORT || '5432', 10);
-    config.user = process.env.PGUSER || 'postgres';
-    config.password = process.env.PGPASSWORD || '';
-    config.database = process.env.PGDATABASE || 'teaplus_dev';
+    config.host = env.PGHOST || 'localhost';
+    config.port = parseInt(env.PGPORT || '5432', 10);
+    config.user = env.PGUSER || 'postgres';
+    config.password = env.PGPASSWORD || '';
+    config.database = env.PGDATABASE || 'teaplus_dev';
   }
 
   // SSL Configuration
-  const isProduction = process.env.NODE_ENV === 'production';
-  const sslMode = process.env.PGSSLMODE || process.env.PG_SSL;
+  const isProduction = env.NODE_ENV === 'production';
+  const sslMode = env.PGSSLMODE || env.PG_SSL;
 
   if (sslMode === 'require' || sslMode === 'true' || isProduction) {
     config.ssl = {
-      rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false',
+      rejectUnauthorized: env.PG_SSL_REJECT_UNAUTHORIZED !== 'false',
     };
   } else if (sslMode === 'disable' || sslMode === 'false') {
     config.ssl = false;

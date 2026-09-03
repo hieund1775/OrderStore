@@ -49,6 +49,8 @@ export function createOrdersRepository(
       paymentProvider = 'cod',
       rootCategoryId = null,
       paymentProfile = null,
+      originalPaymentProfile = null,
+      groupAllocatedAmount = null,
     }, { tx: externalTx } = {}) {
       if (!idempotencyKey || idempotencyKey.length > 255) throw new OrderError('Thiếu Idempotency-Key hợp lệ');
 
@@ -182,6 +184,7 @@ export function createOrdersRepository(
         const bankName = paymentProfile?.bank_name || null;
         const accountNumber = paymentProfile?.account_number || null;
         const accountHolder = paymentProfile?.account_holder || null;
+        const originalProfileCode = originalPaymentProfile?.code || profileCode;
 
         let order = null;
         const MAX_CODE_ATTEMPTS = 5;
@@ -194,8 +197,9 @@ export function createOrdersRepository(
                  payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
                  delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note,
                  root_category_id, payment_profile_id, payment_profile_code, payment_profile_version,
-                 receiver_bank_name, receiver_account_number, receiver_account_holder)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+                 receiver_bank_name, receiver_account_number, receiver_account_holder,
+                 original_payment_profile_code, group_allocated_amount)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
                RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider,
                          root_category_id, payment_profile_code`,
               [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
@@ -203,7 +207,8 @@ export function createOrdersRepository(
                 (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
                 input.delivery_addr || null, input.voucher_code || null, discountAmount, pointsEarned, subtotal, total, input.note || null,
                 rootCategoryId ? Number(rootCategoryId) : null, profileId, profileCode, profileVersion,
-                bankName, accountNumber, accountHolder],
+                bankName, accountNumber, accountHolder, originalProfileCode,
+                groupAllocatedAmount == null ? null : Math.round(Number(groupAllocatedAmount))],
             );
             order = orders[0];
             await tx.query('RELEASE SAVEPOINT order_code_attempt');
@@ -301,6 +306,7 @@ export function createOrdersRepository(
                 o.payment_method, o.payment_status, o.payment_provider, o.paid_at,
                 o.payment_link_id, o.payos_order_code, o.payment_checkout_url, o.customer_name, o.customer_phone, o.delivery_addr,
                 o.discount_amount, o.subtotal, o.total, o.payment_expires_at, o.created_at,
+                o.payment_profile_code,
                 o.shipping_driver_name, o.shipping_driver_phone, o.shipping_tracking_url, o.cancel_token_hash,
                 o.root_category_id, COALESCE(rc.name, 'Chưa phân loại') AS root_category_name,
                 s.name AS store_name, latest.status AS current_status

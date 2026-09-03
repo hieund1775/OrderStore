@@ -15,7 +15,11 @@ export async function reconcilePayOSOrder({ order, paymentRepository, getPayment
   if (now - lastCheck < CHECK_INTERVAL_MS) return { changed: false, skipped: true };
   lastChecks.set(payosCode, now);
 
-  const payosInfo = await getPaymentInfo(order.payos_order_code, order.payment_link_id);
+  const payosInfo = await getPaymentInfo(
+    order.payos_order_code,
+    order.payment_link_id,
+    order.payment_profile_code || null,
+  );
   const paidAmount = Number(payosInfo?.amountPaid ?? payosInfo?.amount);
   if (payosInfo?.status !== 'PAID' || !Number.isFinite(paidAmount) || paidAmount !== Number(order.total)) {
     return { changed: false, skipped: false };

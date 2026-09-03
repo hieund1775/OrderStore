@@ -189,7 +189,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
   // ═════════════════════════════════════════════════════════════════
   // B2 & B5: Resolver Strict Product Validation and Audit Logging
   // ═════════════════════════════════════════════════════════════════
-  it('B2 & B5: Resolver rejects unmapped product with 400 and records audit log on fallback', async () => {
+  it('B2 & B5: Resolver rejects missing product and fails closed without a ready fallback', async () => {
     let auditLogInserted = false;
     const mockDb = {
       async query(sql, params) {
@@ -219,7 +219,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       (err) => err.message.includes('Sản phẩm #102 không tồn tại hoặc chưa gán danh mục'),
     );
 
-    // B5: Valid product with unmapped profile throws explicit fail-closed error (no silent fallback)
+    // B5: Valid but unmapped root fails closed while DEFAULT_PROFILE is unavailable.
     const mockProfilesRepo = {
       async getActiveProfileByRootCategoryId() {
         return null; // Unmapped root
@@ -235,7 +235,7 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
           profilesRepo: mockProfilesRepo,
         });
       },
-      (err) => err.message.includes('chưa được gán tài khoản thanh toán'),
+      (err) => err.code === 'FALLBACK_PAYMENT_PROFILE_UNAVAILABLE',
     );
   });
 
@@ -984,10 +984,15 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       );
     });
 
-    it('Multi-industry checkout uses active grouped profile and fails closed when unavailable', async () => {
+    it('Multi-industry checkout uses grouped profile only for distinct resolved profiles', async () => {
       process.env.PAYOS_PROFILE_GROUP_CHECKOUT_CLIENT_ID = 'test-client';
       process.env.PAYOS_PROFILE_GROUP_CHECKOUT_API_KEY = 'test-api-key';
       process.env.PAYOS_PROFILE_GROUP_CHECKOUT_CHECKSUM_KEY = 'test-checksum-key';
+      for (const prefix of ['PAYOS_PROFILE_NUOC_UONG_DEFAULT', 'PAYOS_PROFILE_THOI_TRANG_DEFAULT']) {
+        process.env[`${prefix}_CLIENT_ID`] = 'test-client';
+        process.env[`${prefix}_API_KEY`] = 'test-api-key';
+        process.env[`${prefix}_CHECKSUM_KEY`] = 'test-checksum-key';
+      }
 
       const mockDb = {
         async query(sql) {
@@ -1003,6 +1008,14 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
 
       // 1. When active grouped profile is present and configured
       const mockProfilesRepoSuccess = {
+        async getMappedProfileByRootCategoryId(rootCategoryId) {
+          return {
+            id: rootCategoryId,
+            code: rootCategoryId === 1 ? 'NUOC_UONG_DEFAULT' : 'THOI_TRANG_DEFAULT',
+            purpose: 'industry',
+            status: 'active',
+          };
+        },
         async getActiveGroupedProfile() {
           return {
             id: 2,
@@ -1028,6 +1041,14 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
 
       // 2. When no active grouped profile is present
       const mockProfilesRepoMissing = {
+        async getMappedProfileByRootCategoryId(rootCategoryId) {
+          return {
+            id: rootCategoryId,
+            code: rootCategoryId === 1 ? 'NUOC_UONG_DEFAULT' : 'THOI_TRANG_DEFAULT',
+            purpose: 'industry',
+            status: 'active',
+          };
+        },
         async getActiveGroupedProfile() {
           return null;
         },

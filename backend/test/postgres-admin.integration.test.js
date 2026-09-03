@@ -13,6 +13,7 @@ import adminInventoryRepository from '../repositories/postgres/admin-inventory.j
 import adminReportsRepository from '../repositories/postgres/admin-reports.js';
 import adminManagementRepository from '../repositories/postgres/admin-management.js';
 import ordersRepository from '../repositories/postgres/orders.js';
+import fulfillmentRepository from '../repositories/postgres/fulfillment.js';
 import { hashOrderRequest } from '../services/order-idempotency.js';
 import { evaluateOrderTransition } from '../services/order-transition-policy.js';
 
@@ -62,6 +63,23 @@ describe('PostgreSQL admin domains suite', () => {
       const kitchenOrders = await adminOrdersRepository.listKitchen({ scopedStoreId: 1 });
       assert.ok(kitchenOrders.some((row) => Number(row.id) === Number(storeOne.id)));
       assert.equal(kitchenOrders.find((row) => Number(row.id) === Number(storeOne.id)).items.length, 1);
+
+      await assert.rejects(
+        adminOrdersRepository.transition({
+          orderId: storeOne.id, scopedStoreId: 1, targetStatus: 'Hoàn thành', actorId: null,
+          actorRole: 'kitchen', evaluateTransition: evaluateOrderTransition,
+        }),
+        (err) => err instanceof AdminOrderError && err.code === 'FULFILLMENT_TASKS_INCOMPLETE',
+      );
+
+      const fulfillmentTasks = await fulfillmentRepository.getTasksForOrder(storeOne.id);
+      assert.ok(fulfillmentTasks.length > 0);
+      for (const task of fulfillmentTasks.filter((task) => task.status !== 'cancelled')) {
+        const completed = await fulfillmentRepository.updateTaskStatus({
+          taskId: task.id, status: 'completed', expectedStatus: task.status,
+        });
+        assert.equal(completed?.status, 'completed');
+      }
 
       await adminOrdersRepository.transition({
         orderId: storeOne.id, scopedStoreId: 1, targetStatus: 'Hoàn thành', actorId: null,

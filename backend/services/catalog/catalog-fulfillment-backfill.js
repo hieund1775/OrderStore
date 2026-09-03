@@ -180,7 +180,7 @@ export async function runCatalogFulfillmentBackfill({ dryRun = false, database =
       rootId = Number(legacyRoots[0].id);
       await tx.query(
         `UPDATE categories
-         SET name = 'Nước uống', slug = 'nuoc-uong', updated_at = CURRENT_TIMESTAMP
+         SET name = 'Nước uống', slug = 'nuoc-uong'
          WHERE id = $1`,
         [rootId],
       );
@@ -197,7 +197,7 @@ export async function runCatalogFulfillmentBackfill({ dryRun = false, database =
 
     const [beverageDefaults] = await tx.query(
       `UPDATE categories
-       SET default_fulfillment_lane = 'kitchen', updated_at = CURRENT_TIMESTAMP
+       SET default_fulfillment_lane = 'kitchen'
        WHERE id = $1 AND default_fulfillment_lane IS NULL
        RETURNING id`,
       [rootId],
@@ -205,7 +205,7 @@ export async function runCatalogFulfillmentBackfill({ dryRun = false, database =
     summary.categoriesDefaultLaneSet = beverageDefaults.length;
     const [apparelDefaults] = await tx.query(
       `UPDATE categories
-       SET default_fulfillment_lane = 'packing', updated_at = CURRENT_TIMESTAMP
+       SET default_fulfillment_lane = 'packing'
        WHERE slug = 'quan-ao' AND depth = 0 AND parent_id IS NULL
          AND default_fulfillment_lane IS NULL
        RETURNING id`,

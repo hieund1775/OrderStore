@@ -49,7 +49,7 @@ export function PaymentProfileManager() {
   // Form states
   const [code, setCode] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [purpose, setPurpose] = useState<'industry' | 'grouped_checkout'>('industry');
+  const [purpose, setPurpose] = useState<'industry' | 'grouped_checkout' | 'fallback'>('industry');
   const [isActive, setIsActive] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -127,11 +127,16 @@ export function PaymentProfileManager() {
     .trim()
     .replace(/[^A-Z0-9_]/g, '_')}_DEFAULT`;
 
-  const handleCreatePurposeChange = (nextPurpose: 'industry' | 'grouped_checkout') => {
+  const handleCreatePurposeChange = (nextPurpose: 'industry' | 'grouped_checkout' | 'fallback') => {
     setPurpose(nextPurpose);
     if (nextPurpose === 'grouped_checkout') {
       setSelectedCreateRootId(null);
       setCode('GROUP_CHECKOUT');
+      return;
+    }
+    if (nextPurpose === 'fallback') {
+      setSelectedCreateRootId(null);
+      setCode('DEFAULT_PROFILE');
       return;
     }
     setCode(selectedCreateRoot ? getIndustryDefaultCode(selectedCreateRoot.slug) : '');
@@ -241,6 +246,7 @@ export function PaymentProfileManager() {
         ) : (
           profiles.map((profile) => {
             const isGrouped = profile.purpose === 'grouped_checkout';
+            const isFallback = profile.purpose === 'fallback';
             const hasAssignedCategories = (profile.assigned_categories || []).length > 0;
 
             return (
@@ -251,7 +257,7 @@ export function PaymentProfileManager() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border/50 pb-3">
                   <div className="flex items-center gap-3">
                     <div className={`h-10 w-10 rounded-lg flex items-center justify-center font-bold ${
-                      isGrouped ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : 'bg-primary/10 text-primary'
+                      isGrouped ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : isFallback ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-primary/10 text-primary'
                     }`}>
                       {isGrouped ? <Layers className="size-5" /> : <Building2 className="size-5" />}
                     </div>
@@ -267,6 +273,10 @@ export function PaymentProfileManager() {
                         {isGrouped ? (
                           <Badge variant="secondary" className="bg-purple-500/15 text-purple-700 dark:text-purple-300 font-semibold text-[11px]">
                             Tài khoản thanh toán gộp
+                          </Badge>
+                        ) : isFallback ? (
+                          <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300 font-semibold text-[11px]">
+                            DEFAULT_PROFILE — fallback toàn hệ thống
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="bg-sky-500/15 text-sky-700 dark:text-sky-300 font-semibold text-[11px]">
@@ -316,7 +326,7 @@ export function PaymentProfileManager() {
                           : `Ngành hàng áp dụng (${profile.assigned_categories?.length || 0})`}
                       </span>
                     </div>
-                    {!isGrouped && (
+                    {!isGrouped && !isFallback && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -331,6 +341,10 @@ export function PaymentProfileManager() {
                   {isGrouped ? (
                     <p className="text-xs text-muted-foreground/90 bg-purple-500/5 border border-purple-500/20 p-2.5 rounded-lg">
                       Dùng khi khách mua từ nhiều ngành hàng. Hệ thống tự động gom thanh toán về tài khoản này.
+                    </p>
+                  ) : isFallback ? (
+                    <p className="text-xs text-muted-foreground/90 bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-lg">
+                      Chỉ được dùng khi ngành hàng chưa gán profile. Ngành đã gán nhưng profile tắt hoặc thiếu ENV sẽ bị chặn thanh toán.
                     </p>
                   ) : !hasAssignedCategories ? (
                     <p className="text-xs text-amber-600 dark:text-amber-400 italic bg-amber-500/5 border border-amber-500/20 p-2 rounded-lg">
@@ -425,7 +439,7 @@ export function PaymentProfileManager() {
                   placeholder="Ví dụ: NUOC_HIEU, DO_AN_LAN"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  readOnly={purpose === 'grouped_checkout'}
+                  readOnly={purpose === 'grouped_checkout' || purpose === 'fallback'}
                   required
                 />
               </div>
@@ -442,7 +456,7 @@ export function PaymentProfileManager() {
                 <label className="text-xs font-semibold">Mục Đích Sử Dụng *</label>
                 <select
                   value={purpose}
-                  onChange={(e) => handleCreatePurposeChange(e.target.value as 'industry' | 'grouped_checkout')}
+                  onChange={(e) => handleCreatePurposeChange(e.target.value as 'industry' | 'grouped_checkout' | 'fallback')}
                   className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
                 >
                   <option value="industry">Nhận tiền ngành hàng (Đơn thuộc 1 ngành)</option>
@@ -518,6 +532,7 @@ export function PaymentProfileManager() {
                     >
                       <option value="industry">Nhận tiền ngành hàng</option>
                       <option value="grouped_checkout">Tài khoản thanh toán gộp</option>
+                      <option value="fallback">Tài khoản mặc định toàn hệ thống</option>
                     </select>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       ⚠️ Để đổi mục đích: Hãy tắt profile và bỏ gán toàn bộ ngành hàng trước.
@@ -531,6 +546,7 @@ export function PaymentProfileManager() {
                   >
                     <option value="industry">Nhận tiền ngành hàng</option>
                     <option value="grouped_checkout">Tài khoản thanh toán gộp</option>
+                    <option value="fallback">Tài khoản mặc định toàn hệ thống</option>
                   </select>
                 )}
               </div>

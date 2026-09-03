@@ -104,12 +104,17 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
 
         // Insert allocations and link child orders
         for (const alloc of allocations) {
+          const originalProfileCode = String(alloc.originalPaymentProfile?.code || '').trim();
+          if (!originalProfileCode || alloc.allocatedTotal == null) {
+            throw new CheckoutGroupError('Missing original profile or allocated amount snapshot', 400, 'GROUP_ALLOCATION_SNAPSHOT_REQUIRED');
+          }
           await tx.query(
             `INSERT INTO checkout_group_allocations
                (checkout_group_id, order_id, root_category_id, root_category_name,
                 root_category_slug, allocated_subtotal, allocated_discount,
-                allocated_shipping_fee, allocated_total)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                allocated_shipping_fee, allocated_total, original_payment_profile_code,
+                allocated_amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [
               group.id,
               Number(alloc.orderId),
@@ -120,6 +125,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
               Math.round(Number(alloc.allocatedDiscount || 0)),
               Math.round(Number(alloc.allocatedShippingFee || 0)),
               Math.round(Number(alloc.allocatedTotal)),
+              originalProfileCode,
+              Math.round(Number(alloc.allocatedTotal)),
             ],
           );
 
@@ -129,8 +136,9 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                  payment_profile_id = $3, payment_profile_code = $4,
                  payment_profile_version = $5, receiver_bank_name = $6,
                  receiver_account_number = $7, receiver_account_holder = $8,
+                 original_payment_profile_code = $9, group_allocated_amount = $10,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $9`,
+             WHERE id = $11`,
             [
               group.id,
               Number(alloc.rootCategoryId),
@@ -140,6 +148,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
               paymentProfile?.bank_name || null,
               paymentProfile?.account_number || null,
               paymentProfile?.account_holder || null,
+              originalProfileCode,
+              Math.round(Number(alloc.allocatedTotal)),
               Number(alloc.orderId),
             ],
           );

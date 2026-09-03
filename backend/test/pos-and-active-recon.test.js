@@ -8,8 +8,11 @@ describe('POS Validation & Active Reconciliation Suite', () => {
   it('reconciles a paid PayOS order only when the amount matches exactly', async () => {
     const calls = [];
     const result = await reconcilePayOSOrder({
-      order: { payment_status: 'unpaid', payment_provider: 'payos', payos_order_code: `recon-${Date.now()}`, total: 45000 },
-      getPaymentInfo: async () => ({ status: 'PAID', amountPaid: 45000, transactions: [{ reference: 'bank-ref-1' }] }),
+      order: { payment_status: 'unpaid', payment_provider: 'payos', payos_order_code: `recon-${Date.now()}`, payment_profile_code: 'NUOC_UONG_DEFAULT', total: 45000 },
+      getPaymentInfo: async (_code, _linkId, profileCode) => {
+        assert.equal(profileCode, 'NUOC_UONG_DEFAULT');
+        return { status: 'PAID', amountPaid: 45000, transactions: [{ reference: 'bank-ref-1' }] };
+      },
       paymentRepository: {
         processSuccessfulWebhook: async (payload) => {
           calls.push(payload);

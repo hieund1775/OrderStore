@@ -52,9 +52,9 @@ router.post('/', asyncHandler(async (req, res) => {
     });
   }
 
-  if (!purpose || !['industry', 'grouped_checkout'].includes(purpose)) {
+  if (!purpose || !['industry', 'grouped_checkout', 'fallback'].includes(purpose)) {
     return res.status(400).json({
-      error: 'Mục đích profile (purpose) là bắt buộc và phải là "industry" hoặc "grouped_checkout"',
+      error: 'Mục đích profile (purpose) là bắt buộc và phải là "industry", "grouped_checkout" hoặc "fallback"',
     });
   }
 

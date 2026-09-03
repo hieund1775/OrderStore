@@ -7,8 +7,9 @@ export function createPaymentsRepository(database = postgresDb) {
       return database.transaction(async (tx) => {
         const [rows] = await tx.query(
           `SELECT id, order_code, total, payment_link_id, payos_order_code,
-                  payment_checkout_url, payment_qr_code, payment_expires_at
+                  payment_checkout_url, payment_qr_code, payment_expires_at, checkout_group_id
            FROM orders WHERE id = $1 AND payment_provider = 'payos' AND payment_status = 'unpaid'
+             AND checkout_group_id IS NULL
            FOR UPDATE`,
           [orderId],
         );
@@ -18,7 +19,7 @@ export function createPaymentsRepository(database = postgresDb) {
         const [reserved] = await tx.query(
           `UPDATE orders SET payos_order_code = $2, payment_expires_at = $3,
              payment_created_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 RETURNING id, order_code, total, payment_link_id, payos_order_code,
+           WHERE id = $1 AND checkout_group_id IS NULL RETURNING id, order_code, total, payment_link_id, payos_order_code,
              payment_checkout_url, payment_qr_code, payment_expires_at`,
           [orderId, payosOrderCode, paymentExpiresAt],
         );
@@ -34,6 +35,7 @@ export function createPaymentsRepository(database = postgresDb) {
              payment_created_at = CURRENT_TIMESTAMP, payment_expires_at = $4,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND payment_provider = 'payos' AND payment_status = 'unpaid'
+           AND checkout_group_id IS NULL
          RETURNING id, order_code, total, payment_status, payment_provider,
                    payment_link_id, payos_order_code, payment_checkout_url,
                    payment_qr_code, payment_expires_at`,
@@ -45,7 +47,7 @@ export function createPaymentsRepository(database = postgresDb) {
     async findStatusByOrderCode(orderCode) {
       const [rows] = await database.query(
         `SELECT id, order_code, total, payment_status, payment_provider, paid_at,
-                payment_expires_at, payment_link_id, payos_order_code
+                payment_expires_at, payment_link_id, payos_order_code, payment_profile_code
          FROM orders WHERE order_code = $1 LIMIT 1`,
         [orderCode],
       );
@@ -133,7 +135,7 @@ export function createPaymentsRepository(database = postgresDb) {
           `SELECT id, order_code, user_id, customer_phone, total,
                   payment_status, payment_provider, current_status, cancel_token_hash,
                   payos_order_code, payment_link_id, payment_checkout_url,
-                  payment_qr_code, payment_expires_at
+                  payment_qr_code, payment_expires_at, checkout_group_id, payment_profile_code
            FROM orders
            WHERE order_code = $1
            FOR UPDATE`,
@@ -157,6 +159,13 @@ export function createPaymentsRepository(database = postgresDb) {
         if (!isOwnerByUserId && !isOwnerByCancelToken) {
           const err = new Error('Bạn không có quyền thao tác trên đơn hàng này');
           err.status = 403;
+          throw err;
+        }
+
+        if (order.checkout_group_id != null) {
+          const err = new Error('Don con trong thanh toan gop khong co QR rieng; hay thanh toan bang ma cua don gop');
+          err.status = 409;
+          err.code = 'GROUP_CHILD_PAYMENT_MANAGED_BY_GROUP';
           throw err;
         }
 
@@ -220,6 +229,7 @@ export function createPaymentsRepository(database = postgresDb) {
           payosOrderCode: newPayosOrderCode,
           returnUrl: effectiveReturnUrl,
           cancelUrl: effectiveCancelUrl,
+          paymentProfileCode: order.payment_profile_code || null,
         });
 
         const [updatedRows] = await tx.query(
@@ -233,7 +243,8 @@ export function createPaymentsRepository(database = postgresDb) {
                payment_provider = 'payos',
                payment_created_at = CURRENT_TIMESTAMP,
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND payment_status != 'paid' AND current_status != 'Đã hủy'
+           WHERE id = $1 AND checkout_group_id IS NULL
+             AND payment_status != 'paid' AND current_status != 'Đã hủy'
            RETURNING id, order_code, total, payment_status, payment_provider,
                      payment_link_id, payos_order_code, payment_checkout_url,
                      payment_qr_code, payment_expires_at`,

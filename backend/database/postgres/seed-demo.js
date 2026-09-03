@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { getPostgresPoolConfig } from '../../config/db-postgres.js';
-import { validatePostgresTestGuard, redactDatabaseUrl } from '../../config/postgres-guard.js';
+import { describePostgresTarget, validatePostgresTestGuard } from '../../config/postgres-guard.js';
 
 const { Pool } = pg;
 
@@ -13,8 +13,8 @@ async function resetIdentitySequences(client) {
 /** Seeds a deterministic, route-compatible demo dataset into a guarded non-production database. */
 export async function seedDemoData({ customUrl = null, pool = null } = {}) {
   const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
-  validatePostgresTestGuard(targetUrl);
-  console.log(`🌱 [PostgreSQL Seeder] Target DB: ${redactDatabaseUrl(targetUrl)}`);
+  const guardedTarget = validatePostgresTestGuard(targetUrl);
+  console.log(`🌱 [PostgreSQL Seeder] Target DB: ${describePostgresTarget(guardedTarget)}`);
 
   const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
   const client = await activePool.connect();

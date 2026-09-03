@@ -159,6 +159,45 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       };
     },
 
+    async getActiveFallbackProfile() {
+      const [rows] = await database.query(
+        `SELECT * FROM payment_profiles
+         WHERE purpose = 'fallback' AND status = 'active'
+         LIMIT 1`,
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        id: Number(r.id),
+        purpose: 'fallback',
+        version: Number(r.version),
+        is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
+      };
+    },
+
+    async getMappedProfileByRootCategoryId(rootCategoryId) {
+      const [rows] = await database.query(
+        `SELECT pp.*
+         FROM category_payment_profiles cpp
+         JOIN payment_profiles pp ON pp.id = cpp.payment_profile_id
+         WHERE cpp.root_category_id = $1
+           AND cpp.is_active = TRUE
+           AND pp.purpose = 'industry'
+         LIMIT 1`,
+        [Number(rootCategoryId)],
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        id: Number(r.id),
+        purpose: 'industry',
+        version: Number(r.version),
+        is_env_configured: checkEnvConfigured(r.env_prefix, r.code),
+      };
+    },
+
     async getActiveProfileByRootCategoryId(rootCategoryId) {
       const [rows] = await database.query(
         `SELECT pp.*
@@ -190,7 +229,7 @@ export function createPaymentProfilesRepository(database = postgresDb) {
         throw new PaymentProfileError('Tên hiển thị profile không được để trống');
       }
 
-      const validPurposes = ['industry', 'grouped_checkout'];
+      const validPurposes = ['industry', 'grouped_checkout', 'fallback'];
       const normalizedPurpose = String(purpose || 'industry').trim();
       if (!validPurposes.includes(normalizedPurpose)) {
         throw new PaymentProfileError('Mục đích profile phải là "industry" hoặc "grouped_checkout"', 400, 'INVALID_PURPOSE');
@@ -199,11 +238,15 @@ export function createPaymentProfilesRepository(database = postgresDb) {
       const normalizedCode = String(code).toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
       const envPrefix = generateEnvPrefix(normalizedCode);
 
+      if (normalizedPurpose === 'fallback' && normalizedCode !== 'DEFAULT_PROFILE') {
+        throw new PaymentProfileError('Fallback profile he thong phai dung ma DEFAULT_PROFILE', 400, 'FALLBACK_CODE_REQUIRED');
+      }
+
       if (normalizedPurpose === 'industry' && !rootCategoryId) {
         throw new PaymentProfileError('Profile nganh hang phai chon nganh hang goc', 400, 'ROOT_CATEGORY_REQUIRED');
       }
-      if (normalizedPurpose === 'grouped_checkout' && rootCategoryId) {
-        throw new PaymentProfileError('Tai khoan thanh toan gop khong duoc gan nganh hang', 400, 'GROUPED_PROFILE_CANNOT_ASSIGN_ROOT');
+      if (normalizedPurpose !== 'industry' && rootCategoryId) {
+        throw new PaymentProfileError('Chi profile nganh hang moi duoc gan danh muc goc', 400, 'NON_INDUSTRY_PROFILE_CANNOT_ASSIGN_ROOT');
       }
 
       const execute = typeof database.transaction === 'function'
@@ -289,9 +332,16 @@ export function createPaymentProfilesRepository(database = postgresDb) {
         const newPurpose = purpose !== undefined ? String(purpose).trim() : current.purpose;
         const newStatus = status !== undefined ? status : current.status;
 
+        if (current.code === 'DEFAULT_PROFILE' && newPurpose !== 'fallback') {
+          throw new PaymentProfileError('DEFAULT_PROFILE phai giu muc dich fallback', 400, 'DEFAULT_PROFILE_PURPOSE_LOCKED');
+        }
+        if (newPurpose === 'fallback' && current.code !== 'DEFAULT_PROFILE') {
+          throw new PaymentProfileError('Fallback profile he thong phai dung ma DEFAULT_PROFILE', 400, 'FALLBACK_CODE_REQUIRED');
+        }
+
         // Purpose change validations
         if (purpose !== undefined && newPurpose !== current.purpose) {
-          const validPurposes = ['industry', 'grouped_checkout'];
+          const validPurposes = ['industry', 'grouped_checkout', 'fallback'];
           if (!validPurposes.includes(newPurpose)) {
             throw new PaymentProfileError('Mục đích profile phải là "industry" hoặc "grouped_checkout"', 400, 'INVALID_PURPOSE');
           }
@@ -319,12 +369,12 @@ export function createPaymentProfilesRepository(database = postgresDb) {
           }
 
           // If activating a grouped profile, ensure any other active grouped profile is disabled
-          if (newPurpose === 'grouped_checkout') {
+          if (newPurpose === 'grouped_checkout' || newPurpose === 'fallback') {
             await tx.query(
               `UPDATE payment_profiles
                SET status = 'disabled', updated_at = CURRENT_TIMESTAMP
-               WHERE purpose = 'grouped_checkout' AND id <> $1 AND status = 'active'`,
-              [Number(id)],
+               WHERE purpose = $2 AND id <> $1 AND status = 'active'`,
+              [Number(id), newPurpose],
             );
           }
         }

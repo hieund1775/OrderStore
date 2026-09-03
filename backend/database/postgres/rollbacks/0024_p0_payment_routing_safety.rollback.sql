@@ -1,0 +1,2 @@
+-- Forward-only production migration. Do not remove payment snapshots that may be
+-- required to audit already-created grouped checkouts.

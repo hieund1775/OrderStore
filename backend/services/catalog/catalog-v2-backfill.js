@@ -148,7 +148,7 @@ export async function runRootCategoryReparentBackfill({ dryRun = false, database
       // Move category under root and set depth = 1
       await tx.query(
         `UPDATE categories
-         SET parent_id = $1, depth = 1, updated_at = CURRENT_TIMESTAMP
+         SET parent_id = $1, depth = 1
          WHERE id = $2`,
         [rootCategoryId, cat.id],
       );

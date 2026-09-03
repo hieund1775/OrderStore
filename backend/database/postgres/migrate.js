@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { getPostgresPoolConfig } from '../../config/db-postgres.js';
-import { redactDatabaseUrl } from '../../config/postgres-guard.js';
+import { describePostgresTarget, validatePostgresTestGuard } from '../../config/postgres-guard.js';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,10 +21,13 @@ export function calculateChecksum(content) {
  * Runs all pending PostgreSQL migrations in order
  */
 export async function runMigrations({ customUrl = null, pool = null } = {}) {
-  const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
   const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  // This guard is intentionally before Pool construction/connect and before
+  // every SQL statement, including the advisory lock.
+  const guardedTarget = validatePostgresTestGuard(targetUrl);
+  const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
 
-  console.log(`🚀 [PostgreSQL Migrator] Target DB: ${redactDatabaseUrl(targetUrl)}`);
+  console.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
 
   const client = await activePool.connect();
   let lockHeld = false;

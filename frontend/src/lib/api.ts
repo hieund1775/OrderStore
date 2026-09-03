@@ -677,7 +677,7 @@ export type PaymentProfile = {
   id: number;
   code: string;
   display_name: string;
-  purpose: 'industry' | 'grouped_checkout';
+  purpose: 'industry' | 'grouped_checkout' | 'fallback';
   bank_name?: string | null;
   bank_bin?: string | null;
   account_number_masked?: string | null;
@@ -708,7 +708,7 @@ export async function fetchPaymentProfiles(status?: string): Promise<{ profiles:
 export async function createPaymentProfile(data: {
   code: string;
   display_name: string;
-  purpose: 'industry' | 'grouped_checkout';
+  purpose: 'industry' | 'grouped_checkout' | 'fallback';
   root_category_id?: number;
 }): Promise<{ profile: PaymentProfile }> {
   return apiFetch<{ profile: PaymentProfile }>('/admin/payment-profiles', {
@@ -721,7 +721,7 @@ export async function updatePaymentProfile(
   id: number,
   data: {
     display_name?: string;
-    purpose?: 'industry' | 'grouped_checkout';
+    purpose?: 'industry' | 'grouped_checkout' | 'fallback';
     status?: 'active' | 'disabled';
   },
 ): Promise<{ profile: PaymentProfile }> {

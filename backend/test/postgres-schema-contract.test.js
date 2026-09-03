@@ -375,5 +375,28 @@ test('payment profile code convention migration 0023 creates GROUP_CHECKOUT and 
   assert.match(rollbackSql, /Forward-only migration/);
 });
 
+test('P0 payment routing migration establishes fallback, snapshots, and child QR barrier', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0024_p0_payment_routing_safety.sql');
+  const rollbackPath = path.join(testDir, '..', 'database', 'postgres', 'rollbacks', '0024_p0_payment_routing_safety.rollback.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile(rollbackPath, 'utf8');
+
+  for (const fragment of [
+    "'fallback'",
+    'uq_active_fallback_payment_profile',
+    "'DEFAULT_PROFILE'",
+    'original_payment_profile_code',
+    'group_allocated_amount',
+    'allocated_amount',
+    'chk_group_child_payment_snapshots',
+    'chk_group_allocation_payment_snapshots',
+    'chk_group_child_has_no_direct_payos_link',
+    'NOT VALID',
+  ]) {
+    assert.ok(sql.includes(fragment), `missing P0 migration contract: ${fragment}`);
+  }
+  assert.match(rollbackSql, /Forward-only production migration/);
+});
+
 
 

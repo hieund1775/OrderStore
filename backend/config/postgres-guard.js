@@ -15,6 +15,15 @@ export function redactDatabaseUrl(rawUrl) {
 }
 
 /**
+ * Builds a log-safe database identity. Credentials, port, query string and
+ * connection-string syntax are intentionally absent.
+ */
+export function describePostgresTarget({ host, dbName }) {
+  const clean = (value) => String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `host=${clean(host)}, database=${clean(dbName)}`;
+}
+
+/**
  * Validates that a PostgreSQL URL is dedicated for test/perf execution and strictly avoids production
  */
 export function validatePostgresTestGuard(
@@ -25,8 +34,8 @@ export function validatePostgresTestGuard(
     allowedHosts = process.env.POSTGRES_TEST_ALLOWED_HOSTS,
   } = {}
 ) {
-  if (env === 'production') {
-    throw new Error('GUARDS VIOLATION: PostgreSQL integration tests cannot run when NODE_ENV is production.');
+  if (env !== 'test') {
+    throw new Error('GUARDS VIOLATION: PostgreSQL test operations require NODE_ENV=test.');
   }
 
   if (confirmFlag !== '1' && confirmFlag !== true) {

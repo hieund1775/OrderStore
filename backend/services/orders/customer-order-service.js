@@ -330,6 +330,8 @@ export function createCustomerOrderService({
               paymentProvider: payment_provider,
               rootCategoryId: alloc.rootCategoryId,
               paymentProfile: resolved.profile,
+              originalPaymentProfile: alloc.originalPaymentProfile,
+              groupAllocatedAmount: alloc.allocatedTotal,
             }, { tx });
 
             createdChildOrders.push(childOrder);
@@ -342,6 +344,7 @@ export function createCustomerOrderService({
               allocatedDiscount: alloc.allocatedDiscount,
               allocatedShippingFee: alloc.allocatedShippingFee,
               allocatedTotal: alloc.allocatedTotal,
+              originalPaymentProfile: alloc.originalPaymentProfile,
             });
           }
 
