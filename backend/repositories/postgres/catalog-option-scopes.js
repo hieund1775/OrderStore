@@ -30,7 +30,7 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
     async listCategoryAssignments(categoryId) {
       const [rows] = await database.query(
         `SELECT caa.*, ad.name AS attribute_name, ad.code AS attribute_code,
-                ad.role AS attribute_role, ad.input_type, ad.is_system
+                ad.role AS attribute_role, ad.input_type
          FROM category_attribute_assignments caa
          JOIN attribute_definitions ad ON ad.id = caa.attribute_definition_id
          WHERE caa.category_id = $1
@@ -185,7 +185,7 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
       if (ancestorIds.length > 0) {
         const [assignRows] = await database.query(
           `SELECT caa.*, ad.code AS attribute_code, ad.name AS attribute_name,
-                  ad.role AS attribute_role, ad.input_type, ad.is_system,
+                  ad.role AS attribute_role, ad.input_type,
                   c.name AS category_name, c.depth AS category_depth
            FROM category_attribute_assignments caa
            JOIN categories c ON c.id = caa.category_id
@@ -201,7 +201,7 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
       // 4. Fetch product overrides
       const [overrides] = await database.query(
         `SELECT pao.*, ad.code AS attribute_code, ad.name AS attribute_name,
-                ad.role AS attribute_role, ad.input_type, ad.is_system
+                ad.role AS attribute_role, ad.input_type
          FROM product_attribute_overrides pao
          JOIN attribute_definitions ad ON ad.id = pao.attribute_definition_id
          WHERE pao.product_id = $1`,
@@ -322,11 +322,11 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
 
         // 2. Verify attribute definition
         const [attrRows] = await tx.query(
-          `SELECT id, input_type, is_active FROM attribute_definitions WHERE id = $1`,
+          `SELECT id, input_type FROM attribute_definitions WHERE id = $1`,
           [Number(attributeDefinitionId)],
         );
-        if (!attrRows[0] || attrRows[0].is_active === false) {
-          throw new CatalogOptionScopeError('Tùy chọn không tồn tại hoặc đã bị vô hiệu hóa', 404);
+        if (!attrRows[0]) {
+          throw new CatalogOptionScopeError('Tùy chọn không tồn tại', 404);
         }
 
         // 3. Verify values match attribute definition and are active
