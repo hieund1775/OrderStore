@@ -45,7 +45,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const kitchenUser = { id: 5, admin_role: 'kitchen', admin_branch_id: 1 };
+    const kitchenUser = { sub: 5, role: 'kitchen', branch_id: 1 };
 
     await assert.rejects(
       async () => service.getTaskDetails({ taskId: 10, user: kitchenUser }),
@@ -61,7 +61,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const packingUser = { id: 6, admin_role: 'packing', admin_branch_id: 1 };
+    const packingUser = { sub: 6, role: 'packing', branch_id: 1 };
 
     await assert.rejects(
       async () => service.getTaskDetails({ taskId: 11, user: packingUser }),
@@ -83,7 +83,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const managerUser = { id: 1, admin_role: 'manager', admin_branch_id: 1 };
+    const managerUser = { sub: 1, role: 'manager', branch_id: 1 };
 
     const result = await service.updateTaskStatus({
       taskId: 20,
@@ -109,7 +109,7 @@ test('Fulfillment Lane & Task Splitting Suite', async (t) => {
     await assert.rejects(
       service.updateTaskStatus({
         taskId: 20,
-        user: { id: 1, admin_role: 'manager', admin_branch_id: 1 },
+        user: { sub: 1, role: 'manager', branch_id: 1 },
         status: 'preparing',
       }),
       (err) => err?.status === 409 && err?.code === 'FULFILLMENT_STATUS_TRANSITION_INVALID',

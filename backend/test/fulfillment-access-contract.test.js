@@ -17,7 +17,7 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const managerBranch1 = { id: 10, admin_role: 'manager', admin_branch_id: 1 };
+    const managerBranch1 = { sub: 10, role: 'manager', branch_id: 1 };
 
     await assert.rejects(
       async () => service.getTaskDetails({ taskId: 55, user: managerBranch1 }),
@@ -35,7 +35,7 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const superAdmin = { id: 1, admin_role: 'super', admin_branch_id: null };
+    const superAdmin = { sub: 1, role: 'super', branch_id: null };
 
     // Super Admin calling listTasksByLane without branchId must fail with 400
     await assert.rejects(
@@ -62,7 +62,7 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
-    const kitchenUser = { id: 5, admin_role: 'kitchen', admin_branch_id: 1 };
+    const kitchenUser = { sub: 5, role: 'kitchen', branch_id: 1 };
 
     await assert.rejects(
       async () => service.updateTaskStatus({
@@ -72,5 +72,30 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
       }),
       (err) => err.status === 403 || /Bạn không có quyền truy cập nhiệm vụ thuộc luồng đóng gói/.test(err.message),
     );
+  });
+
+  await t.test('Super Admin token bypasses branch scope for task detail and status update', async () => {
+    let updateInput = null;
+    const mockRepo = {
+      async getTaskById(taskId) {
+        return { id: taskId, order_id: 103, branch_id: 2, lane: 'kitchen', status: 'pending' };
+      },
+      async updateTaskStatus(input) {
+        updateInput = input;
+        return { id: input.taskId, order_id: 103, status: input.status };
+      },
+      async areAllTasksCompletedForOrder() {
+        return false;
+      },
+    };
+    const service = createFulfillmentService({ repository: mockRepo });
+    const superAdmin = { sub: 1, role: 'super', branch_id: null };
+
+    const task = await service.getTaskDetails({ taskId: 88, user: superAdmin });
+    assert.equal(task.branch_id, 2);
+
+    const result = await service.updateTaskStatus({ taskId: 88, user: superAdmin, status: 'preparing' });
+    assert.equal(result.task.status, 'preparing');
+    assert.equal(updateInput.taskId, 88);
   });
 });

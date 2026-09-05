@@ -75,7 +75,7 @@ export function createFulfillmentService({
     },
 
     async listTasks({ user, branchId = null, lane = null, statuses = null, limit = 50 }) {
-      if (user?.admin_role === 'super' && !branchId) {
+      if (user?.role === 'super' && !branchId) {
         const err = new Error('Vui lòng chọn chi nhánh cụ thể để xem danh sách vận hành');
         err.status = 400;
         err.code = 'FULFILLMENT_BRANCH_REQUIRED';
@@ -83,8 +83,8 @@ export function createFulfillmentService({
       }
 
       const requestedBranchId = branchId == null ? null : Number(branchId);
-      const assignedBranchId = user?.admin_branch_id == null ? null : Number(user.admin_branch_id);
-      if (user?.admin_role !== 'super') {
+      const assignedBranchId = user?.branch_id == null ? null : Number(user.branch_id);
+      if (user?.role !== 'super') {
         if (!assignedBranchId) {
           const err = new Error('Tài khoản vận hành chưa được gán chi nhánh');
           err.status = 403;
@@ -99,10 +99,10 @@ export function createFulfillmentService({
         }
       }
 
-      const effectiveBranchId = user?.admin_role === 'super' ? requestedBranchId : assignedBranchId;
+      const effectiveBranchId = user?.role === 'super' ? requestedBranchId : assignedBranchId;
 
       let effectiveLane = lane;
-      if (user?.admin_role === 'kitchen') {
+      if (user?.role === 'kitchen') {
         if (lane && lane !== 'kitchen') {
           const err = new Error('Tài khoản bếp không có quyền truy cập luồng khác');
           err.status = 403;
@@ -110,7 +110,7 @@ export function createFulfillmentService({
           throw err;
         }
         effectiveLane = 'kitchen';
-      } else if (user?.admin_role === 'packing') {
+      } else if (user?.role === 'packing') {
         if (lane && lane !== 'packing') {
           const err = new Error('Tài khoản đóng gói không có quyền truy cập luồng khác');
           err.status = 403;
@@ -144,21 +144,21 @@ export function createFulfillmentService({
       }
 
       // RBAC check
-      if (user?.admin_role === 'kitchen' && task.lane !== 'kitchen') {
+      if (user?.role === 'kitchen' && task.lane !== 'kitchen') {
         const err = new Error('Bạn không có quyền truy cập nhiệm vụ thuộc luồng đóng gói');
         err.status = 403;
         throw err;
       }
 
-      if (user?.admin_role === 'packing' && task.lane !== 'packing') {
+      if (user?.role === 'packing' && task.lane !== 'packing') {
         const err = new Error('Bạn không có quyền truy cập nhiệm vụ thuộc luồng pha chế');
         err.status = 403;
         throw err;
       }
 
-      if (user?.admin_role !== 'super' && (
-        user?.admin_branch_id == null
-        || Number(user.admin_branch_id) !== Number(task.branch_id)
+      if (user?.role !== 'super' && (
+        user?.branch_id == null
+        || Number(user.branch_id) !== Number(task.branch_id)
       )) {
         const err = new Error('Bạn không có quyền quản lý đơn hàng của chi nhánh khác');
         err.status = 403;
