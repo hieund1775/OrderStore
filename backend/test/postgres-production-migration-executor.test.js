@@ -101,15 +101,18 @@ describe('PostgreSQL production migration guard', () => {
     );
   });
 
-  it('accepts only the reviewed P0 target and explicit apply syntax', () => {
+  it('accepts only reviewed targets and explicit apply syntax', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0024']), {
       apply: false, dryRun: true, toVersion: '0024',
     });
     assert.deepEqual(parseProductionMigrationArgs(['--apply', '--to', '0024']), {
       apply: true, dryRun: false, toVersion: '0024',
     });
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0025']), {
+      apply: false, dryRun: true, toVersion: '0025',
+    });
     assert.throws(() => parseProductionMigrationArgs(['--apply']), /--to=<numeric migration version> is required/);
-    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0025']), /supports only --to=0024/);
+    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0026']), /supports only --to=0024, --to=0025/);
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -170,6 +173,24 @@ describe('PostgreSQL production migration guard', () => {
     assert.match(output, /DRY RUN: no changes applied/);
     assert.equal(output.includes('release_user'), false);
     assert.equal(output.includes('release_secret'), false);
+  });
+
+  it('preflights only 0025 when that reviewed target is requested', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0025' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0025')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0025'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+    });
+
+    assert.deepEqual(result.pendingVersions, ['0025']);
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
+    assert.match(captured.logs.join('\n'), /Plan confirmed: only 0025 is pending/);
   });
 
   it('uses the backend scoped Pool SSL policy with the explicit production URL', async () => {

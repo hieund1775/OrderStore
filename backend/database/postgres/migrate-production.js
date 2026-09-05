@@ -16,6 +16,7 @@ const MIGRATION_LOCK_SQL = "SELECT pg_advisory_lock(hashtext('teaplus_postgres_m
 const MIGRATION_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(hashtext('teaplus_postgres_migrations')) AS acquired";
 const MIGRATION_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))";
 export const PRODUCTION_MIGRATION_TARGET = '0024';
+export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(['0024', '0025']);
 
 function sanitizeErrorMessage(error) {
   return String(error?.message || error || 'Unknown migration error')
@@ -49,8 +50,8 @@ export function parseProductionMigrationArgs(args = []) {
   if (!toVersion || !/^\d+$/.test(toVersion)) {
     throw new Error('PRODUCTION MIGRATION CLI: --to=<numeric migration version> is required.');
   }
-  if (toVersion !== PRODUCTION_MIGRATION_TARGET) {
-    throw new Error(`PRODUCTION MIGRATION CLI: this executor currently supports only --to=${PRODUCTION_MIGRATION_TARGET}.`);
+  if (!PRODUCTION_MIGRATION_TARGETS.includes(toVersion)) {
+    throw new Error(`PRODUCTION MIGRATION CLI: this executor currently supports only --to=${PRODUCTION_MIGRATION_TARGETS.join(', --to=')}.`);
   }
 
   return { apply, dryRun: !apply, toVersion };
