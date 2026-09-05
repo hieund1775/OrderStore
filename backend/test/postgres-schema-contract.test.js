@@ -398,5 +398,32 @@ test('P0 payment routing migration establishes fallback, snapshots, and child QR
   assert.match(rollbackSql, /Forward-only production migration/);
 });
 
+test('0025 restores only approved industry roots and disables the legacy category-1 mapping', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0025_restore_industry_roots_from_legacy_menu.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+
+  for (const fragment of [
+    "(1, 33, 1, TRUE)",
+    "(14, 33, 1, TRUE)",
+    "(15, 33, 1, TRUE)",
+    "(22::BIGINT, 15::BIGINT, 1)",
+    "(24::BIGINT, 14::BIGINT, 1)",
+    "(25::BIGINT, 14::BIGINT, 1)",
+    "root_category_id IN (14, 15)",
+    "category_one_profile_code <> 'DEFAULT_LONG'",
+    "category_one_profile_status <> 'active'",
+    'SET parent_id = NULL',
+    'depth = 0',
+    'SET is_active = FALSE',
+  ]) {
+    assert.ok(sql.includes(fragment), `missing 0025 root-restore safety contract: ${fragment}`);
+  }
+
+  assert.doesNotMatch(sql, /UPDATE\s+orders\b/i);
+  assert.doesNotMatch(sql, /UPDATE\s+checkout_group_allocations\b/i);
+  assert.doesNotMatch(sql, /DELETE\s+FROM\s+categories\b/i);
+  assert.doesNotMatch(sql, /INSERT\s+INTO\s+category_payment_profiles\b/i);
+});
+
 
 

@@ -17,6 +17,11 @@ const approvedEnvironment = Object.freeze({
   PRODUCTION_DATABASE_URL: 'postgresql://release_user:release_secret@prod.db.example:5432/teaplus',
   POSTGRES_PRODUCTION_ALLOWED_HOSTS: 'prod.db.example',
   POSTGRES_PRODUCTION_ALLOWED_DATABASES: 'teaplus',
+  // The full PostgreSQL suite intentionally loads .env for integration tests.
+  // Explicit nulls keep this production-executor fixture isolated from those
+  // test-only values without weakening the production guard itself.
+  TEST_DATABASE_URL: null,
+  POSTGRES_INTEGRATION: null,
 });
 
 function createFakePool({ appliedRows, tryLock = true, trackerExists = true } = {}) {
@@ -65,30 +70,32 @@ describe('PostgreSQL production migration guard', () => {
       confirmFlag: approvedEnvironment.POSTGRES_PRODUCTION_MIGRATIONS,
       allowedHosts: approvedEnvironment.POSTGRES_PRODUCTION_ALLOWED_HOSTS,
       allowedDatabases: approvedEnvironment.POSTGRES_PRODUCTION_ALLOWED_DATABASES,
+      testDatabaseUrl: approvedEnvironment.TEST_DATABASE_URL,
+      testConfirmFlag: approvedEnvironment.POSTGRES_INTEGRATION,
     });
     assert.equal(describeProductionMigrationTarget(target), 'host=prod.db.example, database=teaplus');
 
     assert.throws(
       () => validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
-        env: 'test', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'teaplus',
+        env: 'test', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'teaplus', testDatabaseUrl: null, testConfirmFlag: null,
       }),
       /NODE_ENV must be production/,
     );
     assert.throws(
       () => validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
-        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'other.db.example', allowedDatabases: 'teaplus',
+        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'other.db.example', allowedDatabases: 'teaplus', testDatabaseUrl: null, testConfirmFlag: null,
       }),
       /target host .* is not allowlisted/,
     );
     assert.throws(
       () => validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
-        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'other_db',
+        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'other_db', testDatabaseUrl: null, testConfirmFlag: null,
       }),
       /target database .* is not allowlisted/,
     );
     assert.throws(
       () => validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
-        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'teaplus', testDatabaseUrl: 'postgresql://test/db',
+        env: 'production', mode: 'production', confirmFlag: '1', allowedHosts: 'prod.db.example', allowedDatabases: 'teaplus', testDatabaseUrl: 'postgresql://test/db', testConfirmFlag: null,
       }),
       /test migration variables must not be present/,
     );
