@@ -425,5 +425,39 @@ test('0025 restores only approved industry roots and disables the legacy categor
   assert.doesNotMatch(sql, /INSERT\s+INTO\s+category_payment_profiles\b/i);
 });
 
+test('P1 phase 0026 is additive, preserves legacy payment compatibility, and fail-closes ambiguous backfill', async () => {
+  const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0026_payment_attempts_additive.sql');
+  const verifyPath = path.join(testDir, '..', 'database', 'postgres', 'verification', '0026_payment_attempts_readonly_verify.sql');
+  const sql = await readFile(migrationPath, 'utf8');
+  const verifySql = await readFile(verifyPath, 'utf8');
+
+  for (const fragment of [
+    'CREATE TABLE IF NOT EXISTS payment_attempts',
+    "target_type IN ('order', 'checkout_group')",
+    'payment_profile_code VARCHAR(50) NOT NULL',
+    "status IN ('creating', 'active', 'expired', 'superseded', 'paid', 'failed')",
+    'ADD COLUMN IF NOT EXISTS current_payment_attempt_id BIGINT',
+    'ADD COLUMN IF NOT EXISTS payment_attempt_id BIGINT',
+    'ADD COLUMN IF NOT EXISTS provider_payment_identity VARCHAR(255)',
+    'idx_payment_attempts_provider_order_code',
+    'idx_payment_events_provider_profile_identity',
+    "grouped child order has direct PayOS artifacts",
+    "legacy PayOS artifact has no resolvable payment profile snapshot",
+    "same-profile legacy provider identity collision",
+    'NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id = o.id)',
+    'NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.checkout_group_id = cg.id)',
+  ]) {
+    assert.ok(sql.includes(fragment), `missing 0026 payment-attempts contract: ${fragment}`);
+  }
+
+  assert.doesNotMatch(sql, /DROP\s+(?:INDEX|CONSTRAINT|TABLE|COLUMN)\b/i);
+  assert.doesNotMatch(sql, /ALTER\s+TABLE\s+(?:orders|checkout_groups|payment_events)\s+.*?DROP\b/is);
+  assert.doesNotMatch(sql, /CREATE\s+UNIQUE\s+INDEX/i);
+  assert.doesNotMatch(sql, /INSERT\s+INTO\s+payment_profiles[\s\S]*?LEGACY_UNKNOWN/i);
+  assert.doesNotMatch(sql, /UPDATE\s+(?:orders|checkout_groups)\s+.*?(?:payment_link_id|payos_order_code|payment_checkout_url|payment_qr_code)\s*=/is);
+  assert.match(verifySql, /^\s*(?:--[^\n]*\n|\s|WITH\s+|SELECT\s+)+/i);
+  assert.doesNotMatch(verifySql, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|GRANT|REVOKE)\b/i);
+});
+
 
 
