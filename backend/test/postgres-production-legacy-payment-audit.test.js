@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  aggregateLegacyClassificationRows,
   parseProductionLegacyAuditArgs,
   runProductionLegacyPaymentArtifactAudit,
 } from '../database/postgres/audit-production-legacy-payment-artifacts.js';
@@ -19,14 +20,24 @@ const approvedEnvironment = Object.freeze({
   POSTGRES_INTEGRATION: null,
 });
 
-function createFakePool({ lock = true, report = { summary: { unique_blocked_targets: 1 } } } = {}) {
+function canonicalRow(id, classification = 'ACTIVE_PAYMENT_REQUIRES_REPAIR') {
+  return {
+    target_kind: 'direct_order', target_id: id, payment_status: 'unpaid', lifecycle_status: null,
+    has_payos_order_code: true, has_payment_link_id: true, has_checkout_url: true, has_qr_code: true, has_expires_at: true,
+    missing_profile_snapshot: classification !== 'SAFE_TO_SKIP_HISTORY', ambiguous_shape_or_status: classification === 'AMBIGUOUS_BLOCK',
+    reconciliation_needed: classification === 'ACTIVE_PAYMENT_REQUIRES_REPAIR', classification,
+    deterministic_evidence_source: 'NONE_OR_MULTIPLE_PROFILES',
+  };
+}
+
+function createFakePool({ lock = true, rows = [canonicalRow(1)] } = {}) {
   const calls = [];
   let connectCalls = 0;
   const client = {
     async query(sql) {
       calls.push(sql);
       if (sql.includes('pg_try_advisory_lock')) return { rows: [{ acquired: lock }] };
-      if (sql.includes('WITH latest_order_lifecycle AS')) return { rows: [{ report }] };
+      if (sql.includes('P1 / 0026 canonical legacy blocker classification')) return { rows };
       return { rows: [] };
     },
     release() {},
@@ -66,11 +77,8 @@ describe('production legacy payment artifact audit', () => {
   });
 
   it('uses guarded scoped Pool config and emits only aggregate report data', async () => {
-    const report = {
-      summary: { unique_blocked_targets: 290, reconciliation_needed_count: 4 },
-      breakdown: [{ target_kind: 'direct_order', target_count: 1 }],
-    };
-    const fake = createFakePool({ report });
+    const rows = [canonicalRow(1), canonicalRow(2, 'AMBIGUOUS_BLOCK')];
+    const fake = createFakePool({ rows });
     const captured = captureLogger();
     let receivedConfig = null;
 
@@ -85,7 +93,8 @@ describe('production legacy payment artifact audit', () => {
       logger: captured.logger,
     });
 
-    assert.deepEqual(result.report, report);
+    assert.equal(result.report.summary.unique_blocked_targets, 2);
+    assert.equal(result.report.summary.reconciliation_needed_count, 1);
     assert.equal(receivedConfig.connectionString, approvedEnvironment.PRODUCTION_DATABASE_URL);
     assert.deepEqual(receivedConfig.ssl, { rejectUnauthorized: false });
     assert.equal(fake.calls.some((sql) => /\b(?:BEGIN|INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql)), false);
@@ -106,5 +115,17 @@ describe('production legacy payment artifact audit', () => {
     assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
     assert.doesNotMatch(sql, /\b(?:categories|category_payment_profiles|root_category_id)\b/i);
     assert.doesNotMatch(sql, /\b(?:order_code|group_code|customer_name|customer_phone|payment_checkout_url\s+AS|payment_qr_code\s+AS|receiver_account_number\s+AS)\b/i);
+  });
+
+  it('derives aggregates from the one canonical classifier, including the 100 active and 27 ambiguous regression fixture', () => {
+    const rows = [
+      ...Array.from({ length: 100 }, (_, index) => canonicalRow(index + 1)),
+      ...Array.from({ length: 27 }, (_, index) => canonicalRow(index + 200, 'AMBIGUOUS_BLOCK')),
+      ...Array.from({ length: 47 }, (_, index) => canonicalRow(index + 300, 'SAFE_TO_SKIP_HISTORY')),
+    ];
+    const report = aggregateLegacyClassificationRows(rows);
+    assert.equal(report.summary.unique_blocked_targets, 174);
+    assert.equal(report.summary.reconciliation_needed_count, 100);
+    assert.equal(report.classification_counts.find((row) => row.classification === 'AMBIGUOUS_BLOCK').target_count, 27);
   });
 });

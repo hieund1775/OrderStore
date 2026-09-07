@@ -7,9 +7,10 @@ import {
 } from '../../config/postgres-production-migration-guard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CANDIDATES_FILE = '0026_provider_resolution_candidates_readonly.sql';
+const CLASSIFICATION_FILE = '0026_payment_attempts_legacy_blocker_audit_readonly.sql';
 const HISTORY_FILE = '0026_ambiguous_legacy_history_audit_readonly.sql';
 const DEFAULT_LOOKUP_TIMEOUT_MS = 10_000;
+const SCOPED_PAYOS_KEY = /^PAYOS_PROFILE_([A-Z0-9_]+)_(CLIENT_ID|API_KEY|CHECKSUM_KEY)$/;
 
 function sanitizeErrorMessage(error) {
   return String(error?.message || error || 'Unknown provider-resolution audit error')
@@ -31,63 +32,75 @@ function safePositiveInteger(value, label) {
 export function parseProductionProviderResolutionAuditArgs(args = []) {
   let audit = null;
   let maxProviderLookups = null;
+  let payosEnvFile = null;
   for (const argument of args) {
     if (argument === '--audit=0026-provider-resolution') {
       audit = '0026-provider-resolution';
     } else if (argument.startsWith('--max-provider-lookups=')) {
       maxProviderLookups = safePositiveInteger(argument.slice('--max-provider-lookups='.length), '--max-provider-lookups');
+    } else if (argument.startsWith('--payos-env-file=')) {
+      payosEnvFile = argument.slice('--payos-env-file='.length);
     } else {
       throw new Error(`PRODUCTION PROVIDER AUDIT: unsupported argument "${argument}".`);
     }
   }
-  if (!audit || maxProviderLookups == null) {
-    throw new Error('PRODUCTION PROVIDER AUDIT: --audit=0026-provider-resolution and --max-provider-lookups=<positive integer> are required.');
+  if (!audit || maxProviderLookups == null || !payosEnvFile) {
+    throw new Error('PRODUCTION PROVIDER AUDIT: --audit=0026-provider-resolution, --max-provider-lookups=<positive integer>, and --payos-env-file=<absolute-path> are required.');
   }
-  return { audit, maxProviderLookups };
+  if (!path.isAbsolute(payosEnvFile)) {
+    throw new Error('PRODUCTION PROVIDER AUDIT: --payos-env-file must be an absolute path.');
+  }
+  return { audit, maxProviderLookups, payosEnvFile };
 }
 
 export async function readProviderResolutionAuditSql() {
-  const [candidatesSql, historySql] = await Promise.all([
-    fs.readFile(path.join(__dirname, 'verification', CANDIDATES_FILE), 'utf8'),
+  const [classificationSql, historySql] = await Promise.all([
+    fs.readFile(path.join(__dirname, 'verification', CLASSIFICATION_FILE), 'utf8'),
     fs.readFile(path.join(__dirname, 'verification', HISTORY_FILE), 'utf8'),
   ]);
-  return { candidatesSql, historySql };
+  return { classificationSql, historySql };
 }
 
-function generateProfileEnvPrefix(code) {
-  const normalized = String(code || '').toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
-  return `PAYOS_PROFILE_${normalized}`;
-}
-
-function credentialsFromSnapshot(env, profileCode) {
-  const normalizedCode = String(profileCode || '').toUpperCase().trim();
-  const prefix = generateProfileEnvPrefix(normalizedCode);
-  const scoped = {
-    clientId: env[`${prefix}_CLIENT_ID`]?.trim(),
-    apiKey: env[`${prefix}_API_KEY`]?.trim(),
-    checksumKey: env[`${prefix}_CHECKSUM_KEY`]?.trim(),
-  };
-  if (scoped.clientId && scoped.apiKey && scoped.checksumKey) return scoped;
-
-  // Preserve the legacy runtime compatibility only for historical system
-  // profiles. Each code remains a separate candidate in the audit.
-  if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
-    const legacy = {
-      clientId: env.PAYOS_CLIENT_ID?.trim(),
-      apiKey: env.PAYOS_API_KEY?.trim(),
-      checksumKey: env.PAYOS_CHECKSUM_KEY?.trim(),
-    };
-    if (legacy.clientId && legacy.apiKey && legacy.checksumKey) return legacy;
+export function extractScopedPayOSCredentials(parsedEnv = {}) {
+  const byCode = new Map();
+  for (const [key, rawValue] of Object.entries(parsedEnv)) {
+    const match = SCOPED_PAYOS_KEY.exec(key);
+    if (!match || typeof rawValue !== 'string' || !rawValue.trim()) continue;
+    const [, code, part] = match;
+    const credentials = byCode.get(code) || {};
+    credentials[part] = rawValue.trim();
+    byCode.set(code, credentials);
   }
-  return null;
+  const resolved = new Map();
+  for (const [code, credentials] of byCode) {
+    if (credentials.CLIENT_ID && credentials.API_KEY && credentials.CHECKSUM_KEY) {
+      resolved.set(code, {
+        clientId: credentials.CLIENT_ID,
+        apiKey: credentials.API_KEY,
+        checksumKey: credentials.CHECKSUM_KEY,
+      });
+    }
+  }
+  return resolved;
 }
 
-export function createSnapshotPayOSResolver({ env, PayOS }) {
+export async function readScopedPayOSCredentialsFile(filePath, { parseEnv, readFile = fs.readFile } = {}) {
+  if (!path.isAbsolute(filePath)) {
+    throw new Error('PRODUCTION PROVIDER AUDIT: --payos-env-file must be an absolute path.');
+  }
+  if (typeof parseEnv !== 'function') {
+    throw new Error('PRODUCTION PROVIDER AUDIT: explicit PayOS ENV parser is unavailable.');
+  }
+  const content = await readFile(filePath, 'utf8');
+  return extractScopedPayOSCredentials(parseEnv(content));
+}
+
+export function createSnapshotPayOSResolver({ credentialsByProfile, PayOS }) {
   const instances = new Map();
   return (profileCode) => {
     const normalizedCode = String(profileCode || '').toUpperCase().trim();
     if (instances.has(normalizedCode)) return instances.get(normalizedCode);
-    const credentials = credentialsFromSnapshot(env, normalizedCode);
+    const credentials = credentialsByProfile.get(normalizedCode);
     if (!credentials) return null;
     const instance = new PayOS(credentials);
     instances.set(normalizedCode, instance);
@@ -98,15 +111,17 @@ export function createSnapshotPayOSResolver({ env, PayOS }) {
 async function loadProductionRuntimeModules() {
   // These imports are intentionally delayed until the production guard has
   // accepted the explicit shell environment. Some runtime modules load dotenv.
-  const [pgModule, dbModule, payOSModule] = await Promise.all([
+  const [pgModule, dbModule, payOSModule, dotenvModule] = await Promise.all([
     import('pg'),
     import('../../config/db-postgres.js'),
     import('@payos/node'),
+    import('dotenv'),
   ]);
   return {
     Pool: pgModule.default.Pool,
     getPostgresPoolConfig: dbModule.getPostgresPoolConfig,
     PayOS: payOSModule.PayOS,
+    parseDotenv: dotenvModule.parse || dotenvModule.default?.parse,
   };
 }
 
@@ -261,7 +276,7 @@ export async function runProductionProviderResolutionAudit({
   pool = null,
   createPool = null,
   lookupTransaction = null,
-  isProfileConfigured = null,
+  readPayOSCredentialFile = readScopedPayOSCredentialsFile,
   loadRuntimeModules = loadProductionRuntimeModules,
   logger = console,
 } = {}) {
@@ -287,8 +302,11 @@ export async function runProductionProviderResolutionAudit({
     logger.log(`[Production Provider Audit] Target: ${describeProductionMigrationTarget(target)}`);
     logger.log('[Production Provider Audit] Guard passed.');
     const runtime = await loadRuntimeModules();
-    const getPayOSForProfile = createSnapshotPayOSResolver({ env: shellEnv, PayOS: runtime.PayOS });
-    const profileConfigured = isProfileConfigured || ((profileCode) => Boolean(credentialsFromSnapshot(shellEnv, profileCode)));
+    // The explicit file is parsed only after the guard. Its parser returns an
+    // object and this audit whitelists scoped PayOS keys without writing them
+    // into process.env. The shell environment remains the sole DB authority.
+    const credentialsByProfile = await readPayOSCredentialFile(options.payosEnvFile, { parseEnv: runtime.parseDotenv });
+    const getPayOSForProfile = createSnapshotPayOSResolver({ credentialsByProfile, PayOS: runtime.PayOS });
     const lookupProvider = lookupTransaction || ((params) => lookupPayOSTransactionForAudit({ ...params, getPayOSForProfile }));
     const makePool = createPool || ((config) => new runtime.Pool(config));
     // Explicit URL plus the pre-import shell snapshot prevents DATABASE_URL or
@@ -296,13 +314,23 @@ export async function runProductionProviderResolutionAudit({
     // this audit anywhere other than the guarded production target.
     activePool = pool || makePool(runtime.getPostgresPoolConfig(shellEnv.PRODUCTION_DATABASE_URL, { env: shellEnv }));
     client = await activePool.connect();
-    const { candidatesSql, historySql } = await readProviderResolutionAuditSql();
+    const { classificationSql, historySql } = await readProviderResolutionAuditSql();
     const [candidateResult, profileResult] = await Promise.all([
-      client.query(candidatesSql),
+      client.query(classificationSql),
       client.query('SELECT code FROM payment_profiles ORDER BY code ASC'),
     ]);
-    const candidates = candidateResult.rows || [];
-    const profiles = (profileResult.rows || []).map((row) => String(row.code)).filter((code) => profileConfigured(code));
+    const canonicalRows = candidateResult.rows || [];
+    const candidates = canonicalRows.filter((row) => row.classification === 'ACTIVE_PAYMENT_REQUIRES_REPAIR');
+    const ambiguousTargets = canonicalRows.filter((row) => row.classification === 'AMBIGUOUS_BLOCK');
+    const profiles = (profileResult.rows || [])
+      .map((row) => String(row.code).toUpperCase().trim())
+      .filter((code) => credentialsByProfile.has(code));
+    const canonicalCounts = {
+      blocked_targets: canonicalRows.length,
+      active_payment_requires_repair: candidates.length,
+      ambiguous_block: ambiguousTargets.length,
+    };
+    logger.log(`[Production Provider Audit] Configured profiles: ${JSON.stringify({ configured_profile_codes: profiles, configured_profile_count: profiles.length })}`);
     const resolutions = [];
     let checkedPairs = 0;
     let uncheckedPairsDueToLimit = 0;
@@ -341,8 +369,16 @@ export async function runProductionProviderResolutionAudit({
       }
     }
 
-    const historyResult = await client.query(historySql);
+    const historyInput = ambiguousTargets.map((target) => ({
+      target_kind: target.target_kind,
+      target_id: target.target_id,
+      provider_order_code: target.provider_order_code,
+      expected_payment_link_id: target.expected_payment_link_id,
+      transaction_id: target.transaction_id,
+    }));
+    const historyResult = await client.query(historySql, [JSON.stringify(historyInput)]);
     const report = {
+      canonical_classification: canonicalCounts,
       provider_resolution: buildAggregateReport({
         candidates,
         profileCount: profiles.length,
@@ -354,6 +390,13 @@ export async function runProductionProviderResolutionAudit({
     };
     if (!report.ambiguous_legacy_history || typeof report.ambiguous_legacy_history !== 'object') {
       throw new Error('PRODUCTION PROVIDER AUDIT: ambiguous legacy-history report was empty.');
+    }
+    const historyCount = Number(report.ambiguous_legacy_history?.summary?.ambiguous_block_targets);
+    if (report.provider_resolution.candidate_targets !== canonicalCounts.active_payment_requires_repair
+      || historyInput.length !== canonicalCounts.ambiguous_block
+      || !Number.isSafeInteger(historyCount)
+      || historyCount !== canonicalCounts.ambiguous_block) {
+      throw new Error('PRODUCTION PROVIDER AUDIT: canonical classification count mismatch; provider resolution is fail-closed.');
     }
     logger.log(`[Production Provider Audit] Report: ${JSON.stringify(report)}`);
     logger.log('[Production Provider Audit] COMPLETE: DB and provider reads only; no changes applied.');
