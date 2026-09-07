@@ -107,6 +107,7 @@ export async function createPaymentLinkForOrder({
   orderCode,
   total,
   payosOrderCode: reservedPayosOrderCode,
+  attemptExpiresAt = null,
   returnUrl,
   cancelUrl,
   description,
@@ -129,7 +130,10 @@ export async function createPaymentLinkForOrder({
     throw new Error('Mã đơn PayOS không hợp lệ');
   }
   const timeoutMinutes = parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10);
-  const expiredAtSec = Math.floor(Date.now() / 1000) + timeoutMinutes * 60;
+  const requestedExpiry = attemptExpiresAt ? new Date(attemptExpiresAt) : null;
+  const expiredAtSec = requestedExpiry && Number.isFinite(requestedExpiry.getTime())
+    ? Math.floor(requestedExpiry.getTime() / 1000)
+    : Math.floor(Date.now() / 1000) + timeoutMinutes * 60;
   const paymentExpiresAt = new Date(expiredAtSec * 1000);
 
   const desc = (description || `Don ${orderCode}`).slice(0, 25);
@@ -202,5 +206,34 @@ export async function getPaymentLinkInformation(orderCode, paymentLinkId = null,
   } catch (err) {
     console.warn(`[PayOS Active Recon] Không thể lấy thông tin link ${orderCode}:`, err.message);
     return null;
+  }
+}
+
+function isConclusiveNotFound(error) {
+  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
+  return status === 404 || error?.code === 'NOT_FOUND' || error?.code === 'PAYMENT_LINK_NOT_FOUND';
+}
+
+/**
+ * Recovery lookup for a reserved payment attempt. Unlike the legacy helper,
+ * it distinguishes a confirmed missing link from an ambiguous provider error.
+ */
+export async function lookupPaymentLinkForRecovery(orderCode, profileCode = null) {
+  const instance = getPayOS(profileCode);
+  if (!instance) return { kind: 'unknown', reason: 'PROFILE_NOT_CONFIGURED' };
+
+  try {
+    let payment;
+    if (typeof instance.paymentRequests?.get === 'function') {
+      payment = await instance.paymentRequests.get(String(orderCode));
+    } else if (typeof instance.getPaymentLinkInformation === 'function') {
+      payment = await instance.getPaymentLinkInformation(Number(orderCode));
+    } else {
+      return { kind: 'unknown', reason: 'LOOKUP_UNSUPPORTED' };
+    }
+    return payment ? { kind: 'found', payment } : { kind: 'unknown', reason: 'EMPTY_RESPONSE' };
+  } catch (error) {
+    if (isConclusiveNotFound(error)) return { kind: 'not_found' };
+    return { kind: 'unknown', reason: 'LOOKUP_UNCERTAIN' };
   }
 }

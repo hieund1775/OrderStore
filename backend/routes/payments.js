@@ -5,6 +5,7 @@ import { verifyWebhookData } from '../services/payos.js';
 import { reconcilePayOSOrder } from '../services/payos-reconciliation.js';
 import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
+import directPayOSAttemptService from '../services/direct-payos-attempt.js';
 import { noCache } from '../middleware/no-cache.js';
 
 const router = Router();
@@ -226,7 +227,7 @@ router.post('/payos/regenerate-qr', async (req, res) => {
       });
     }
 
-    const updatedOrder = await paymentsRepository.renewPayOSOrderLink({
+    const updatedOrder = await directPayOSAttemptService.regenerateForCustomer({
       orderCode: order_code.trim(),
       userId,
       cancelToken: rawCancelToken,

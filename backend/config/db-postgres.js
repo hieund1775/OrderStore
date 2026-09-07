@@ -65,6 +65,33 @@ export function getPool(customUrl = null) {
 }
 
 /**
+ * Serializes a short external-provider operation across every backend instance
+ * without holding a database transaction open. The connection is dedicated to
+ * this session-level advisory lock and is always released in finally.
+ */
+export async function withDedicatedAdvisoryLock(lockKey, callback) {
+  if (mockAdapter) return callback({ acquired: true });
+  const client = await getPool().connect();
+  let acquired = false;
+  try {
+    const result = await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [String(lockKey)]);
+    acquired = result.rows[0]?.locked === true;
+    if (!acquired) return { acquired: false };
+    return callback({ acquired: true });
+  } finally {
+    if (acquired) {
+      try {
+        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [String(lockKey)]);
+      } finally {
+        client.release();
+      }
+    } else {
+      client.release();
+    }
+  }
+}
+
+/**
  * PostgreSQL Database Adapter implementing [rows, affectedCount] contract
  */
 export const postgresDb = {

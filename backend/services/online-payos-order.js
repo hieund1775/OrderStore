@@ -1,13 +1,8 @@
 import crypto from 'node:crypto';
 import ordersRepository from '../repositories/postgres/orders.js';
-import paymentsRepository from '../repositories/postgres/payments.js';
-import { createPaymentLinkForOrder } from './payos.js';
 import { hashOrderRequest } from './order-idempotency.js';
 import config from '../config/env.js';
-
-function makePayOSCode(orderId) {
-  return Number(`${String(Date.now()).slice(-6)}${String(Number(orderId) % 10000).padStart(4, '0')}`);
-}
+import directPayOSAttemptService from './direct-payos-attempt.js';
 
 export function appendOrderCodeToUrl(baseUrlString, code) {
   if (!baseUrlString || typeof baseUrlString !== 'string') return null;
@@ -72,55 +67,20 @@ export async function createOnlinePayOSOrder({
     rootCategoryId,
     paymentProfile,
   });
-  const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
-  const reserved = await paymentsRepository.reservePayOSOrder({
-    orderId: order.id,
-    payosOrderCode: makePayOSCode(order.id),
-    paymentExpiresAt: expiresAt,
-  });
-  if (!reserved) throw new Error('Không thể khởi tạo thanh toán PayOS');
-  if (reserved.payment_link_id) {
-    if (!reserved.payment_checkout_url && !reserved.payment_qr_code) {
-      const error = new Error('PayOS đã có liên kết nhưng thiếu mã QR thanh toán, vui lòng thử lại');
-      error.status = 502;
-      throw error;
-    }
-    return {
-      ...order,
-      checkout_url: reserved.payment_checkout_url,
-      qr_code: reserved.payment_qr_code,
-      payment_link_id: reserved.payment_link_id,
-      payos_order_code: reserved.payos_order_code,
-      payment_expires_at: reserved.payment_expires_at,
-    };
-  }
-
   const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, order.order_code);
   const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, order.order_code);
-
-  const link = await createPaymentLinkForOrder({
-    orderId: order.id,
-    orderCode: order.order_code,
-    total: order.total,
-    payosOrderCode: reserved.payos_order_code,
-    paymentExpiresAt: reserved.payment_expires_at,
+  const payment = await directPayOSAttemptService.createForOrder({
+    order,
+    paymentProfile,
     returnUrl: effectiveReturnUrl,
     cancelUrl: effectiveCancelUrl,
-    paymentProfileCode: paymentProfile?.code || null,
   });
-  if (!link.checkoutUrl && !link.qrCode) {
-    const error = new Error('PayOS không trả về mã QR thanh toán');
-    error.status = 502;
-    throw error;
-  }
-  const payment = await paymentsRepository.attachPaymentLink({
-    orderId: order.id, paymentLinkId: link.paymentLinkId, payosOrderCode: reserved.payos_order_code,
-    paymentExpiresAt: reserved.payment_expires_at, checkoutUrl: link.checkoutUrl, qrCode: link.qrCode,
-  });
-  if (!payment) {
-    const error = new Error('Không thể lưu liên kết thanh toán PayOS');
-    error.status = 502;
-    throw error;
-  }
-  return { ...order, checkout_url: link.checkoutUrl, qr_code: link.qrCode, payment_link_id: payment.payment_link_id, payos_order_code: payment.payos_order_code, payment_expires_at: payment.payment_expires_at };
+  return {
+    ...order,
+    checkout_url: payment.payment_checkout_url,
+    qr_code: payment.payment_qr_code,
+    payment_link_id: payment.payment_link_id,
+    payos_order_code: payment.payos_order_code,
+    payment_expires_at: payment.payment_expires_at,
+  };
 }
