@@ -9,7 +9,7 @@ import {
 import { createPaymentProfilesRepository, maskAccountNumber, generateEnvPrefix } from '../repositories/postgres/payment-profiles.js';
 import { createCheckoutGroupsRepository, verifyGroupOwnership, generateGroupCode } from '../repositories/postgres/checkout-groups.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
-import { isPayOSConfigured, setPayOSForTest } from '../services/payos.js';
+import { isPayOSConfigured } from '../services/payos.js';
 
 describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Round 4)', () => {
 
@@ -407,6 +407,20 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
       },
     };
 
+    const createGroupPayOSAttempt = async () => {
+      throw new Error('PayOS gateway temporary outage 503');
+    };
+    const regenerateGroupPayOSAttempt = async () => {
+      renewCallCount++;
+      return {
+        payment_checkout_url: 'https://payos.vn/gate/222',
+        payment_qr_code: 'qr_222',
+        payment_link_id: 'link_222',
+        payos_order_code: 999222,
+        payment_expires_at: new Date(),
+      };
+    };
+
     const mockPromotionsRepo = {
       async validateForOrder() {
         return null;
@@ -428,6 +442,8 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     const service = createCustomerOrderService({
       repository: mockOrdersRepo,
       checkoutGroupsRepo: mockCheckoutGroupsRepo,
+      createGroupPayOSAttempt,
+      regenerateGroupPayOSAttempt,
       promotionsRepo: mockPromotionsRepo,
       resolvePaymentProfile: mockResolvePaymentProfile,
       checkPayOSConfigured: () => true,
@@ -449,14 +465,6 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     };
 
     // 1. Initial attempt fails during PayOS link creation
-    setPayOSForTest({
-      paymentRequests: {
-        create: async () => {
-          throw new Error('PayOS gateway temporary outage 503');
-        },
-      },
-    });
-
     await assert.rejects(
       async () => {
         await service.create(requestPayload);
@@ -468,30 +476,16 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
     assert.equal(groupCreateCount, 1);
 
     // 2. Retry with SAME idempotency key when PayOS is healthy
-    setPayOSForTest({
-      paymentRequests: {
-        create: async () => ({
-          checkoutUrl: 'https://payos.vn/gate/222',
-          qrCode: 'qr_222',
-          paymentLinkId: 'link_222',
-        }),
-      },
-    });
+    const retryResult = await service.create(requestPayload);
+    assert.equal(retryResult.replay, true);
+    assert.equal(retryResult.group_code, 'GRP_FAIL_RETRY_1');
+    assert.equal(retryResult.checkout_url, 'https://payos.vn/gate/222');
+    assert.equal(retryResult.qr_code, 'qr_222');
 
-    try {
-      const retryResult = await service.create(requestPayload);
-      assert.equal(retryResult.replay, true);
-      assert.equal(retryResult.group_code, 'GRP_FAIL_RETRY_1');
-      assert.equal(retryResult.checkout_url, 'https://payos.vn/gate/222');
-      assert.equal(retryResult.qr_code, 'qr_222');
-
-      // Assert NO duplicate child orders or groups were created on retry
-      assert.equal(orderCreateCount, 2);
-      assert.equal(groupCreateCount, 1);
-      assert.equal(renewCallCount, 1);
-    } finally {
-      setPayOSForTest(null);
-    }
+    // Assert NO duplicate child orders or groups were created on retry
+    assert.equal(orderCreateCount, 2);
+    assert.equal(groupCreateCount, 1);
+    assert.equal(renewCallCount, 1);
   });
 
   describe('Gate 9: Customer Industry Payment Summary Contract', () => {

@@ -6,6 +6,7 @@ import { reconcilePayOSOrder } from '../services/payos-reconciliation.js';
 import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 import directPayOSAttemptService from '../services/direct-payos-attempt.js';
+import groupedPayOSAttemptService from '../services/grouped-payos-attempt.js';
 import { noCache } from '../middleware/no-cache.js';
 
 const router = Router();
@@ -208,7 +209,7 @@ router.post('/payos/regenerate-qr', async (req, res) => {
     const rawCancelToken = (req.headers['x-cancel-token'] || cancel_token || '').trim() || null;
 
     if (order_code.startsWith('GRP')) {
-      const updatedGroup = await checkoutGroupsRepository.renewGroupPayOSLink({
+      const updatedGroup = await groupedPayOSAttemptService.regenerateForCustomer({
         groupCode: order_code.trim(),
         userId,
         cancelToken: rawCancelToken,

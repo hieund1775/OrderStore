@@ -59,7 +59,8 @@ async function createPost0025RepositoryFixture(client, schema) {
     INSERT INTO payment_profiles (code) VALUES ('DIRECT_A'), ('GROUP_CHECKOUT');
     INSERT INTO checkout_groups (id, total_amount, payment_status, payment_profile_code, payment_profile_version)
     VALUES (10, 50000, 'unpaid', 'GROUP_CHECKOUT', 1),
-           (11, 51000, 'cancelled', 'GROUP_CHECKOUT', 1);
+           (11, 51000, 'cancelled', 'GROUP_CHECKOUT', 1),
+           (12, 52000, 'unpaid', 'GROUP_CHECKOUT', 1);
     INSERT INTO orders (id, total, checkout_group_id, payment_provider, payment_status, current_status, payment_profile_code, payment_profile_version)
     VALUES (1, 10000, NULL, 'payos', 'unpaid', 'Chờ xác nhận', 'DIRECT_A', 1),
            (2, 20000, 10, 'payos', 'unpaid', 'Chờ xác nhận', 'DIRECT_A', 1),
@@ -170,6 +171,39 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
       await repo.activateAttempt({ attemptId: grouped.id, providerOrderCode: groupedProviderCode, paymentLinkId: 'link-group', checkoutUrl: 'https://payos.test/group', qrCode: 'qr-group', expiresAt: expiry });
       const { rows: [groupMirror] } = await client.query('SELECT current_payment_attempt_id, payment_link_id, payos_order_code FROM checkout_groups WHERE id = 10');
       assert.deepEqual(groupMirror, { current_payment_attempt_id: String(grouped.id), payment_link_id: 'link-group', payos_order_code: String(groupedProviderCode) });
+
+      const groupedReplacement = await repo.createCreatingAttempt({ checkoutGroupId: 10, paymentProfileCode: 'GROUP_CHECKOUT', amount: 50000, providerOrderCode: providerCodeBase + 12, expiresAt: expiry });
+      const { rows: [groupBeforePromotion] } = await client.query(`
+        SELECT cg.current_payment_attempt_id, cg.payment_link_id,
+               old_attempt.status AS old_status, replacement.status AS replacement_status
+        FROM checkout_groups cg
+        JOIN payment_attempts old_attempt ON old_attempt.id = $1
+        JOIN payment_attempts replacement ON replacement.id = $2
+        WHERE cg.id = 10
+      `, [grouped.id, groupedReplacement.id]);
+      assert.deepEqual(groupBeforePromotion, {
+        current_payment_attempt_id: String(grouped.id), payment_link_id: 'link-group',
+        old_status: 'active', replacement_status: 'creating',
+      });
+      await repo.activateAttempt({ attemptId: groupedReplacement.id, providerOrderCode: providerCodeBase + 12, paymentLinkId: 'link-group-replacement', checkoutUrl: 'https://payos.test/group-replacement', qrCode: 'qr-group-replacement', expiresAt: expiry });
+      const { rows: [groupAfterPromotion] } = await client.query(`
+        SELECT cg.current_payment_attempt_id, cg.payment_link_id,
+               old_attempt.status AS old_status, replacement.status AS replacement_status
+        FROM checkout_groups cg
+        JOIN payment_attempts old_attempt ON old_attempt.id = $1
+        JOIN payment_attempts replacement ON replacement.id = $2
+        WHERE cg.id = 10
+      `, [grouped.id, groupedReplacement.id]);
+      assert.deepEqual(groupAfterPromotion, {
+        current_payment_attempt_id: String(groupedReplacement.id), payment_link_id: 'link-group-replacement',
+        old_status: 'superseded', replacement_status: 'active',
+      });
+
+      const groupRace = await repo.createCreatingAttempt({ checkoutGroupId: 12, paymentProfileCode: 'GROUP_CHECKOUT', amount: 52000, providerOrderCode: providerCodeBase + 13, expiresAt: expiry });
+      await client.query("UPDATE checkout_groups SET payment_status = 'paid' WHERE id = 12");
+      const lateGroupActivation = await repo.activateAttempt({ attemptId: groupRace.id, providerOrderCode: providerCodeBase + 13, paymentLinkId: 'link-group-race', checkoutUrl: 'https://payos.test/group-race', qrCode: 'qr-group-race', expiresAt: expiry });
+      assert.equal(lateGroupActivation.kind, 'target_closed');
+      assert.equal(lateGroupActivation.attempt.status, 'superseded');
 
       await assert.rejects(
         () => repo.createCreatingAttempt({ orderId: 2, paymentProfileCode: 'DIRECT_A', amount: 20000, providerOrderCode: providerCodeBase + 20, expiresAt: expiry }),

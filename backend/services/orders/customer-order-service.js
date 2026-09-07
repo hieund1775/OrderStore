@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { isPayOSConfigured, createPaymentLinkForOrder } from '../payos.js';
+import { isPayOSConfigured } from '../payos.js';
 import { validateOrderCreationInput, buildPublicLookupDto } from '../public-dto.js';
 import { evaluateOrderTransition } from '../order-transition-policy.js';
 import { buildPageInfo } from '../cursor-pagination.js';
@@ -8,6 +8,7 @@ import { hashOrderRequest, claimOrderIdempotency, completeOrderIdempotency } fro
 import { OrderDomainError } from './order-errors.js';
 import defaultOrdersRepository from '../../repositories/postgres/orders.js';
 import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder, appendOrderCodeToUrl } from '../online-payos-order.js';
+import groupedPayOSAttemptService from '../grouped-payos-attempt.js';
 import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
 import defaultCheckoutGroupsRepository from '../../repositories/postgres/checkout-groups.js';
 import defaultPromotionsRepository from '../../repositories/postgres/promotions.js';
@@ -22,10 +23,6 @@ import config from '../../config/env.js';
 let customResolvePaymentProfileForTest = null;
 export function setResolvePaymentProfileForTest(resolver = null) {
   customResolvePaymentProfileForTest = resolver;
-}
-
-function makePayOSCode(id) {
-  return Number(`${String(Date.now()).slice(-6)}${String(Number(id) % 10000).padStart(4, '0')}`);
 }
 
 function buildSafePayOSRedirectUrl(requestedUrl, fallbackUrl, orderCode) {
@@ -168,6 +165,8 @@ async function calculateDbLineSubtotal(items, tx) {
 export function createCustomerOrderService({
   repository = defaultOrdersRepository,
   createPayOSOrder = defaultCreateOnlinePayOSOrder,
+  createGroupPayOSAttempt = groupedPayOSAttemptService.createForGroup.bind(groupedPayOSAttemptService),
+  regenerateGroupPayOSAttempt = groupedPayOSAttemptService.regenerateForCustomer.bind(groupedPayOSAttemptService),
   checkPayOSConfigured = isPayOSConfigured,
   batchLoader = batchLoadPostgresOrderDetails,
   paymentsRepository = defaultPaymentsRepository,
@@ -383,16 +382,6 @@ export function createCustomerOrderService({
             allocations: groupAllocations,
           }, { tx });
 
-          let reserved = null;
-          if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
-            const expiresAt = new Date(Date.now() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
-            reserved = await checkoutGroupsRepo.reservePayOSCheckoutGroup({
-              groupId: createdGroup.id,
-              payosOrderCode: makePayOSCode(createdGroup.id),
-              paymentExpiresAt: expiresAt,
-            }, { tx });
-          }
-
           const paymentSummary = {
             is_grouped: true,
             group_code: createdGroup.group_code,
@@ -438,7 +427,6 @@ export function createCustomerOrderService({
             replay: false,
             group: createdGroup,
             childOrders: createdChildOrders,
-            reservedPayOS: reserved,
             baseResponse,
           };
         });
@@ -448,7 +436,7 @@ export function createCustomerOrderService({
           const replayResp = txnResult.response;
           if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
             if (!replayResp.checkout_url && replayResp.group_code) {
-              const refreshed = await checkoutGroupsRepo.renewGroupPayOSLink({
+              const refreshed = await regenerateGroupPayOSAttempt({
                 groupCode: replayResp.group_code,
                 userId,
                 cancelToken: rawCancelToken,
@@ -481,40 +469,26 @@ export function createCustomerOrderService({
           return { ...replayResp, replay: true };
         }
 
-        const { group, childOrders, reservedPayOS, baseResponse } = txnResult;
+        const { group, childOrders, baseResponse } = txnResult;
 
-        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR' && reservedPayOS) {
+        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
           const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
           const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
 
           try {
-            const link = await createPaymentLinkForOrder({
-              orderId: group.id,
-              orderCode: group.group_code,
-              total: group.total_amount,
-              payosOrderCode: reservedPayOS.payos_order_code,
-              paymentExpiresAt: reservedPayOS.payment_expires_at,
+            const payment = await createGroupPayOSAttempt({
+              group,
               returnUrl: effectiveReturnUrl,
               cancelUrl: effectiveCancelUrl,
-              paymentProfileCode: resolved.profile.code,
-            });
-
-            const attached = await checkoutGroupsRepo.attachPaymentLinkToGroup({
-              groupId: group.id,
-              paymentLinkId: link.paymentLinkId,
-              payosOrderCode: reservedPayOS.payos_order_code,
-              paymentExpiresAt: reservedPayOS.payment_expires_at,
-              checkoutUrl: link.checkoutUrl,
-              qrCode: link.qrCode,
             });
 
             const finalResponse = {
               ...baseResponse,
-              checkout_url: link.checkoutUrl,
-              qr_code: link.qrCode,
-              payment_link_id: attached?.payment_link_id || link.paymentLinkId,
-              payos_order_code: attached?.payos_order_code || reservedPayOS.payos_order_code,
-              payment_expires_at: attached?.payment_expires_at || reservedPayOS.payment_expires_at,
+              checkout_url: payment.payment_checkout_url,
+              qr_code: payment.payment_qr_code,
+              payment_link_id: payment.payment_link_id,
+              payos_order_code: payment.payos_order_code,
+              payment_expires_at: payment.payment_expires_at,
             };
 
             // Store complete response in idempotency record
