@@ -16,7 +16,11 @@ const MIGRATION_LOCK_SQL = "SELECT pg_advisory_lock(hashtext('teaplus_postgres_m
 const MIGRATION_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(hashtext('teaplus_postgres_migrations')) AS acquired";
 const MIGRATION_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))";
 export const PRODUCTION_MIGRATION_TARGET = '0024';
-export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(['0024', '0025']);
+export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(['0024', '0025', '0026', '0027']);
+const PRODUCTION_PREFLIGHT_FILES = Object.freeze({
+  '0026': '0026_payment_attempts_preflight_readonly.sql',
+  '0027': '0027_payment_attempts_preflight_readonly.sql',
+});
 
 function sanitizeErrorMessage(error) {
   return String(error?.message || error || 'Unknown migration error')
@@ -108,6 +112,10 @@ async function inspectProductionMigrationPlan(client, migrations, toVersion) {
     }
   }
 
+  if (toVersion === '0027' && !applied.has('0026')) {
+    throw new Error('PRODUCTION MIGRATION PREFLIGHT: target 0027 requires tracked migration 0026 with a verified checksum. Run a separately approved --to=0026 rollout first.');
+  }
+
   const pending = migrations.throughTarget.filter((migration) => !applied.has(migration.version));
   const pendingVersions = pending.map((migration) => migration.version);
   const allowedPlans = applied.has(toVersion) ? [[]] : [[toVersion]];
@@ -115,6 +123,22 @@ async function inspectProductionMigrationPlan(client, migrations, toVersion) {
     throw new Error(`PRODUCTION MIGRATION PREFLIGHT: expected only pending ${toVersion}; found ${pendingVersions.join(',') || 'none'}.`);
   }
   return { pending, pendingVersions, alreadyApplied: pending.length === 0 };
+}
+
+async function runProductionReadOnlyPreflight(client, toVersion) {
+  const filename = PRODUCTION_PREFLIGHT_FILES[toVersion];
+  if (!filename) return { filename: null, rows: [] };
+  const sql = await fs.readFile(path.join(__dirname, 'verification', filename), 'utf8');
+  const result = await client.query(sql);
+  const rows = result.rows || [];
+  if (rows.length === 0) {
+    throw new Error(`PRODUCTION MIGRATION PREFLIGHT: ${toVersion} read-only preflight returned no checks.`);
+  }
+  const blockers = rows.filter((row) => Number(row.issue_count) !== 0 || row.status !== 'PASS');
+  if (blockers.length) {
+    throw new Error(`PRODUCTION MIGRATION PREFLIGHT: ${toVersion} blocked by ${blockers.map((row) => `${row.check_name}:${row.issue_count}`).join(', ')}.`);
+  }
+  return { filename, rows };
 }
 
 async function applyMigrationPlan(client, pending, logger) {
@@ -186,14 +210,20 @@ export async function runProductionMigrationExecutor({
     logger.log(`[Production Migrator] Tracker/checksum status: verified through ${options.toVersion}.`);
     logger.log(`[Production Migrator] Pending migrations: ${plan.pendingVersions.join(',') || 'none'}.`);
     logger.log(`[Production Migrator] Plan confirmed: only ${options.toVersion} is ${plan.alreadyApplied ? 'already applied' : 'pending'}.`);
+    const preflight = plan.alreadyApplied
+      ? { filename: null, rows: [] }
+      : await runProductionReadOnlyPreflight(client, options.toVersion);
+    if (preflight.filename) {
+      logger.log(`[Production Migrator] ${options.toVersion} read-only preflight passed: all blockers are zero.`);
+    }
     if (options.dryRun) {
       logger.log('[Production Migrator] DRY RUN: no changes applied.');
-      return { ...options, target, ...plan, results: [] };
+      return { ...options, target, ...plan, preflight, results: [] };
     }
 
     const results = await applyMigrationPlan(client, plan.pending, logger);
     logger.log(`[Production Migrator] Apply completed; target ${options.toVersion} is ${plan.alreadyApplied ? 'already applied' : 'applied'}.`);
-    return { ...options, target, ...plan, results };
+    return { ...options, target, ...plan, preflight, results };
   } catch (error) {
     logger.error(`[Production Migrator] Failed: ${sanitizeErrorMessage(error)}`);
     throw error;

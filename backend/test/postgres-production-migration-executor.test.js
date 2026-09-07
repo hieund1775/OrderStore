@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import {
   describeProductionMigrationTarget,
   validatePostgresProductionMigrationGuard,
@@ -24,7 +27,7 @@ const approvedEnvironment = Object.freeze({
   POSTGRES_INTEGRATION: null,
 });
 
-function createFakePool({ appliedRows, tryLock = true, trackerExists = true } = {}) {
+function createFakePool({ appliedRows, tryLock = true, trackerExists = true, preflightRows = null } = {}) {
   let connectCalls = 0;
   const calls = [];
   const client = {
@@ -35,6 +38,7 @@ function createFakePool({ appliedRows, tryLock = true, trackerExists = true } = 
         return { rows: [{ relation_name: trackerExists ? 'schema_migrations' : null }] };
       }
       if (sql.includes('SELECT version, checksum FROM schema_migrations')) return { rows: appliedRows || [] };
+      if (sql.includes('WITH checks AS')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
       return { rows: [], rowCount: 0 };
     },
     release() {},
@@ -112,7 +116,13 @@ describe('PostgreSQL production migration guard', () => {
       apply: false, dryRun: true, toVersion: '0025',
     });
     assert.throws(() => parseProductionMigrationArgs(['--apply']), /--to=<numeric migration version> is required/);
-    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0026']), /supports only --to=0024, --to=0025/);
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0026']), {
+      apply: false, dryRun: true, toVersion: '0026',
+    });
+    assert.deepEqual(parseProductionMigrationArgs(['--apply', '--to=0027']), {
+      apply: true, dryRun: false, toVersion: '0027',
+    });
+    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0028']), /supports only --to=0024, --to=0025, --to=0026, --to=0027/);
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -191,6 +201,86 @@ describe('PostgreSQL production migration guard', () => {
     assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
     assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
     assert.match(captured.logs.join('\n'), /Plan confirmed: only 0025 is pending/);
+  });
+
+  it('plans only 0026 and runs its read-only legacy preflight before any apply', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0026' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0026')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0026'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+    });
+
+    assert.deepEqual(result.pendingVersions, ['0026']);
+    assert.equal(result.preflight.filename, '0026_payment_attempts_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.match(captured.logs.join('\n'), /0026 read-only preflight passed/);
+  });
+
+  it('fails closed when the 0026 read-only preflight reports a blocker', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0026' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0026')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({
+      appliedRows,
+      preflightRows: [{ check_name: 'duplicate_legacy_provider_order_identity', issue_count: '1', status: 'BLOCK' }],
+    });
+
+    await assert.rejects(
+      () => runProductionMigrationExecutor({
+        args: ['--apply', '--to=0026'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+      }),
+      /0026 blocked by duplicate_legacy_provider_order_identity:1/,
+    );
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+  });
+
+  it('keeps the 0026 production preflight SQL read-only', async () => {
+    const currentFile = fileURLToPath(import.meta.url);
+    const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0026_payment_attempts_preflight_readonly.sql'), 'utf8');
+    assert.match(preflight, /^\s*--[\s\S]*WITH checks AS/m);
+    assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
+  });
+
+  it('fails closed for 0027 before preflight or apply when 0026 is not tracked', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0027' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => !['0026', '0027'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    await assert.rejects(
+      () => runProductionMigrationExecutor({
+        args: ['--dry-run', '--to=0027'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+      }),
+      /target 0027 requires tracked migration 0026/,
+    );
+    assert.equal(fake.calls.some((call) => call.sql.includes('WITH checks AS')), false);
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+  });
+
+  it('plans only 0027 after a tracked/checksummed 0026 and gates it with the enforcement preflight', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0027' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0027')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0027'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+    });
+
+    assert.deepEqual(result.pendingVersions, ['0027']);
+    assert.equal(result.preflight.filename, '0027_payment_attempts_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.match(captured.logs.join('\n'), /0027 read-only preflight passed/);
   });
 
   it('uses the backend scoped Pool SSL policy with the explicit production URL', async () => {
