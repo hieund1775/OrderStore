@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon } from "lucide-react";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,9 +22,10 @@ import {
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
-import { apiGet, apiPost, setCustomerUser } from "@/lib/api";
+import { apiGet, apiPost, setCustomerUser, getCustomerToken } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
+import { ReviewDialog } from "@/components/reviews/ReviewDialog";
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -102,9 +103,10 @@ function Profile() {
     current_status: string;
     created_at: string;
     store_name: string;
-    items: { product_name: string; qty: number; size_label: string }[];
+    items: { id: number; product_id: number; product_name: string; qty: number; size_label: string }[];
   }[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [reviewDialog, setReviewDialog] = useState<{ open: boolean; orderCode: string; orderItemId: number; productId: number } | null>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const notificationsList = notificationData?.notifications ?? [];
 
@@ -184,7 +186,7 @@ function Profile() {
       current_status: string;
       created_at: string;
       store_name: string;
-      items: { product_name: string; qty: number; size_label: string }[];
+      items: { id: number; product_id: number; product_name: string; qty: number; size_label: string }[];
     }[] | { orders: any[]; page_info: any }>(`/api/users/${user.id}/orders`)
       .then((resData) => {
         const rows = Array.isArray(resData) ? resData : (resData?.orders || []);
@@ -387,11 +389,27 @@ function Profile() {
 
                   <div className="space-y-1">
                     {o.items?.map((item, idx) => (
-                      <p key={idx} className="text-sm flex justify-between">
-                        <span>
+                      <div key={idx} className="flex items-center justify-between">
+                        <p className="text-sm">
                           {item.qty}x {item.product_name} ({item.size_label})
-                        </span>
-                      </p>
+                        </p>
+                        {o.current_status === "Hoàn thành" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-amber-600 hover:text-amber-700"
+                            onClick={() => setReviewDialog({
+                              open: true,
+                              orderCode: o.order_code,
+                              orderItemId: item.id,
+                              productId: item.product_id,
+                            })}
+                          >
+                            <Star className="mr-0.5 h-3 w-3" />
+                            Đánh giá
+                          </Button>
+                        )}
+                      </div>
                     ))}
                   </div>
 
@@ -741,6 +759,26 @@ function Profile() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Review Dialog */}
+      <ReviewDialog
+        open={!!reviewDialog}
+        onOpenChange={(open) => setReviewDialog(open ? reviewDialog : null)}
+        mode="create"
+        orderCode={reviewDialog?.orderCode}
+        orderItemId={reviewDialog?.orderItemId}
+        onSubmit={async ({ rating, comment, intentIds }) => {
+          if (!reviewDialog) return;
+          const token = getCustomerToken();
+          if (!token) throw new Error('Vui lòng đăng nhập để đánh giá');
+
+          await apiPost(`/api/orders/${reviewDialog.orderCode}/items/${reviewDialog.orderItemId}/review`, {
+            rating,
+            comment,
+            intent_ids: intentIds,
+          });
+        }}
+      />
     </>
   );
 }

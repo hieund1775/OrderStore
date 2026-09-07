@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
-import { validateReviewInput, validateJobApplyInput } from '../../validation/engagement-schemas.js';
+import { validateJobApplyInput } from '../../validation/engagement-schemas.js';
 import { validateCustomerId, validateWishlistProductId } from '../../validation/customer-schemas.js';
-import { toReviewDto, toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
+import { toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
 import { toCustomerDto, toNotificationDto } from '../../dto/customer-dto.js';
 import engagementService from '../../services/engagement/engagement-service.js';
 import recruitmentService from '../../services/recruitment/recruitment-service.js';
@@ -210,39 +210,6 @@ router.get('/users/:id/vouchers', authenticate, requireCustomerSelf, asyncHandle
     const rows = await engagementService.listUserVouchers(id);
     res.json(rows);
   } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
-  }
-}));
-
-// ═══════════ REVIEWS ═══════════
-
-router.get('/products/:id/reviews', asyncHandler(async (req, res) => {
-  try {
-    const rows = await engagementService.listProductReviews(req.params.id);
-    res.json(rows.map(toReviewDto));
-  } catch (err) {
-    console.error('Public reviews read failed:', err.message);
-    res.status(500).json({ error: 'Không thể tải đánh giá lúc này' });
-  }
-}));
-
-router.post('/products/:id/reviews', authenticate, asyncHandler(async (req, res) => {
-  try {
-    const userId = Number(req.user?.id || req.user?.sub);
-    const validated = validateReviewInput(req.body);
-    const result = await engagementService.createProductReview(userId, {
-      productId: req.params.id,
-      orderItemId: validated.order_item_id,
-      rating: validated.rating,
-      comment: validated.comment,
-      imageUrls: validated.image_urls,
-    });
-    res.status(201).json(result);
-  } catch (err) {
-    if (err.message && err.message.includes('uq_review')) {
-      return res.status(409).json({ error: 'Bạn đã đánh giá món này rồi' });
-    }
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
   }
