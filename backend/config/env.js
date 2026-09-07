@@ -99,6 +99,11 @@ export const config = {
     timeoutMinutes: parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10),
     isConfigured: Boolean(payosClientId && payosApiKey && payosChecksumKey),
   },
+  storage: {
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',
+    reviewBucket: process.env.SUPABASE_REVIEW_BUCKET || 'review-media',
+  },
 };
 
 export { JWT_SECRET, isProduction, NODE_ENV, PORT, allowedOrigins };

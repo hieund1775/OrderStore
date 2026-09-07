@@ -13,6 +13,8 @@ import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import paymentRoutes, { handlePayOSWebhook } from './routes/payments.js';
+import publicReviewRoutes from './routes/public/reviews.js';
+import adminReviewRoutes from './routes/admin/reviews.js';
 import postgresDb from './config/db-postgres.js';
 
 export function createApp() {
@@ -185,9 +187,11 @@ export function createApp() {
   // ─────────────────────────────────────────────
   app.use('/api/auth', customerAuthRoutes);
   app.use('/api', publicRoutes);
+  app.use('/api', publicReviewRoutes);
   app.use('/catalog', publicCatalogV2Router);
   app.use('/admin', authRoutes);
   app.use('/admin', adminRoutes);
+  app.use('/admin', adminReviewRoutes);
 
   // 404 fallback
   app.use((req, res) => {
