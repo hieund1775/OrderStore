@@ -1,15 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pg from 'pg';
-import { getPostgresPoolConfig } from '../../config/db-postgres.js';
-import { isPayOSConfigured, getPayOS } from '../../services/payos.js';
 import {
   describeProductionMigrationTarget,
   validatePostgresProductionMigrationGuard,
 } from '../../config/postgres-production-migration-guard.js';
 
-const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CANDIDATES_FILE = '0026_provider_resolution_candidates_readonly.sql';
 const HISTORY_FILE = '0026_ambiguous_legacy_history_audit_readonly.sql';
@@ -58,6 +54,62 @@ export async function readProviderResolutionAuditSql() {
   return { candidatesSql, historySql };
 }
 
+function generateProfileEnvPrefix(code) {
+  const normalized = String(code || '').toUpperCase().trim().replace(/[^A-Z0-9_]/g, '_');
+  return `PAYOS_PROFILE_${normalized}`;
+}
+
+function credentialsFromSnapshot(env, profileCode) {
+  const normalizedCode = String(profileCode || '').toUpperCase().trim();
+  const prefix = generateProfileEnvPrefix(normalizedCode);
+  const scoped = {
+    clientId: env[`${prefix}_CLIENT_ID`]?.trim(),
+    apiKey: env[`${prefix}_API_KEY`]?.trim(),
+    checksumKey: env[`${prefix}_CHECKSUM_KEY`]?.trim(),
+  };
+  if (scoped.clientId && scoped.apiKey && scoped.checksumKey) return scoped;
+
+  // Preserve the legacy runtime compatibility only for historical system
+  // profiles. Each code remains a separate candidate in the audit.
+  if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
+    const legacy = {
+      clientId: env.PAYOS_CLIENT_ID?.trim(),
+      apiKey: env.PAYOS_API_KEY?.trim(),
+      checksumKey: env.PAYOS_CHECKSUM_KEY?.trim(),
+    };
+    if (legacy.clientId && legacy.apiKey && legacy.checksumKey) return legacy;
+  }
+  return null;
+}
+
+export function createSnapshotPayOSResolver({ env, PayOS }) {
+  const instances = new Map();
+  return (profileCode) => {
+    const normalizedCode = String(profileCode || '').toUpperCase().trim();
+    if (instances.has(normalizedCode)) return instances.get(normalizedCode);
+    const credentials = credentialsFromSnapshot(env, normalizedCode);
+    if (!credentials) return null;
+    const instance = new PayOS(credentials);
+    instances.set(normalizedCode, instance);
+    return instance;
+  };
+}
+
+async function loadProductionRuntimeModules() {
+  // These imports are intentionally delayed until the production guard has
+  // accepted the explicit shell environment. Some runtime modules load dotenv.
+  const [pgModule, dbModule, payOSModule] = await Promise.all([
+    import('pg'),
+    import('../../config/db-postgres.js'),
+    import('@payos/node'),
+  ]);
+  return {
+    Pool: pgModule.default.Pool,
+    getPostgresPoolConfig: dbModule.getPostgresPoolConfig,
+    PayOS: payOSModule.PayOS,
+  };
+}
+
 function readStatus(payment) {
   return String(payment?.status || payment?.paymentStatus || '').toUpperCase() || null;
 }
@@ -103,8 +155,8 @@ async function withTimeout(promise, timeoutMs) {
 }
 
 /** Read-only PayOS GET adapter. It deliberately never calls create/cancel/update APIs. */
-export async function lookupPayOSTransactionForAudit({ profileCode, providerOrderCode, timeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS }) {
-  const instance = getPayOS(profileCode);
+export async function lookupPayOSTransactionForAudit({ profileCode, providerOrderCode, getPayOSForProfile, timeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS }) {
+  const instance = getPayOSForProfile(profileCode);
   if (!instance) return { kind: 'profile_error' };
   try {
     let payment;
@@ -207,30 +259,42 @@ export async function runProductionProviderResolutionAudit({
   args = process.argv.slice(2),
   env = process.env,
   pool = null,
-  createPool = (config) => new Pool(config),
-  lookupTransaction = lookupPayOSTransactionForAudit,
-  isProfileConfigured = isPayOSConfigured,
+  createPool = null,
+  lookupTransaction = null,
+  isProfileConfigured = null,
+  loadRuntimeModules = loadProductionRuntimeModules,
   logger = console,
 } = {}) {
   let activePool = null;
   let client = null;
   try {
     const options = parseProductionProviderResolutionAuditArgs(args);
-    if (env.PRODUCTION_PAYOS_AUDIT !== '1') {
+    // This snapshot is taken before any dotenv-loading runtime module is
+    // imported. Never delete or rewrite values in env/process.env to pass.
+    const shellEnv = { ...env };
+    if (shellEnv.PRODUCTION_PAYOS_AUDIT !== '1') {
       throw new Error('PRODUCTION PROVIDER AUDIT: PRODUCTION_PAYOS_AUDIT=1 is required.');
     }
-    const target = validatePostgresProductionMigrationGuard(env.PRODUCTION_DATABASE_URL, {
-      env: env.NODE_ENV,
-      mode: env.MIGRATION_MODE,
-      confirmFlag: env.POSTGRES_PRODUCTION_MIGRATIONS,
-      allowedHosts: env.POSTGRES_PRODUCTION_ALLOWED_HOSTS,
-      allowedDatabases: env.POSTGRES_PRODUCTION_ALLOWED_DATABASES,
-      testDatabaseUrl: env.TEST_DATABASE_URL,
-      testConfirmFlag: env.POSTGRES_INTEGRATION,
+    const target = validatePostgresProductionMigrationGuard(shellEnv.PRODUCTION_DATABASE_URL, {
+      env: shellEnv.NODE_ENV,
+      mode: shellEnv.MIGRATION_MODE,
+      confirmFlag: shellEnv.POSTGRES_PRODUCTION_MIGRATIONS,
+      allowedHosts: shellEnv.POSTGRES_PRODUCTION_ALLOWED_HOSTS,
+      allowedDatabases: shellEnv.POSTGRES_PRODUCTION_ALLOWED_DATABASES,
+      testDatabaseUrl: shellEnv.TEST_DATABASE_URL,
+      testConfirmFlag: shellEnv.POSTGRES_INTEGRATION,
     });
     logger.log(`[Production Provider Audit] Target: ${describeProductionMigrationTarget(target)}`);
     logger.log('[Production Provider Audit] Guard passed.');
-    activePool = pool || createPool(getPostgresPoolConfig(env.PRODUCTION_DATABASE_URL, { env }));
+    const runtime = await loadRuntimeModules();
+    const getPayOSForProfile = createSnapshotPayOSResolver({ env: shellEnv, PayOS: runtime.PayOS });
+    const profileConfigured = isProfileConfigured || ((profileCode) => Boolean(credentialsFromSnapshot(shellEnv, profileCode)));
+    const lookupProvider = lookupTransaction || ((params) => lookupPayOSTransactionForAudit({ ...params, getPayOSForProfile }));
+    const makePool = createPool || ((config) => new runtime.Pool(config));
+    // Explicit URL plus the pre-import shell snapshot prevents DATABASE_URL or
+    // TEST_DATABASE_URL (including values later loaded from .env) from routing
+    // this audit anywhere other than the guarded production target.
+    activePool = pool || makePool(runtime.getPostgresPoolConfig(shellEnv.PRODUCTION_DATABASE_URL, { env: shellEnv }));
     client = await activePool.connect();
     const { candidatesSql, historySql } = await readProviderResolutionAuditSql();
     const [candidateResult, profileResult] = await Promise.all([
@@ -238,7 +302,7 @@ export async function runProductionProviderResolutionAudit({
       client.query('SELECT code FROM payment_profiles ORDER BY code ASC'),
     ]);
     const candidates = candidateResult.rows || [];
-    const profiles = (profileResult.rows || []).map((row) => String(row.code)).filter((code) => isProfileConfigured(code));
+    const profiles = (profileResult.rows || []).map((row) => String(row.code)).filter((code) => profileConfigured(code));
     const resolutions = [];
     let checkedPairs = 0;
     let uncheckedPairsDueToLimit = 0;
@@ -255,13 +319,13 @@ export async function runProductionProviderResolutionAudit({
             break;
           }
           const profileCode = profiles[profileIndex];
-          let lookup;
+          let lookupResult;
           try {
-            lookup = await lookupTransaction({ profileCode, providerOrderCode: candidate.provider_order_code });
+            lookupResult = await lookupProvider({ profileCode, providerOrderCode: candidate.provider_order_code });
           } catch {
-            lookup = { kind: 'unknown' };
+            lookupResult = { kind: 'unknown' };
           }
-          checks.push(assessProviderLookup({ candidate, profileCode, lookup }));
+          checks.push(assessProviderLookup({ candidate, profileCode, lookup: lookupResult }));
           checkedPairs += 1;
         }
       }

@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   assessProviderLookup,
   classifyProviderLookupFailure,
+  createSnapshotPayOSResolver,
   parseProductionProviderResolutionAuditArgs,
   runProductionProviderResolutionAudit,
 } from '../database/postgres/audit-production-provider-resolution.js';
@@ -53,6 +54,74 @@ describe('production provider-resolution audit', () => {
     const fake = createFakePool();
     await assert.rejects(() => runProductionProviderResolutionAudit({ args: ['--audit=0026-provider-resolution', '--max-provider-lookups=1'], env: { ...approvedEnvironment, PRODUCTION_PAYOS_AUDIT: '0' }, pool: fake.pool, logger: captureLogger().logger }), /PRODUCTION_PAYOS_AUDIT=1/);
     assert.equal(fake.getConnectCalls(), 0);
+  });
+
+  it('runs the guard before a dotenv-like runtime import can introduce test variables', async () => {
+    const fake = createFakePool();
+    const shellEnv = { ...approvedEnvironment };
+    let runtimeImported = false;
+    await assert.rejects(
+      () => runProductionProviderResolutionAudit({
+        args: ['--audit=0026-provider-resolution', '--max-provider-lookups=1'],
+        env: { ...shellEnv, POSTGRES_PRODUCTION_MIGRATIONS: '0' },
+        pool: fake.pool,
+        loadRuntimeModules: async () => {
+          runtimeImported = true;
+          shellEnv.TEST_DATABASE_URL = 'postgresql://test-user:test-secret@test.db.example:5432/test';
+          return {};
+        },
+        logger: captureLogger().logger,
+      }),
+      /POSTGRES_PRODUCTION_MIGRATIONS=1 is required/,
+    );
+    assert.equal(runtimeImported, false);
+    assert.equal(fake.getConnectCalls(), 0);
+  });
+
+  it('keeps the production connection and profile credentials bound to the pre-import shell snapshot', async () => {
+    const fake = createFakePool({ profiles: ['A'] });
+    const shellEnv = { ...approvedEnvironment, PAYOS_PROFILE_A_CLIENT_ID: 'prod-client', PAYOS_PROFILE_A_API_KEY: 'prod-key', PAYOS_PROFILE_A_CHECKSUM_KEY: 'prod-checksum' };
+    let receivedUrl = null;
+    let receivedConfigEnv = null;
+    const result = await runProductionProviderResolutionAudit({
+      args: ['--audit=0026-provider-resolution', '--max-provider-lookups=1'], env: shellEnv, createPool: () => fake.pool,
+      lookupTransaction: async () => ({ kind: 'not_found' }), logger: captureLogger().logger,
+      loadRuntimeModules: async () => {
+        shellEnv.TEST_DATABASE_URL = 'postgresql://test-user:test-secret@test.db.example:5432/test';
+        shellEnv.DATABASE_URL = 'postgresql://wrong-user:wrong-secret@wrong.db.example:5432/wrong';
+        return {
+          PayOS: class PayOS {},
+          Pool: class Pool {},
+          getPostgresPoolConfig(url, { env }) {
+            receivedUrl = url;
+            receivedConfigEnv = env;
+            return { connectionString: url };
+          },
+        };
+      },
+    });
+    assert.equal(result.report.provider_resolution.configured_profile_count, 1);
+    assert.equal(receivedUrl, approvedEnvironment.PRODUCTION_DATABASE_URL);
+    assert.equal(receivedConfigEnv.TEST_DATABASE_URL, null);
+    assert.equal(receivedConfigEnv.DATABASE_URL, undefined);
+  });
+
+  it('constructs a profile client only from the pre-import production credential snapshot', () => {
+    const shellSnapshot = {
+      PAYOS_PROFILE_A_CLIENT_ID: 'prod-client',
+      PAYOS_PROFILE_A_API_KEY: 'prod-key',
+      PAYOS_PROFILE_A_CHECKSUM_KEY: 'prod-checksum',
+    };
+    const dotenvMutatedRuntimeEnv = { ...shellSnapshot, PAYOS_PROFILE_A_CLIENT_ID: 'dotenv-test-client' };
+    const observed = [];
+    const resolver = createSnapshotPayOSResolver({
+      env: shellSnapshot,
+      PayOS: class PayOS { constructor(credentials) { observed.push(credentials); } },
+    });
+    // Model dotenv populating process.env after the shell snapshot was taken.
+    assert.equal(dotenvMutatedRuntimeEnv.PAYOS_PROFILE_A_CLIENT_ID, 'dotenv-test-client');
+    resolver('A');
+    assert.deepEqual(observed[0], { clientId: 'prod-client', apiKey: 'prod-key', checksumKey: 'prod-checksum' });
   });
 
   it('requires exact order, amount, and persisted link identity for a provider match', () => {
@@ -140,6 +209,15 @@ describe('production provider-resolution audit', () => {
     assert.equal(output.includes('998877'), false);
     assert.equal(output.includes('secret-link'), false);
     assert.equal(output.includes('payment_qr_code'), false);
+  });
+
+  it('has no static import of dotenv-loading DB or PayOS runtime modules', async () => {
+    const root = path.dirname(fileURLToPath(import.meta.url));
+    const source = await readFile(path.join(root, '..', 'database', 'postgres', 'audit-production-provider-resolution.js'), 'utf8');
+    assert.doesNotMatch(source, /^import .*['"]pg['"];?$/m);
+    assert.doesNotMatch(source, /^import .*db-postgres\.js['"];?$/m);
+    assert.doesNotMatch(source, /^import .*services\/payos\.js['"];?$/m);
+    assert.match(source, /await loadRuntimeModules\(\)/);
   });
 
   it('classifies only explicit 404 as not-found and treats 401/403 as profile errors plus 429/5xx/timeouts as unknown', () => {
