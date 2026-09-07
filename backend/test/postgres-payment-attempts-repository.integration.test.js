@@ -14,6 +14,8 @@ const enabled = process.env.POSTGRES_INTEGRATION === '1';
 const testDbUrl = process.env.TEST_DATABASE_URL;
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0026_payment_attempts_additive.sql');
+const enforcementMigrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0027_payment_attempts_enforcement.sql');
+const enforcementPreflightPath = path.join(testDir, '..', 'database', 'postgres', 'verification', '0027_payment_attempts_preflight_readonly.sql');
 
 function schemaName() {
   return `p1_0026_repo_${crypto.randomBytes(6).toString('hex')}`;
@@ -118,12 +120,14 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
     if (!enabled || !testDbUrl) return t.skip('Requires POSTGRES_INTEGRATION=1 and TEST_DATABASE_URL');
     assert.equal(validatePostgresTestGuard(testDbUrl).valid, true);
     const sql = await readFile(migrationPath, 'utf8');
+    const enforcementSql = await readFile(enforcementMigrationPath, 'utf8');
     const pool = new Pool(getPostgresPoolConfig(testDbUrl));
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       await createPost0025RepositoryFixture(client, schemaName());
       await client.query(sql);
+      await client.query(enforcementSql);
       const repo = createPaymentAttemptsRepository(transactionAdapter(client));
       const expiry = '2026-09-06T12:15:00.000Z';
       // Provider identity locks intentionally survive only for the transaction.
@@ -453,6 +457,7 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
     if (!enabled || !testDbUrl) return t.skip('Requires POSTGRES_INTEGRATION=1 and TEST_DATABASE_URL');
     assert.equal(validatePostgresTestGuard(testDbUrl).valid, true);
     const sql = await readFile(migrationPath, 'utf8');
+    const enforcementSql = await readFile(enforcementMigrationPath, 'utf8');
     const pool = new Pool(getPostgresPoolConfig(testDbUrl));
     const setupClient = await pool.connect();
     const schema = schemaName();
@@ -473,6 +478,7 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
       await setupClient.query('BEGIN');
       await createPost0025RepositoryFixture(setupClient, schema);
       await setupClient.query(sql);
+      await setupClient.query(enforcementSql);
       await setupClient.query('COMMIT');
 
       clientA = await pool.connect();
@@ -534,6 +540,126 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
       if (clientB) clientB.release();
       await setupClient.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       setupClient.release();
+      await pool.end();
+    }
+  });
+
+  it('enforces 0027 target, pointer, immutability, and event identity contracts on a post-0026 fixture', async (t) => {
+    if (!enabled || !testDbUrl) return t.skip('Requires POSTGRES_INTEGRATION=1 and TEST_DATABASE_URL');
+    assert.equal(validatePostgresTestGuard(testDbUrl).valid, true);
+    const sql = await readFile(migrationPath, 'utf8');
+    const enforcementSql = await readFile(enforcementMigrationPath, 'utf8');
+    const pool = new Pool(getPostgresPoolConfig(testDbUrl));
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await createPost0025RepositoryFixture(client, schemaName());
+      await client.query(sql);
+      await client.query(enforcementSql);
+      await client.query(enforcementSql); // migration SQL is rehearsal-safe when replayed directly.
+      await client.query(`
+        INSERT INTO payment_attempts (
+          target_type, order_id, provider, payment_profile_code, amount,
+          provider_order_code, provider_payment_link_id, checkout_url, qr_code,
+          status, activated_at, expires_at
+        ) VALUES (
+          'order', 1, 'payos', 'DIRECT_A', 10000,
+          992001, 'link-immutable', 'https://payos.test/immutable', 'qr-immutable',
+          'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '15 minutes'
+        )
+      `);
+
+      await assert.rejects(
+        () => client.query(`
+          INSERT INTO payment_attempts (
+            target_type, order_id, provider, payment_profile_code, amount, provider_order_code, status
+          ) VALUES ('order', 2, 'payos', 'DIRECT_A', 20000, 992002, 'creating')
+        `),
+        /grouped child/i,
+      );
+
+      await client.query(`
+        INSERT INTO payment_attempts (
+          target_type, order_id, provider, payment_profile_code, amount, provider_order_code, status
+        ) VALUES ('order', 5, 'payos', 'DIRECT_A', 60000, 992005, 'creating')
+      `);
+      await assert.rejects(
+        () => client.query(`
+          INSERT INTO payment_attempts (
+            target_type, order_id, provider, payment_profile_code, amount, provider_order_code, status
+          ) VALUES ('order', 5, 'payos', 'DIRECT_A', 60000, 992006, 'creating')
+        `),
+        /uq_payment_attempts_creating_order|duplicate key/i,
+      );
+      await assert.rejects(
+        () => client.query(`
+          UPDATE orders SET current_payment_attempt_id = (
+            SELECT id FROM payment_attempts WHERE order_id = 1 LIMIT 1
+          ) WHERE id = 4
+        `),
+        /must belong to this order/i,
+      );
+      await assert.rejects(
+        () => client.query('UPDATE payment_attempts SET amount = amount + 1 WHERE order_id = 1'),
+        /immutable/i,
+      );
+      await assert.rejects(
+        () => client.query("UPDATE payment_attempts SET qr_code = 'mutated' WHERE order_id = 1"),
+        /artifacts are immutable/i,
+      );
+
+      await client.query(`
+        INSERT INTO payment_events (
+          provider, provider_event_key, event_type, payload, payment_profile_code, provider_payment_identity
+        ) VALUES
+          ('payos', 'direct-event-1', 'payment.succeeded', '{}'::jsonb, 'DIRECT_A', 'reference:shared'),
+          ('payos', 'group-event-1', 'payment.succeeded', '{}'::jsonb, 'GROUP_CHECKOUT', 'reference:shared')
+      `);
+      await assert.rejects(
+        () => client.query(`
+          INSERT INTO payment_events (
+            provider, provider_event_key, event_type, payload, payment_profile_code, provider_payment_identity
+          ) VALUES ('payos', 'direct-event-2', 'payment.succeeded', '{}'::jsonb, 'DIRECT_A', 'reference:shared')
+        `),
+        /uq_payment_events_provider_profile_identity|duplicate key/i,
+      );
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+      await pool.end();
+    }
+  });
+
+  it('reports a preflight collision and fails closed before 0027 enforcement', async (t) => {
+    if (!enabled || !testDbUrl) return t.skip('Requires POSTGRES_INTEGRATION=1 and TEST_DATABASE_URL');
+    assert.equal(validatePostgresTestGuard(testDbUrl).valid, true);
+    const sql = await readFile(migrationPath, 'utf8');
+    const enforcementSql = await readFile(enforcementMigrationPath, 'utf8');
+    const preflightSql = await readFile(enforcementPreflightPath, 'utf8');
+    const pool = new Pool(getPostgresPoolConfig(testDbUrl));
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await createPost0025RepositoryFixture(client, schemaName());
+      await client.query(sql);
+      await client.query(`
+        INSERT INTO payment_events (
+          provider, provider_event_key, event_type, payload, payment_profile_code, provider_payment_identity
+        ) VALUES
+          ('payos', 'collision-1', 'payment.succeeded', '{}'::jsonb, 'DIRECT_A', 'reference:collision'),
+          ('payos', 'collision-2', 'payment.succeeded', '{}'::jsonb, 'DIRECT_A', 'reference:collision')
+      `);
+      const preflight = await client.query(preflightSql);
+      const collision = preflight.rows.find((row) => row.check_name === 'duplicate_event_identity');
+      assert.deepEqual(collision, { check_name: 'duplicate_event_identity', issue_count: '1', status: 'BLOCK' });
+      await assert.rejects(() => client.query(enforcementSql), /provider event identity collision/i);
+      const { rows: [enforcementIndex] } = await client.query(`
+        SELECT to_regclass('uq_payment_events_provider_profile_identity') AS relation_name
+      `);
+      assert.equal(enforcementIndex.relation_name, null);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
       await pool.end();
     }
   });
