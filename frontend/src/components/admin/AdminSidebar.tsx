@@ -16,6 +16,7 @@ import {
   Boxes,
   PackageCheck,
   Package,
+  Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchBranchCapabilities, getUser } from '@/lib/api';
@@ -37,6 +38,7 @@ export const adminNav = [
   // Nhóm 3: Quản trị
   { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'management', roles: MANAGEMENT_ROLES },
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone, section: 'management', roles: MANAGEMENT_ROLES },
+  { to: '/admin/danh-gia', label: 'Quản lý đánh giá', icon: Star, section: 'management', roles: MANAGEMENT_ROLES },
   { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase, section: 'management', roles: MANAGEMENT_ROLES },
   { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell, section: 'management', roles: ALL_ROLES },
   { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings, section: 'management', roles: MANAGEMENT_ROLES },
