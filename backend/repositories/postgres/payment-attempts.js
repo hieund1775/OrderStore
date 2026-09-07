@@ -666,12 +666,15 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
           );
         };
 
-        const attempt = await findAttemptForUpdate(tx, attemptId);
-        const target = await lockTarget(tx, targetFromAttempt(attempt));
+        // Every lifecycle mutation locks target first, then its attempt. This
+        // ordering is shared with expiry so a PAID callback cannot deadlock
+        // with an expiry transition for the same QR.
+        const target = await lockTarget(tx, targetFromAttempt(initialAttempt));
         if (!target) {
           await finishEvent('ignored', 'TARGET_NOT_FOUND');
           return { kind: 'not_found', eventId };
         }
+        const attempt = await findAttemptForUpdate(tx, attemptId);
         if (attempt.provider !== normalizedProvider) {
           await finishEvent('ignored', 'PROVIDER_MISMATCH');
           return { kind: 'provider_mismatch', eventId, attempt };
@@ -713,6 +716,10 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
     },
 
     async expireAttempt({ attemptId, expiredAt = null }, { tx: externalTx } = {}) {
+      const effectiveExpiredAt = expiredAt == null ? new Date() : new Date(expiredAt);
+      if (!Number.isFinite(effectiveExpiredAt.getTime())) {
+        throw new PaymentAttemptError('expiredAt must be a valid timestamp', 400, 'PAYMENT_ATTEMPT_EXPIRED_AT_INVALID');
+      }
       return inTransaction(database, externalTx, async (tx) => {
         const existing = await this.findAttemptById(attemptId, { tx });
         if (!existing) throw new PaymentAttemptError('Payment attempt was not found', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
@@ -720,19 +727,50 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         const lockedTarget = await lockTarget(tx, target);
         const attempt = await findAttemptForUpdate(tx, attemptId);
         if (attempt.status === 'expired') return attempt;
-        if (!isPaymentAttemptTransitionAllowed(attempt.status, 'expired')) {
+        if (attempt.status !== 'active') {
           throw new PaymentAttemptError(`Cannot transition ${attempt.status} attempt to expired`, 409, 'PAYMENT_ATTEMPT_TRANSITION_INVALID');
         }
+        if (!attempt.expires_at || new Date(attempt.expires_at).getTime() > effectiveExpiredAt.getTime()) {
+          return attempt;
+        }
+        // A concurrent valid payment owns the terminal state. Normally it
+        // has already superseded open attempts; this guard is fail-safe.
+        if (lockedTarget.payment_status === 'paid') return attempt;
         const [rows] = await tx.query(
           `UPDATE payment_attempts
            SET status = 'expired', expired_at = COALESCE($2, expired_at, CURRENT_TIMESTAMP),
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $1 RETURNING *`,
-          [attempt.id, expiredAt],
+          [attempt.id, effectiveExpiredAt],
         );
         await markTargetExpiredIfCurrent(tx, target, rows[0]);
         return rows[0];
       });
+    },
+
+    async expireDuePaymentAttempts({ limit = 100, now = null } = {}) {
+      const batchSize = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 1000);
+      const effectiveNow = now == null ? new Date() : new Date(now);
+      if (!Number.isFinite(effectiveNow.getTime())) {
+        throw new PaymentAttemptError('now must be a valid timestamp', 400, 'PAYMENT_ATTEMPT_EXPIRED_AT_INVALID');
+      }
+      // Do not lock rows in this discovery query: the per-attempt lifecycle
+      // transaction locks target -> attempt. That shared ordering serializes
+      // expiry with PAID events without holding a batch transaction open.
+      const [dueRows] = await database.query(
+        `SELECT id
+         FROM payment_attempts
+         WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= $1
+         ORDER BY expires_at ASC, id ASC
+         LIMIT $2`,
+        [effectiveNow, batchSize],
+      );
+      const expired = [];
+      for (const due of dueRows) {
+        const attempt = await this.expireAttempt({ attemptId: due.id, expiredAt: effectiveNow });
+        if (attempt.status === 'expired') expired.push(attempt);
+      }
+      return expired;
     },
 
     async failAttempt({ attemptId, failureCode }, { tx: externalTx } = {}) {

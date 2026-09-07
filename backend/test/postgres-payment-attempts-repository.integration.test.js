@@ -61,7 +61,8 @@ async function createPost0025RepositoryFixture(client, schema) {
     INSERT INTO checkout_groups (id, total_amount, payment_status, payment_profile_code, payment_profile_version)
     VALUES (10, 50000, 'unpaid', 'GROUP_CHECKOUT', 1),
            (11, 51000, 'cancelled', 'GROUP_CHECKOUT', 1),
-           (12, 52000, 'unpaid', 'GROUP_CHECKOUT', 1);
+           (12, 52000, 'unpaid', 'GROUP_CHECKOUT', 1),
+           (13, 53000, 'unpaid', 'GROUP_CHECKOUT', 1);
     INSERT INTO orders (id, total, checkout_group_id, payment_provider, payment_status, current_status, payment_profile_code, payment_profile_version)
     VALUES (1, 10000, NULL, 'payos', 'unpaid', 'Chờ xác nhận', 'DIRECT_A', 1),
            (2, 20000, 10, 'payos', 'unpaid', 'Chờ xác nhận', 'DIRECT_A', 1),
@@ -76,12 +77,39 @@ async function createPost0025RepositoryFixture(client, schema) {
 
 function transactionAdapter(client) {
   return {
+    query: async (sql, params = []) => {
+      const result = await client.query(sql, params);
+      return [result.rows, result.rowCount ?? 0];
+    },
     transaction: async (runner) => runner({
       query: async (sql, params = []) => {
         const result = await client.query(sql, params);
         return [result.rows, result.rowCount ?? 0];
       },
     }),
+  };
+}
+
+function transactionalAdapter(client, schema, { beforeQuery = null } = {}) {
+  const query = async (sql, params = []) => {
+    if (beforeQuery) await beforeQuery(sql, params);
+    const result = await client.query(sql, params);
+    return [result.rows, result.rowCount ?? 0];
+  };
+  return {
+    transaction: async (runner) => {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL search_path TO "${schema}", public`);
+      try {
+        const result = await runner({ query });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    },
+    query,
   };
 }
 
@@ -166,6 +194,14 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
       await repo.activateAttempt({ attemptId: expiring.id, providerOrderCode: expiringProviderCode, paymentLinkId: 'link-expiring', checkoutUrl: 'https://payos.test/expiring', qrCode: 'qr-expiring', expiresAt: expiry });
       const expired = await repo.expireAttempt({ attemptId: expiring.id, expiredAt: '2026-09-06T12:16:00.000Z' });
       assert.equal(expired.status, 'expired');
+      const expiredReplacement = await repo.createCreatingAttempt({
+        orderId: 4, paymentProfileCode: 'DIRECT_A', amount: 40000,
+        providerOrderCode: providerCodeBase + 6, expiresAt: expiry,
+      });
+      await repo.activateAttempt({
+        attemptId: expiredReplacement.id, providerOrderCode: providerCodeBase + 6,
+        paymentLinkId: 'link-expiring-replacement', checkoutUrl: 'https://payos.test/expiring-replacement', qrCode: 'qr-expiring-replacement', expiresAt: expiry,
+      });
       const lateExpiredPaid = await repo.processSuccessfulAttemptEvent({
         attemptId: expiring.id,
         providerPaymentIdentity: 'reference:late-expired-payment',
@@ -175,8 +211,39 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
         paidAt: '2026-09-06T12:17:00.000Z',
       });
       assert.equal(lateExpiredPaid.kind, 'paid');
-      const { rows: [expiredTarget] } = await client.query('SELECT payment_status, current_payment_attempt_id FROM orders WHERE id = 4');
-      assert.deepEqual(expiredTarget, { payment_status: 'paid', current_payment_attempt_id: String(expiring.id) });
+      const { rows: [expiredTarget] } = await client.query(`
+        SELECT o.payment_status, o.current_payment_attempt_id,
+               old_attempt.status AS old_status, replacement.status AS replacement_status
+        FROM orders o
+        JOIN payment_attempts old_attempt ON old_attempt.id = $1
+        JOIN payment_attempts replacement ON replacement.id = $2
+        WHERE o.id = 4
+      `, [expiring.id, expiredReplacement.id]);
+      assert.deepEqual(expiredTarget, {
+        payment_status: 'paid', current_payment_attempt_id: String(expiring.id),
+        old_status: 'paid', replacement_status: 'superseded',
+      });
+
+      const expiringGroup = await repo.createCreatingAttempt({
+        checkoutGroupId: 13, paymentProfileCode: 'GROUP_CHECKOUT', amount: 53000,
+        providerOrderCode: providerCodeBase + 9, expiresAt: expiry,
+      });
+      await repo.activateAttempt({
+        attemptId: expiringGroup.id, providerOrderCode: providerCodeBase + 9,
+        paymentLinkId: 'link-expiring-group', checkoutUrl: 'https://payos.test/expiring-group', qrCode: 'qr-expiring-group', expiresAt: expiry,
+      });
+      const firstExpiryBatch = await repo.expireDuePaymentAttempts({ limit: 10, now: '2026-09-06T12:16:00.000Z' });
+      assert.deepEqual(firstExpiryBatch.map((attempt) => Number(attempt.id)), [Number(expiringGroup.id)]);
+      const secondExpiryBatch = await repo.expireDuePaymentAttempts({ limit: 10, now: '2026-09-06T12:16:00.000Z' });
+      assert.deepEqual(secondExpiryBatch, []);
+      const { rows: [expiredGroupTarget] } = await client.query(`
+        SELECT cg.payment_status, cg.current_payment_attempt_id, pa.status
+        FROM checkout_groups cg JOIN payment_attempts pa ON pa.id = cg.current_payment_attempt_id
+        WHERE cg.id = 13
+      `);
+      assert.deepEqual(expiredGroupTarget, {
+        payment_status: 'expired', current_payment_attempt_id: String(expiringGroup.id), status: 'expired',
+      });
 
       const grouped = await repo.createCreatingAttempt({ checkoutGroupId: 10, paymentProfileCode: 'GROUP_CHECKOUT', amount: 50000, providerOrderCode: groupedProviderCode, expiresAt: expiry });
       await repo.activateAttempt({ attemptId: grouped.id, providerOrderCode: groupedProviderCode, paymentLinkId: 'link-group', checkoutUrl: 'https://payos.test/group', qrCode: 'qr-group', expiresAt: expiry });
@@ -378,6 +445,95 @@ describe('PostgreSQL payment-attempt repository primitives', () => {
     } finally {
       await client.query('ROLLBACK');
       client.release();
+      await pool.end();
+    }
+  });
+
+  it('serializes expiry against a valid late PAID event and leaves the target paid', async (t) => {
+    if (!enabled || !testDbUrl) return t.skip('Requires POSTGRES_INTEGRATION=1 and TEST_DATABASE_URL');
+    assert.equal(validatePostgresTestGuard(testDbUrl).valid, true);
+    const sql = await readFile(migrationPath, 'utf8');
+    const pool = new Pool(getPostgresPoolConfig(testDbUrl));
+    const setupClient = await pool.connect();
+    const schema = schemaName();
+    const expiryAt = '2026-09-06T12:15:00.000Z';
+    const runAt = '2026-09-06T12:16:00.000Z';
+    let releaseExpiry;
+    const expiryLocked = new Promise((resolve) => { releaseExpiry = resolve; });
+    let signalExpiryLocked;
+    const targetLocked = new Promise((resolve) => { signalExpiryLocked = resolve; });
+    let signalPaidWaiting;
+    const paidWaiting = new Promise((resolve) => { signalPaidWaiting = resolve; });
+    let expiryPaused = false;
+    let pauseExpiry = false;
+    let paidRequested = false;
+    let clientA;
+    let clientB;
+    try {
+      await setupClient.query('BEGIN');
+      await createPost0025RepositoryFixture(setupClient, schema);
+      await setupClient.query(sql);
+      await setupClient.query('COMMIT');
+
+      clientA = await pool.connect();
+      clientB = await pool.connect();
+      const expiryRepo = createPaymentAttemptsRepository(transactionalAdapter(clientA, schema, {
+        beforeQuery: async (query) => {
+          if (pauseExpiry && !expiryPaused && query.includes('FROM orders WHERE id = $1 FOR UPDATE')) {
+            expiryPaused = true;
+            signalExpiryLocked();
+            await expiryLocked;
+          }
+        },
+      }));
+      const paidRepo = createPaymentAttemptsRepository(transactionalAdapter(clientB, schema, {
+        beforeQuery: async (query) => {
+          if (!paidRequested && query.includes('FROM orders WHERE id = $1 FOR UPDATE')) {
+            paidRequested = true;
+            signalPaidWaiting();
+          }
+        },
+      }));
+
+      const attempt = await expiryRepo.createCreatingAttempt({
+        orderId: 1, paymentProfileCode: 'DIRECT_A', amount: 10000,
+        providerOrderCode: 771001, expiresAt: expiryAt,
+      });
+      await expiryRepo.activateAttempt({
+        attemptId: attempt.id, providerOrderCode: 771001,
+        paymentLinkId: 'link-expiry-race', checkoutUrl: 'https://payos.test/expiry-race', qrCode: 'qr-expiry-race', expiresAt: expiryAt,
+      });
+
+      pauseExpiry = true;
+      const expiryPromise = expiryRepo.expireAttempt({ attemptId: attempt.id, expiredAt: runAt });
+      await targetLocked;
+      const paidPromise = paidRepo.processSuccessfulAttemptEvent({
+        attemptId: attempt.id,
+        providerPaymentIdentity: 'reference:expiry-paid-race',
+        amount: 10000,
+        reference: 'expiry-paid-race',
+        paymentLinkId: 'link-expiry-race',
+      });
+      await paidWaiting;
+      releaseExpiry();
+      const [expiredAttempt, paidResult] = await Promise.all([expiryPromise, paidPromise]);
+      assert.equal(expiredAttempt.status, 'expired');
+      assert.equal(paidResult.kind, 'paid');
+
+      const { rows: [finalState] } = await setupClient.query(`
+        SELECT o.payment_status, pa.status, o.current_payment_attempt_id
+        FROM "${schema}".orders o
+        JOIN "${schema}".payment_attempts pa ON pa.id = $1
+        WHERE o.id = 1
+      `, [attempt.id]);
+      assert.deepEqual(finalState, {
+        payment_status: 'paid', status: 'paid', current_payment_attempt_id: String(attempt.id),
+      });
+    } finally {
+      if (clientA) clientA.release();
+      if (clientB) clientB.release();
+      await setupClient.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      setupClient.release();
       await pool.end();
     }
   });
