@@ -33,7 +33,7 @@ export async function resolveVerifiedPayOSAttempt({
     }
   }
   if (verified.length === 0) return { kind: 'signature_invalid' };
-  if (verified.length !== 1) return { kind: 'ambiguous' };
+  if (verified.length !== 1) return { kind: 'ambiguous', candidateCount: verified.length };
   return { kind: 'resolved', ...verified[0] };
 }
 

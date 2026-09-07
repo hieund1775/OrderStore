@@ -51,6 +51,9 @@ export function createPayOSWebhookHandler({ processWebhook = processPayOSWebhook
     if (result.kind === 'not_successful') {
       return res.status(200).json({ ok: false, message: 'Giao dịch chưa thành công' });
     }
+    if (result.kind === 'ambiguous') {
+      console.warn('[PayOS Webhook Anomaly] Multiple payment-attempt snapshots verified one callback');
+    }
     // Unknown/ambiguous candidates and business rejections never mutate a
     // target, and are non-retryable from PayOS's point of view.
     return res.status(200).json({ ok: false, message: 'Giao dịch không hợp lệ' });

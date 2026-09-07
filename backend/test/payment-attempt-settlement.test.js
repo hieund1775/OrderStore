@@ -59,6 +59,7 @@ describe('payment-attempt webhook resolution', () => {
       verifyWebhook: () => ({ orderCode: 991001, paymentLinkId: 'link-direct', amount: 50000, code: '00' }),
     });
     assert.equal(ambiguous.kind, 'ambiguous');
+    assert.equal(ambiguous.candidateCount, 2);
 
     let settled = false;
     const invalid = await processPayOSWebhookWithAttempts({
