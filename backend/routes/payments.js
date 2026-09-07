@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/env.js';
-import { verifyWebhookData } from '../services/payos.js';
-import { reconcilePayOSOrder } from '../services/payos-reconciliation.js';
-import { classifyWebhookError, classifyCASZeroAffected } from '../services/webhook-classifier.js';
+import { reconcilePayOSCheckoutGroup, reconcilePayOSOrder } from '../services/payos-reconciliation.js';
+import { processPayOSWebhookWithAttempts } from '../services/payment-attempt-settlement.js';
+import { classifyWebhookError } from '../services/webhook-classifier.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
 import directPayOSAttemptService from '../services/direct-payos-attempt.js';
 import groupedPayOSAttemptService from '../services/grouped-payos-attempt.js';
@@ -30,115 +30,40 @@ function extractCustomerToken(req) {
  * POST /api/payments/payos/webhook
  */
 import checkoutGroupsRepository from '../repositories/postgres/checkout-groups.js';
-import postgresDb from '../config/db-postgres.js';
 
-export async function handlePayOSWebhook(req, res) {
+export function createPayOSWebhookHandler({ processWebhook = processPayOSWebhookWithAttempts } = {}) {
+  return async function handlePayOSWebhook(req, res) {
   // Test event từ PayOS Dashboard - chỉ cho phép ở môi trường không phải production
   if (process.env.NODE_ENV !== 'production' && (req.body?.data?.orderCode === 123 || req.body?.desc?.includes('ma giao dich thu'))) {
     console.log('ℹ️ PayOS webhook test event verified');
     return res.json({ ok: true, message: 'Test webhook ok' });
   }
 
-  const rawOrderCode = req.body?.data?.orderCode || req.body?.orderCode;
-  const rawLinkId = req.body?.data?.paymentLinkId || req.body?.paymentLinkId;
-
-  let snapshotProfileCode = null;
-  if (rawOrderCode || rawLinkId) {
-    try {
-      const [orderRows] = await postgresDb.query(
-        `SELECT payment_profile_code FROM orders WHERE payos_order_code = $1 OR payment_link_id = $2 LIMIT 1`,
-        [rawOrderCode || null, rawLinkId || null],
-      );
-      if (orderRows[0]?.payment_profile_code) {
-        snapshotProfileCode = orderRows[0].payment_profile_code;
-      } else {
-        const [groupRows] = await postgresDb.query(
-          `SELECT payment_profile_code FROM checkout_groups WHERE payos_order_code = $1 OR payment_link_id = $2 LIMIT 1`,
-          [rawOrderCode || null, rawLinkId || null],
-        );
-        if (groupRows[0]?.payment_profile_code) {
-          snapshotProfileCode = groupRows[0].payment_profile_code;
-        }
-      }
-    } catch {}
-  }
-
-  let verifiedData;
   try {
-    verifiedData = verifyWebhookData(req.body, { profileCode: snapshotProfileCode });
-  } catch (err) {
-    console.error('❌ PayOS Webhook Invalid Signature:', err.message);
-    const classified = classifyWebhookError({ type: 'INVALID_SIGNATURE', message: err.message });
-    return res.status(classified.statusCode).json(classified.body);
-  }
-
-  const { orderCode, amount, reference, paymentLinkId, code } = verifiedData || {};
-  if (!orderCode) {
-    return res.status(200).json({ ok: false, message: 'Thiếu orderCode' });
-  }
-
-  // Chỉ chấp nhận giao dịch thành công theo chuẩn PayOS (code '00')
-  if (code !== '00') {
-    console.warn(`⚠️ PayOS webhook báo trạng thái không thành công: code=${code}`);
-    return res.status(200).json({ ok: false, message: 'Giao dịch chưa thành công' });
-  }
-
-  try {
-    // Check if matching checkout group exists
-    const group = await checkoutGroupsRepository.findGroupByPayOSOrderCode(orderCode);
-    if (group) {
-      const groupResult = await checkoutGroupsRepository.processSuccessfulGroupWebhook({
-        eventKey: String(reference || paymentLinkId || orderCode),
-        orderCode,
-        amount: Number(amount),
-        reference,
-        paymentLinkId,
-        payload: { orderCode, amount: Number(amount), reference: reference || null, paymentLinkId: paymentLinkId || null, code },
-      });
-
-      if (groupResult.kind === 'paid') {
-        console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán Checkout Group ${group.group_code} (${amount}đ)`);
-        return res.json({ ok: true, message: 'Thanh toán thành công' });
-      }
-      if (groupResult.kind === 'duplicate' || groupResult.kind === 'already_paid') {
-        return res.json({ ok: true, message: 'Đơn hàng đã được xác nhận thanh toán từ trước' });
-      }
-      if (groupResult.kind === 'amount_mismatch') {
-        console.warn(`⚠️ [PayOS Webhook Rejection]: Số tiền thanh toán không khớp đơn hàng gộp ${group.group_code}`);
-        return res.status(200).json({ ok: false, message: 'Số tiền thanh toán không khớp' });
-      }
-      return res.status(200).json({ ok: false, message: 'Giao dịch không hợp lệ' });
-    }
-
-    const result = await paymentsRepository.processSuccessfulWebhook({
-      eventKey: String(reference || paymentLinkId || orderCode),
-      orderCode, amount: Number(amount), reference, paymentLinkId,
-      payload: { orderCode, amount: Number(amount), reference: reference || null, paymentLinkId: paymentLinkId || null, code },
-    });
-    if (result.kind === 'paid') {
-      console.log(`✅ [PayOS Webhook Success]: Đã xác nhận thanh toán đơn (PayOS Code: ${orderCode}, ${amount}đ)`);
+    const result = await processWebhook({ body: req.body });
+    if (['paid', 'duplicate', 'already_paid'].includes(result.kind)) {
       return res.json({ ok: true, message: 'Thanh toán thành công' });
     }
-    if (result.kind === 'duplicate' || result.kind === 'already_paid') {
-      return res.json({ ok: true, message: 'Đơn hàng đã được xác nhận thanh toán từ trước' });
+    if (result.kind === 'signature_invalid') {
+      const classified = classifyWebhookError({ type: 'INVALID_SIGNATURE', message: 'signature verification failed' });
+      return res.status(classified.statusCode).json(classified.body);
     }
-    const order = result.order || null;
-    const classified = classifyCASZeroAffected({ order, webhookAmount: amount });
-
-    if (classified.ok) {
-      console.log(`ℹ️ [PayOS Webhook Idempotent]: Đơn hàng ${order?.order_code} đã thanh toán từ trước`);
-    } else {
-      console.warn(`⚠️ [PayOS Webhook Rejection]: ${classified.message} (reason: ${classified.reason})`);
+    if (result.kind === 'not_successful') {
+      return res.status(200).json({ ok: false, message: 'Giao dịch chưa thành công' });
     }
-
-    return res.status(classified.statusCode).json({ ok: classified.ok, message: classified.message });
+    // Unknown/ambiguous candidates and business rejections never mutate a
+    // target, and are non-retryable from PayOS's point of view.
+    return res.status(200).json({ ok: false, message: 'Giao dịch không hợp lệ' });
   } catch (err) {
     console.error('PayOS webhook infrastructure error:', err?.name || 'unknown');
     // Lỗi hạ tầng / Database timeout phải trả HTTP 500 để PayOS retry
     const classified = classifyWebhookError({ type: 'INFRASTRUCTURE', message: err.message });
     return res.status(classified.statusCode).json(classified.body);
   }
+  };
 }
+
+export const handlePayOSWebhook = createPayOSWebhookHandler();
 
 router.post('/payos/webhook', handlePayOSWebhook);
 
@@ -156,11 +81,19 @@ router.get('/payos/status', noCache, async (req, res) => {
       const userId = decodedToken ? Number(decodedToken.id || decodedToken.sub) : null;
       const rawCancelToken = (req.headers['x-cancel-token'] || req.query.cancel_token || '').trim() || null;
 
-      const groupDto = await checkoutGroupsRepository.findGroupForCustomerLookup(code, {
+      let groupDto = await checkoutGroupsRepository.findGroupForCustomerLookup(code, {
         userId,
         cancelToken: rawCancelToken,
       });
       if (!groupDto) return res.status(404).json({ error: 'Không tìm thấy đơn hàng gộp' });
+      if (['unpaid', 'expired'].includes(groupDto.payment_status) && groupDto.payment_provider === 'payos') {
+        const group = await checkoutGroupsRepository.findGroupByCode(code);
+        await reconcilePayOSCheckoutGroup({ checkoutGroup: group });
+        groupDto = await checkoutGroupsRepository.findGroupForCustomerLookup(code, {
+          userId,
+          cancelToken: rawCancelToken,
+        });
+      }
       return res.json({
         order: {
           order_code: groupDto.group_code,
@@ -178,8 +111,8 @@ router.get('/payos/status', noCache, async (req, res) => {
     let order = await paymentsRepository.findStatusByOrderCode(code);
     if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
 
-    if (order.payment_status === 'unpaid') {
-      await reconcilePayOSOrder({ order, paymentRepository: paymentsRepository });
+    if (['unpaid', 'expired'].includes(order.payment_status)) {
+      await reconcilePayOSOrder({ order });
       if (order.payment_provider === 'payos') {
         order = await paymentsRepository.findStatusByOrderCode(code);
       }
