@@ -265,7 +265,6 @@ export function createUsersRepository(database = postgresDb) {
         params.push(branchId);
         where += ` AND u.admin_branch_id = $${params.length}`;
       }
-      params.push(params.length + 1);
       const [rows] = await database.query(
         `SELECT u.id, u.fullname, u.email, u.admin_role AS role,
                 u.admin_branch_id AS branch_id,

@@ -125,7 +125,7 @@ export function createEmailService({
  */
 export function createResendTransport({ apiKey, fromEmail } = {}) {
   const key = apiKey || process.env.RESEND_API_KEY;
-  const from = fromEmail || process.env.EMAIL_FROM || 'noreply@teaplus.vn';
+  const from = fromEmail || process.env.EMAIL_FROM || 'TeaPlus <onboarding@resend.dev>';
 
   if (!key) {
     // Don't throw at construction time — allow injection during tests

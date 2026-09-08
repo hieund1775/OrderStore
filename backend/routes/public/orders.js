@@ -95,7 +95,7 @@ router.post('/', asyncHandler(async (req, res) => {
       delivery_addr: validated.deliveryAddress,
     };
     const customerUserId = extractCustomerUserId(req);
-    const idempotencyKey = String(req.headers['idempotency-key'] || '');
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim() || `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const order = await customerOrderService.create({
       input,
       userId: customerUserId,

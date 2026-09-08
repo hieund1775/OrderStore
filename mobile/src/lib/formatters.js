@@ -33,7 +33,7 @@ export function getOrderStatusLabel(status) {
     case 'delivering':
       return { label: 'Đang giao hàng', color: '#2563eb', bg: '#dbeafe' };
     case 'completed':
-      return { label: 'Hoàn thành', color: '#059669', bg: '#d1fae5' };
+      return { label: 'Hoàn thành', color: '#ea580c', bg: '#fff7ed' };
     case 'cancelled':
       return { label: 'Đã hủy', color: '#dc2626', bg: '#fee2e2' };
     default:

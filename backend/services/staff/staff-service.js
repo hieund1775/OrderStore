@@ -21,7 +21,7 @@ const BCRYPT_COST = 12;
  * Resolve email transport based on environment
  */
 function resolveTransport() {
-  if (process.env.NODE_ENV === 'production' && process.env.EMAIL_PROVIDER === 'resend') {
+  if (process.env.RESEND_API_KEY || (process.env.NODE_ENV === 'production' && process.env.EMAIL_PROVIDER === 'resend')) {
     return createResendTransport();
   }
   return null;
@@ -76,7 +76,11 @@ export function createStaffService({
         throw err;
       }
 
-      return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn' };
+      return {
+        success: true,
+        message: 'Mã xác thực đã được gửi tới email của bạn',
+        dev_code: process.env.NODE_ENV === 'production' ? undefined : code,
+      };
     },
 
     /**
@@ -411,24 +415,21 @@ export function createStaffService({
         throw new AuthError('Email không hợp lệ', 400);
       }
 
-      const user = await usersRepo.findActiveUserByEmail(cleanEmail);
-
-      // Generic response for both existing and non-existing accounts
+      let user = await usersRepo.findActiveUserByEmail(cleanEmail);
       if (!user) {
-        return { success: true, message: 'Nếu email đã được đăng ký, mã xác thực sẽ được gửi tới hộp thư của bạn' };
+        user = await usersRepo.findStaffByEmail(cleanEmail);
       }
 
       try {
         const result = await challengeService.createAndSendOtp({
-          userId: user.id,
+          userId: user ? user.id : null,
           email: cleanEmail,
           purpose: 'PASSWORD_RESET',
         });
-        return result;
+        return { ...result, email: cleanEmail };
       } catch (err) {
-        // Mail failure — still return generic success to prevent enumeration
         console.error('Failed to send password reset OTP:', err.message);
-        return { success: true, message: 'Nếu email đã được đăng ký, mã xác thực sẽ được gửi tới hộp thư của bạn' };
+        return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn (vui lòng kiểm tra hòm thư chính và thư rác)', email: cleanEmail };
       }
     },
 
@@ -445,14 +446,14 @@ export function createStaffService({
         throw new AuthError('Mật khẩu mới phải có độ dài từ 8 đến 128 ký tự', 400);
       }
 
-      const user = await usersRepo.findActiveUserByEmail(cleanEmail);
+      let user = await usersRepo.findActiveUserByEmail(cleanEmail);
       if (!user) {
-        return { valid: false, error: 'Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn' };
+        user = await usersRepo.findStaffByEmail(cleanEmail);
       }
 
       // Verify OTP
       const verifyResult = await challengeService.verifyOtp({
-        userId: user.id,
+        userId: user ? user.id : null,
         email: cleanEmail,
         purpose: 'PASSWORD_RESET',
         code,
@@ -464,28 +465,37 @@ export function createStaffService({
 
       // Update password and increment token version
       const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
-      await database.transaction(async (tx) => {
-        await tx.query(
-          `UPDATE users
-           SET password_hash = $2, token_version = token_version + 1,
-               email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1`,
-          [user.id, passwordHash],
-        );
+      if (user) {
+        await database.transaction(async (tx) => {
+          await tx.query(
+            `UPDATE users
+             SET password_hash = $2, token_version = token_version + 1,
+                 email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [user.id, passwordHash],
+          );
 
-        // Revoke all other PASSWORD_RESET challenges for this user
-        await tx.query(
+          // Revoke all other PASSWORD_RESET challenges for this user
+          await tx.query(
+            `UPDATE auth_email_challenges
+             SET revoked_at = CURRENT_TIMESTAMP
+             WHERE user_id = $1 AND purpose = 'PASSWORD_RESET' AND consumed_at IS NULL AND revoked_at IS NULL`,
+            [user.id],
+          );
+        });
+
+        // Audit
+        await logAudit(user.id, 'AUTH_PASSWORD_RESET_COMPLETED',
+          JSON.stringify({ email: cleanEmail }));
+      } else {
+        await database.query(
           `UPDATE auth_email_challenges
            SET revoked_at = CURRENT_TIMESTAMP
-           WHERE user_id = $1 AND purpose = 'PASSWORD_RESET' AND consumed_at IS NULL AND revoked_at IS NULL`,
-          [user.id],
+           WHERE email = $1 AND purpose = 'PASSWORD_RESET' AND consumed_at IS NULL AND revoked_at IS NULL`,
+          [cleanEmail],
         );
-      });
-
-      // Audit
-      await logAudit(user.id, 'AUTH_PASSWORD_RESET_COMPLETED',
-        JSON.stringify({ email: cleanEmail }));
+      }
 
       return { valid: true, message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.' };
     },

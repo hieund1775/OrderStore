@@ -2,12 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import pg from 'pg';
 import { getPostgresPoolConfig } from '../../config/db-postgres.js';
 import { describePostgresTarget, validatePostgresTestGuard } from '../../config/postgres-guard.js';
 
-const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config();
+
+const { Pool } = pg;
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
 /**

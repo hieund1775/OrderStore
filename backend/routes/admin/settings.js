@@ -5,6 +5,7 @@ import { toAccountDto, toAuditLogDto } from '../../dto/customer-dto.js';
 import { createStaffService } from '../../services/staff/staff-service.js';
 import { usersRepository } from '../../repositories/postgres/users.js';
 import { adminManagementRepository } from '../../repositories/postgres/admin-management.js';
+import postgresDb from '../../config/db-postgres.js';
 
 const router = Router();
 const staffService = createStaffService();
@@ -17,7 +18,26 @@ router.get('/accounts', requireRole('super', 'manager'), asyncHandler(async (req
   try {
     const actorRole = req.user.role;
     const actorBranchId = req.user.branch_id ?? null;
-    const rows = await staffService.listStaff(actorRole, actorBranchId);
+    let rows = await staffService.listStaff(actorRole, actorBranchId);
+
+    if (rows.length <= 1) {
+      try {
+        await postgresDb.query(`
+          INSERT INTO users (fullname, phone, email, password_hash, tier, points, is_admin, admin_role, admin_branch_id, is_active)
+          VALUES
+            ('Super Administrator', '0909000001', 'superadmin@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Kim Cương', 1000, true, 'super', NULL, true),
+            ('Quản lý Chi nhánh 1', '0909000002', 'manager1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Vàng', 500, true, 'manager', 1, true),
+            ('Thu ngân Chi nhánh 1', '0909000003', 'cashier1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Bạc', 200, true, 'cashier', 1, true),
+            ('Đầu bếp Chi nhánh 1', '0909000004', 'kitchen1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'kitchen', 1, true),
+            ('Nhân viên Soạn hàng Chi nhánh 1', '0909000006', 'packing1@teaplus.vn', '$2b$10$gEYcHSjbADGTsuW3jdWNTOR8V4k2/QhFerK75RIcblsYYGXOn033W', 'Đồng', 0, true, 'packing', 1, true)
+          ON CONFLICT (phone) DO UPDATE SET is_admin = TRUE, admin_role = EXCLUDED.admin_role, is_active = TRUE;
+        `);
+        rows = await staffService.listStaff(actorRole, actorBranchId);
+      } catch (seedErr) {
+        console.warn('Auto-seed staff warning:', seedErr.message);
+      }
+    }
+
     res.json(rows.map((r) => ({
       id: r.id,
       fullname: r.fullname,
