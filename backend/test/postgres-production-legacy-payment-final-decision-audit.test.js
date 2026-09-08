@@ -32,14 +32,34 @@ function canonicalRow(id, classification = 'ACTIVE_PAYMENT_REQUIRES_REPAIR') {
   };
 }
 
-function finalReport({ inputCount = 1, resolvedCount = inputCount, classifiedCount = inputCount, driftCount = inputCount - resolvedCount, classes = [] } = {}) {
+function finalReport({
+  inputCount = 1,
+  distinctCount = inputCount,
+  resolvedCount = inputCount,
+  unresolvedCount = inputCount - resolvedCount,
+  missingCount = 0,
+  extraCount = 0,
+  kindMismatchCount = 0,
+  classes = [],
+} = {}) {
   return {
-    input_integrity: {
-      canonical_active_input_count: inputCount,
-      canonical_active_distinct_count: inputCount,
-      resolved_target_count: resolvedCount,
-      classified_target_count: classifiedCount,
-      input_drift_count: driftCount,
+    input_diagnostics: {
+      canonical_active_count: inputCount,
+      serialized_input_count: inputCount,
+      distinct_input_target_count: distinctCount,
+      duplicate_input_count: inputCount - distinctCount,
+      detail_resolved_count: resolvedCount,
+      unresolved_input_count: unresolvedCount,
+      missing_from_detail_count: missingCount,
+      unexpected_extra_detail_count: extraCount,
+      target_kind_mismatch_count: kindMismatchCount,
+      by_target_kind: [{
+        target_kind: 'direct_order', serialized_input_count: inputCount,
+        distinct_input_target_count: distinctCount, duplicate_input_count: inputCount - distinctCount,
+        detail_resolved_count: resolvedCount, unresolved_input_count: unresolvedCount,
+        missing_from_detail_count: missingCount, unexpected_extra_detail_count: extraCount,
+        target_kind_mismatch_count: kindMismatchCount,
+      }],
     },
     age_breakdown: [{ artifact_age_bucket: 'GT_30D', target_count: inputCount }],
     payment_status_breakdown: [{ payment_status: 'unpaid', target_count: inputCount }],
@@ -133,10 +153,11 @@ describe('production legacy final decision audit', () => {
       logger: captured.logger,
     });
 
-    assert.equal(result.report.input_integrity.canonical_active_input_count, 100);
+    assert.equal(result.report.input_diagnostics.canonical_active_count, 100);
     assert.equal(receivedConfig.connectionString, approvedEnvironment.PRODUCTION_DATABASE_URL);
     const detailCall = fake.calls.find((call) => call.sql.includes('P1 / 0026 final decision audit'));
-    assert.equal(JSON.parse(detailCall.params[0]).length, 127, 'detail audit receives the complete canonical set and filters ACTIVE internally');
+    assert.equal(JSON.parse(detailCall.params[0]).length, 100, 'detail audit receives only the canonical ACTIVE set');
+    assert.equal(detailCall.params[1], 100);
     assert.equal(fake.calls.some((call) => /\b(?:BEGIN|INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|COMMIT|ROLLBACK)\b/i.test(call.sql)), false);
     const output = `${captured.logs.join('\n')}\n${captured.errors.join('\n')}`;
     assert.match(output, /host=prod\.db\.example, database=teaplus/);
@@ -146,27 +167,49 @@ describe('production legacy final decision audit', () => {
     assert.equal(output.includes('internal-transaction-1'), false);
   });
 
-  it('fails closed when canonical active input drifts, is duplicated, or does not resolve', async () => {
-    const drift = createFakePool({ rows: [canonicalRow(1)], report: finalReport({ inputCount: 1, resolvedCount: 0, classifiedCount: 1, driftCount: 1 }) });
+  it('fails closed when canonical active input drifts, duplicates, or does not resolve', async () => {
+    const drift = createFakePool({ rows: [canonicalRow(1)], report: finalReport({ inputCount: 1, resolvedCount: 0, unresolvedCount: 1, missingCount: 1 }) });
     await assert.rejects(() => runProductionLegacyFinalDecisionAudit({
       args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: drift.pool,
       loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
     }), /input drift detected/);
 
-    const duplicate = createFakePool({ rows: [canonicalRow(1), canonicalRow(1)], report: finalReport({ inputCount: 2 }) });
+    const duplicate = createFakePool({ rows: [canonicalRow(1), canonicalRow(1)], report: finalReport({ inputCount: 2, distinctCount: 1, resolvedCount: 2 }) });
     await assert.rejects(() => runProductionLegacyFinalDecisionAudit({
       args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: duplicate.pool,
       loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
-    }), /duplicate targets/);
+    }), /input drift detected/);
+  });
+
+  it('reproduces old UNION fan-out diagnostics and accepts exactly one detail row per valid target after branch filters', async () => {
+    const oldFanout = createFakePool({ rows: [canonicalRow(1)], report: finalReport({ inputCount: 1, resolvedCount: 1, extraCount: 1 }) });
+    await assert.rejects(() => runProductionLegacyFinalDecisionAudit({
+      args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: oldFanout.pool,
+      loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+    }), /input drift detected/);
+
+    const direct = canonicalRow(1);
+    const group = canonicalRow(2);
+    const fixed = createFakePool({ rows: [direct, group], report: finalReport({
+      inputCount: 2,
+      classes: [{ final_classification: 'STALE_LEGACY_SAFE_TO_QUARANTINE', target_count: 2 }],
+    }) });
+    const result = await runProductionLegacyFinalDecisionAudit({
+      args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: fixed.pool,
+      loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+    });
+    assert.equal(result.report.input_diagnostics.unexpected_extra_detail_count, 0);
+    assert.equal(result.report.input_diagnostics.detail_resolved_count, 2);
   });
 
   it('keeps final SQL CTE/SELECT-only, category-free, and ordered by the safe classification precedence', async () => {
     const currentFile = fileURLToPath(import.meta.url);
     const sql = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0026_active_legacy_payment_final_decision_audit_readonly.sql'), 'utf8');
-    assert.match(sql, /^\s*--[\s\S]*WITH canonical_input AS/m);
+    assert.match(sql, /^\s*--[\s\S]*WITH serialized_input AS/m);
     assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
     assert.doesNotMatch(sql, /\b(?:categories|category_payment_profiles|root_category_id|updated_at)\b/i);
     assert.doesNotMatch(sql, /\b(?:customer_name|customer_phone|order_code|group_code|receiver_account_number)\b/i);
+    assert.match(sql, /FROM serialized_input si[\s\S]*WHERE si\.target_kind = 'direct_order'[\s\S]*UNION ALL[\s\S]*FROM serialized_input si[\s\S]*WHERE si\.target_kind = 'checkout_group'/);
     const evidenceIndex = sql.indexOf("WHEN has_payment_evidence THEN 'HAS_PAYMENT_EVIDENCE'");
     const recentIndex = sql.indexOf("THEN 'RECENT_OR_POTENTIALLY_LIVE'");
     const staleIndex = sql.indexOf("THEN 'STALE_LEGACY_SAFE_TO_QUARANTINE'");

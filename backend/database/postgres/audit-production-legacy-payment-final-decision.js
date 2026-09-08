@@ -105,25 +105,36 @@ export async function runProductionLegacyFinalDecisionAudit({
     const canonicalRows = canonicalResult.rows || [];
     const activeTargets = canonicalActiveTargets(canonicalRows);
     const uniqueActiveTargetCount = new Set(activeTargets.map(activeCanonicalTargetKey)).size;
-    if (uniqueActiveTargetCount !== activeTargets.length) {
-      throw new Error('PRODUCTION LEGACY FINAL DECISION AUDIT: canonical active input has duplicate targets.');
-    }
-
-    const decisionResult = await client.query(decisionSql, [JSON.stringify(canonicalRows)]);
+    // Preserve duplicate input through the detail audit so it can report the
+    // anomaly before the equality gate rejects it. Never deduplicate it here.
+    const decisionResult = await client.query(decisionSql, [JSON.stringify(activeTargets), activeTargets.length]);
     const report = decisionResult.rows?.[0]?.report;
-    const integrity = report?.input_integrity;
+    const diagnostics = report?.input_diagnostics;
     const expectedCount = activeTargets.length;
-    const reportedInputCount = Number(integrity?.canonical_active_input_count);
-    const reportedDistinctCount = Number(integrity?.canonical_active_distinct_count);
-    const resolvedCount = Number(integrity?.resolved_target_count);
-    const classifiedCount = Number(integrity?.classified_target_count);
-    const driftCount = Number(integrity?.input_drift_count);
+    const reportedCanonicalCount = Number(diagnostics?.canonical_active_count);
+    const serializedInputCount = Number(diagnostics?.serialized_input_count);
+    const reportedDistinctCount = Number(diagnostics?.distinct_input_target_count);
+    const duplicateInputCount = Number(diagnostics?.duplicate_input_count);
+    const resolvedCount = Number(diagnostics?.detail_resolved_count);
+    const unresolvedCount = Number(diagnostics?.unresolved_input_count);
+    const missingDetailCount = Number(diagnostics?.missing_from_detail_count);
+    const unexpectedExtraCount = Number(diagnostics?.unexpected_extra_detail_count);
+    const targetKindMismatchCount = Number(diagnostics?.target_kind_mismatch_count);
+    const classifiedCount = (report?.final_classification_counts || [])
+      .reduce((total, row) => total + Number(row.target_count || 0), 0);
     if (!report || typeof report !== 'object'
-      || reportedInputCount !== expectedCount
+      || reportedCanonicalCount !== expectedCount
+      || serializedInputCount !== expectedCount
       || reportedDistinctCount !== expectedCount
+      || uniqueActiveTargetCount !== expectedCount
+      || duplicateInputCount !== 0
       || resolvedCount !== expectedCount
+      || unresolvedCount !== 0
+      || missingDetailCount !== 0
+      || unexpectedExtraCount !== 0
+      || targetKindMismatchCount !== 0
       || classifiedCount !== expectedCount
-      || driftCount !== 0) {
+    ) {
       throw new Error('PRODUCTION LEGACY FINAL DECISION AUDIT: canonical active input drift detected; decision is fail-closed.');
     }
 
