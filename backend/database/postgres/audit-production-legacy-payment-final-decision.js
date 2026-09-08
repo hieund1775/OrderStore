@@ -92,6 +92,36 @@ function finalDecisionExplanationIsConsistent(report) {
   ));
 }
 
+function breakdownSumsTo(rows, expected) {
+  return Array.isArray(rows) && countTargets(rows) === expected;
+}
+
+function finalDecisionDeepExplanationIsConsistent(report) {
+  const deep = report?.unresolved_evidence_deep_explanation;
+  const multiple = report?.multiple_predicates_change_explanation;
+  const evidenceTargetCount = classificationTargetCount(report, 'HAS_PAYMENT_EVIDENCE');
+  const multipleTargetCount = (report?.recent_live_explanation?.reason_counts || [])
+    .filter((row) => row.reason === 'MULTIPLE_PREDICATES')
+    .reduce((total, row) => total + Number(row.target_count || 0), 0);
+  if (!deep || !multiple
+    || Number(deep.has_payment_evidence_target_count) !== evidenceTargetCount
+    || Number(multiple.target_count) !== multipleTargetCount
+    || !breakdownSumsTo(deep.event_type_group_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.processing_status_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.business_code_state_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.provider_status_state_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.artifact_timing_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.expiry_timing_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.amount_match_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.target_identity_match_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.profile_evidence_state_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.p1_transition_interpretation_counts, evidenceTargetCount)
+    || !breakdownSumsTo(deep.overlap, evidenceTargetCount)
+    || !breakdownSumsTo(multiple.overlap, multipleTargetCount)
+    || !countsAreWithinTarget(multipleTargetCount, multiple.source_counts)) return false;
+  return true;
+}
+
 /**
  * Guarded DB-only decision audit. It reads the canonical classifier first and
  * passes that exact in-memory result to the detail SQL. No provider SDK, HTTP
@@ -173,6 +203,7 @@ export async function runProductionLegacyFinalDecisionAudit({
       || targetKindMismatchCount !== 0
       || classifiedCount !== expectedCount
       || !finalDecisionExplanationIsConsistent(report)
+      || !finalDecisionDeepExplanationIsConsistent(report)
     ) {
       throw new Error('PRODUCTION LEGACY FINAL DECISION AUDIT: canonical active input drift detected; decision is fail-closed.');
     }

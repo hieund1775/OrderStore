@@ -32,7 +32,10 @@ target_state AS (
     o.payment_created_at, o.payment_expires_at, o.paid_at,
     o.created_at AS target_created_at, lol.lifecycle_changed_at,
     (o.payos_order_code IS NOT NULL OR o.payment_link_id IS NOT NULL
-      OR o.payment_checkout_url IS NOT NULL OR o.payment_qr_code IS NOT NULL) AS has_payos_artifact
+      OR o.payment_checkout_url IS NOT NULL OR o.payment_qr_code IS NOT NULL) AS has_payos_artifact,
+    o.total::numeric AS target_amount,
+    NULLIF(BTRIM(o.payment_profile_code), '') AS historical_profile_code,
+    (o.payment_status = 'cancelled' OR lol.lifecycle_status = 'Đã hủy') AS target_cancelled
   FROM serialized_input si
   LEFT JOIN orders o ON o.id = si.target_id
   LEFT JOIN latest_order_lifecycle lol ON lol.order_id = o.id
@@ -46,7 +49,10 @@ target_state AS (
     cg.payment_created_at, cg.payment_expires_at, cg.paid_at,
     cg.created_at, NULL::timestamptz,
     (cg.payos_order_code IS NOT NULL OR cg.payment_link_id IS NOT NULL
-      OR cg.payment_checkout_url IS NOT NULL OR cg.payment_qr_code IS NOT NULL)
+      OR cg.payment_checkout_url IS NOT NULL OR cg.payment_qr_code IS NOT NULL),
+    cg.total_amount::numeric,
+    NULLIF(BTRIM(cg.payment_profile_code), ''),
+    (cg.payment_status = 'cancelled')
   FROM serialized_input si
   LEFT JOIN checkout_groups cg ON cg.id = si.target_id
   WHERE si.target_kind = 'checkout_group'
@@ -89,24 +95,38 @@ with_artifact_time AS (
   END AS artifact_timestamp
   FROM target_state ts
 ),
-payment_event_evidence AS (
-  SELECT wat.input_row_id,
-    COALESCE(BOOL_OR(e.id IS NOT NULL), FALSE) AS has_payment_event,
-    COALESCE(BOOL_OR(e.id IS NOT NULL AND wat.payment_expires_at IS NOT NULL
-      AND COALESCE(e.processed_at, e.created_at) > wat.payment_expires_at), FALSE) AS has_payment_event_after_expiry,
-    COALESCE(BOOL_OR(e.id IS NOT NULL AND e.event_type = 'payment.succeeded'), FALSE) AS has_matched_successful_payment_event,
-    COALESCE(BOOL_OR(e.id IS NOT NULL AND e.event_type = 'payment.succeeded'
-      AND e.processing_status = 'processed'), FALSE) AS has_processed_paid_event,
-    COALESCE(MAX(COALESCE(e.processed_at, e.created_at)), NULL) AS latest_payment_event_at
+matched_payment_events AS (
+  SELECT wat.input_row_id, e.id, e.event_type, e.processing_status, e.created_at, e.processed_at, e.payload,
+    ((wat.target_kind = 'direct_order' AND e.order_id = wat.target_id)) AS direct_target_identity_match,
+    (si.provider_order_code IS NOT NULL AND (
+      e.payload ->> 'orderCode' = si.provider_order_code::text
+      OR e.payload #>> '{data,orderCode}' = si.provider_order_code::text
+    )) AS provider_order_identity_match,
+    (si.expected_payment_link_id IS NOT NULL AND (
+      e.payload ->> 'paymentLinkId' = si.expected_payment_link_id
+      OR e.payload #>> '{data,paymentLinkId}' = si.expected_payment_link_id
+    )) AS payment_link_identity_match
   FROM with_artifact_time wat
   JOIN serialized_input si ON si.input_row_id = wat.input_row_id
-  LEFT JOIN payment_events e ON e.provider = 'payos' AND (
+  JOIN payment_events e ON e.provider = 'payos' AND (
     (wat.target_kind = 'direct_order' AND e.order_id = wat.target_id)
     OR (si.provider_order_code IS NOT NULL AND (e.payload ->> 'orderCode' = si.provider_order_code::text
       OR e.payload #>> '{data,orderCode}' = si.provider_order_code::text))
     OR (si.expected_payment_link_id IS NOT NULL AND (e.payload ->> 'paymentLinkId' = si.expected_payment_link_id
       OR e.payload #>> '{data,paymentLinkId}' = si.expected_payment_link_id))
   )
+),
+payment_event_evidence AS (
+  SELECT wat.input_row_id,
+    COALESCE(BOOL_OR(mpe.id IS NOT NULL), FALSE) AS has_payment_event,
+    COALESCE(BOOL_OR(mpe.id IS NOT NULL AND wat.payment_expires_at IS NOT NULL
+      AND COALESCE(mpe.processed_at, mpe.created_at) > wat.payment_expires_at), FALSE) AS has_payment_event_after_expiry,
+    COALESCE(BOOL_OR(mpe.id IS NOT NULL AND mpe.event_type = 'payment.succeeded'), FALSE) AS has_matched_successful_payment_event,
+    COALESCE(BOOL_OR(mpe.id IS NOT NULL AND mpe.event_type = 'payment.succeeded'
+      AND mpe.processing_status = 'processed'), FALSE) AS has_processed_paid_event,
+    COALESCE(MAX(COALESCE(mpe.processed_at, mpe.created_at)), NULL) AS latest_payment_event_at
+  FROM with_artifact_time wat
+  LEFT JOIN matched_payment_events mpe ON mpe.input_row_id = wat.input_row_id
   GROUP BY wat.input_row_id
 ),
 evidence_state AS (
@@ -201,6 +221,88 @@ age_by_final_classification AS (
   FROM classified
   WHERE final_classification IN ('HAS_PAYMENT_EVIDENCE', 'RECENT_OR_POTENTIALLY_LIVE')
   GROUP BY final_classification, artifact_age_bucket
+),
+evidence_event_rows AS (
+  SELECT c.input_row_id, c.artifact_timestamp, c.payment_expires_at, c.target_amount,
+    c.historical_profile_code, c.target_cancelled,
+    mpe.id AS event_id, mpe.event_type, mpe.processing_status, mpe.created_at, mpe.processed_at, mpe.payload,
+    mpe.direct_target_identity_match, mpe.provider_order_identity_match, mpe.payment_link_identity_match,
+    CASE WHEN mpe.event_type = 'payment.succeeded' THEN 'PAYMENT_SUCCEEDED' ELSE 'OTHER_EVENT_TYPE' END AS event_type_group,
+    CASE WHEN mpe.processing_status = 'processed' THEN 'PROCESSED'
+      WHEN mpe.processing_status IN ('pending', 'ignored', 'failed') THEN UPPER(mpe.processing_status)
+      ELSE 'OTHER_OR_MISSING' END AS processing_status_group,
+    CASE WHEN COALESCE(mpe.payload ->> 'code', mpe.payload #>> '{data,code}') = '00' THEN 'CODE_00'
+      WHEN NULLIF(BTRIM(COALESCE(mpe.payload ->> 'code', mpe.payload #>> '{data,code}')), '') IS NULL THEN 'MISSING'
+      ELSE 'NON_00_OR_OTHER' END AS business_code_state,
+    CASE WHEN UPPER(COALESCE(mpe.payload ->> 'status', mpe.payload #>> '{data,status}', '')) = 'PAID' THEN 'PAID'
+      WHEN NULLIF(BTRIM(COALESCE(mpe.payload ->> 'status', mpe.payload #>> '{data,status}')), '') IS NULL THEN 'MISSING'
+      ELSE 'NOT_PAID_OR_OTHER' END AS provider_status_state,
+    CASE WHEN artifact_timestamp IS NULL THEN 'ARTIFACT_TIME_MISSING'
+      WHEN COALESCE(mpe.processed_at, mpe.created_at) > artifact_timestamp THEN 'AFTER_ARTIFACT'
+      ELSE 'BEFORE_OR_AT_ARTIFACT' END AS artifact_timing_state,
+    CASE WHEN payment_expires_at IS NULL THEN 'EXPIRY_TIME_MISSING'
+      WHEN COALESCE(mpe.processed_at, mpe.created_at) > payment_expires_at THEN 'AFTER_EXPIRY'
+      ELSE 'BEFORE_OR_AT_EXPIRY' END AS expiry_timing_state,
+    CASE
+      WHEN NULLIF(BTRIM(COALESCE(mpe.payload ->> 'amount', mpe.payload #>> '{data,amount}')), '') !~ '^-?[0-9]+(?:\.[0-9]+)?$' THEN 'MISSING_OR_INVALID'
+      WHEN (COALESCE(mpe.payload ->> 'amount', mpe.payload #>> '{data,amount}'))::numeric = target_amount THEN 'MATCH'
+      ELSE 'MISMATCH'
+    END AS amount_match_state,
+    CASE WHEN mpe.direct_target_identity_match AND (mpe.provider_order_identity_match OR mpe.payment_link_identity_match) THEN 'MULTIPLE_MATCHES'
+      WHEN mpe.direct_target_identity_match THEN 'DIRECT_TARGET_MATCH'
+      WHEN mpe.provider_order_identity_match AND mpe.payment_link_identity_match THEN 'MULTIPLE_MATCHES'
+      WHEN mpe.provider_order_identity_match THEN 'PROVIDER_ORDER_MATCH'
+      WHEN mpe.payment_link_identity_match THEN 'PAYMENT_LINK_MATCH'
+      ELSE 'NO_MATCH' END AS target_identity_match_state
+  FROM classified c
+  JOIN matched_payment_events mpe ON mpe.input_row_id = c.input_row_id
+  WHERE c.final_classification = 'HAS_PAYMENT_EVIDENCE'
+),
+evidence_target_summary AS (
+  SELECT input_row_id,
+    CASE WHEN COUNT(DISTINCT event_type_group) = 1 THEN MIN(event_type_group) ELSE 'MULTIPLE_EVENT_TYPE_GROUPS' END AS event_type_group,
+    CASE WHEN COUNT(DISTINCT processing_status_group) = 1 THEN MIN(processing_status_group) ELSE 'MULTIPLE_PROCESSING_STATUSES' END AS processing_status_group,
+    CASE WHEN COUNT(DISTINCT business_code_state) = 1 THEN MIN(business_code_state) ELSE 'MULTIPLE_BUSINESS_CODE_STATES' END AS business_code_state,
+    CASE WHEN COUNT(DISTINCT provider_status_state) = 1 THEN MIN(provider_status_state) ELSE 'MULTIPLE_PROVIDER_STATUS_STATES' END AS provider_status_state,
+    CASE WHEN COUNT(DISTINCT artifact_timing_state) = 1 THEN MIN(artifact_timing_state) ELSE 'MULTIPLE_ARTIFACT_TIMINGS' END AS artifact_timing_state,
+    CASE WHEN COUNT(DISTINCT expiry_timing_state) = 1 THEN MIN(expiry_timing_state) ELSE 'MULTIPLE_EXPIRY_TIMINGS' END AS expiry_timing_state,
+    CASE WHEN COUNT(DISTINCT amount_match_state) = 1 THEN MIN(amount_match_state) ELSE 'MULTIPLE_AMOUNT_STATES' END AS amount_match_state,
+    CASE WHEN COUNT(DISTINCT target_identity_match_state) = 1 THEN MIN(target_identity_match_state) ELSE 'MULTIPLE_IDENTITY_MATCH_STATES' END AS target_identity_match_state,
+    CASE WHEN BOOL_OR(historical_profile_code IS NULL) THEN 'NOT_DETERMINABLE_NO_PROFILE_SNAPSHOT'
+      ELSE 'PROFILE_CODE_RECORDED_NOT_SIGNATURE_VERIFIED' END AS profile_evidence_state,
+    CASE
+      WHEN BOOL_OR(target_cancelled) THEN 'WOULD_NOT_TRANSITION'
+      WHEN BOOL_AND(business_code_state = 'NON_00_OR_OTHER' OR amount_match_state = 'MISMATCH' OR target_identity_match_state = 'NO_MATCH') THEN 'WOULD_NOT_TRANSITION'
+      ELSE 'NOT_DETERMINABLE_LEGACY_SNAPSHOT_MISSING'
+    END AS p1_transition_interpretation
+  FROM evidence_event_rows
+  GROUP BY input_row_id
+),
+evidence_deep_overlap AS (
+  SELECT event_type_group, processing_status_group, business_code_state, provider_status_state,
+    artifact_timing_state, expiry_timing_state, amount_match_state, target_identity_match_state,
+    profile_evidence_state, p1_transition_interpretation, COUNT(*)::bigint AS target_count
+  FROM evidence_target_summary
+  GROUP BY event_type_group, processing_status_group, business_code_state, provider_status_state,
+    artifact_timing_state, expiry_timing_state, amount_match_state, target_identity_match_state,
+    profile_evidence_state, p1_transition_interpretation
+),
+multiple_predicate_change_targets AS (
+  SELECT input_row_id,
+    (paid_at IS NOT NULL AND artifact_timestamp IS NOT NULL AND paid_at > artifact_timestamp) AS paid_at_after_artifact,
+    (latest_payment_event_at IS NOT NULL AND artifact_timestamp IS NOT NULL AND latest_payment_event_at > artifact_timestamp) AS matched_payment_event_after_artifact,
+    (lifecycle_changed_at IS NOT NULL AND artifact_timestamp IS NOT NULL AND lifecycle_changed_at > artifact_timestamp) AS lifecycle_change_after_artifact
+  FROM classified
+  WHERE final_classification = 'RECENT_OR_POTENTIALLY_LIVE'
+    AND (COALESCE((artifact_timestamp IS NOT NULL AND CURRENT_TIMESTAMP - artifact_timestamp <= INTERVAL '30 days')::int, 0)
+      + COALESCE((payment_expires_at > CURRENT_TIMESTAMP)::int, 0)
+      + COALESCE(has_payment_or_lifecycle_change_after_artifact::int, 0)) > 1
+),
+multiple_predicate_change_overlap AS (
+  SELECT paid_at_after_artifact, matched_payment_event_after_artifact, lifecycle_change_after_artifact,
+    COUNT(*)::bigint AS target_count
+  FROM multiple_predicate_change_targets
+  GROUP BY paid_at_after_artifact, matched_payment_event_after_artifact, lifecycle_change_after_artifact
 )
 SELECT jsonb_build_object(
   'input_diagnostics', jsonb_build_object(
@@ -245,6 +347,29 @@ SELECT jsonb_build_object(
     'predicate_overlap', COALESCE((SELECT jsonb_agg(to_jsonb(rlo) ORDER BY rlo.artifact_age_lt_30d, rlo.expiry_still_live, rlo.has_payment_or_lifecycle_change_after_artifact) FROM recent_live_overlap rlo), '[]'::jsonb)
   ),
   'age_by_final_classification', COALESCE((SELECT jsonb_agg(to_jsonb(abfc) ORDER BY abfc.final_classification, abfc.artifact_age_bucket) FROM age_by_final_classification abfc), '[]'::jsonb),
+  'unresolved_evidence_deep_explanation', jsonb_build_object(
+    'has_payment_evidence_target_count', (SELECT COUNT(*)::bigint FROM evidence_target_summary),
+    'event_type_group_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('event_type_group', event_type_group, 'target_count', target_count) ORDER BY event_type_group) FROM (SELECT event_type_group, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY event_type_group) x), '[]'::jsonb),
+    'processing_status_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('processing_status', processing_status_group, 'target_count', target_count) ORDER BY processing_status_group) FROM (SELECT processing_status_group, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY processing_status_group) x), '[]'::jsonb),
+    'business_code_state_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('business_code_state', business_code_state, 'target_count', target_count) ORDER BY business_code_state) FROM (SELECT business_code_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY business_code_state) x), '[]'::jsonb),
+    'provider_status_state_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('provider_status_state', provider_status_state, 'target_count', target_count) ORDER BY provider_status_state) FROM (SELECT provider_status_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY provider_status_state) x), '[]'::jsonb),
+    'artifact_timing_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('artifact_timing_state', artifact_timing_state, 'target_count', target_count) ORDER BY artifact_timing_state) FROM (SELECT artifact_timing_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY artifact_timing_state) x), '[]'::jsonb),
+    'expiry_timing_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('expiry_timing_state', expiry_timing_state, 'target_count', target_count) ORDER BY expiry_timing_state) FROM (SELECT expiry_timing_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY expiry_timing_state) x), '[]'::jsonb),
+    'amount_match_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('amount_match_state', amount_match_state, 'target_count', target_count) ORDER BY amount_match_state) FROM (SELECT amount_match_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY amount_match_state) x), '[]'::jsonb),
+    'target_identity_match_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('target_identity_match_state', target_identity_match_state, 'target_count', target_count) ORDER BY target_identity_match_state) FROM (SELECT target_identity_match_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY target_identity_match_state) x), '[]'::jsonb),
+    'profile_evidence_state_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('profile_evidence_state', profile_evidence_state, 'target_count', target_count) ORDER BY profile_evidence_state) FROM (SELECT profile_evidence_state, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY profile_evidence_state) x), '[]'::jsonb),
+    'p1_transition_interpretation_counts', COALESCE((SELECT jsonb_agg(jsonb_build_object('p1_transition_interpretation', p1_transition_interpretation, 'target_count', target_count) ORDER BY p1_transition_interpretation) FROM (SELECT p1_transition_interpretation, COUNT(*)::bigint AS target_count FROM evidence_target_summary GROUP BY p1_transition_interpretation) x), '[]'::jsonb),
+    'overlap', COALESCE((SELECT jsonb_agg(to_jsonb(edo) ORDER BY edo.event_type_group, edo.processing_status_group, edo.business_code_state, edo.provider_status_state, edo.artifact_timing_state, edo.expiry_timing_state, edo.amount_match_state, edo.target_identity_match_state, edo.profile_evidence_state, edo.p1_transition_interpretation) FROM evidence_deep_overlap edo), '[]'::jsonb)
+  ),
+  'multiple_predicates_change_explanation', jsonb_build_object(
+    'target_count', (SELECT COUNT(*)::bigint FROM multiple_predicate_change_targets),
+    'source_counts', jsonb_build_object(
+      'paid_at_after_artifact', (SELECT COUNT(*)::bigint FROM multiple_predicate_change_targets WHERE paid_at_after_artifact),
+      'matched_payment_event_after_artifact', (SELECT COUNT(*)::bigint FROM multiple_predicate_change_targets WHERE matched_payment_event_after_artifact),
+      'lifecycle_change_after_artifact', (SELECT COUNT(*)::bigint FROM multiple_predicate_change_targets WHERE lifecycle_change_after_artifact)
+    ),
+    'overlap', COALESCE((SELECT jsonb_agg(to_jsonb(mpco) ORDER BY mpco.paid_at_after_artifact, mpco.matched_payment_event_after_artifact, mpco.lifecycle_change_after_artifact) FROM multiple_predicate_change_overlap mpco), '[]'::jsonb)
+  ),
   'remediation_decision', CASE
     WHEN $2::bigint > 0 AND $2::bigint = ic.serialized_input_count
       AND ic.serialized_input_count = ic.distinct_input_target_count
