@@ -10,7 +10,19 @@ export class ProductReviewsRepository {
    * @param {import('pg').Pool} [db]
    */
   constructor(db) {
-    this.db = db || postgresDb;
+    const adapter = db || postgresDb;
+    // postgresDb exposes the shared [rows, affectedCount] adapter contract,
+    // while this repository also supports native pg.Result clients in tests.
+    // Normalize only query results at this boundary.
+    this.db = new Proxy(adapter, {
+      get(target, property, receiver) {
+        if (property !== 'query') return Reflect.get(target, property, receiver);
+        return async (...args) => {
+          const result = await target.query(...args);
+          return Array.isArray(result) ? { rows: result[0], rowCount: result[1] } : result;
+        };
+      },
+    });
   }
 
   // ────── Reviews ──────
@@ -72,6 +84,19 @@ export class ProductReviewsRepository {
        JOIN orders o ON o.id = oi.order_id
        WHERE oi.id = $1 AND o.user_id = $2`,
       [orderItemId, userId],
+    );
+    return rows[0] || null;
+  }
+
+  async getReviewOwnerContext(reviewId) {
+    const { rows } = await this.db.query(
+      `SELECT rev.id AS review_id, rev.user_id, rev.order_item_id,
+              oi.order_id, oi.product_id, o.order_code, o.user_id AS order_user_id
+       FROM reviews rev
+       JOIN order_items oi ON oi.id = rev.order_item_id
+       JOIN orders o ON o.id = oi.order_id
+       WHERE rev.id = $1`,
+      [reviewId],
     );
     return rows[0] || null;
   }

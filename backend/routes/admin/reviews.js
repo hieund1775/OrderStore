@@ -45,6 +45,8 @@ router.get('/reviews/:id', requireRole('super', 'manager'), asyncHandler(async (
   const reviewId = Number(req.params.id);
   if (!reviewId) return res.status(400).json({ error: 'ID không hợp lệ' });
 
+  await productReviewsService.checkAdminReviewAccess(reviewId, req.user.role, req.user.branch_id);
+
   const review = await productReviewsService.getAdminReviewDetail(reviewId);
   if (!review) return res.status(404).json({ error: 'Không tìm thấy đánh giá' });
 

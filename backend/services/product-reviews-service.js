@@ -74,6 +74,10 @@ export class ProductReviewsService {
       throw new IdentityError('FORBIDDEN', 'Sản phẩm không thuộc đơn hàng của bạn');
     }
 
+    if (Number(productId) !== Number(ownership.product_id)) {
+      throw new IdentityError('PRODUCT_MISMATCH', 'Sản phẩm không khớp với sản phẩm đã mua');
+    }
+
     const status = await this.repo.getLatestOrderStatus(ownership.order_id);
     if (status !== 'Hoàn thành') {
       throw new IdentityError('NOT_COMPLETED', 'Đơn hàng chưa hoàn thành');
@@ -86,9 +90,12 @@ export class ProductReviewsService {
         if (!intent) {
           throw new IdentityError('INTENT_NOT_FOUND', `Upload intent ${intentId} không tồn tại`);
         }
-        if (intent.owner_user_id !== userId) {
-          throw new IdentityError('FORBIDDEN', 'Upload intent không thuộc về bạn');
-        }
+        await this._assertIntentScope(intent, {
+          userId,
+          action: 'create_original',
+          orderId: ownership.order_id,
+          orderItemId,
+        });
         if (intent.claimed_at) {
           throw new IdentityError('INTENT_USED', 'Upload intent đã được sử dụng');
         }
@@ -160,9 +167,11 @@ export class ProductReviewsService {
         if (!intent) {
           throw new IdentityError('INTENT_NOT_FOUND', `Upload intent ${intentId} không tồn tại`);
         }
-        if (intent.owner_user_id !== userId) {
-          throw new IdentityError('FORBIDDEN', 'Upload intent không thuộc về bạn');
-        }
+        await this._assertIntentScope(intent, {
+          userId,
+          action: 'edit_revision',
+          reviewId,
+        });
         if (intent.claimed_at) {
           throw new IdentityError('INTENT_USED', 'Upload intent đã được sử dụng');
         }
@@ -225,6 +234,35 @@ export class ProductReviewsService {
       if (byteSize > MAX_VIDEO_BYTES) {
         throw new IdentityError('FILE_TOO_LARGE', 'Video không được vượt quá 10MB');
       }
+    }
+
+    if (action === 'create_original') {
+      if (!orderId || !orderItemId) {
+        throw new IdentityError('INVALID_INTENT_SCOPE', 'Review gốc phải gắn với order và order item');
+      }
+      const ownership = await this.repo.verifyOrderItemOwnership(orderItemId, userId);
+      if (!ownership || Number(ownership.order_id) !== Number(orderId)) {
+        throw new IdentityError('FORBIDDEN', 'Order item không thuộc đơn hàng của bạn');
+      }
+      const status = await this.repo.getLatestOrderStatus(ownership.order_id);
+      if (status !== 'Hoàn thành') {
+        throw new IdentityError('NOT_COMPLETED', 'Đơn hàng chưa hoàn thành');
+      }
+      reviewId = null;
+    } else {
+      if (!reviewId || orderId || orderItemId) {
+        throw new IdentityError('INVALID_INTENT_SCOPE', 'Media chỉnh sửa chỉ được gắn với review');
+      }
+      const reviewContext = await this.repo.getReviewOwnerContext(reviewId);
+      if (!reviewContext || Number(reviewContext.user_id) !== Number(userId)) {
+        throw new IdentityError('FORBIDDEN', 'Review không thuộc về bạn');
+      }
+      const review = await this.repo.findById(reviewId);
+      if (!review || !review.edit_window_expires_at || new Date(review.edit_window_expires_at) < new Date() || review.customer_edit_used_at) {
+        throw new IdentityError('EDIT_EXPIRED', 'Review không còn cửa sổ chỉnh sửa');
+      }
+      orderId = null;
+      orderItemId = null;
     }
 
     const intentId = crypto.randomUUID();
@@ -354,6 +392,22 @@ export class ProductReviewsService {
     }
 
     throw new IdentityError('FORBIDDEN', 'Bạn không có quyền quản lý đánh giá', 403);
+  }
+
+  async _assertIntentScope(intent, expected) {
+    if (!intent || Number(intent.owner_user_id) !== Number(expected.userId)) {
+      throw new IdentityError('FORBIDDEN', 'Upload intent không thuộc về bạn');
+    }
+    if (intent.action !== expected.action) {
+      throw new IdentityError('INVALID_INTENT_SCOPE', 'Upload intent không đúng hành động');
+    }
+    if (expected.action === 'create_original') {
+      if (Number(intent.order_id) !== Number(expected.orderId) || Number(intent.order_item_id) !== Number(expected.orderItemId) || intent.review_id !== null) {
+        throw new IdentityError('INVALID_INTENT_SCOPE', 'Upload intent không đúng order item');
+      }
+    } else if (Number(intent.review_id) !== Number(expected.reviewId) || intent.order_id !== null || intent.order_item_id !== null) {
+      throw new IdentityError('INVALID_INTENT_SCOPE', 'Upload intent không đúng review');
+    }
   }
 
   // ────── DTO helpers ──────

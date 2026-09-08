@@ -14,11 +14,11 @@ const enabled = process.env.POSTGRES_INTEGRATION === '1';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const migrationPath = path.join(testDir, '..', 'database', 'postgres', 'migrations', '0028_product_reviews.sql');
 
-function schemaName() {
+export function schemaName() {
   return `pr_0028_rehearsal_${crypto.randomBytes(6).toString('hex')}`;
 }
 
-async function createPost0027Baseline(client, schema) {
+export async function createPost0027Baseline(client, schema) {
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET LOCAL search_path TO "${schema}", public`);
 
@@ -151,30 +151,10 @@ describe('Migration 0028 Product Reviews — Rehearsal', () => {
         schemaSql = migrationSql.replace(doBlock, scopedDoBlock);
       }
 
-      // Apply the scoped SQL
-      // First, apply everything except the DO block
-      const statements = schemaSql.split(';').filter((s) => s.trim());
-      for (const stmt of statements) {
-        if (stmt.trim()) {
-          try {
-            await client.query(stmt.trim() + ';');
-          } catch (err) {
-            // If the statement fails due to scoping, try with schema prefix
-            if (err.message && err.message.includes('does not exist')) {
-              const prefixed = stmt
-                .replace(/reviews/g, `"${schema}".reviews`)
-                .replace(/review_revisions/g, `"${schema}".review_revisions`)
-                .replace(/review_replies/g, `"${schema}".review_replies`)
-                .replace(/review_media/g, `"${schema}".review_media`)
-                .replace(/review_media_uploads/g, `"${schema}".review_media_uploads`)
-                .replace(/products/g, `"${schema}".products`);
-              await client.query(prefixed.trim() + ';');
-            } else {
-              throw err;
-            }
-          }
-        }
-      }
+      // Execute the full script after selecting the isolated fixture schema.
+      // Splitting on semicolons corrupts PL/pgSQL blocks and string literals.
+      await client.query(`SET search_path TO "${schema}", public`);
+      await client.query(migrationSql);
 
       // Instead of complex string replacement, let's test the migration outcome directly
       // by verifying what the migration produces

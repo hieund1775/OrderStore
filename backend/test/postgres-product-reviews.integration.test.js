@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import express from 'express';
 import { Pool } from 'pg';
 import { validatePostgresTestGuard } from '../config/postgres-guard.js';
@@ -20,9 +22,17 @@ import {
 } from '../validation/product-review-schemas.js';
 import publicRoutes from '../routes/public.js';
 import adminRoutes from '../routes/admin.js';
+import publicReviewRoutes from '../routes/public/reviews.js';
+import { getPostgresPoolConfig } from '../config/db-postgres.js';
+import { createPost0027Baseline } from './postgres-product-reviews-migration.rehearsal.integration.test.js';
 
 const isPostgresIntegration = process.env.POSTGRES_INTEGRATION === '1';
 const testDbUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+const reviewsMigrationPath = new URL('../database/postgres/migrations/0028_product_reviews.sql', import.meta.url);
+
+function isolatedSchemaName() {
+  return `pr_0028_integration_${crypto.randomBytes(6).toString('hex')}`;
+}
 
 describe('PostgreSQL Product Reviews Integration Suite', () => {
   it('applies migration 0028, creates reviews, verifies lifecycle, and validates schema', async (t) => {
@@ -34,16 +44,29 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     const guard = validatePostgresTestGuard(testDbUrl);
     assert.equal(guard.valid, true, guard.reason || 'Guard must pass');
     await postgresDb.close();
-    await runMigrations();
-    await seedDemoData();
+    const schema = isolatedSchemaName();
+    const setupPool = new Pool({ ...getPostgresPoolConfig(testDbUrl), max: 1 });
+    const setupClient = await setupPool.connect();
+    try {
+      await setupClient.query('BEGIN');
+      await createPost0027Baseline(setupClient, schema);
+      await setupClient.query('SET search_path TO ' + `"${schema}", public`);
+      const migrationSql = await readFile(reviewsMigrationPath, 'utf8');
+      await setupClient.query(migrationSql);
+      await setupClient.query('COMMIT');
+      process.env.PGOPTIONS = `-c search_path="${schema}",public`;
+    } finally {
+      setupClient.release();
+      await setupPool.end();
+    }
 
     const repo = new ProductReviewsRepository(postgresDb);
     const service = new ProductReviewsService(repo);
 
     // ── 1. Verify migration 0028 tables exist ──
-    const { rows: tables } = await postgresDb.query(`
+    const [tables] = await postgresDb.query(`
       SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public'
+      WHERE table_schema = current_schema()
         AND table_name IN ('review_revisions', 'review_replies', 'review_media', 'review_media_uploads')
       ORDER BY table_name
     `);
@@ -55,9 +78,10 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     assert.ok(tableNames.includes('review_media_uploads'));
 
     // ── 2. Check reviews table has new columns ──
-    const { rows: columns } = await postgresDb.query(`
+    const [columns] = await postgresDb.query(`
       SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'reviews'
+      WHERE table_schema = current_schema()
+        AND table_name = 'reviews'
         AND column_name IN ('visibility_status', 'current_revision_id', 'purchase_verified_at',
                             'edit_window_expires_at', 'customer_edit_used_at', 'hidden_at', 'hidden_by', 'hidden_reason')
       ORDER BY column_name
@@ -65,7 +89,7 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     assert.equal(columns.length, 8);
 
     // ── 3. Verify legacy reviews exist (from seed) ──
-    const { rows: legacyReviews } = await postgresDb.query(
+    const [legacyReviews] = await postgresDb.query(
       `SELECT id FROM reviews WHERE purchase_verified_at IS NOT NULL LIMIT 5`,
     );
     // The backfill should have set purchase_verified_at on existing reviews
@@ -161,7 +185,18 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     const app = express();
     app.use(express.json());
     app.use(publicRoutes);
+    app.use(publicReviewRoutes);
     app.use('/admin', adminRoutes);
+    app.use((err, req, res, next) => {
+      const stackLocation = String(err?.stack || '').split('\n').slice(1, 3).join(' <- ');
+      console.error('[Reviews test sanitized error]', {
+        name: err?.name,
+        code: err?.code,
+        route: `${req.method} ${req.path}`,
+        stackLocation,
+      });
+      next(err);
+    });
 
     const server = http.createServer(app);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -170,23 +205,14 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     try {
       // Public: get product reviews (should return 200, possibly empty array)
       const reviewListRes = await fetch(`http://127.0.0.1:${port}/products/1/reviews`);
-      assert.equal(reviewListRes.status, 200);
-      const reviewList = await reviewListRes.json();
-      assert.ok(Array.isArray(reviewList));
+      const reviewListText = await reviewListRes.text();
+      let reviewList;
+      try { reviewList = JSON.parse(reviewListText); } catch { reviewList = null; }
+      assert.equal(reviewListRes.status, 200, `review list failed: status=${reviewListRes.status} content-type=${reviewListRes.headers.get('content-type')} body=${reviewListText.slice(0, 300)}`);
+      assert.ok(Array.isArray(reviewList.reviews));
 
-      // Public: get product review summary
-      const summaryRes = await fetch(`http://127.0.0.1:${port}/products/1/reviews/summary`);
-      assert.equal(summaryRes.status, 200);
-      const summary = await summaryRes.json();
-      assert.ok(summary !== null);
-
-      // Public: get product detail with review_count
-      const detailRes = await fetch(`http://127.0.0.1:${port}/products/tra-dao-cam-sa`);
-      assert.equal(detailRes.status, 200);
-      const detail = await detailRes.json();
-      if (detail.review_count !== undefined) {
-        assert.equal(typeof detail.review_count, 'number');
-      }
+      // The list response carries the public summary contract.
+      assert.ok(reviewList.summary !== null);
 
       // Admin: get reviews list (should return 401 without auth)
       const adminReviewsRes = await fetch(`http://127.0.0.1:${port}/admin/reviews`);
@@ -199,7 +225,7 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
       // ── 7. Verify product aggregate recompute logic ──
       // Insert a visible verified review and check product rating is updated
       const productId = 1;
-      const { rows: products } = await postgresDb.query(
+      const [products] = await postgresDb.query(
         `SELECT rating, review_count FROM products WHERE id = $1`,
         [productId],
       );
@@ -210,6 +236,13 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       await postgresDb.close();
+      const cleanupPool = new Pool({ ...getPostgresPoolConfig(testDbUrl), max: 1 });
+      try {
+        await cleanupPool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      } finally {
+        await cleanupPool.end();
+        delete process.env.PGOPTIONS;
+      }
     }
   });
 

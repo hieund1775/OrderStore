@@ -28,6 +28,8 @@ function mockRepo(overrides = {}) {
     replyToReview: mock.fn(),
     setVisibility: mock.fn(),
     getReviewStoreId: mock.fn(),
+    getReviewOwnerContext: mock.fn(),
+    findById: mock.fn(),
   };
   return { ...defaults, ...overrides };
 }
@@ -133,6 +135,10 @@ describe('ProductReviewsService — unit tests', () => {
       id: 'intent-1',
       owner_user_id: 5,
       media_type: 'image',
+      action: 'create_original',
+      order_id: 10,
+      order_item_id: 1,
+      review_id: null,
       storage_key: 'review-media/key',
       requested_content_type: 'image/jpeg',
       requested_byte_size: 50000,
@@ -143,6 +149,10 @@ describe('ProductReviewsService — unit tests', () => {
       id: 'intent-1',
       owner_user_id: 5,
       media_type: 'image',
+      action: 'create_original',
+      order_id: 10,
+      order_item_id: 1,
+      review_id: null,
       storage_key: 'review-media/key',
       requested_content_type: 'image/jpeg',
       requested_byte_size: 50000,
@@ -179,6 +189,11 @@ describe('ProductReviewsService — unit tests', () => {
   it('delegates editReview to repo and attaches media', async () => {
     const repo = mockRepo();
     const storage = new FakeReviewStorage();
+    repo.getReviewOwnerContext.mock.mockImplementation(() => ({ review_id: 100, user_id: 5, order_item_id: 1 }));
+    repo.findById.mock.mockImplementation(() => ({
+      id: 100, user_id: 5, edit_window_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      customer_edit_used_at: null,
+    }));
     repo.editReview.mock.mockImplementation(() => ({
       review: { id: 100, user_id: 5, product_id: 1, current_revision_id: 201 },
       revision: { id: 201, review_id: 100, sequence: 2, revision_type: 'customer_edit', rating: 4, comment: 'Sửa' },
@@ -187,6 +202,10 @@ describe('ProductReviewsService — unit tests', () => {
       id: 'intent-2',
       owner_user_id: 5,
       media_type: 'video',
+      action: 'edit_revision',
+      review_id: 100,
+      order_id: null,
+      order_item_id: null,
       storage_key: 'review-media/key2',
       requested_content_type: 'video/mp4',
       requested_byte_size: 2000000,
@@ -197,6 +216,10 @@ describe('ProductReviewsService — unit tests', () => {
       id: 'intent-2',
       owner_user_id: 5,
       media_type: 'video',
+      action: 'edit_revision',
+      review_id: 100,
+      order_id: null,
+      order_item_id: null,
       storage_key: 'review-media/key2',
       requested_content_type: 'video/mp4',
       requested_byte_size: 2000000,
@@ -221,6 +244,11 @@ describe('ProductReviewsService — unit tests', () => {
 
   it('creates an upload intent with valid image type', async () => {
     const repo = mockRepo();
+    repo.verifyOrderItemOwnership.mock.mockImplementation(() => ({ order_id: 10, product_id: 1 }));
+    repo.getLatestOrderStatus.mock.mockImplementation(() => String.fromCodePoint(72, 111, 224, 110, 32, 116, 104, 224, 110, 104));
+    repo.getLatestOrderStatus.mock.mockImplementation(() => 'HoÃ n thÃ nh');
+    repo.getLatestOrderStatus.mock.mockImplementation(() => 'HoÃ n thÃ nh');
+    repo.getLatestOrderStatus.mock.mockImplementation(() => String.fromCodePoint(72, 111, 224, 110, 32, 116, 104, 224, 110, 104));
     repo.createUploadIntent.mock.mockImplementation((data) => ({
       id: data.id,
       storage_key: data.storageKey,
@@ -230,7 +258,8 @@ describe('ProductReviewsService — unit tests', () => {
     const service = new ProductReviewsService(repo, storage);
 
     const result = await service.createUploadIntent({
-      userId: 5, action: 'create_original', mediaType: 'image', contentType: 'image/jpeg', byteSize: 50000,
+      userId: 5, action: 'create_original', orderId: 10, orderItemId: 1,
+      mediaType: 'image', contentType: 'image/jpeg', byteSize: 50000,
     });
 
     assert.ok(result.intentId);
