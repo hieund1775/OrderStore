@@ -48,6 +48,10 @@ function fakeCredentialReader(codes = ['A']) {
   return async () => new Map(codes.map((code) => [code, { clientId: `${code}-client`, apiKey: `${code}-key`, checksumKey: `${code}-checksum` }]));
 }
 
+function equivalentCredentialReader(codes = ['A', 'B', 'C']) {
+  return async () => new Map(codes.map((code) => [code, { clientId: 'shared-client', apiKey: 'shared-key', checksumKey: 'shared-checksum' }]));
+}
+
 function createFakePool({ rows = [canonicalRow(1)], profiles = ['A', 'B'], history = null } = {}) {
   const calls = [];
   let connectCalls = 0;
@@ -216,13 +220,17 @@ describe('production provider-resolution audit', () => {
   });
 
   it('classifies every provider failure class without preserving provider error text', async () => {
+    assert.deepEqual(classifyProviderLookupFailure({ status: 400 }), { kind: 'unknown', resultClass: 'HTTP_400' });
     assert.deepEqual(classifyProviderLookupFailure({ status: 401 }), { kind: 'profile_error', resultClass: 'HTTP_401' });
     assert.deepEqual(classifyProviderLookupFailure({ status: 403 }), { kind: 'profile_error', resultClass: 'HTTP_403' });
     assert.deepEqual(classifyProviderLookupFailure({ status: 404 }), { kind: 'not_found', resultClass: 'HTTP_404' });
     assert.deepEqual(classifyProviderLookupFailure({ status: 429 }), { kind: 'unknown', resultClass: 'HTTP_429' });
+    assert.deepEqual(classifyProviderLookupFailure({ status: 418 }), { kind: 'unknown', resultClass: 'HTTP_4XX_OTHER' });
     assert.deepEqual(classifyProviderLookupFailure({ status: 503 }), { kind: 'unknown', resultClass: 'HTTP_5XX' });
     assert.deepEqual(classifyProviderLookupFailure({ code: 'AUDIT_TIMEOUT' }), { kind: 'unknown', resultClass: 'TIMEOUT_OR_NETWORK' });
-    assert.deepEqual(classifyProviderLookupFailure({ code: 'UNEXPECTED_SDK_FAILURE' }), { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' });
+    assert.deepEqual(classifyProviderLookupFailure({ code: 'UNEXPECTED_SDK_FAILURE' }), {
+      kind: 'unknown', resultClass: 'SDK_OR_INTERNAL', sdkMetadata: { error_name: 'UnknownError', error_code: 'UNEXPECTED_SDK_FAILURE', has_http_status: false },
+    });
     const malformed = await lookupPayOSTransactionForAudit({
       profileCode: 'A', providerOrderCode: 9001,
       getPayOSForProfile: () => ({ paymentRequests: { get: async () => null } }),
@@ -232,6 +240,52 @@ describe('production provider-resolution audit', () => {
       assessProviderLookup({ candidate: canonicalRow(1), profileCode: 'A', lookup: { kind: 'found', payment: {} } }),
       { profileCode: 'A', kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' },
     );
+  });
+
+  it('deduplicates only exactly equivalent credentials, fans out non-conclusive results, and keeps matching aliases multi-profile', async () => {
+    const fake = createFakePool({ rows: [canonicalRow(1)], profiles: ['A', 'B', 'C'] });
+    const calls = [];
+    const nonConclusive = await runProductionProviderResolutionAudit({
+      args: auditArgs(1), env: approvedEnvironment, pool: fake.pool,
+      readPayOSCredentialFile: equivalentCredentialReader(), loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+      lookupTransaction: async ({ profileCode }) => { calls.push(profileCode); return { kind: 'unknown', resultClass: 'HTTP_400' }; },
+    });
+    assert.deepEqual(calls, ['A']);
+    assert.equal(nonConclusive.report.provider_resolution.physical_provider_get_count, 1);
+    assert.equal(nonConclusive.report.provider_resolution.logical_lookup_pair_count, 3);
+    assert.equal(nonConclusive.report.provider_resolution.provider_unknown_or_profile_error, 1);
+    assert.deepEqual(nonConclusive.report.provider_resolution.credential_equivalence_groups, [{ credential_group: 'credential_group_A', profile_codes: ['A', 'B', 'C'] }]);
+    assert.deepEqual(nonConclusive.report.provider_resolution.provider_result_breakdown, [
+      { profile_code: 'A', result_class: 'HTTP_400', lookup_pair_count: 1, target_count: 1 },
+      { profile_code: 'B', result_class: 'HTTP_400', lookup_pair_count: 1, target_count: 1 },
+      { profile_code: 'C', result_class: 'HTTP_400', lookup_pair_count: 1, target_count: 1 },
+    ]);
+
+    const matching = await runProductionProviderResolutionAudit({
+      args: auditArgs(1), env: approvedEnvironment, pool: createFakePool({ rows: [canonicalRow(1)], profiles: ['A', 'B', 'C'] }).pool,
+      readPayOSCredentialFile: equivalentCredentialReader(), loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+      lookupTransaction: async () => found(),
+    });
+    assert.equal(matching.report.provider_resolution.physical_provider_get_count, 1);
+    assert.equal(matching.report.provider_resolution.logical_lookup_pair_count, 3);
+    assert.equal(matching.report.provider_resolution.multi_profile_match, 1);
+    assert.equal(matching.report.provider_resolution.unique_profile_resolved, 0);
+  });
+
+  it('reports SDK/internal metadata only as safe aggregate fields and never error messages', async () => {
+    const fake = createFakePool({ rows: [canonicalRow(1)], profiles: ['A'] });
+    const captured = captureLogger();
+    const result = await runProductionProviderResolutionAudit({
+      args: auditArgs(), env: approvedEnvironment, pool: fake.pool,
+      readPayOSCredentialFile: fakeCredentialReader(['A']), loadRuntimeModules: fakeRuntime(), logger: captured.logger,
+      lookupTransaction: async () => { throw Object.assign(new Error('order=9001&token=must-not-log'), { name: 'ConnectionError', code: 'SAFE_PROVIDER_CODE' }); },
+    });
+    assert.deepEqual(result.report.provider_resolution.sdk_internal_metadata_breakdown, [{
+      error_name: 'ConnectionError', error_code: 'SAFE_PROVIDER_CODE', has_http_status: false, lookup_pair_count: 1, target_count: 1,
+    }]);
+    const unsafe = classifyProviderLookupFailure({ name: 'Error', code: 'order=9001&token=unsafe' });
+    assert.equal(unsafe.sdkMetadata.error_code, null);
+    assert.equal(`${captured.logs.join('\n')}\n${captured.errors.join('\n')}`.includes('must-not-log'), false);
   });
 
   it('reports lookup-pair and distinct-target counts independently when one target has multiple result classes', async () => {
@@ -247,6 +301,8 @@ describe('production provider-resolution audit', () => {
       },
     });
     const breakdown = result.report.provider_resolution.provider_result_breakdown;
+    assert.equal(result.report.provider_resolution.physical_provider_get_count, 6, 'different credential triples must not be deduplicated');
+    assert.equal(result.report.provider_resolution.logical_lookup_pair_count, 6);
     assert.deepEqual(breakdown, [
       { profile_code: 'A', result_class: 'HTTP_401', lookup_pair_count: 2, target_count: 2 },
       { profile_code: 'B', result_class: 'HTTP_429', lookup_pair_count: 1, target_count: 1 },

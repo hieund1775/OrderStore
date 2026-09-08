@@ -11,6 +11,8 @@ const CLASSIFICATION_FILE = '0026_payment_attempts_legacy_blocker_audit_readonly
 const HISTORY_FILE = '0026_ambiguous_legacy_history_audit_readonly.sql';
 const DEFAULT_LOOKUP_TIMEOUT_MS = 10_000;
 const SCOPED_PAYOS_KEY = /^PAYOS_PROFILE_([A-Z0-9_]+)_(CLIENT_ID|API_KEY|CHECKSUM_KEY)$/;
+const SAFE_ERROR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,80}$/;
+const SAFE_ERROR_CODE = /^(?:[A-Z][A-Z0-9_.:-]{0,63}|\d{1,12})$/;
 
 function sanitizeErrorMessage(error) {
   return String(error?.message || error || 'Unknown provider-resolution audit error')
@@ -139,8 +141,32 @@ function exactAmount(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
-export function classifyProviderLookupFailure(error) {
+function providerHttpStatus(error) {
   const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+function sanitizeErrorName(name, fallback = 'UnknownError') {
+  const value = typeof name === 'string' ? name.trim() : '';
+  return SAFE_ERROR_NAME.test(value) ? value : fallback;
+}
+
+function sanitizeErrorCode(code) {
+  const value = typeof code === 'number' ? String(code) : (typeof code === 'string' ? code.trim() : '');
+  return SAFE_ERROR_CODE.test(value) ? value : null;
+}
+
+function safeSdkMetadata(error, fallbackName = 'UnknownError') {
+  return {
+    error_name: sanitizeErrorName(error?.name, fallbackName),
+    error_code: sanitizeErrorCode(error?.code),
+    has_http_status: providerHttpStatus(error) != null,
+  };
+}
+
+export function classifyProviderLookupFailure(error) {
+  const status = providerHttpStatus(error);
+  if (status === 400) return { kind: 'unknown', resultClass: 'HTTP_400' };
   if (status === 401) return { kind: 'profile_error', resultClass: 'HTTP_401' };
   if (status === 403) return { kind: 'profile_error', resultClass: 'HTTP_403' };
   if (status === 404 || error?.code === 'NOT_FOUND' || error?.code === 'PAYMENT_LINK_NOT_FOUND') {
@@ -148,10 +174,11 @@ export function classifyProviderLookupFailure(error) {
   }
   if (status === 429) return { kind: 'unknown', resultClass: 'HTTP_429' };
   if (status >= 500 && status <= 599) return { kind: 'unknown', resultClass: 'HTTP_5XX' };
+  if (status >= 400 && status <= 499) return { kind: 'unknown', resultClass: 'HTTP_4XX_OTHER' };
   if (['AUDIT_TIMEOUT', 'ETIMEDOUT', 'ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE'].includes(error?.code)) {
     return { kind: 'unknown', resultClass: 'TIMEOUT_OR_NETWORK' };
   }
-  return { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' };
+  return { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL', sdkMetadata: safeSdkMetadata(error) };
 }
 
 async function withTimeout(promise, timeoutMs) {
@@ -171,7 +198,7 @@ async function withTimeout(promise, timeoutMs) {
 /** Read-only PayOS GET adapter. It deliberately never calls create/cancel/update APIs. */
 export async function lookupPayOSTransactionForAudit({ profileCode, providerOrderCode, getPayOSForProfile, timeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS }) {
   const instance = getPayOSForProfile(profileCode);
-  if (!instance) return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL' };
+  if (!instance) return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL', sdkMetadata: safeSdkMetadata(null, 'PayOSClientUnavailable') };
   try {
     let payment;
     if (typeof instance.paymentRequests?.get === 'function') {
@@ -179,7 +206,7 @@ export async function lookupPayOSTransactionForAudit({ profileCode, providerOrde
     } else if (typeof instance.getPaymentLinkInformation === 'function') {
       payment = await withTimeout(instance.getPaymentLinkInformation(Number(providerOrderCode)), timeoutMs);
     } else {
-      return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL' };
+      return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL', sdkMetadata: safeSdkMetadata(null, 'PayOSClientUnsupported') };
     }
     if (!payment || typeof payment !== 'object') return { kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' };
     return { kind: 'found', payment };
@@ -194,6 +221,7 @@ export function assessProviderLookup({ candidate, profileCode, lookup }) {
       profileCode,
       kind: lookup.kind,
       resultClass: lookup.resultClass || (lookup.kind === 'not_found' ? 'HTTP_404' : 'SDK_OR_INTERNAL'),
+      sdkMetadata: lookup.resultClass === 'SDK_OR_INTERNAL' ? lookup.sdkMetadata || safeSdkMetadata(null) : null,
     };
   }
   const expectedOrderCode = String(candidate.provider_order_code);
@@ -247,26 +275,36 @@ function credentialGroupLabel(index) {
   return `credential_group_${String.fromCharCode(65 + index)}`;
 }
 
-export function buildCredentialEquivalenceGroups(credentialsByProfile, profileCodes) {
+function privateCredentialKey(credentials) {
+  return `${credentials.clientId.length}:${credentials.clientId}\u0000${credentials.apiKey.length}:${credentials.apiKey}\u0000${credentials.checksumKey.length}:${credentials.checksumKey}`;
+}
+
+function buildCredentialGroupEntries(credentialsByProfile, profileCodes) {
   const groups = new Map();
   for (const profileCode of profileCodes) {
     const credentials = credentialsByProfile.get(profileCode);
     if (!credentials) continue;
     // This key remains process-local and is never returned or logged.
-    const privateKey = `${credentials.clientId.length}:${credentials.clientId}\u0000${credentials.apiKey.length}:${credentials.apiKey}\u0000${credentials.checksumKey.length}:${credentials.checksumKey}`;
-    const existing = groups.get(privateKey) || [];
-    existing.push(profileCode);
+    const privateKey = privateCredentialKey(credentials);
+    const existing = groups.get(privateKey) || { representative_profile_code: profileCode, profile_codes: [] };
+    existing.profile_codes.push(profileCode);
     groups.set(privateKey, existing);
   }
-  return [...groups.values()].map((profileCodesInGroup, index) => ({
+  return [...groups.values()].map((entry, index) => ({
     credential_group: credentialGroupLabel(index),
-    profile_codes: profileCodesInGroup,
+    representative_profile_code: entry.representative_profile_code,
+    profile_codes: entry.profile_codes,
   }));
+}
+
+export function buildCredentialEquivalenceGroups(credentialsByProfile, profileCodes) {
+  return buildCredentialGroupEntries(credentialsByProfile, profileCodes).map(({ credential_group, profile_codes }) => ({ credential_group, profile_codes }));
 }
 
 function buildLookupBreakdown(resolutions) {
   const resultGroups = new Map();
   const mismatchGroups = new Map();
+  const sdkMetadataGroups = new Map();
   const identityMismatchTargets = new Set();
   let identityMismatchLookupPairs = 0;
   for (const resolution of resolutions) {
@@ -285,6 +323,20 @@ function buildLookupBreakdown(resolutions) {
       resultGroup.lookup_pair_count += 1;
       if (targetKey) resultGroup.targetKeys.add(targetKey);
       resultGroups.set(resultKey, resultGroup);
+      if (resultClass === 'SDK_OR_INTERNAL') {
+        const metadata = check.sdkMetadata || safeSdkMetadata(null);
+        const metadataKey = `${metadata.error_name}:${metadata.error_code || 'NONE'}:${metadata.has_http_status}`;
+        const metadataGroup = sdkMetadataGroups.get(metadataKey) || {
+          error_name: metadata.error_name,
+          error_code: metadata.error_code,
+          has_http_status: metadata.has_http_status,
+          lookup_pair_count: 0,
+          targetKeys: new Set(),
+        };
+        metadataGroup.lookup_pair_count += 1;
+        if (targetKey) metadataGroup.targetKeys.add(targetKey);
+        sdkMetadataGroups.set(metadataKey, metadataGroup);
+      }
       if (check.kind !== 'identity_mismatch') continue;
       identityMismatchLookupPairs += 1;
       if (targetKey) identityMismatchTargets.add(targetKey);
@@ -313,6 +365,15 @@ function buildLookupBreakdown(resolutions) {
     .sort((left, right) => `${left.profile_code}:${left[field]}`.localeCompare(`${right.profile_code}:${right[field]}`));
   return {
     provider_result_breakdown: toPublicRows(resultGroups, 'result_class'),
+    sdk_internal_metadata_breakdown: [...sdkMetadataGroups.values()]
+      .map((group) => ({
+        error_name: group.error_name,
+        error_code: group.error_code,
+        has_http_status: group.has_http_status,
+        lookup_pair_count: group.lookup_pair_count,
+        target_count: group.targetKeys.size,
+      }))
+      .sort((left, right) => `${left.error_name}:${left.error_code || ''}:${left.has_http_status}`.localeCompare(`${right.error_name}:${right.error_code || ''}:${right.has_http_status}`)),
     identity_mismatch_breakdown: {
       identity_mismatch_lookup_pair_count: identityMismatchLookupPairs,
       identity_mismatch_target_count: identityMismatchTargets.size,
@@ -321,13 +382,23 @@ function buildLookupBreakdown(resolutions) {
   };
 }
 
-function buildAggregateReport({ candidates, profileCount, checkedPairs, uncheckedPairsDueToLimit, resolutions, credentialGroups }) {
+function buildAggregateReport({
+  candidates, profileCount, physicalProviderGetCount, logicalLookupPairCount,
+  plannedPhysicalProviderGetCount, uncheckedPhysicalProviderGetsDueToLimit,
+  uncheckedPairsDueToLimit, resolutions, credentialGroups,
+}) {
   const count = (predicate) => resolutions.filter(predicate).length;
   const report = {
     candidate_targets: candidates.length,
     configured_profile_count: profileCount,
     planned_provider_lookups: candidates.length * profileCount,
-    checked_provider_lookups: checkedPairs,
+    planned_physical_provider_get_count: plannedPhysicalProviderGetCount,
+    // Retained as the historical external-call counter; logical checks are
+    // reported separately after credential-group fan-out.
+    checked_provider_lookups: physicalProviderGetCount,
+    physical_provider_get_count: physicalProviderGetCount,
+    logical_lookup_pair_count: logicalLookupPairCount,
+    unchecked_physical_provider_get_count_due_to_limit: uncheckedPhysicalProviderGetsDueToLimit,
     unchecked_target_profile_pairs_due_to_limit: uncheckedPairsDueToLimit,
     unchecked_targets_due_to_limit: count((result) => result.outcome === 'AUDIT_INCOMPLETE'),
     audit_incomplete: uncheckedPairsDueToLimit > 0,
@@ -417,6 +488,10 @@ export async function runProductionProviderResolutionAudit({
       .map((row) => String(row.code).toUpperCase().trim())
       .filter((code) => credentialsByProfile.has(code));
     const credentialGroups = buildCredentialEquivalenceGroups(credentialsByProfile, profiles);
+    // The audit client is created from only clientId/apiKey/checksumKey. A
+    // group is therefore safe to share one GET only when that entire tuple is
+    // exactly equal; no profile-specific request option exists in this CLI.
+    const credentialLookupGroups = buildCredentialGroupEntries(credentialsByProfile, profiles);
     const canonicalCounts = {
       blocked_targets: canonicalRows.length,
       active_payment_requires_repair: candidates.length,
@@ -424,7 +499,9 @@ export async function runProductionProviderResolutionAudit({
     };
     logger.log(`[Production Provider Audit] Configured profiles: ${JSON.stringify({ configured_profile_codes: profiles, configured_profile_count: profiles.length })}`);
     const resolutions = [];
-    let checkedPairs = 0;
+    let physicalProviderGetCount = 0;
+    let logicalLookupPairCount = 0;
+    let uncheckedPhysicalProviderGetsDueToLimit = 0;
     let uncheckedPairsDueToLimit = 0;
 
     for (let targetIndex = 0; targetIndex < candidates.length; targetIndex += 1) {
@@ -432,25 +509,35 @@ export async function runProductionProviderResolutionAudit({
       const checks = [];
       let skippedByLimit = false;
       if (candidate.provider_order_code != null) {
-        for (let profileIndex = 0; profileIndex < profiles.length; profileIndex += 1) {
-          if (checkedPairs >= options.maxProviderLookups) {
+        for (let groupIndex = 0; groupIndex < credentialLookupGroups.length; groupIndex += 1) {
+          if (physicalProviderGetCount >= options.maxProviderLookups) {
             skippedByLimit = true;
-            uncheckedPairsDueToLimit += profiles.length - profileIndex;
+            const remainingGroups = credentialLookupGroups.slice(groupIndex);
+            uncheckedPhysicalProviderGetsDueToLimit += remainingGroups.length;
+            uncheckedPairsDueToLimit += remainingGroups.reduce((total, group) => total + group.profile_codes.length, 0);
             break;
           }
-          const profileCode = profiles[profileIndex];
+          const group = credentialLookupGroups[groupIndex];
           let lookupResult;
           try {
-            lookupResult = await lookupProvider({ profileCode, providerOrderCode: candidate.provider_order_code });
-          } catch {
-            lookupResult = { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' };
+            lookupResult = await lookupProvider({ profileCode: group.representative_profile_code, providerOrderCode: candidate.provider_order_code });
+          } catch (error) {
+            lookupResult = classifyProviderLookupFailure(error);
           }
-          checks.push(assessProviderLookup({ candidate, profileCode, lookup: lookupResult }));
-          checkedPairs += 1;
+          physicalProviderGetCount += 1;
+          // Fan out the same provider result to each profile code. This keeps
+          // resolution profile-scoped: equivalent profile aliases still yield
+          // MULTI_PROFILE_MATCH when a shared credential returns a match.
+          for (const profileCode of group.profile_codes) {
+            checks.push(assessProviderLookup({ candidate, profileCode, lookup: lookupResult }));
+            logicalLookupPairCount += 1;
+          }
         }
       }
       if (skippedByLimit) {
-        uncheckedPairsDueToLimit += (candidates.length - targetIndex - 1) * profiles.length;
+        const remainingTargets = candidates.length - targetIndex - 1;
+        uncheckedPhysicalProviderGetsDueToLimit += remainingTargets * credentialLookupGroups.length;
+        uncheckedPairsDueToLimit += remainingTargets * profiles.length;
       }
       resolutions.push({
         candidate,
@@ -478,7 +565,10 @@ export async function runProductionProviderResolutionAudit({
       provider_resolution: buildAggregateReport({
         candidates,
         profileCount: profiles.length,
-        checkedPairs,
+        physicalProviderGetCount,
+        logicalLookupPairCount,
+        plannedPhysicalProviderGetCount: candidates.length * credentialLookupGroups.length,
+        uncheckedPhysicalProviderGetsDueToLimit,
         uncheckedPairsDueToLimit,
         resolutions,
         credentialGroups,
