@@ -94,6 +94,7 @@ payment_event_evidence AS (
     COALESCE(BOOL_OR(e.id IS NOT NULL), FALSE) AS has_payment_event,
     COALESCE(BOOL_OR(e.id IS NOT NULL AND wat.payment_expires_at IS NOT NULL
       AND COALESCE(e.processed_at, e.created_at) > wat.payment_expires_at), FALSE) AS has_payment_event_after_expiry,
+    COALESCE(BOOL_OR(e.id IS NOT NULL AND e.event_type = 'payment.succeeded'), FALSE) AS has_matched_successful_payment_event,
     COALESCE(BOOL_OR(e.id IS NOT NULL AND e.event_type = 'payment.succeeded'
       AND e.processing_status = 'processed'), FALSE) AS has_processed_paid_event,
     COALESCE(MAX(COALESCE(e.processed_at, e.created_at)), NULL) AS latest_payment_event_at
@@ -110,7 +111,10 @@ payment_event_evidence AS (
 ),
 evidence_state AS (
   SELECT wat.*, pee.has_payment_event, pee.has_payment_event_after_expiry,
-    pee.has_processed_paid_event, pee.latest_payment_event_at,
+    pee.has_matched_successful_payment_event, pee.has_processed_paid_event, pee.latest_payment_event_at,
+    (wat.paid_at IS NOT NULL) AS paid_at_present,
+    (wat.payment_status = 'paid') AS payment_status_paid,
+    pee.has_payment_event AS matched_payment_event,
     (wat.payment_status = 'paid' OR wat.paid_at IS NOT NULL OR pee.has_payment_event) AS has_payment_evidence,
     ((wat.paid_at IS NOT NULL AND wat.artifact_timestamp IS NOT NULL AND wat.paid_at > wat.artifact_timestamp)
       OR (pee.latest_payment_event_at IS NOT NULL AND wat.artifact_timestamp IS NOT NULL AND pee.latest_payment_event_at > wat.artifact_timestamp)
@@ -150,6 +154,54 @@ artifact_breakdown AS (SELECT has_payos_artifact, COUNT(*)::bigint AS target_cou
 evidence_breakdown AS (SELECT has_payment_event_after_expiry, has_processed_paid_event, has_payment_evidence, COUNT(*)::bigint AS target_count FROM classified GROUP BY has_payment_event_after_expiry, has_processed_paid_event, has_payment_evidence),
 change_breakdown AS (SELECT has_payment_or_lifecycle_change_after_artifact, COUNT(*)::bigint AS target_count FROM classified GROUP BY has_payment_or_lifecycle_change_after_artifact),
 classification_breakdown AS (SELECT final_classification, COUNT(*)::bigint AS target_count FROM classified GROUP BY final_classification)
+,
+payment_evidence_targets AS (
+  SELECT paid_at_present, payment_status_paid, matched_payment_event,
+    has_matched_successful_payment_event, has_processed_paid_event
+  FROM classified WHERE final_classification = 'HAS_PAYMENT_EVIDENCE'
+),
+payment_evidence_overlap AS (
+  SELECT paid_at_present, payment_status_paid, matched_payment_event,
+    has_matched_successful_payment_event, has_processed_paid_event,
+    COUNT(*)::bigint AS target_count
+  FROM payment_evidence_targets
+  GROUP BY paid_at_present, payment_status_paid, matched_payment_event,
+    has_matched_successful_payment_event, has_processed_paid_event
+),
+recent_live_targets AS (
+  SELECT
+    (artifact_timestamp IS NOT NULL AND CURRENT_TIMESTAMP - artifact_timestamp <= INTERVAL '30 days') AS artifact_age_lt_30d,
+    (payment_expires_at > CURRENT_TIMESTAMP) AS expiry_still_live,
+    has_payment_or_lifecycle_change_after_artifact,
+    CASE
+      WHEN (artifact_timestamp IS NOT NULL AND CURRENT_TIMESTAMP - artifact_timestamp <= INTERVAL '30 days')
+        AND NOT (payment_expires_at > CURRENT_TIMESTAMP)
+        AND NOT has_payment_or_lifecycle_change_after_artifact THEN 'RECENCY_ONLY'
+      WHEN NOT (artifact_timestamp IS NOT NULL AND CURRENT_TIMESTAMP - artifact_timestamp <= INTERVAL '30 days')
+        AND has_payment_or_lifecycle_change_after_artifact
+        AND NOT (payment_expires_at > CURRENT_TIMESTAMP) THEN 'CHANGE_ONLY'
+      WHEN NOT (artifact_timestamp IS NOT NULL AND CURRENT_TIMESTAMP - artifact_timestamp <= INTERVAL '30 days')
+        AND NOT has_payment_or_lifecycle_change_after_artifact
+        AND (payment_expires_at > CURRENT_TIMESTAMP) THEN 'UNEXPIRED_ONLY'
+      ELSE 'MULTIPLE_PREDICATES'
+    END AS reason
+  FROM classified WHERE final_classification = 'RECENT_OR_POTENTIALLY_LIVE'
+),
+recent_live_overlap AS (
+  SELECT artifact_age_lt_30d, expiry_still_live, has_payment_or_lifecycle_change_after_artifact,
+    COUNT(*)::bigint AS target_count
+  FROM recent_live_targets
+  GROUP BY artifact_age_lt_30d, expiry_still_live, has_payment_or_lifecycle_change_after_artifact
+),
+recent_live_reason_counts AS (
+  SELECT reason, COUNT(*)::bigint AS target_count FROM recent_live_targets GROUP BY reason
+),
+age_by_final_classification AS (
+  SELECT final_classification, artifact_age_bucket, COUNT(*)::bigint AS target_count
+  FROM classified
+  WHERE final_classification IN ('HAS_PAYMENT_EVIDENCE', 'RECENT_OR_POTENTIALLY_LIVE')
+  GROUP BY final_classification, artifact_age_bucket
+)
 SELECT jsonb_build_object(
   'input_diagnostics', jsonb_build_object(
     'canonical_active_count', $2::bigint,
@@ -171,6 +223,28 @@ SELECT jsonb_build_object(
   'post_expiry_payment_evidence_breakdown', COALESCE((SELECT jsonb_agg(to_jsonb(eb) ORDER BY eb.has_payment_event_after_expiry, eb.has_processed_paid_event, eb.has_payment_evidence) FROM evidence_breakdown eb), '[]'::jsonb),
   'payment_or_lifecycle_change_after_artifact_breakdown', COALESCE((SELECT jsonb_agg(to_jsonb(cb) ORDER BY cb.has_payment_or_lifecycle_change_after_artifact) FROM change_breakdown cb), '[]'::jsonb),
   'final_classification_counts', COALESCE((SELECT jsonb_agg(to_jsonb(cb) ORDER BY cb.final_classification) FROM classification_breakdown cb), '[]'::jsonb),
+  'payment_evidence_explanation', jsonb_build_object(
+    'target_count', (SELECT COUNT(*)::bigint FROM payment_evidence_targets),
+    'source_counts', jsonb_build_object(
+      'paid_at_present', (SELECT COUNT(*)::bigint FROM payment_evidence_targets WHERE paid_at_present),
+      'payment_status_paid', (SELECT COUNT(*)::bigint FROM payment_evidence_targets WHERE payment_status_paid),
+      'matched_successful_payment_event', (SELECT COUNT(*)::bigint FROM payment_evidence_targets WHERE has_matched_successful_payment_event),
+      'processed_paid_event', (SELECT COUNT(*)::bigint FROM payment_evidence_targets WHERE has_processed_paid_event),
+      'matched_payment_event', (SELECT COUNT(*)::bigint FROM payment_evidence_targets WHERE matched_payment_event)
+    ),
+    'overlap', COALESCE((SELECT jsonb_agg(to_jsonb(peo) ORDER BY peo.paid_at_present, peo.payment_status_paid, peo.matched_payment_event, peo.has_matched_successful_payment_event, peo.has_processed_paid_event) FROM payment_evidence_overlap peo), '[]'::jsonb)
+  ),
+  'recent_live_explanation', jsonb_build_object(
+    'target_count', (SELECT COUNT(*)::bigint FROM recent_live_targets),
+    'predicate_counts', jsonb_build_object(
+      'artifact_age_lt_30d', (SELECT COUNT(*)::bigint FROM recent_live_targets WHERE artifact_age_lt_30d),
+      'expiry_still_live', (SELECT COUNT(*)::bigint FROM recent_live_targets WHERE expiry_still_live),
+      'payment_or_lifecycle_change_after_artifact', (SELECT COUNT(*)::bigint FROM recent_live_targets WHERE has_payment_or_lifecycle_change_after_artifact)
+    ),
+    'reason_counts', COALESCE((SELECT jsonb_agg(to_jsonb(rlr) ORDER BY rlr.reason) FROM recent_live_reason_counts rlr), '[]'::jsonb),
+    'predicate_overlap', COALESCE((SELECT jsonb_agg(to_jsonb(rlo) ORDER BY rlo.artifact_age_lt_30d, rlo.expiry_still_live, rlo.has_payment_or_lifecycle_change_after_artifact) FROM recent_live_overlap rlo), '[]'::jsonb)
+  ),
+  'age_by_final_classification', COALESCE((SELECT jsonb_agg(to_jsonb(abfc) ORDER BY abfc.final_classification, abfc.artifact_age_bucket) FROM age_by_final_classification abfc), '[]'::jsonb),
   'remediation_decision', CASE
     WHEN $2::bigint > 0 AND $2::bigint = ic.serialized_input_count
       AND ic.serialized_input_count = ic.distinct_input_target_count

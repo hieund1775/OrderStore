@@ -54,6 +54,44 @@ function canonicalActiveTargets(rows = []) {
   return rows.filter((row) => row.classification === 'ACTIVE_PAYMENT_REQUIRES_REPAIR' && row.reconciliation_needed === true);
 }
 
+function countTargets(rows) {
+  if (!Array.isArray(rows)) return Number.NaN;
+  return rows.reduce((total, row) => total + Number(row?.target_count || 0), 0);
+}
+
+function classificationTargetCount(report, classification) {
+  return (report?.final_classification_counts || [])
+    .filter((row) => row.final_classification === classification)
+    .reduce((total, row) => total + Number(row.target_count || 0), 0);
+}
+
+function countsAreWithinTarget(total, values) {
+  return Object.values(values || {}).every((value) => Number.isSafeInteger(Number(value)) && Number(value) >= 0 && Number(value) <= total);
+}
+
+function finalDecisionExplanationIsConsistent(report) {
+  const evidence = report?.payment_evidence_explanation;
+  const recent = report?.recent_live_explanation;
+  const evidenceTargetCount = classificationTargetCount(report, 'HAS_PAYMENT_EVIDENCE');
+  const recentTargetCount = classificationTargetCount(report, 'RECENT_OR_POTENTIALLY_LIVE');
+  const ageRows = report?.age_by_final_classification;
+  if (!evidence || !recent || !Array.isArray(ageRows)
+    || Number(evidence.target_count) !== evidenceTargetCount
+    || Number(recent.target_count) !== recentTargetCount
+    || countTargets(evidence.overlap) !== evidenceTargetCount
+    || countTargets(recent.reason_counts) !== recentTargetCount
+    || countTargets(recent.predicate_overlap) !== recentTargetCount
+    || !countsAreWithinTarget(evidenceTargetCount, evidence.source_counts)
+    || !countsAreWithinTarget(recentTargetCount, recent.predicate_counts)) return false;
+
+  return ['HAS_PAYMENT_EVIDENCE', 'RECENT_OR_POTENTIALLY_LIVE'].every((classification) => (
+    ageRows
+      .filter((row) => row.final_classification === classification)
+      .reduce((total, row) => total + Number(row.target_count || 0), 0)
+      === classificationTargetCount(report, classification)
+  ));
+}
+
 /**
  * Guarded DB-only decision audit. It reads the canonical classifier first and
  * passes that exact in-memory result to the detail SQL. No provider SDK, HTTP
@@ -134,6 +172,7 @@ export async function runProductionLegacyFinalDecisionAudit({
       || unexpectedExtraCount !== 0
       || targetKindMismatchCount !== 0
       || classifiedCount !== expectedCount
+      || !finalDecisionExplanationIsConsistent(report)
     ) {
       throw new Error('PRODUCTION LEGACY FINAL DECISION AUDIT: canonical active input drift detected; decision is fail-closed.');
     }

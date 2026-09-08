@@ -41,7 +41,16 @@ function finalReport({
   extraCount = 0,
   kindMismatchCount = 0,
   classes = [],
+  paymentEvidenceExplanation = null,
+  recentLiveExplanation = null,
+  ageByFinalClassification = null,
 } = {}) {
+  const finalClasses = classes.length ? classes : [{ final_classification: 'STALE_LEGACY_SAFE_TO_QUARANTINE', target_count: inputCount }];
+  const classifiedCount = (classification) => finalClasses
+    .filter((row) => row.final_classification === classification)
+    .reduce((total, row) => total + Number(row.target_count || 0), 0);
+  const evidenceTargetCount = classifiedCount('HAS_PAYMENT_EVIDENCE');
+  const recentTargetCount = classifiedCount('RECENT_OR_POTENTIALLY_LIVE');
   return {
     input_diagnostics: {
       canonical_active_count: inputCount,
@@ -68,7 +77,27 @@ function finalReport({
     payos_artifact_breakdown: [{ has_payos_artifact: true, target_count: inputCount }],
     post_expiry_payment_evidence_breakdown: [{ has_payment_event_after_expiry: false, has_processed_paid_event: false, has_payment_evidence: false, target_count: inputCount }],
     payment_or_lifecycle_change_after_artifact_breakdown: [{ has_payment_or_lifecycle_change_after_artifact: false, target_count: inputCount }],
-    final_classification_counts: classes.length ? classes : [{ final_classification: 'STALE_LEGACY_SAFE_TO_QUARANTINE', target_count: inputCount }],
+    final_classification_counts: finalClasses,
+    payment_evidence_explanation: paymentEvidenceExplanation || {
+      target_count: evidenceTargetCount,
+      source_counts: {
+        paid_at_present: 0, payment_status_paid: 0, matched_successful_payment_event: 0,
+        processed_paid_event: 0, matched_payment_event: 0,
+      },
+      overlap: evidenceTargetCount ? [{ paid_at_present: false, payment_status_paid: false, matched_payment_event: true, has_matched_successful_payment_event: true, has_processed_paid_event: true, target_count: evidenceTargetCount }] : [],
+    },
+    recent_live_explanation: recentLiveExplanation || {
+      target_count: recentTargetCount,
+      predicate_counts: {
+        artifact_age_lt_30d: 0, expiry_still_live: 0, payment_or_lifecycle_change_after_artifact: 0,
+      },
+      reason_counts: recentTargetCount ? [{ reason: 'RECENCY_ONLY', target_count: recentTargetCount }] : [],
+      predicate_overlap: recentTargetCount ? [{ artifact_age_lt_30d: true, expiry_still_live: false, has_payment_or_lifecycle_change_after_artifact: false, target_count: recentTargetCount }] : [],
+    },
+    age_by_final_classification: ageByFinalClassification || [
+      ...(evidenceTargetCount ? [{ final_classification: 'HAS_PAYMENT_EVIDENCE', artifact_age_bucket: 'D8_TO_D30', target_count: evidenceTargetCount }] : []),
+      ...(recentTargetCount ? [{ final_classification: 'RECENT_OR_POTENTIALLY_LIVE', artifact_age_bucket: 'D8_TO_D30', target_count: recentTargetCount }] : []),
+    ],
     remediation_decision: 'PROPOSE_ADDITIVE_QUARANTINE_ONLY',
   };
 }
@@ -202,6 +231,65 @@ describe('production legacy final decision audit', () => {
     assert.equal(result.report.input_diagnostics.detail_resolved_count, 2);
   });
 
+  it('accepts evidence/recent overlap aggregates only when each class total remains exact', async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => canonicalRow(index + 1));
+    const report = finalReport({
+      inputCount: 100,
+      classes: [
+        { final_classification: 'HAS_PAYMENT_EVIDENCE', target_count: 27 },
+        { final_classification: 'RECENT_OR_POTENTIALLY_LIVE', target_count: 73 },
+      ],
+      paymentEvidenceExplanation: {
+        target_count: 27,
+        source_counts: {
+          paid_at_present: 7, payment_status_paid: 7, matched_successful_payment_event: 27,
+          processed_paid_event: 19, matched_payment_event: 27,
+        },
+        overlap: [
+          { paid_at_present: true, payment_status_paid: true, matched_payment_event: true, has_matched_successful_payment_event: true, has_processed_paid_event: true, target_count: 7 },
+          { paid_at_present: false, payment_status_paid: false, matched_payment_event: true, has_matched_successful_payment_event: true, has_processed_paid_event: true, target_count: 12 },
+          { paid_at_present: false, payment_status_paid: false, matched_payment_event: true, has_matched_successful_payment_event: true, has_processed_paid_event: false, target_count: 8 },
+        ],
+      },
+      recentLiveExplanation: {
+        target_count: 73,
+        predicate_counts: {
+          artifact_age_lt_30d: 73, expiry_still_live: 0, payment_or_lifecycle_change_after_artifact: 0,
+        },
+        reason_counts: [{ reason: 'RECENCY_ONLY', target_count: 73 }],
+        predicate_overlap: [{ artifact_age_lt_30d: true, expiry_still_live: false, has_payment_or_lifecycle_change_after_artifact: false, target_count: 73 }],
+      },
+      ageByFinalClassification: [
+        { final_classification: 'HAS_PAYMENT_EVIDENCE', artifact_age_bucket: 'D1_TO_D7', target_count: 7 },
+        { final_classification: 'HAS_PAYMENT_EVIDENCE', artifact_age_bucket: 'D8_TO_D30', target_count: 20 },
+        { final_classification: 'RECENT_OR_POTENTIALLY_LIVE', artifact_age_bucket: 'D1_TO_D7', target_count: 24 },
+        { final_classification: 'RECENT_OR_POTENTIALLY_LIVE', artifact_age_bucket: 'D8_TO_D30', target_count: 49 },
+      ],
+    });
+    const good = createFakePool({ rows, report });
+    const result = await runProductionLegacyFinalDecisionAudit({
+      args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: good.pool,
+      loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+    });
+    assert.equal(result.report.payment_evidence_explanation.overlap.length, 3);
+    assert.equal(result.report.recent_live_explanation.reason_counts[0].reason, 'RECENCY_ONLY');
+
+    const invalid = createFakePool({
+      rows,
+      report: finalReport({
+        inputCount: 100,
+        classes: [{ final_classification: 'HAS_PAYMENT_EVIDENCE', target_count: 27 }, { final_classification: 'RECENT_OR_POTENTIALLY_LIVE', target_count: 73 }],
+        paymentEvidenceExplanation: { ...report.payment_evidence_explanation, overlap: [{ target_count: 26 }] },
+        recentLiveExplanation: report.recent_live_explanation,
+        ageByFinalClassification: report.age_by_final_classification,
+      }),
+    });
+    await assert.rejects(() => runProductionLegacyFinalDecisionAudit({
+      args: ['--audit=0026-final-decision'], env: approvedEnvironment, pool: invalid.pool,
+      loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+    }), /input drift detected/);
+  });
+
   it('keeps final SQL CTE/SELECT-only, category-free, and ordered by the safe classification precedence', async () => {
     const currentFile = fileURLToPath(import.meta.url);
     const sql = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0026_active_legacy_payment_final_decision_audit_readonly.sql'), 'utf8');
@@ -210,6 +298,12 @@ describe('production legacy final decision audit', () => {
     assert.doesNotMatch(sql, /\b(?:categories|category_payment_profiles|root_category_id|updated_at)\b/i);
     assert.doesNotMatch(sql, /\b(?:customer_name|customer_phone|order_code|group_code|receiver_account_number)\b/i);
     assert.match(sql, /FROM serialized_input si[\s\S]*WHERE si\.target_kind = 'direct_order'[\s\S]*UNION ALL[\s\S]*FROM serialized_input si[\s\S]*WHERE si\.target_kind = 'checkout_group'/);
+    assert.match(sql, /payment_evidence_explanation[\s\S]*paid_at_present[\s\S]*matched_successful_payment_event[\s\S]*processed_paid_event[\s\S]*matched_payment_event/);
+    assert.match(sql, /recent_live_explanation/);
+    assert.match(sql, /'RECENCY_ONLY'/);
+    assert.match(sql, /'CHANGE_ONLY'/);
+    assert.match(sql, /'UNEXPIRED_ONLY'/);
+    assert.match(sql, /'MULTIPLE_PREDICATES'/);
     const evidenceIndex = sql.indexOf("WHEN has_payment_evidence THEN 'HAS_PAYMENT_EVIDENCE'");
     const recentIndex = sql.indexOf("THEN 'RECENT_OR_POTENTIALLY_LIVE'");
     const staleIndex = sql.indexOf("THEN 'STALE_LEGACY_SAFE_TO_QUARANTINE'");
