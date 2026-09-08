@@ -749,3 +749,52 @@ export async function unassignPaymentProfileFromRoot(
   });
 }
 
+// ═══════════ STAFF ACCOUNT MANAGEMENT APIS ═══════════
+
+export type StaffAccount = {
+  id: number;
+  fullname: string;
+  email: string | null;
+  role: string;
+  branch: string;
+  branch_id: number | null;
+  active: boolean;
+  email_verified_at: string | null;
+  created_at: string;
+};
+
+export type Branch = {
+  id: number;
+  name: string;
+  address?: string;
+};
+
+export async function fetchStaffAccounts(): Promise<StaffAccount[]> {
+  return apiGet<StaffAccount[]>('/admin/settings/accounts');
+}
+
+export async function createStaffAccount(data: {
+  fullname: string;
+  email: string;
+  role: string;
+  branch_id?: number | null;
+}): Promise<{ id: number; fullname: string; email: string; role: string; branch_id: number | null; message: string }> {
+  return apiPost('/admin/settings/accounts', data);
+}
+
+export async function resendStaffInvitation(id: number): Promise<{ success: boolean; message: string }> {
+  return apiPost(`/admin/settings/accounts/${id}/resend-invitation`, {});
+}
+
+export async function updateStaffStatus(id: number, isActive: boolean): Promise<{ message: string }> {
+  return apiPatch(`/admin/settings/accounts/${id}/status`, { is_active: isActive });
+}
+
+export async function fetchBranches(): Promise<Branch[]> {
+  return apiGet<Branch[]>('/admin/branches');
+}
+
+export async function acceptStaffInvitation(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+  return apiPost('/api/auth/staff-invitation/accept', { token, newPassword });
+}
+

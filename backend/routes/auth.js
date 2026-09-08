@@ -71,6 +71,7 @@ router.get('/me', authenticate, async (req, res) => {
     email: user.email,
     admin_role: user.admin_role,
     admin_branch_id: user.admin_branch_id,
+    email_verified_at: user.email_verified_at || null,
   });
 });
 

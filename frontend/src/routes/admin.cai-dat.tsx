@@ -1,13 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2, Users, History, Laptop, CreditCard } from "lucide-react";
+import { Loader2, Users, History, Laptop, CreditCard, Plus, RefreshCw, Mail, Ban, CheckCircle, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PaymentProfileManager } from "@/components/admin/payment-profiles/PaymentProfileManager";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -16,7 +27,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet, getUser } from "@/lib/api";
+import { apiGet, getUser, fetchStaffAccounts, createStaffAccount, resendStaffInvitation, updateStaffStatus, fetchBranches } from "@/lib/api";
+import type { StaffAccount, Branch } from "@/lib/api";
 import { fmtDateTime } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/cai-dat")({
@@ -59,41 +71,111 @@ const roleLabels: Record<string, string> = {
   packing: "Packing Staff",
 };
 
+const roleOptions: { value: string; label: string; managerOnly?: boolean }[] = [
+  { value: "manager", label: "Store Manager" },
+  { value: "cashier", label: "Cashier Staff" },
+  { value: "kitchen", label: "Kitchen Staff" },
+  { value: "packing", label: "Packing Staff" },
+];
+
 function SettingsPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [createForm, setCreateForm] = useState({ fullname: "", email: "", role: "cashier", branch_id: "" });
+  const [creating, setCreating] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Record<number, boolean>>({});
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      apiGet<AccountRow[]>("/admin/settings/accounts"),
-      apiGet<AuditRow[]>("/admin/settings/audit-logs"),
-    ])
-      .then(([accs, als]) => {
-        if (cancelled) return;
-        setAccounts(accs);
-        setLogs(als);
-      })
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Không tải được cài đặt"))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Keep role source consistent with admin login, route guard and sidebar.
-  // `auth_user` belongs to a legacy/customer session and must never grant admin UI access.
   const currentUser = getUser();
   const isSuper = currentUser?.role === 'super';
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [accs, als, brs] = await Promise.all([
+        fetchStaffAccounts(),
+        apiGet<AuditRow[]>("/admin/settings/audit-logs"),
+        isSuper ? fetchBranches() : Promise.resolve([]),
+      ]);
+      setAccounts(accs);
+      setLogs(als);
+      setBranches(brs);
+    } catch (err: any) {
+      toast.error(err?.message || "Không tải được dữ liệu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createForm.fullname.trim() || !createForm.email.trim()) {
+      toast.error("Vui lòng nhập họ tên và email");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const result = await createStaffAccount({
+        fullname: createForm.fullname.trim(),
+        email: createForm.email.trim(),
+        role: createForm.role,
+        branch_id: isSuper && createForm.branch_id ? Number(createForm.branch_id) : null,
+      });
+      toast.success(result.message || "Tài khoản đã được tạo");
+      setShowCreateForm(false);
+      setCreateForm({ fullname: "", email: "", role: "cashier", branch_id: "" });
+      loadData();
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể tạo tài khoản");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleToggleStatus = async (account: AccountRow) => {
+    setActionLoading(prev => ({ ...prev, [account.id]: true }));
+    try {
+      const result = await updateStaffStatus(account.id, !account.active);
+      toast.success(result.message);
+      loadData();
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể cập nhật trạng thái");
+    } finally {
+      setActionLoading(prev => ({ ...prev, [account.id]: false }));
+    }
+  };
+
+  const handleResendInvitation = async (accountId: number) => {
+    setActionLoading(prev => ({ ...prev, [accountId]: true }));
+    try {
+      const result = await resendStaffInvitation(accountId);
+      toast.success(result.message);
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể gửi lại lời mời");
+    } finally {
+      setActionLoading(prev => ({ ...prev, [accountId]: false }));
+    }
+  };
+
+  const getStatusBadge = (account: AccountRow) => {
+    if (account.active) {
+      return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">Hoạt động</Badge>;
+    }
+    return <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Đã khóa</Badge>;
+  };
 
   return (
     <>
       <AdminPageHeader
         title="Tài khoản & Cài đặt"
-        desc="Chỉ Super Admin có toàn quyền chỉnh sửa các mục dưới đây"
+        desc={isSuper ? "Quản lý tài khoản nội bộ, kênh thanh toán và nhật ký hoạt động" : "Quản lý tài khoản nhân viên trong chi nhánh"}
       />
 
       <Tabs defaultValue={isSuper ? "payment-profiles" : "accounts"}>
@@ -133,6 +215,15 @@ function SettingsPage() {
           <Card className="shadow-soft overflow-hidden">
             <div className="flex items-center justify-between border-b p-4">
               <p className="font-display font-bold text-sm sm:text-base">Tài khoản nội bộ ({accounts.length})</p>
+              <Button
+                size="sm"
+                variant="hero"
+                className="gap-1.5"
+                onClick={() => setShowCreateForm(true)}
+              >
+                <UserPlus className="size-4" />
+                <span className="hidden sm:inline">Tạo tài khoản</span>
+              </Button>
             </div>
 
             {loading ? (
@@ -164,11 +255,31 @@ function SettingsPage() {
                           <span className="font-medium text-foreground">{u.branch}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground text-[11px]">
-                            {u.active ? "Đang kích hoạt" : "Đã khóa"}
-                          </span>
-                          <Switch checked={u.active} disabled aria-label={`Kích hoạt ${u.fullname}`} />
+                          {getStatusBadge(u)}
                         </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-1 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => handleToggleStatus(u)}
+                          disabled={actionLoading[u.id]}
+                        >
+                          {u.active ? <Ban className="size-3 mr-1" /> : <CheckCircle className="size-3 mr-1" />}
+                          {u.active ? "Vô hiệu" : "Kích hoạt"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => handleResendInvitation(u.id)}
+                          disabled={actionLoading[u.id]}
+                        >
+                          <RefreshCw className="size-3 mr-1" />
+                          Gửi lại
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -185,7 +296,8 @@ function SettingsPage() {
                         <TableHead>Nhân sự</TableHead>
                         <TableHead>Vai trò</TableHead>
                         <TableHead className="hidden md:table-cell">Phạm vi</TableHead>
-                        <TableHead className="text-right">Kích hoạt</TableHead>
+                        <TableHead>Trạng thái</TableHead>
+                        <TableHead className="text-right">Thao tác</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -199,8 +311,29 @@ function SettingsPage() {
                             <Badge variant="secondary">{roleLabels[u.role] ?? u.role}</Badge>
                           </TableCell>
                           <TableCell className="hidden text-sm md:table-cell">{u.branch}</TableCell>
+                          <TableCell>{getStatusBadge(u)}</TableCell>
                           <TableCell className="text-right">
-                            <Switch checked={u.active} disabled />
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => handleToggleStatus(u)}
+                                disabled={actionLoading[u.id]}
+                              >
+                                {u.active ? "Vô hiệu" : "Kích hoạt"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => handleResendInvitation(u.id)}
+                                disabled={actionLoading[u.id]}
+                              >
+                                <RefreshCw className="size-3 mr-1" />
+                                Gửi lại
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -292,6 +425,97 @@ function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Create Staff Dialog */}
+      <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tạo tài khoản nhân viên</DialogTitle>
+            <DialogDescription>
+              Nhân viên sẽ nhận được email mời thiết lập mật khẩu lần đầu.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreate} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="staff-fullname">Họ và tên</Label>
+              <Input
+                id="staff-fullname"
+                placeholder="Nguyễn Văn A"
+                value={createForm.fullname}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, fullname: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff-email">Email</Label>
+              <Input
+                id="staff-email"
+                type="email"
+                placeholder="nhanvien@teaplus.vn"
+                value={createForm.email}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff-role">Vai trò</Label>
+              <Select
+                value={createForm.role}
+                onValueChange={(value) => setCreateForm(prev => ({ ...prev, role: value }))}
+              >
+                <SelectTrigger id="staff-role">
+                  <SelectValue placeholder="Chọn vai trò" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roleOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isSuper && (
+              <div className="space-y-2">
+                <Label htmlFor="staff-branch">Chi nhánh</Label>
+                <Select
+                  value={createForm.branch_id}
+                  onValueChange={(value) => setCreateForm(prev => ({ ...prev, branch_id: value }))}
+                >
+                  <SelectTrigger id="staff-branch">
+                    <SelectValue placeholder="Chọn chi nhánh" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowCreateForm(false)}
+              >
+                Hủy
+              </Button>
+              <Button type="submit" variant="hero" className="flex-1 font-bold" disabled={creating}>
+                {creating ? "Đang tạo..." : "Tạo tài khoản"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

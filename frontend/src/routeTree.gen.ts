@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ChapNhanLoiMoiRouteImport } from './routes/chap-nhan-loi-moi'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
 import { Route as HoSoRouteImport } from './routes/ho-so'
@@ -24,6 +25,7 @@ import { Route as AdminBepRouteImport } from './routes/admin.bep'
 import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
 import { Route as AdminChiNhanhRouteImport } from './routes/admin.chi-nhanh'
+import { Route as AdminDanhGiaRouteImport } from './routes/admin.danh-gia'
 import { Route as AdminDonHangRouteImport } from './routes/admin.don-hang'
 import { Route as AdminDongGoiRouteImport } from './routes/admin.dong-goi'
 import { Route as AdminHangDangBanRouteImport } from './routes/admin.hang-dang-ban'
@@ -34,6 +36,7 @@ import { Route as AdminThongBaoRouteImport } from './routes/admin.thong-bao'
 import { Route as AdminThucDonRouteImport } from './routes/admin.thuc-don'
 import { Route as AdminTuyenDungRouteImport } from './routes/admin.tuyen-dung'
 import { Route as AdminViTriRouteImport } from './routes/admin.vi-tri'
+import { Route as SanPhamSlugRouteImport } from './routes/san-pham.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -43,6 +46,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChapNhanLoiMoiRoute = ChapNhanLoiMoiRouteImport.update({
+  id: '/chap-nhan-loi-moi',
+  path: '/chap-nhan-loi-moi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CuaHangRoute = CuaHangRouteImport.update({
@@ -110,6 +118,11 @@ const AdminChiNhanhRoute = AdminChiNhanhRouteImport.update({
   path: '/chi-nhanh',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDanhGiaRoute = AdminDanhGiaRouteImport.update({
+  id: '/danh-gia',
+  path: '/danh-gia',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDonHangRoute = AdminDonHangRouteImport.update({
   id: '/don-hang',
   path: '/don-hang',
@@ -160,10 +173,16 @@ const AdminViTriRoute = AdminViTriRouteImport.update({
   path: '/vi-tri',
   getParentRoute: () => AdminRoute,
 } as any)
+const SanPhamSlugRoute = SanPhamSlugRouteImport.update({
+  id: '/san-pham/$slug',
+  path: '/san-pham/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chap-nhan-loi-moi': typeof ChapNhanLoiMoiRoute
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -176,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
+  '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -186,10 +206,12 @@ export interface FileRoutesByFullPath {
   '/admin/thuc-don': typeof AdminThucDonRoute
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
+  '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chap-nhan-loi-moi': typeof ChapNhanLoiMoiRoute
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -202,6 +224,7 @@ export interface FileRoutesByTo {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
+  '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -212,12 +235,14 @@ export interface FileRoutesByTo {
   '/admin/thuc-don': typeof AdminThucDonRoute
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
+  '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chap-nhan-loi-moi': typeof ChapNhanLoiMoiRoute
   '/cua-hang': typeof CuaHangRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -230,6 +255,7 @@ export interface FileRoutesById {
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
+  '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -240,6 +266,7 @@ export interface FileRoutesById {
   '/admin/thuc-don': typeof AdminThucDonRoute
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
+  '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -247,6 +274,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/chap-nhan-loi-moi'
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
@@ -259,6 +287,7 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/catalog'
     | '/admin/chi-nhanh'
+    | '/admin/danh-gia'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -269,10 +298,12 @@ export interface FileRouteTypes {
     | '/admin/thuc-don'
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
+    | '/san-pham/$slug'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/chap-nhan-loi-moi'
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
@@ -285,6 +316,7 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/catalog'
     | '/admin/chi-nhanh'
+    | '/admin/danh-gia'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -295,11 +327,13 @@ export interface FileRouteTypes {
     | '/admin/thuc-don'
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
+    | '/san-pham/$slug'
     | '/admin'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/chap-nhan-loi-moi'
     | '/cua-hang'
     | '/gioi-thieu'
     | '/ho-so'
@@ -312,6 +346,7 @@ export interface FileRouteTypes {
     | '/admin/cai-dat'
     | '/admin/catalog'
     | '/admin/chi-nhanh'
+    | '/admin/danh-gia'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -322,12 +357,14 @@ export interface FileRouteTypes {
     | '/admin/thuc-don'
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
+    | '/san-pham/$slug'
     | '/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ChapNhanLoiMoiRoute: typeof ChapNhanLoiMoiRoute
   CuaHangRoute: typeof CuaHangRoute
   GioiThieuRoute: typeof GioiThieuRoute
   HoSoRoute: typeof HoSoRoute
@@ -336,6 +373,7 @@ export interface RootRouteChildren {
   ThanhToanRoute: typeof ThanhToanRoute
   TheoDoiDonRoute: typeof TheoDoiDonRoute
   TuyenDungRoute: typeof TuyenDungRoute
+  SanPhamSlugRoute: typeof SanPhamSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -352,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chap-nhan-loi-moi': {
+      id: '/chap-nhan-loi-moi'
+      path: '/chap-nhan-loi-moi'
+      fullPath: '/chap-nhan-loi-moi'
+      preLoaderRoute: typeof ChapNhanLoiMoiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cua-hang': {
@@ -445,6 +490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminChiNhanhRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/danh-gia': {
+      id: '/admin/danh-gia'
+      path: '/danh-gia'
+      fullPath: '/admin/danh-gia'
+      preLoaderRoute: typeof AdminDanhGiaRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/don-hang': {
       id: '/admin/don-hang'
       path: '/don-hang'
@@ -515,6 +567,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminViTriRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/san-pham/$slug': {
+      id: '/san-pham/$slug'
+      path: '/san-pham/$slug'
+      fullPath: '/san-pham/$slug'
+      preLoaderRoute: typeof SanPhamSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -523,6 +582,7 @@ interface AdminRouteChildren {
   AdminCaiDatRoute: typeof AdminCaiDatRoute
   AdminCatalogRoute: typeof AdminCatalogRoute
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
+  AdminDanhGiaRoute: typeof AdminDanhGiaRoute
   AdminDonHangRoute: typeof AdminDonHangRoute
   AdminDongGoiRoute: typeof AdminDongGoiRoute
   AdminHangDangBanRoute: typeof AdminHangDangBanRoute
@@ -541,6 +601,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCaiDatRoute: AdminCaiDatRoute,
   AdminCatalogRoute: AdminCatalogRoute,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
+  AdminDanhGiaRoute: AdminDanhGiaRoute,
   AdminDonHangRoute: AdminDonHangRoute,
   AdminDongGoiRoute: AdminDongGoiRoute,
   AdminHangDangBanRoute: AdminHangDangBanRoute,
@@ -559,6 +620,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ChapNhanLoiMoiRoute: ChapNhanLoiMoiRoute,
   CuaHangRoute: CuaHangRoute,
   GioiThieuRoute: GioiThieuRoute,
   HoSoRoute: HoSoRoute,
@@ -567,6 +629,7 @@ const rootRouteChildren: RootRouteChildren = {
   ThanhToanRoute: ThanhToanRoute,
   TheoDoiDonRoute: TheoDoiDonRoute,
   TuyenDungRoute: TuyenDungRoute,
+  SanPhamSlugRoute: SanPhamSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

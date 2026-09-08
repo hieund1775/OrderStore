@@ -1,11 +1,12 @@
 import postgresDb from '../../config/db-postgres.js';
 import { IdentityError, isUniqueViolation } from './errors.js';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 
-const CUSTOMER_FIELD_NAMES = ['id', 'fullname', 'phone', 'email', 'tier', 'points', 'is_active', 'token_version', 'is_admin', 'admin_role', 'admin_branch_id'];
+const CUSTOMER_FIELD_NAMES = ['id', 'fullname', 'phone', 'email', 'tier', 'points', 'is_active', 'token_version', 'is_admin', 'admin_role', 'admin_branch_id', 'email_verified_at'];
 const CUSTOMER_COLUMNS = CUSTOMER_FIELD_NAMES.join(', ');
 const CUSTOMER_COLUMNS_FOR_USER = CUSTOMER_FIELD_NAMES.map((field) => `u.${field}`).join(', ');
-const ADMIN_COLUMNS = 'id, fullname, phone, email, password_hash, admin_role, admin_branch_id, is_active, token_version';
+const ADMIN_COLUMNS = 'id, fullname, phone, email, password_hash, admin_role, admin_branch_id, is_active, token_version, email_verified_at';
 
 export function createUsersRepository(database = postgresDb) {
   return {
@@ -191,6 +192,177 @@ export function createUsersRepository(database = postgresDb) {
          WHERE id = $1
          RETURNING ${CUSTOMER_COLUMNS}`,
         [userId, cleanEmail],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Find staff (admin) by email, regardless of status
+     */
+    async findStaffByEmail(email) {
+      if (!email || typeof email !== 'string') return null;
+      const cleanEmail = email.trim().toLowerCase();
+      const [rows] = await database.query(
+        `SELECT ${ADMIN_COLUMNS}
+         FROM users
+         WHERE LOWER(email) = $1 AND is_admin = TRUE
+         LIMIT 1`,
+        [cleanEmail],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Find admin by id regardless of active status
+     */
+    async findAdminById(id) {
+      const [rows] = await database.query(
+        `SELECT ${ADMIN_COLUMNS}
+         FROM users
+         WHERE id = $1 AND is_admin = TRUE
+         LIMIT 1`,
+        [id],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Create a staff account (admin user) with unusable password hash
+     */
+    async createStaff({ fullname, email, adminRole, branchId }) {
+      const cleanEmail = email ? email.trim().toLowerCase() : null;
+      // Use an unusable bcrypt hash (no plaintext password)
+      const unusableHash = await bcrypt.hash(crypto.randomUUID(), 12);
+      return database.transaction(async (tx) => {
+        // Check duplicate email
+        const [existing] = await tx.query(
+          `SELECT id FROM users WHERE LOWER(email) = $1 AND is_admin = TRUE LIMIT 1 FOR UPDATE`,
+          [cleanEmail],
+        );
+        if (existing[0]) {
+          const err = new Error('Email đã được sử dụng cho tài khoản quản trị khác');
+          err.status = 409;
+          throw err;
+        }
+
+        const [rows] = await tx.query(
+          `INSERT INTO users (fullname, email, password_hash, is_admin, admin_role, admin_branch_id, is_active)
+           VALUES ($1, $2, $3, TRUE, $4, $5, FALSE)
+           RETURNING ${ADMIN_COLUMNS}`,
+          [fullname, cleanEmail, unusableHash, adminRole, branchId || null],
+        );
+        return rows[0];
+      });
+    },
+
+    /**
+     * List staff accounts. Super sees all; Manager sees own branch.
+     */
+    async listStaff(branchId) {
+      const params = [];
+      let where = 'WHERE u.is_admin = TRUE';
+      if (branchId) {
+        params.push(branchId);
+        where += ` AND u.admin_branch_id = $${params.length}`;
+      }
+      params.push(params.length + 1);
+      const [rows] = await database.query(
+        `SELECT u.id, u.fullname, u.email, u.admin_role AS role,
+                u.admin_branch_id AS branch_id,
+                COALESCE(s.name, 'Toàn hệ thống') AS branch_name,
+                u.is_active, u.email_verified_at,
+                u.created_at, u.token_version
+         FROM users u
+         LEFT JOIN stores s ON u.admin_branch_id = s.id
+         ${where}
+         ORDER BY u.created_at DESC, u.id`,
+        params,
+      );
+      return rows;
+    },
+
+    /**
+     * Update staff account status (enable/disable)
+     */
+    async updateStaffStatus(userId, isActive) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET is_active = $2, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND is_admin = TRUE
+         RETURNING ${ADMIN_COLUMNS}`,
+        [userId, isActive],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Update staff password hash and increment token version
+     */
+    async updateStaffPassword(userId, passwordHash) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET password_hash = $2, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND is_admin = TRUE
+         RETURNING ${ADMIN_COLUMNS}`,
+        [userId, passwordHash],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Set email_verified_at for a user
+     */
+    async setEmailVerified(userId) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND email_verified_at IS NULL
+         RETURNING id, email_verified_at`,
+        [userId],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Clear email_verified_at (on email change)
+     */
+    async clearEmailVerified(userId) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET email_verified_at = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING id, email_verified_at`,
+        [userId],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Increment token_version for a user (invalidate existing sessions)
+     */
+    async incrementTokenVersion(userId) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING id, token_version`,
+        [userId],
+      );
+      return rows[0] || null;
+    },
+
+    /**
+     * Activate a staff account (set is_active = TRUE, set password, mark email verified)
+     */
+    async activateStaff(userId, passwordHash) {
+      const [rows] = await database.query(
+        `UPDATE users
+         SET password_hash = $2, is_active = TRUE, token_version = token_version + 1,
+             email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND is_admin = TRUE
+         RETURNING ${ADMIN_COLUMNS}`,
+        [userId, passwordHash],
       );
       return rows[0] || null;
     },
