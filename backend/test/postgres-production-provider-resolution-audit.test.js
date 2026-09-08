@@ -288,6 +288,28 @@ describe('production provider-resolution audit', () => {
     assert.equal(`${captured.logs.join('\n')}\n${captured.errors.join('\n')}`.includes('must-not-log'), false);
   });
 
+  it('aggregates only valid numeric HTTP status for SDK/internal errors without exposing error text', async () => {
+    const fake = createFakePool({ rows: [canonicalRow(1)], profiles: ['A'] });
+    const captured = captureLogger();
+    const result = await runProductionProviderResolutionAudit({
+      args: auditArgs(), env: approvedEnvironment, pool: fake.pool,
+      readPayOSCredentialFile: fakeCredentialReader(['A']), loadRuntimeModules: fakeRuntime(), logger: captured.logger,
+      lookupTransaction: async () => {
+        throw Object.assign(new Error('order=9001&url=https://must-not-log.example'), {
+          name: 'APIError', code: '101', status: 200,
+        });
+      },
+    });
+
+    assert.deepEqual(result.report.provider_resolution.sdk_internal_metadata_breakdown, [{
+      error_name: 'APIError', error_code: '101', has_http_status: true, http_status: 200, lookup_pair_count: 1, target_count: 1,
+    }]);
+    const unsafeStatus = classifyProviderLookupFailure({ name: 'APIError', code: 'order=9001&token=unsafe', status: '200' });
+    assert.equal(unsafeStatus.sdkMetadata.error_code, null);
+    assert.equal(Object.hasOwn(unsafeStatus.sdkMetadata, 'http_status'), false);
+    assert.equal(`${captured.logs.join('\n')}\n${captured.errors.join('\n')}`.includes('must-not-log'), false);
+  });
+
   it('reports lookup-pair and distinct-target counts independently when one target has multiple result classes', async () => {
     const fake = createFakePool({ rows: [canonicalRow(1), canonicalRow(2)], profiles: ['A', 'B', 'C'] });
     const result = await runProductionProviderResolutionAudit({

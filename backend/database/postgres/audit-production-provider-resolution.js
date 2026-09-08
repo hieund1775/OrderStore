@@ -142,7 +142,7 @@ function exactAmount(value) {
 }
 
 function providerHttpStatus(error) {
-  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
+  const status = error?.statusCode ?? error?.status ?? error?.response?.status;
   return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
 }
 
@@ -157,10 +157,12 @@ function sanitizeErrorCode(code) {
 }
 
 function safeSdkMetadata(error, fallbackName = 'UnknownError') {
+  const httpStatus = providerHttpStatus(error);
   return {
     error_name: sanitizeErrorName(error?.name, fallbackName),
     error_code: sanitizeErrorCode(error?.code),
-    has_http_status: providerHttpStatus(error) != null,
+    has_http_status: httpStatus != null,
+    ...(httpStatus != null ? { http_status: httpStatus } : {}),
   };
 }
 
@@ -325,11 +327,12 @@ function buildLookupBreakdown(resolutions) {
       resultGroups.set(resultKey, resultGroup);
       if (resultClass === 'SDK_OR_INTERNAL') {
         const metadata = check.sdkMetadata || safeSdkMetadata(null);
-        const metadataKey = `${metadata.error_name}:${metadata.error_code || 'NONE'}:${metadata.has_http_status}`;
+        const metadataKey = `${metadata.error_name}:${metadata.error_code || 'NONE'}:${metadata.has_http_status}:${metadata.http_status ?? 'NONE'}`;
         const metadataGroup = sdkMetadataGroups.get(metadataKey) || {
           error_name: metadata.error_name,
           error_code: metadata.error_code,
           has_http_status: metadata.has_http_status,
+          http_status: metadata.http_status,
           lookup_pair_count: 0,
           targetKeys: new Set(),
         };
@@ -370,10 +373,11 @@ function buildLookupBreakdown(resolutions) {
         error_name: group.error_name,
         error_code: group.error_code,
         has_http_status: group.has_http_status,
+        ...(group.http_status != null ? { http_status: group.http_status } : {}),
         lookup_pair_count: group.lookup_pair_count,
         target_count: group.targetKeys.size,
       }))
-      .sort((left, right) => `${left.error_name}:${left.error_code || ''}:${left.has_http_status}`.localeCompare(`${right.error_name}:${right.error_code || ''}:${right.has_http_status}`)),
+      .sort((left, right) => `${left.error_name}:${left.error_code || ''}:${left.http_status ?? ''}`.localeCompare(`${right.error_name}:${right.error_code || ''}:${right.http_status ?? ''}`)),
     identity_mismatch_breakdown: {
       identity_mismatch_lookup_pair_count: identityMismatchLookupPairs,
       identity_mismatch_target_count: identityMismatchTargets.size,
