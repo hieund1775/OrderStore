@@ -198,3 +198,16 @@ SET
           AND rev.purchase_verified_at IS NOT NULL
           AND rev.visibility_status = 'visible'
     );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_reviews_current_revision'
+          AND conrelid = 'reviews'::regclass
+    ) THEN
+        ALTER TABLE reviews
+            ADD CONSTRAINT fk_reviews_current_revision
+            FOREIGN KEY (current_revision_id) REFERENCES review_revisions(id);
+    END IF;
+END $$;
