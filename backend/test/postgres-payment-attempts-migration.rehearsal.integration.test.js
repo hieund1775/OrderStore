@@ -78,8 +78,8 @@ async function createPost0025Baseline(client, schema) {
       payment_created_at, payment_expires_at, paid_at
     ) VALUES
       (101, 41000, 'payos', 'paid', 'QUAN__O', 3, 'direct-paid-link', 8101, 'https://payos.test/8101', 'qr-8101', '2026-09-01T00:00:00Z', '2026-09-01T00:15:00Z', '2026-09-01T00:05:00Z'),
-      (102, 42000, 'payos', 'unpaid', 'DEFAULT_PROFILE', 2, 'direct-active-link', 8102, 'https://payos.test/8102', 'qr-8102', '2026-09-01T00:00:00Z', '2026-09-01T00:15:00Z', NULL),
-      (103, 43000, 'payos', 'unpaid', 'QUAN__O', 3, NULL, 8103, NULL, NULL, '2026-09-01T00:00:00Z', '2026-09-01T00:15:00Z', NULL),
+      (102, 42000, 'payos', 'unpaid', 'DEFAULT_PROFILE', 2, 'direct-active-link', 8102, 'https://payos.test/8102', 'qr-8102', '2030-09-01T00:00:00Z', '2030-09-01T00:15:00Z', NULL),
+      (103, 43000, 'payos', 'unpaid', 'QUAN__O', 3, NULL, 8103, NULL, NULL, '2030-09-01T00:00:00Z', '2030-09-01T00:15:00Z', NULL),
       (104, 44000, 'payos', 'unpaid', 'QUAN__O', 3, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
       (105, 45000, 'payos', 'unpaid', 'QUAN__O', 3, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     INSERT INTO checkout_groups (

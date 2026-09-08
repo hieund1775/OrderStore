@@ -38,7 +38,7 @@ function createFakePool({ appliedRows, tryLock = true, trackerExists = true, pre
         return { rows: [{ relation_name: trackerExists ? 'schema_migrations' : null }] };
       }
       if (sql.includes('SELECT version, checksum FROM schema_migrations')) return { rows: appliedRows || [] };
-      if (sql.includes('WITH checks AS')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
+      if (sql.includes('checks AS (')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
       return { rows: [], rowCount: 0 };
     },
     release() {},
@@ -243,7 +243,7 @@ describe('PostgreSQL production migration guard', () => {
   it('keeps the 0026 production preflight SQL read-only', async () => {
     const currentFile = fileURLToPath(import.meta.url);
     const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0026_payment_attempts_preflight_readonly.sql'), 'utf8');
-    assert.match(preflight, /^\s*--[\s\S]*WITH checks AS/m);
+    assert.match(preflight, /^\s*--[\s\S]*WITH [a-z_]+ AS \([\s\S]*\), checks AS/m);
     assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
   });
 

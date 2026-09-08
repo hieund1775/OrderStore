@@ -1,6 +1,37 @@
 -- P1 / phase 0026 production preflight. Read-only: all issue_count values
 -- must be zero before the additive backfill can be applied safely.
-WITH checks AS (
+WITH eligible_quarantine AS (
+  SELECT 'order'::text AS target_type, o.id AS target_id
+  FROM orders o
+  WHERE o.checkout_group_id IS NULL AND o.payment_provider = 'payos'
+    AND o.payos_order_code IS NOT NULL AND o.payment_expires_at IS NOT NULL
+    AND o.payment_expires_at <= CURRENT_TIMESTAMP
+    AND o.payment_status IN ('unpaid', 'expired') AND o.paid_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM payment_events e
+      WHERE e.provider = 'payos' AND e.order_id = o.id
+        AND e.event_type = 'payment.succeeded'
+        AND COALESCE(e.payload ->> 'code', e.payload #>> '{data,code}') = '00'
+        AND UPPER(COALESCE(e.payload ->> 'status', e.payload #>> '{data,status}', '')) = 'PAID'
+        AND NULLIF(BTRIM(COALESCE(e.payload ->> 'amount', e.payload #>> '{data,amount}')), '') ~ '^-?[0-9]+(?:\.[0-9]+)?$'
+        AND COALESCE(e.payload ->> 'amount', e.payload #>> '{data,amount}')::numeric = o.total
+    )
+  UNION ALL
+  SELECT 'checkout_group'::text, cg.id
+  FROM checkout_groups cg
+  WHERE cg.payment_provider = 'payos' AND cg.payos_order_code IS NOT NULL
+    AND cg.payment_expires_at IS NOT NULL AND cg.payment_expires_at <= CURRENT_TIMESTAMP
+    AND cg.payment_status IN ('unpaid', 'expired') AND cg.paid_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM payment_events e
+      WHERE e.provider = 'payos' AND e.event_type = 'payment.succeeded'
+        AND (e.payload ->> 'orderCode' = cg.payos_order_code::text OR e.payload #>> '{data,orderCode}' = cg.payos_order_code::text)
+        AND COALESCE(e.payload ->> 'code', e.payload #>> '{data,code}') = '00'
+        AND UPPER(COALESCE(e.payload ->> 'status', e.payload #>> '{data,status}', '')) = 'PAID'
+        AND NULLIF(BTRIM(COALESCE(e.payload ->> 'amount', e.payload #>> '{data,amount}')), '') ~ '^-?[0-9]+(?:\.[0-9]+)?$'
+        AND COALESCE(e.payload ->> 'amount', e.payload #>> '{data,amount}')::numeric = cg.total_amount
+    )
+), checks AS (
   SELECT 'group_child_direct_payos_artifacts'::text AS check_name, COUNT(*)::bigint AS issue_count
   FROM orders o
   WHERE o.checkout_group_id IS NOT NULL
@@ -22,24 +53,25 @@ WITH checks AS (
   UNION ALL
   SELECT 'legacy_artifact_missing_profile_snapshot', COUNT(*)::bigint
   FROM (
-    SELECT payment_profile_code, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at
+    SELECT 'order'::text AS target_type, id AS target_id, payment_profile_code, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at
     FROM orders WHERE checkout_group_id IS NULL AND payment_provider = 'payos'
     UNION ALL
-    SELECT payment_profile_code, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at
+    SELECT 'checkout_group'::text, id, payment_profile_code, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at
     FROM checkout_groups WHERE payment_provider = 'payos'
   ) legacy
   WHERE (payos_order_code IS NOT NULL OR payment_link_id IS NOT NULL OR payment_checkout_url IS NOT NULL
     OR payment_qr_code IS NOT NULL OR payment_created_at IS NOT NULL OR payment_expires_at IS NOT NULL)
     AND (NULLIF(BTRIM(payment_profile_code), '') IS NULL
       OR NOT EXISTS (SELECT 1 FROM payment_profiles pp WHERE pp.code = legacy.payment_profile_code))
+    AND NOT EXISTS (SELECT 1 FROM eligible_quarantine q WHERE q.target_type = legacy.target_type AND q.target_id = legacy.target_id)
 
   UNION ALL
   SELECT 'legacy_artifact_ambiguous_shape_or_status', COUNT(*)::bigint
   FROM (
-    SELECT payment_status, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at, paid_at
+    SELECT 'order'::text AS target_type, id AS target_id, payment_status, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at, paid_at
     FROM orders WHERE checkout_group_id IS NULL AND payment_provider = 'payos'
     UNION ALL
-    SELECT payment_status, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at, paid_at
+    SELECT 'checkout_group'::text, id, payment_status, payos_order_code, payment_link_id, payment_checkout_url, payment_qr_code, payment_created_at, payment_expires_at, paid_at
     FROM checkout_groups WHERE payment_provider = 'payos'
   ) legacy
   WHERE (payos_order_code IS NOT NULL OR payment_link_id IS NOT NULL OR payment_checkout_url IS NOT NULL
@@ -49,6 +81,7 @@ WITH checks AS (
       OR (payment_link_id IS NOT NULL AND payment_checkout_url IS NULL AND payment_qr_code IS NULL)
       OR (payment_status IN ('paid', 'expired') AND payment_link_id IS NULL)
       OR (payment_status = 'paid' AND paid_at IS NULL))
+    AND NOT EXISTS (SELECT 1 FROM eligible_quarantine q WHERE q.target_type = legacy.target_type AND q.target_id = legacy.target_id)
 
   UNION ALL
   SELECT 'checkout_group_legacy_invalid_payment_status', COUNT(*)::bigint

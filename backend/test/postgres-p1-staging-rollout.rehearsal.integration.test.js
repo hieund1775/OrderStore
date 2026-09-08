@@ -26,6 +26,34 @@ function schemaName() {
   return `p1_rollout_${crypto.randomBytes(6).toString('hex')}`;
 }
 
+let lastStartedPhase = 'none';
+async function runPhase(name, work, timeoutMs = 45_000, onTimeout = null) {
+  lastStartedPhase = name;
+  console.log(`[P1 rehearsal] BEFORE ${name}`);
+  let timer;
+  try {
+    const result = await Promise.race([
+      work(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`PHASE_TIMEOUT ${name} after ${timeoutMs}ms; last_started_phase=${lastStartedPhase}; open_handles=runner-managed`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+    console.log(`[P1 rehearsal] AFTER ${name}`);
+    return result;
+  } catch (error) {
+    if (String(error?.message || '').startsWith('PHASE_TIMEOUT') && onTimeout) {
+      try { console.error(`[P1 rehearsal] TIMEOUT_DIAGNOSTICS ${JSON.stringify(await onTimeout())}`); } catch (diagnosticError) {
+        console.error(`[P1 rehearsal] TIMEOUT_DIAGNOSTICS_FAILED code=${diagnosticError?.code || 'unknown'}`);
+      }
+    }
+    console.error(`[P1 rehearsal] FAILED ${name}: ${error?.message || String(error)}`);
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function createPost0025Baseline(client, schema) {
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET search_path TO "${schema}", public`);
@@ -76,7 +104,126 @@ function database(client) {
     const result = await client.query(sql, params);
     return [result.rows, result.rowCount ?? 0];
   };
-  return { query, transaction: async (runner) => runner({ query }) };
+  return {
+    query,
+    transaction: async (runner) => {
+      await client.query('BEGIN');
+      try {
+        const result = await runner({ query });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    },
+  };
+}
+
+function safeSqlLabel(sql) {
+  const text = String(sql).replace(/\s+/g, ' ').trim();
+  if (/FROM orders WHERE id = \$1 FOR UPDATE/i.test(text)) return 'lockTarget(order)';
+  if (/FROM checkout_groups WHERE id = \$1 FOR UPDATE/i.test(text)) return 'lockTarget(group)';
+  if (/FROM payment_attempts WHERE id = \$1 FOR UPDATE/i.test(text)) return 'findAttemptForUpdate';
+  if (/UPDATE payment_attempts/i.test(text)) return 'markAttemptPaid/update_attempt';
+  if (/UPDATE (orders|checkout_groups)/i.test(text)) return 'mirror_or_pointer_update';
+  if (/INSERT INTO payment_events/i.test(text)) return 'payment_event_insert';
+  if (/UPDATE payment_events/i.test(text)) return 'payment_event_update';
+  return 'query';
+}
+
+async function readOnlyLockDiagnostics(testDbUrl, pid) {
+  const diagnosticPool = new Pool(getPostgresPoolConfig(testDbUrl));
+  const diagnosticClient = await diagnosticPool.connect();
+  try {
+    const activity = await diagnosticClient.query(`
+      SELECT pid, pg_blocking_pids(pid) AS blockers, wait_event_type, wait_event, state,
+             backend_xid IS NOT NULL AS has_backend_xid
+      FROM pg_stat_activity WHERE pid = $1
+    `, [pid]);
+    const blockerPids = activity.rows[0]?.blockers || [];
+    const locks = await diagnosticClient.query(`
+      SELECT l.pid, l.locktype, l.mode, l.granted,
+             CASE WHEN l.relation IS NULL THEN NULL ELSE l.relation::regclass::text END AS relation,
+             l.classid, l.objid, l.objsubid
+      FROM pg_locks l
+      WHERE l.pid = $1 OR l.pid = ANY($2::int[])
+    `, [pid, blockerPids]);
+    const blockerActivity = blockerPids.length
+      ? await diagnosticClient.query(`
+          SELECT pid, pg_blocking_pids(pid) AS blockers, wait_event_type, wait_event, state,
+                 backend_xid IS NOT NULL AS has_backend_xid
+          FROM pg_stat_activity WHERE pid = ANY($1::int[])
+        `, [blockerPids])
+      : { rows: [] };
+    return {
+      blocked_pid: pid,
+      blocked_activity: activity.rows,
+      blocker_activity: blockerActivity.rows,
+      locks: locks.rows,
+      blocker_classification: blockerPids.map((blockerPid) => ({ pid: blockerPid, owner: 'unknown_external_or_previous_substep' })),
+    };
+  } finally {
+    diagnosticClient.release();
+    await diagnosticPool.end();
+  }
+}
+
+async function runLatePaidDiagnostic({ client, testDbUrl, repo, attemptId }) {
+  const [{ pid }] = (await client.query('SELECT pg_backend_pid() AS pid')).rows;
+  await client.query("SET lock_timeout = '2s'");
+  await client.query("SET statement_timeout = '8s'");
+  const started = Date.now();
+  let timeoutHandle;
+  console.log(`[P1 late-paid] session purpose=late-paid transaction backend_pid=${pid}`);
+  console.log(`[P1 late-paid] connection tags purpose=direct-create/regenerate,grouped-create/regenerate,webhook,reconciliation,expiry,late-paid transaction backend_pid=${pid}`);
+  const originalQuery = client.query.bind(client);
+  client.query = async (sql, params) => {
+    const label = safeSqlLabel(sql);
+    if (label !== 'query') console.log(`[P1 late-paid] BEFORE ${label}`);
+    try {
+      const result = await originalQuery(sql, params);
+      if (label !== 'query') console.log(`[P1 late-paid] AFTER ${label}`);
+      return result;
+    } catch (error) {
+      if (label !== 'query') console.error(`[P1 late-paid] ERROR ${label} code=${error?.code || 'unknown'}`);
+      throw error;
+    }
+  };
+  try {
+    console.log('[P1 late-paid] BEFORE transaction begin');
+    const result = await Promise.race([
+      repo.processSuccessfulAttemptEvent({
+        attemptId, provider: 'payos', providerPaymentIdentity: 'reference:late-group',
+        amount: 51000, reference: 'late-group', paymentLinkId: 'expire-group',
+      }),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(async () => {
+          try {
+            const diagnostics = await readOnlyLockDiagnostics(testDbUrl, pid);
+            console.error(`[P1 late-paid] TIMEOUT_DIAGNOSTICS ${JSON.stringify(diagnostics)}`);
+          } catch (diagnosticError) {
+            console.error(`[P1 late-paid] TIMEOUT_DIAGNOSTICS_FAILED code=${diagnosticError?.code || 'unknown'}`);
+          }
+          reject(Object.assign(new Error('LATE_PAID_TIMEOUT'), { code: 'LATE_PAID_TIMEOUT' }));
+        }, 4_000);
+      }),
+    ]);
+    console.log('[P1 late-paid] AFTER transaction commit');
+    return result;
+  } catch (error) {
+    console.error(`[P1 late-paid] FAILED class=${error?.name || 'Error'} code=${error?.code || 'unknown'} elapsed_ms=${Date.now() - started}`);
+    if (error?.code === 'LATE_PAID_TIMEOUT' || error?.code === '55P03' || error?.code === '57014') {
+      console.error(`[P1 late-paid] DIAGNOSTICS ${JSON.stringify(await readOnlyLockDiagnostics(testDbUrl, pid))}`);
+    }
+    console.error('[P1 late-paid] AFTER transaction rollback');
+    throw error;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    client.query = originalQuery;
+    await client.query("RESET lock_timeout");
+    await client.query("RESET statement_timeout");
+  }
 }
 
 async function applyTrackedMigration(client, version, filename, sql) {
@@ -120,8 +267,13 @@ describe('Post-0025 staging P1 rollout rehearsal', () => {
     const client = await pool.connect();
     const schema = schemaName();
     try {
-      await createPost0025Baseline(client, schema);
-      await applyTrackedMigration(client, '0026', '0026_payment_attempts_additive.sql', sql0026);
+      await runPhase('prepare post-0025 isolated staging state', () => createPost0025Baseline(client, schema));
+      await runPhase('0026 apply', () => applyTrackedMigration(client, '0026', '0026_payment_attempts_additive.sql', sql0026));
+      await runPhase('verify 0026 schema/backfill/quarantine', async () => {
+        const result = await client.query(`SELECT to_regclass('payment_attempts') AS attempts, to_regclass('payment_attempt_backfill_quarantine') AS quarantine`);
+        assert.equal(result.rows[0].attempts, 'payment_attempts');
+        assert.equal(result.rows[0].quarantine, 'payment_attempt_backfill_quarantine');
+      });
       const repo = createPaymentAttemptsRepository(database(client));
       const now = () => new Date('2026-09-07T00:00:00.000Z');
       let code = 90100000000000;
@@ -137,28 +289,64 @@ describe('Post-0025 staging P1 rollout rehearsal', () => {
         withCreationLock: async (_key, callback) => callback({ acquired: true }),
       });
 
+      if (process.env.P1_LOCK_DIAGNOSTICS === '1') {
+        for (const method of ['markAttemptPaid', 'processSuccessfulAttemptEvent']) {
+          const original = repo[method].bind(repo);
+          repo[method] = async (...args) => {
+            console.log(`[P1 late-paid] BEFORE ${method}`);
+            try {
+              const result = await original(...args);
+              console.log(`[P1 late-paid] AFTER ${method}`);
+              return result;
+            } catch (error) {
+              console.error(`[P1 late-paid] ERROR ${method} code=${error?.code || 'unknown'}`);
+              throw error;
+            }
+          };
+        }
+      }
+
+      if (process.env.P1_LATE_PAID_ONLY === '1') {
+        await runPhase('isolated grouped late-paid setup', async () => {
+          const creating = await repo.reserveOrRecoverCreatingAttempt({
+            checkoutGroupId: 11, paymentProfileCode: 'GROUP_CHECKOUT', amount: 51000,
+            providerOrderCode: ++code, expiresAt: '2026-09-06T23:00:00.000Z',
+          });
+          await repo.activateAttempt({
+            attemptId: creating.attempt.id, providerOrderCode: creating.attempt.provider_order_code,
+            paymentLinkId: 'expire-group', checkoutUrl: 'https://payos.test/expire-group',
+            qrCode: 'expire-group', expiresAt: '2026-09-06T23:00:00.000Z',
+          });
+          await repo.expireAttempt({ attemptId: creating.attempt.id, expiredAt: '2026-09-07T00:00:00.000Z' });
+          const paid = await runLatePaidDiagnostic({ client, testDbUrl, repo, attemptId: creating.attempt.id });
+          assert.equal(paid.kind, 'paid');
+        });
+        return;
+      }
+
       // Runtime on 0026 only: direct and group create/regenerate retain legacy response fields.
       const directTarget = { id: 1, order_code: 'ORD-ROLLOUT-1', user_id: 9, total: 10000, payment_provider: 'payos', payment_status: 'unpaid', current_status: 'pending', payment_profile_code: 'DIRECT_A', payment_profile_version: 1, checkout_group_id: null };
-      const directFirst = await direct.createForOrder({ order: directTarget, paymentProfile: { code: 'DIRECT_A', version: 1 } });
+      await runPhase('P1 runtime checks on 0026', async () => {
+      const directFirst = await runPhase('direct create', () => direct.createForOrder({ order: directTarget, paymentProfile: { code: 'DIRECT_A', version: 1 } }), 10_000);
       assert.equal(directFirst.payment_link_id, 'direct-link-1');
-      const directReplacement = await direct.regenerateForCustomer({ orderCode: 'ORD-ROLLOUT-1', userId: 9 });
+      const directReplacement = await runPhase('direct regenerate', () => direct.regenerateForCustomer({ orderCode: 'ORD-ROLLOUT-1', userId: 9 }), 10_000);
       assert.equal(directReplacement.payment_link_id, 'direct-link-2');
       const groupTarget = { id: 10, group_code: 'GRP-ROLLOUT-10', total_amount: 50000, payment_provider: 'payos', payment_status: 'unpaid', payment_profile_code: 'GROUP_CHECKOUT', payment_profile_version: 1 };
-      const groupFirst = await group.createForGroup({ group: groupTarget });
+      const groupFirst = await runPhase('grouped create', () => group.createForGroup({ group: groupTarget }), 10_000);
       assert.equal(groupFirst.payment_link_id, 'group-link-1');
-      const groupReplacement = await group.regenerateForCustomer({ groupCode: 'GRP-ROLLOUT-10', userId: 9 });
+      const groupReplacement = await runPhase('grouped regenerate', () => group.regenerateForCustomer({ groupCode: 'GRP-ROLLOUT-10', userId: 9 }), 10_000);
       assert.equal(groupReplacement.payment_link_id, 'group-link-2');
 
       // Webhook settlement: an old superseded direct QR can still settle and wins atomically.
       const oldDirect = (await repo.findAttemptsByTarget({ orderId: 1 })).find((attempt) => attempt.status === 'superseded');
-      const webhook = await processPayOSWebhookWithAttempts({
+      const webhook = await runPhase('webhook resolution', () => processPayOSWebhookWithAttempts({
         body: { data: { orderCode: oldDirect.provider_order_code, paymentLinkId: oldDirect.provider_payment_link_id, amount: 10000, reference: 'webhook-direct-old', code: '00' } },
         attemptsRepository: repo,
         verifyWebhook: async (body, { profileCode }) => {
           assert.equal(profileCode, 'DIRECT_A');
           return body.data;
         },
-      });
+      }), 10_000);
       assert.equal(webhook.kind, 'paid');
       const directAfterWebhook = await repo.findAttemptsByTarget({ orderId: 1 });
       assert.equal(directAfterWebhook.filter((attempt) => attempt.status === 'paid').length, 1);
@@ -166,37 +354,48 @@ describe('Post-0025 staging P1 rollout rehearsal', () => {
       // Reconciliation settles the active direct target through the same event identity/lifecycle.
       const reconcileAttempt = await repo.reserveOrRecoverCreatingAttempt({ orderId: 2, paymentProfileCode: 'DIRECT_A', amount: 20000, providerOrderCode: ++code, expiresAt: '2026-09-07T00:15:00.000Z' });
       const activeForReconcile = await repo.activateAttempt({ attemptId: reconcileAttempt.attempt.id, providerOrderCode: reconcileAttempt.attempt.provider_order_code, paymentLinkId: 'recon-link', checkoutUrl: 'https://payos.test/recon', qrCode: 'recon-qr', expiresAt: '2026-09-07T00:15:00.000Z' });
-      const reconciliation = await reconcilePayOSAttempt({
+      const reconciliation = await runPhase('reconciliation', () => reconcilePayOSAttempt({
         attempt: activeForReconcile,
         attemptsRepository: repo,
         getPaymentInfo: async () => ({ status: 'PAID', amountPaid: 20000, id: 'recon-link', reference: 'recon-reference' }),
-      });
+      }), 10_000);
       assert.equal(reconciliation.changed, true);
 
       // Expiry is idempotent for direct and group; valid late evidence still settles expired/group state.
-      const expiringDirect = await repo.reserveOrRecoverCreatingAttempt({ orderId: 3, paymentProfileCode: 'DIRECT_A', amount: 30000, providerOrderCode: ++code, expiresAt: '2026-09-06T23:00:00.000Z' });
-      await repo.activateAttempt({ attemptId: expiringDirect.attempt.id, providerOrderCode: expiringDirect.attempt.provider_order_code, paymentLinkId: 'expire-direct', checkoutUrl: 'https://payos.test/expire-direct', qrCode: 'expire-direct', expiresAt: '2026-09-06T23:00:00.000Z' });
-      const expiringGroup = await repo.reserveOrRecoverCreatingAttempt({ checkoutGroupId: 11, paymentProfileCode: 'GROUP_CHECKOUT', amount: 51000, providerOrderCode: ++code, expiresAt: '2026-09-06T23:00:00.000Z' });
-      await repo.activateAttempt({ attemptId: expiringGroup.attempt.id, providerOrderCode: expiringGroup.attempt.provider_order_code, paymentLinkId: 'expire-group', checkoutUrl: 'https://payos.test/expire-group', qrCode: 'expire-group', expiresAt: '2026-09-06T23:00:00.000Z' });
-      const firstExpiry = await repo.expireDuePaymentAttempts({ now: '2026-09-07T00:00:00.000Z' });
-      const rerunExpiry = await repo.expireDuePaymentAttempts({ now: '2026-09-07T00:00:00.000Z' });
-      assert.equal(firstExpiry.expiredCount, 2);
-      assert.equal(rerunExpiry.expiredCount, 0);
-      const lateGroupPaid = await repo.processSuccessfulAttemptEvent({ attemptId: expiringGroup.attempt.id, provider: 'payos', providerPaymentIdentity: 'reference:late-group', amount: 51000, reference: 'late-group', paymentLinkId: 'expire-group' });
+      const expiringDirect = await runPhase('prepare expiry direct attempt', () => repo.reserveOrRecoverCreatingAttempt({ orderId: 3, paymentProfileCode: 'DIRECT_A', amount: 30000, providerOrderCode: ++code, expiresAt: '2026-09-06T23:00:00.000Z' }), 10_000);
+      await runPhase('activate expiry direct attempt', () => repo.activateAttempt({ attemptId: expiringDirect.attempt.id, providerOrderCode: expiringDirect.attempt.provider_order_code, paymentLinkId: 'expire-direct', checkoutUrl: 'https://payos.test/expire-direct', qrCode: 'expire-direct', expiresAt: '2026-09-06T23:00:00.000Z' }), 10_000);
+      const expiringGroup = await runPhase('prepare expiry grouped attempt', () => repo.reserveOrRecoverCreatingAttempt({ checkoutGroupId: 11, paymentProfileCode: 'GROUP_CHECKOUT', amount: 51000, providerOrderCode: ++code, expiresAt: '2026-09-06T23:00:00.000Z' }), 10_000);
+      await runPhase('activate expiry grouped attempt', () => repo.activateAttempt({ attemptId: expiringGroup.attempt.id, providerOrderCode: expiringGroup.attempt.provider_order_code, paymentLinkId: 'expire-group', checkoutUrl: 'https://payos.test/expire-group', qrCode: 'expire-group', expiresAt: '2026-09-06T23:00:00.000Z' }), 10_000);
+      const firstExpiry = await runPhase('expiry direct/group', () => repo.expireDuePaymentAttempts({ now: '2026-09-07T00:00:00.000Z' }), 10_000);
+      const rerunExpiry = await runPhase('expiry rerun idempotency', () => repo.expireDuePaymentAttempts({ now: '2026-09-07T00:00:00.000Z' }), 10_000);
+      assert.equal(firstExpiry.length, 2);
+      assert.equal(rerunExpiry.length, 0);
+      const lateGroupPaid = await runPhase(
+        'late-paid after expired/superseded',
+        () => runLatePaidDiagnostic({ client, testDbUrl, repo, attemptId: expiringGroup.attempt.id }),
+        process.env.P1_LOCK_CAPTURE === '1' ? 120_000 : 10_000,
+        async () => {
+          const [{ pid }] = await client.query('SELECT pg_backend_pid() AS pid');
+          return readOnlyLockDiagnostics(testDbUrl, pid);
+        },
+      );
       assert.equal(lateGroupPaid.kind, 'paid');
       const [childAttempts] = await database(client).query('SELECT COUNT(*)::int AS count FROM payment_attempts WHERE order_id IN (5, 6)');
       assert.equal(childAttempts[0].count, 0);
-      await assert.rejects(
+      await runPhase('child artifact barrier', () => assert.rejects(
         () => repo.reserveOrRecoverCreatingAttempt({ orderId: 5, paymentProfileCode: 'DIRECT_A', amount: 50000, providerOrderCode: ++code }),
         (error) => error instanceof PaymentAttemptError && error.code === 'GROUP_CHILD_DIRECT_ATTEMPT_FORBIDDEN',
-      );
+      ), 10_000);
+      }, process.env.P1_LOCK_CAPTURE === '1' ? 120_000 : 45_000);
 
       // 0027 preflight must be clean before enforcement. No manual cleanup occurs.
-      const preflightResult = await client.query(preflight);
+      let preflightResult;
+      await runPhase('0027 preflight', async () => { preflightResult = await client.query(preflight); });
       assert.equal(preflightResult.rows.every((row) => Number(row.issue_count) === 0 && row.status === 'PASS'), true, JSON.stringify(preflightResult.rows));
-      await applyTrackedMigration(client, '0027', '0027_payment_attempts_enforcement.sql', sql0027);
+      await runPhase('0027 apply', () => applyTrackedMigration(client, '0027', '0027_payment_attempts_enforcement.sql', sql0027));
 
       // Enforcement regression: constraints preserve P1 flows and reject child attempts/pointer misuse.
+      await runPhase('verify constraints/indexes/triggers and post-0027 runtime', async () => {
       const enforced = await repo.reserveOrRecoverCreatingAttempt({ orderId: 4, paymentProfileCode: 'DIRECT_A', amount: 40000, providerOrderCode: ++code, expiresAt: '2026-09-07T00:15:00.000Z' });
       const enforcedActive = await repo.activateAttempt({ attemptId: enforced.attempt.id, providerOrderCode: enforced.attempt.provider_order_code, paymentLinkId: 'enforced-link', checkoutUrl: 'https://payos.test/enforced', qrCode: 'enforced', expiresAt: '2026-09-07T00:15:00.000Z' });
       assert.equal(enforcedActive.status, 'active');
@@ -230,6 +429,7 @@ describe('Post-0025 staging P1 rollout rehearsal', () => {
         )
       `);
       assert.equal(triggerCount.rows[0].count, 4);
+      });
     } finally {
       await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       client.release();

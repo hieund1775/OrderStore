@@ -433,6 +433,9 @@ test('P1 phase 0026 is additive, preserves legacy payment compatibility, and fai
 
   for (const fragment of [
     'CREATE TABLE IF NOT EXISTS payment_attempts',
+    'CREATE TABLE IF NOT EXISTS payment_attempt_backfill_quarantine',
+    'HISTORICAL_UNRESOLVABLE',
+    'expired_unpaid_without_valid_paid_evidence',
     "target_type IN ('order', 'checkout_group')",
     'payment_profile_code VARCHAR(50) NOT NULL',
     "status IN ('creating', 'active', 'expired', 'superseded', 'paid', 'failed')",
