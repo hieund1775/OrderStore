@@ -139,20 +139,19 @@ function exactAmount(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
-function isExplicitNotFound(error) {
-  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
-  return status === 404 || error?.code === 'NOT_FOUND' || error?.code === 'PAYMENT_LINK_NOT_FOUND';
-}
-
-function isProfileError(error) {
-  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
-  return status === 401 || status === 403;
-}
-
 export function classifyProviderLookupFailure(error) {
-  if (isExplicitNotFound(error)) return { kind: 'not_found' };
-  if (isProfileError(error)) return { kind: 'profile_error' };
-  return { kind: 'unknown' };
+  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
+  if (status === 401) return { kind: 'profile_error', resultClass: 'HTTP_401' };
+  if (status === 403) return { kind: 'profile_error', resultClass: 'HTTP_403' };
+  if (status === 404 || error?.code === 'NOT_FOUND' || error?.code === 'PAYMENT_LINK_NOT_FOUND') {
+    return { kind: 'not_found', resultClass: 'HTTP_404' };
+  }
+  if (status === 429) return { kind: 'unknown', resultClass: 'HTTP_429' };
+  if (status >= 500 && status <= 599) return { kind: 'unknown', resultClass: 'HTTP_5XX' };
+  if (['AUDIT_TIMEOUT', 'ETIMEDOUT', 'ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE'].includes(error?.code)) {
+    return { kind: 'unknown', resultClass: 'TIMEOUT_OR_NETWORK' };
+  }
+  return { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' };
 }
 
 async function withTimeout(promise, timeoutMs) {
@@ -172,7 +171,7 @@ async function withTimeout(promise, timeoutMs) {
 /** Read-only PayOS GET adapter. It deliberately never calls create/cancel/update APIs. */
 export async function lookupPayOSTransactionForAudit({ profileCode, providerOrderCode, getPayOSForProfile, timeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS }) {
   const instance = getPayOSForProfile(profileCode);
-  if (!instance) return { kind: 'profile_error' };
+  if (!instance) return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL' };
   try {
     let payment;
     if (typeof instance.paymentRequests?.get === 'function') {
@@ -180,9 +179,9 @@ export async function lookupPayOSTransactionForAudit({ profileCode, providerOrde
     } else if (typeof instance.getPaymentLinkInformation === 'function') {
       payment = await withTimeout(instance.getPaymentLinkInformation(Number(providerOrderCode)), timeoutMs);
     } else {
-      return { kind: 'profile_error' };
+      return { kind: 'profile_error', resultClass: 'SDK_OR_INTERNAL' };
     }
-    if (!payment || typeof payment !== 'object') return { kind: 'unknown' };
+    if (!payment || typeof payment !== 'object') return { kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' };
     return { kind: 'found', payment };
   } catch (error) {
     return classifyProviderLookupFailure(error);
@@ -190,18 +189,31 @@ export async function lookupPayOSTransactionForAudit({ profileCode, providerOrde
 }
 
 export function assessProviderLookup({ candidate, profileCode, lookup }) {
-  if (lookup.kind !== 'found') return { profileCode, kind: lookup.kind };
+  if (lookup.kind !== 'found') {
+    return {
+      profileCode,
+      kind: lookup.kind,
+      resultClass: lookup.resultClass || (lookup.kind === 'not_found' ? 'HTTP_404' : 'SDK_OR_INTERNAL'),
+    };
+  }
   const expectedOrderCode = String(candidate.provider_order_code);
   const returnedOrderCode = lookup.payment?.orderCode == null ? null : String(lookup.payment.orderCode);
   const expectedAmount = exactAmount(candidate.expected_amount);
   const returnedAmount = exactAmount(lookup.payment?.amountPaid ?? lookup.payment?.amount);
   const expectedLinkId = candidate.expected_payment_link_id == null ? null : String(candidate.expected_payment_link_id);
   const returnedLinkId = paymentLinkId(lookup.payment);
-  if (returnedOrderCode !== expectedOrderCode || expectedAmount == null || returnedAmount !== expectedAmount
-    || (expectedLinkId != null && returnedLinkId !== expectedLinkId)) {
-    return { profileCode, kind: 'identity_mismatch' };
+  if (returnedOrderCode == null || returnedAmount == null || (expectedLinkId != null && returnedLinkId == null)) {
+    return { profileCode, kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' };
   }
-  return { profileCode, kind: 'match', providerStatus: readStatus(lookup.payment) };
+  const mismatch = {
+    amount: expectedAmount == null || returnedAmount !== expectedAmount,
+    payment_link_id: expectedLinkId != null && returnedLinkId !== expectedLinkId,
+    provider_order_code: returnedOrderCode !== expectedOrderCode,
+  };
+  if (mismatch.amount || mismatch.payment_link_id || mismatch.provider_order_code) {
+    return { profileCode, kind: 'identity_mismatch', resultClass: 'IDENTITY_MISMATCH', mismatch };
+  }
+  return { profileCode, kind: 'match', resultClass: 'MATCH', providerStatus: readStatus(lookup.payment) };
 }
 
 function targetResolution({ candidate, checks, profileCount, skippedByLimit }) {
@@ -231,7 +243,85 @@ function providerStatusBucket(status) {
   return 'provider_other_status';
 }
 
-function buildAggregateReport({ candidates, profileCount, checkedPairs, uncheckedPairsDueToLimit, resolutions }) {
+function credentialGroupLabel(index) {
+  return `credential_group_${String.fromCharCode(65 + index)}`;
+}
+
+export function buildCredentialEquivalenceGroups(credentialsByProfile, profileCodes) {
+  const groups = new Map();
+  for (const profileCode of profileCodes) {
+    const credentials = credentialsByProfile.get(profileCode);
+    if (!credentials) continue;
+    // This key remains process-local and is never returned or logged.
+    const privateKey = `${credentials.clientId.length}:${credentials.clientId}\u0000${credentials.apiKey.length}:${credentials.apiKey}\u0000${credentials.checksumKey.length}:${credentials.checksumKey}`;
+    const existing = groups.get(privateKey) || [];
+    existing.push(profileCode);
+    groups.set(privateKey, existing);
+  }
+  return [...groups.values()].map((profileCodesInGroup, index) => ({
+    credential_group: credentialGroupLabel(index),
+    profile_codes: profileCodesInGroup,
+  }));
+}
+
+function buildLookupBreakdown(resolutions) {
+  const resultGroups = new Map();
+  const mismatchGroups = new Map();
+  const identityMismatchTargets = new Set();
+  let identityMismatchLookupPairs = 0;
+  for (const resolution of resolutions) {
+    const targetKey = resolution.candidate
+      ? `${resolution.candidate.target_kind}:${resolution.candidate.target_id}`
+      : null;
+    for (const check of resolution.checks || []) {
+      const resultClass = check.resultClass || 'SDK_OR_INTERNAL';
+      const resultKey = `${check.profileCode}:${resultClass}`;
+      const resultGroup = resultGroups.get(resultKey) || {
+        profile_code: check.profileCode,
+        result_class: resultClass,
+        lookup_pair_count: 0,
+        targetKeys: new Set(),
+      };
+      resultGroup.lookup_pair_count += 1;
+      if (targetKey) resultGroup.targetKeys.add(targetKey);
+      resultGroups.set(resultKey, resultGroup);
+      if (check.kind !== 'identity_mismatch') continue;
+      identityMismatchLookupPairs += 1;
+      if (targetKey) identityMismatchTargets.add(targetKey);
+      for (const field of ['amount', 'payment_link_id', 'provider_order_code']) {
+        if (!check.mismatch?.[field]) continue;
+        const mismatchKey = `${check.profileCode}:${field}`;
+        const mismatchGroup = mismatchGroups.get(mismatchKey) || {
+          profile_code: check.profileCode,
+          mismatch_field: field,
+          lookup_pair_count: 0,
+          targetKeys: new Set(),
+        };
+        mismatchGroup.lookup_pair_count += 1;
+        if (targetKey) mismatchGroup.targetKeys.add(targetKey);
+        mismatchGroups.set(mismatchKey, mismatchGroup);
+      }
+    }
+  }
+  const toPublicRows = (groups, field) => [...groups.values()]
+    .map((group) => ({
+      profile_code: group.profile_code,
+      [field]: group[field],
+      lookup_pair_count: group.lookup_pair_count,
+      target_count: group.targetKeys.size,
+    }))
+    .sort((left, right) => `${left.profile_code}:${left[field]}`.localeCompare(`${right.profile_code}:${right[field]}`));
+  return {
+    provider_result_breakdown: toPublicRows(resultGroups, 'result_class'),
+    identity_mismatch_breakdown: {
+      identity_mismatch_lookup_pair_count: identityMismatchLookupPairs,
+      identity_mismatch_target_count: identityMismatchTargets.size,
+      by_field: toPublicRows(mismatchGroups, 'mismatch_field'),
+    },
+  };
+}
+
+function buildAggregateReport({ candidates, profileCount, checkedPairs, uncheckedPairsDueToLimit, resolutions, credentialGroups }) {
   const count = (predicate) => resolutions.filter(predicate).length;
   const report = {
     candidate_targets: candidates.length,
@@ -252,6 +342,7 @@ function buildAggregateReport({ candidates, profileCount, checkedPairs, unchecke
     provider_cancelled_or_expired: 0,
     provider_cancelled_expired_or_not_found: 0,
     provider_not_found: count((result) => result.outcome === 'ZERO_MATCH'),
+    credential_equivalence_groups: credentialGroups,
   };
   for (const result of resolutions) {
     const seenBuckets = new Set();
@@ -263,7 +354,7 @@ function buildAggregateReport({ candidates, profileCount, checkedPairs, unchecke
     }
   }
   report.provider_cancelled_expired_or_not_found = report.provider_cancelled_or_expired + report.provider_not_found;
-  return report;
+  return { ...report, ...buildLookupBreakdown(resolutions) };
 }
 
 /**
@@ -325,6 +416,7 @@ export async function runProductionProviderResolutionAudit({
     const profiles = (profileResult.rows || [])
       .map((row) => String(row.code).toUpperCase().trim())
       .filter((code) => credentialsByProfile.has(code));
+    const credentialGroups = buildCredentialEquivalenceGroups(credentialsByProfile, profiles);
     const canonicalCounts = {
       blocked_targets: canonicalRows.length,
       active_payment_requires_repair: candidates.length,
@@ -351,7 +443,7 @@ export async function runProductionProviderResolutionAudit({
           try {
             lookupResult = await lookupProvider({ profileCode, providerOrderCode: candidate.provider_order_code });
           } catch {
-            lookupResult = { kind: 'unknown' };
+            lookupResult = { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' };
           }
           checks.push(assessProviderLookup({ candidate, profileCode, lookup: lookupResult }));
           checkedPairs += 1;
@@ -360,10 +452,14 @@ export async function runProductionProviderResolutionAudit({
       if (skippedByLimit) {
         uncheckedPairsDueToLimit += (candidates.length - targetIndex - 1) * profiles.length;
       }
-      resolutions.push(targetResolution({ candidate, checks, profileCount: profiles.length, skippedByLimit }));
+      resolutions.push({
+        candidate,
+        checks,
+        ...targetResolution({ candidate, checks, profileCount: profiles.length, skippedByLimit }),
+      });
       if (skippedByLimit) {
         for (let remaining = targetIndex + 1; remaining < candidates.length; remaining += 1) {
-          resolutions.push({ outcome: 'AUDIT_INCOMPLETE', reconciliationNeeded: true });
+          resolutions.push({ candidate: candidates[remaining], checks: [], outcome: 'AUDIT_INCOMPLETE', reconciliationNeeded: true });
         }
         break;
       }
@@ -385,6 +481,7 @@ export async function runProductionProviderResolutionAudit({
         checkedPairs,
         uncheckedPairsDueToLimit,
         resolutions,
+        credentialGroups,
       }),
       ambiguous_legacy_history: historyResult.rows?.[0]?.report || null,
     };

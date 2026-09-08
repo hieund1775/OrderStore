@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   assessProviderLookup,
+  buildCredentialEquivalenceGroups,
   classifyProviderLookupFailure,
   createSnapshotPayOSResolver,
   extractScopedPayOSCredentials,
+  lookupPayOSTransactionForAudit,
   parseProductionProviderResolutionAuditArgs,
   readScopedPayOSCredentialsFile,
   runProductionProviderResolutionAudit,
@@ -196,11 +198,12 @@ describe('production provider-resolution audit', () => {
     assert.equal(result.report.ambiguous_legacy_history.summary.ambiguous_block_targets, 0);
   });
 
-  it('requires exact order, amount, and persisted link identity for a provider match', () => {
+  it('reports separate amount, payment-link, and provider-order-code mismatch flags without identities', () => {
     const candidate = canonicalRow(1);
     assert.equal(assessProviderLookup({ candidate, profileCode: 'A', lookup: found() }).kind, 'match');
-    assert.equal(assessProviderLookup({ candidate, profileCode: 'A', lookup: found({ amount: 9999 }) }).kind, 'identity_mismatch');
-    assert.equal(assessProviderLookup({ candidate, profileCode: 'A', lookup: found({ id: 'other-link' }) }).kind, 'identity_mismatch');
+    assert.deepEqual(assessProviderLookup({ candidate, profileCode: 'A', lookup: found({ amount: 9999 }) }).mismatch, { amount: true, payment_link_id: false, provider_order_code: false });
+    assert.deepEqual(assessProviderLookup({ candidate, profileCode: 'A', lookup: found({ id: 'other-link' }) }).mismatch, { amount: false, payment_link_id: true, provider_order_code: false });
+    assert.deepEqual(assessProviderLookup({ candidate, profileCode: 'A', lookup: found({ orderCode: 9002 }) }).mismatch, { amount: false, payment_link_id: false, provider_order_code: true });
   });
 
   it('treats aliases as separate profiles; unknown and limit exhaustion fail closed', async () => {
@@ -212,12 +215,80 @@ describe('production provider-resolution audit', () => {
     assert.equal(incomplete.report.provider_resolution.zero_match, 0);
   });
 
-  it('classifies only explicit 404 as not-found and treats 401/403/429/5xx/timeouts as non-conclusive', () => {
-    assert.equal(classifyProviderLookupFailure({ status: 404 }).kind, 'not_found');
-    assert.equal(classifyProviderLookupFailure({ status: 401 }).kind, 'profile_error');
-    assert.equal(classifyProviderLookupFailure({ status: 403 }).kind, 'profile_error');
-    assert.equal(classifyProviderLookupFailure({ status: 429 }).kind, 'unknown');
-    assert.equal(classifyProviderLookupFailure({ status: 500 }).kind, 'unknown');
+  it('classifies every provider failure class without preserving provider error text', async () => {
+    assert.deepEqual(classifyProviderLookupFailure({ status: 401 }), { kind: 'profile_error', resultClass: 'HTTP_401' });
+    assert.deepEqual(classifyProviderLookupFailure({ status: 403 }), { kind: 'profile_error', resultClass: 'HTTP_403' });
+    assert.deepEqual(classifyProviderLookupFailure({ status: 404 }), { kind: 'not_found', resultClass: 'HTTP_404' });
+    assert.deepEqual(classifyProviderLookupFailure({ status: 429 }), { kind: 'unknown', resultClass: 'HTTP_429' });
+    assert.deepEqual(classifyProviderLookupFailure({ status: 503 }), { kind: 'unknown', resultClass: 'HTTP_5XX' });
+    assert.deepEqual(classifyProviderLookupFailure({ code: 'AUDIT_TIMEOUT' }), { kind: 'unknown', resultClass: 'TIMEOUT_OR_NETWORK' });
+    assert.deepEqual(classifyProviderLookupFailure({ code: 'UNEXPECTED_SDK_FAILURE' }), { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' });
+    const malformed = await lookupPayOSTransactionForAudit({
+      profileCode: 'A', providerOrderCode: 9001,
+      getPayOSForProfile: () => ({ paymentRequests: { get: async () => null } }),
+    });
+    assert.deepEqual(malformed, { kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' });
+    assert.deepEqual(
+      assessProviderLookup({ candidate: canonicalRow(1), profileCode: 'A', lookup: { kind: 'found', payment: {} } }),
+      { profileCode: 'A', kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' },
+    );
+  });
+
+  it('reports lookup-pair and distinct-target counts independently when one target has multiple result classes', async () => {
+    const fake = createFakePool({ rows: [canonicalRow(1), canonicalRow(2)], profiles: ['A', 'B', 'C'] });
+    const result = await runProductionProviderResolutionAudit({
+      args: auditArgs(6), env: approvedEnvironment, pool: fake.pool,
+      readPayOSCredentialFile: fakeCredentialReader(['A', 'B', 'C']), loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+      lookupTransaction: async ({ profileCode, providerOrderCode }) => {
+        if (profileCode === 'A') return { kind: 'profile_error', resultClass: 'HTTP_401' };
+        if (profileCode === 'B' && providerOrderCode === 9001) return { kind: 'unknown', resultClass: 'HTTP_429' };
+        if (profileCode === 'B') return { kind: 'unknown', resultClass: 'MALFORMED_OR_EMPTY' };
+        return { kind: 'unknown', resultClass: 'SDK_OR_INTERNAL' };
+      },
+    });
+    const breakdown = result.report.provider_resolution.provider_result_breakdown;
+    assert.deepEqual(breakdown, [
+      { profile_code: 'A', result_class: 'HTTP_401', lookup_pair_count: 2, target_count: 2 },
+      { profile_code: 'B', result_class: 'HTTP_429', lookup_pair_count: 1, target_count: 1 },
+      { profile_code: 'B', result_class: 'MALFORMED_OR_EMPTY', lookup_pair_count: 1, target_count: 1 },
+      { profile_code: 'C', result_class: 'SDK_OR_INTERNAL', lookup_pair_count: 2, target_count: 2 },
+    ]);
+    assert.equal(result.report.provider_resolution.provider_unknown_or_profile_error, 2);
+  });
+
+  it('aggregates identity mismatch fields by profile without raw payment identifiers', async () => {
+    const fake = createFakePool({ rows: [canonicalRow(1)], profiles: ['A', 'B', 'C'] });
+    const result = await runProductionProviderResolutionAudit({
+      args: auditArgs(3), env: approvedEnvironment, pool: fake.pool,
+      readPayOSCredentialFile: fakeCredentialReader(['A', 'B', 'C']), loadRuntimeModules: fakeRuntime(), logger: captureLogger().logger,
+      lookupTransaction: async ({ profileCode }) => {
+        if (profileCode === 'A') return found({ amount: 9999 });
+        if (profileCode === 'B') return found({ id: 'different-link' });
+        return found({ orderCode: 9999 });
+      },
+    });
+    assert.deepEqual(result.report.provider_resolution.identity_mismatch_breakdown, {
+      identity_mismatch_lookup_pair_count: 3,
+      identity_mismatch_target_count: 1,
+      by_field: [
+        { profile_code: 'A', mismatch_field: 'amount', lookup_pair_count: 1, target_count: 1 },
+        { profile_code: 'B', mismatch_field: 'payment_link_id', lookup_pair_count: 1, target_count: 1 },
+        { profile_code: 'C', mismatch_field: 'provider_order_code', lookup_pair_count: 1, target_count: 1 },
+      ],
+    });
+  });
+
+  it('groups equivalent credentials anonymously and keeps non-equivalent profile sets separate', () => {
+    const groups = buildCredentialEquivalenceGroups(new Map([
+      ['A', { clientId: 'same-client', apiKey: 'same-key', checksumKey: 'same-checksum' }],
+      ['B', { clientId: 'same-client', apiKey: 'same-key', checksumKey: 'same-checksum' }],
+      ['C', { clientId: 'other-client', apiKey: 'other-key', checksumKey: 'other-checksum' }],
+    ]), ['A', 'B', 'C']);
+    assert.deepEqual(groups, [
+      { credential_group: 'credential_group_A', profile_codes: ['A', 'B'] },
+      { credential_group: 'credential_group_B', profile_codes: ['C'] },
+    ]);
+    assert.doesNotMatch(JSON.stringify(groups), /same-client|same-key|checksum|other-client/);
   });
 
   it('keeps canonical/history SQL CTE/SELECT-only, free of category mapping, and does not log raw identities or secrets', async () => {
