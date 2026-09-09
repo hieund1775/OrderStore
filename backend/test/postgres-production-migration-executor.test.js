@@ -66,6 +66,10 @@ function captureLogger() {
   };
 }
 
+const testManifest = Object.freeze({ classifier_version: 'test-fixture', targets: [{ target_kind: 'direct_order', target_id: 1, classification: 'ACTIVE_PAYMENT_REQUIRES_REPAIR' }] });
+const loadTestManifest = async () => testManifest;
+const compareTestManifest = () => ({ count: testManifest.targets.length, fingerprints: {} });
+
 describe('PostgreSQL production migration guard', () => {
   it('requires explicit production mode and exact host/database allowlists', () => {
     const target = validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
@@ -107,20 +111,20 @@ describe('PostgreSQL production migration guard', () => {
 
   it('accepts only reviewed targets and explicit apply syntax', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0024']), {
-      apply: false, dryRun: true, toVersion: '0024',
+      apply: false, dryRun: true, toVersion: '0024', legacyManifest: null,
     });
     assert.deepEqual(parseProductionMigrationArgs(['--apply', '--to', '0024']), {
-      apply: true, dryRun: false, toVersion: '0024',
+      apply: true, dryRun: false, toVersion: '0024', legacyManifest: null,
     });
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0025']), {
-      apply: false, dryRun: true, toVersion: '0025',
+      apply: false, dryRun: true, toVersion: '0025', legacyManifest: null,
     });
     assert.throws(() => parseProductionMigrationArgs(['--apply']), /--to=<numeric migration version> is required/);
-    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0026']), {
-      apply: false, dryRun: true, toVersion: '0026',
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0026', '--legacy-manifest=C:\\Secrets\\manifest.json']), {
+      apply: false, dryRun: true, toVersion: '0026', legacyManifest: 'C:\\Secrets\\manifest.json',
     });
     assert.deepEqual(parseProductionMigrationArgs(['--apply', '--to=0027']), {
-      apply: true, dryRun: false, toVersion: '0027',
+      apply: true, dryRun: false, toVersion: '0027', legacyManifest: null,
     });
     assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0028']), /supports only --to=0024, --to=0025, --to=0026, --to=0027/);
   });
@@ -203,7 +207,7 @@ describe('PostgreSQL production migration guard', () => {
     assert.match(captured.logs.join('\n'), /Plan confirmed: only 0025 is pending/);
   });
 
-  it('plans only 0026 and runs its read-only legacy preflight before any apply', async () => {
+  it('plans only 0026 and compares the canonical manifest before any apply', async () => {
     const migrations = await readProductionMigrationFiles({ toVersion: '0026' });
     const appliedRows = migrations.throughTarget
       .filter((migration) => migration.version !== '0026')
@@ -212,30 +216,29 @@ describe('PostgreSQL production migration guard', () => {
     const captured = captureLogger();
 
     const result = await runProductionMigrationExecutor({
-      args: ['--dry-run', '--to=0026'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+      args: ['--dry-run', '--to=0026', '--legacy-manifest=C:\\Secrets\\manifest.json'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+      loadManifest: loadTestManifest, compareRows: compareTestManifest,
     });
 
     assert.deepEqual(result.pendingVersions, ['0026']);
-    assert.equal(result.preflight.filename, '0026_payment_attempts_preflight_readonly.sql');
+    assert.equal(result.preflight.filename, 'canonical-legacy-classifier');
     assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
     assert.match(captured.logs.join('\n'), /0026 read-only preflight passed/);
   });
 
-  it('fails closed when the 0026 read-only preflight reports a blocker', async () => {
+  it('fails closed when canonical manifest comparison reports a blocker', async () => {
     const migrations = await readProductionMigrationFiles({ toVersion: '0026' });
     const appliedRows = migrations.throughTarget
       .filter((migration) => migration.version !== '0026')
       .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
-    const fake = createFakePool({
-      appliedRows,
-      preflightRows: [{ check_name: 'duplicate_legacy_provider_order_identity', issue_count: '1', status: 'BLOCK' }],
-    });
+    const fake = createFakePool({ appliedRows });
 
     await assert.rejects(
       () => runProductionMigrationExecutor({
-        args: ['--apply', '--to=0026'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+        args: ['--apply', '--to=0026', '--legacy-manifest=C:\\Secrets\\manifest.json'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+        loadManifest: loadTestManifest, compareRows: () => { throw new Error('0026 canonical manifest mismatch'); },
       }),
-      /0026 blocked by duplicate_legacy_provider_order_identity:1/,
+      /0026 canonical manifest mismatch/,
     );
     assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
   });
@@ -243,7 +246,7 @@ describe('PostgreSQL production migration guard', () => {
   it('keeps the 0026 production preflight SQL read-only', async () => {
     const currentFile = fileURLToPath(import.meta.url);
     const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0026_payment_attempts_preflight_readonly.sql'), 'utf8');
-    assert.match(preflight, /^\s*--[\s\S]*WITH [a-z_]+ AS \([\s\S]*\), checks AS/m);
+    assert.match(preflight, /^\s*--[\s\S]*WITH checks AS/m);
     assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
   });
 

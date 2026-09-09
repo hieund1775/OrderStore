@@ -229,6 +229,9 @@ async function runLatePaidDiagnostic({ client, testDbUrl, repo, attemptId }) {
 async function applyTrackedMigration(client, version, filename, sql) {
   await client.query('BEGIN');
   try {
+    if (version === '0026') {
+      await client.query(`CREATE TEMP TABLE p1_legacy_quarantine_manifest_input (target_kind text NOT NULL, target_id bigint NOT NULL, classification text NOT NULL, classifier_version text NOT NULL) ON COMMIT DROP`);
+    }
     await client.query(sql);
     await client.query(
       'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
@@ -270,9 +273,9 @@ describe('Post-0025 staging P1 rollout rehearsal', () => {
       await runPhase('prepare post-0025 isolated staging state', () => createPost0025Baseline(client, schema));
       await runPhase('0026 apply', () => applyTrackedMigration(client, '0026', '0026_payment_attempts_additive.sql', sql0026));
       await runPhase('verify 0026 schema/backfill/quarantine', async () => {
-        const result = await client.query(`SELECT to_regclass('payment_attempts') AS attempts, to_regclass('payment_attempt_backfill_quarantine') AS quarantine`);
+        const result = await client.query(`SELECT to_regclass('payment_attempts') AS attempts, to_regclass('legacy_payment_quarantine_manifest') AS quarantine`);
         assert.equal(result.rows[0].attempts, 'payment_attempts');
-        assert.equal(result.rows[0].quarantine, 'payment_attempt_backfill_quarantine');
+        assert.equal(result.rows[0].quarantine, 'legacy_payment_quarantine_manifest');
       });
       const repo = createPaymentAttemptsRepository(database(client));
       const now = () => new Date('2026-09-07T00:00:00.000Z');

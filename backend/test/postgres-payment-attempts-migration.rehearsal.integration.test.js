@@ -103,6 +103,7 @@ describe('P1 phase 0026 payment-attempt migration rehearsal', () => {
     try {
       await client.query('BEGIN');
       await createPost0025Baseline(client, schema);
+      await client.query(`CREATE TEMP TABLE p1_legacy_quarantine_manifest_input (target_kind text NOT NULL, target_id bigint NOT NULL, classification text NOT NULL, classifier_version text NOT NULL) ON COMMIT DROP`);
       await client.query(sql);
       await client.query(sql);
 

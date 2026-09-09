@@ -8,6 +8,7 @@ import {
   validatePostgresProductionMigrationGuard,
 } from '../../config/postgres-production-migration-guard.js';
 import { calculateChecksum } from './migrate.js';
+import { compareCanonicalRows, loadLegacyManifest, readCanonicalClassifierSql } from './legacy-payment-canonical-classifier.js';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,7 @@ function sanitizeErrorMessage(error) {
 export function parseProductionMigrationArgs(args = []) {
   let apply = false;
   let toVersion = null;
+  let legacyManifest = null;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -48,6 +50,7 @@ export function parseProductionMigrationArgs(args = []) {
       toVersion = argument.slice('--to='.length);
       continue;
     }
+    if (argument.startsWith('--legacy-manifest=')) { legacyManifest = argument.slice('--legacy-manifest='.length); continue; }
     throw new Error(`PRODUCTION MIGRATION CLI: unsupported argument "${argument}".`);
   }
 
@@ -58,7 +61,8 @@ export function parseProductionMigrationArgs(args = []) {
     throw new Error(`PRODUCTION MIGRATION CLI: this executor currently supports only --to=${PRODUCTION_MIGRATION_TARGETS.join(', --to=')}.`);
   }
 
-  return { apply, dryRun: !apply, toVersion };
+  if (toVersion === '0026' && !legacyManifest) throw new Error('PRODUCTION MIGRATION CLI: --legacy-manifest=<absolute path> is required for 0026.');
+  return { apply, dryRun: !apply, toVersion, legacyManifest };
 }
 
 export async function readProductionMigrationFiles({ migrationsDir = MIGRATIONS_DIR, toVersion = PRODUCTION_MIGRATION_TARGET } = {}) {
@@ -141,13 +145,19 @@ async function runProductionReadOnlyPreflight(client, toVersion) {
   return { filename, rows };
 }
 
-async function applyMigrationPlan(client, pending, logger) {
+async function applyMigrationPlan(client, pending, logger, manifest, compareRows = compareCanonicalRows) {
   const results = [];
   for (const migration of pending) {
     logger.log(`Applying production migration [${migration.version}] ${migration.file}`);
-    await client.query('BEGIN');
-    try {
-      await client.query(migration.sql);
+      await client.query('BEGIN');
+      try {
+        if (migration.version === '0026') {
+          const canonicalRows = (await client.query(await readCanonicalClassifierSql())).rows;
+          compareRows(canonicalRows, manifest);
+          await client.query(`CREATE TEMP TABLE p1_legacy_quarantine_manifest_input (target_kind text NOT NULL, target_id bigint NOT NULL, classification text NOT NULL, classifier_version text NOT NULL) ON COMMIT DROP`);
+          await client.query('INSERT INTO p1_legacy_quarantine_manifest_input (target_kind,target_id,classification,classifier_version) SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(target_kind text,target_id bigint,classification text,classifier_version text)', [JSON.stringify(manifest.targets.map((row) => ({ ...row, classifier_version: manifest.classifier_version })))]);
+        }
+        await client.query(migration.sql);
       await client.query(
         'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
         [migration.version, migration.file, migration.checksum],
@@ -172,6 +182,8 @@ export async function runProductionMigrationExecutor({
   pool = null,
   createPool = (config) => new Pool(config),
   logger = console,
+  loadManifest = loadLegacyManifest,
+  compareRows = compareCanonicalRows,
 } = {}) {
   let activePool = null;
   let client = null;
@@ -179,6 +191,7 @@ export async function runProductionMigrationExecutor({
 
   try {
     const options = parseProductionMigrationArgs(args);
+    const manifest = options.toVersion === '0026' ? await loadManifest(options.legacyManifest) : null;
     const target = validatePostgresProductionMigrationGuard(env.PRODUCTION_DATABASE_URL, {
       env: env.NODE_ENV,
       mode: env.MIGRATION_MODE,
@@ -210,9 +223,15 @@ export async function runProductionMigrationExecutor({
     logger.log(`[Production Migrator] Tracker/checksum status: verified through ${options.toVersion}.`);
     logger.log(`[Production Migrator] Pending migrations: ${plan.pendingVersions.join(',') || 'none'}.`);
     logger.log(`[Production Migrator] Plan confirmed: only ${options.toVersion} is ${plan.alreadyApplied ? 'already applied' : 'pending'}.`);
-    const preflight = plan.alreadyApplied
+    const canonicalRows = options.toVersion === '0026'
+      ? (await client.query(await readCanonicalClassifierSql())).rows
+      : null;
+    const canonicalCheck = canonicalRows ? compareRows(canonicalRows, manifest) : null;
+    const preflight = plan.alreadyApplied && options.toVersion !== '0026'
       ? { filename: null, rows: [] }
-      : await runProductionReadOnlyPreflight(client, options.toVersion);
+      : options.toVersion === '0026'
+        ? { filename: 'canonical-legacy-classifier', rows: [{ check_name: 'canonical_manifest', issue_count: 0, status: 'PASS' }], canonicalCheck }
+        : await runProductionReadOnlyPreflight(client, options.toVersion);
     if (preflight.filename) {
       logger.log(`[Production Migrator] ${options.toVersion} read-only preflight passed: all blockers are zero.`);
     }
@@ -221,7 +240,7 @@ export async function runProductionMigrationExecutor({
       return { ...options, target, ...plan, preflight, results: [] };
     }
 
-    const results = await applyMigrationPlan(client, plan.pending, logger);
+    const results = await applyMigrationPlan(client, plan.pending, logger, manifest, compareRows);
     logger.log(`[Production Migrator] Apply completed; target ${options.toVersion} is ${plan.alreadyApplied ? 'already applied' : 'applied'}.`);
     return { ...options, target, ...plan, preflight, results };
   } catch (error) {
