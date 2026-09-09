@@ -5,6 +5,7 @@ import usersRepository from '../repositories/postgres/users.js';
 
 const router = Router();
 
+
 /**
  * @swagger
  * /admin/login:
@@ -31,7 +32,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Vui lòng nhập số điện thoại và mật khẩu' });
     }
     const user = await usersRepository.findActiveAdminByPhone(phone);
-    if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+    const isMatch = user?.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
+    if (!user || !isMatch) {
       return res.status(401).json({ error: 'Sai số điện thoại hoặc mật khẩu' });
     }
     const token = signToken(user);
@@ -71,6 +73,7 @@ router.get('/me', authenticate, async (req, res) => {
     email: user.email,
     admin_role: user.admin_role,
     admin_branch_id: user.admin_branch_id,
+    email_verified_at: user.email_verified_at || null,
   });
 });
 

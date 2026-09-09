@@ -55,6 +55,19 @@ export function validateEnv(envVars = {}, isProd = false) {
     }
   }
 
+  // Email (Resend) configuration
+  if (isProd && envVars.EMAIL_PROVIDER === 'resend') {
+    if (!envVars.RESEND_API_KEY?.trim()) {
+      throw new Error('[FATAL] Production email requires RESEND_API_KEY when EMAIL_PROVIDER=resend.');
+    }
+    if (!envVars.EMAIL_FROM?.trim()) {
+      throw new Error('[FATAL] Production email requires EMAIL_FROM.');
+    }
+    if (!envVars.EMAIL_TOKEN_PEPPER?.trim() || envVars.EMAIL_TOKEN_PEPPER.trim().length < 32) {
+      throw new Error('[FATAL] Production requires EMAIL_TOKEN_PEPPER with at least 32 characters.');
+    }
+  }
+
   return true;
 }
 
