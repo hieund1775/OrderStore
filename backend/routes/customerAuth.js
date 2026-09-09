@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { authenticate, signCustomerToken, signToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode } from '../services/otp-service.js';
-import emailService from '../services/email-service.js';
+import { createStaffService } from '../services/staff/staff-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
 import {
@@ -15,6 +15,7 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const staffService = createStaffService();
 
 function customerPayload(user) {
   return {
@@ -27,6 +28,7 @@ function customerPayload(user) {
     is_admin: Boolean(user.is_admin),
     admin_role: user.admin_role || null,
     admin_branch_id: user.admin_branch_id ?? null,
+    email_verified_at: user.email_verified_at || null,
   };
 }
 
@@ -200,6 +202,7 @@ router.post('/google', async (req, res, next) => {
 /**
  * POST /api/auth/forgot-password/send-otp
  * Payload: { email: string }
+ * Uses persistent HMAC OTP challenge
  */
 router.post('/forgot-password/send-otp', async (req, res, next) => {
   try {
@@ -208,17 +211,7 @@ router.post('/forgot-password/send-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'Vui lòng cung cấp địa chỉ email hợp lệ' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const user = await usersRepository.findActiveUserByEmail(cleanEmail);
-    if (!user) {
-      // Không tiết lộ email nào đã đăng ký trong hệ thống.
-      return res.json({
-        success: true,
-        message: 'Nếu email đã được đăng ký, mã xác thực sẽ được gửi tới hộp thư của bạn',
-      });
-    }
-
-    const result = await emailService.sendPasswordResetOtp(cleanEmail);
+    const result = await staffService.forgotPasswordSendOtp(email);
     res.json(result);
   } catch (err) {
     next(err);
@@ -228,6 +221,7 @@ router.post('/forgot-password/send-otp', async (req, res, next) => {
 /**
  * POST /api/auth/forgot-password/reset
  * Payload: { email: string, code: string, newPassword: string }
+ * Uses persistent HMAC OTP challenge
  */
 router.post('/forgot-password/reset', async (req, res, next) => {
   try {
@@ -236,27 +230,14 @@ router.post('/forgot-password/reset', async (req, res, next) => {
       return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin (email, mã OTP, mật khẩu mới)' });
     }
 
-    if (!validatePassword(newPassword)) {
-      return res.status(400).json({ error: 'Mật khẩu mới phải có độ dài từ 8 đến 128 ký tự' });
+    const result = await staffService.forgotPasswordReset({ email, code, newPassword });
+    if (!result.valid) {
+      return res.status(400).json({ error: result.error || 'Mã OTP không chính xác' });
     }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const user = await usersRepository.findActiveUserByEmail(cleanEmail);
-    if (!user) {
-      return res.status(404).json({ error: 'Tài khoản không tồn tại' });
-    }
-
-    const verifyResult = await emailService.verifyPasswordResetOtp(cleanEmail, code);
-    if (!verifyResult.valid) {
-      return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    await usersRepository.updatePassword(user.id, passwordHash);
 
     res.json({
       success: true,
-      message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.',
+      message: result.message || 'Đặt lại mật khẩu thành công!',
     });
   } catch (err) {
     next(err);
@@ -266,6 +247,7 @@ router.post('/forgot-password/reset', async (req, res, next) => {
 /**
  * POST /api/auth/profile/send-email-otp (Yêu cầu đăng nhập)
  * Payload: { email: string }
+ * Uses persistent HMAC OTP challenge
  */
 router.post('/profile/send-email-otp', authenticate, async (req, res, next) => {
   try {
@@ -274,24 +256,19 @@ router.post('/profile/send-email-otp', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Vui lòng nhập địa chỉ email hợp lệ' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const existing = await usersRepository.findActiveUserByEmail(cleanEmail);
     const currentUserId = Number(req.user?.id || req.user?.sub);
-
-    if (existing && existing.id !== currentUserId) {
-      return res.status(409).json({ error: 'Địa chỉ email này đã được sử dụng bởi một tài khoản khác' });
-    }
-
-    const result = await emailService.sendEmailUpdateOtp(cleanEmail);
-    res.json(result);
+    const result = await staffService.sendEmailVerificationOtp({ userId: currentUserId, email: email.trim() });
+    res.json({ success: true, message: result.message || 'Mã xác thực đã được gửi tới email của bạn' });
   } catch (err) {
-    next(err);
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
   }
 });
 
 /**
  * POST /api/auth/profile/verify-email (Yêu cầu đăng nhập)
  * Payload: { email: string, code: string }
+ * Uses persistent HMAC OTP challenge
  */
 router.post('/profile/verify-email', authenticate, async (req, res, next) => {
   try {
@@ -300,22 +277,54 @@ router.post('/profile/verify-email', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Vui lòng nhập email và mã OTP' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const verifyResult = await emailService.verifyEmailUpdateOtp(cleanEmail, code);
-    if (!verifyResult.valid) {
-      return res.status(400).json({ error: verifyResult.error || 'Mã OTP không chính xác' });
+    const currentUserId = Number(req.user?.id || req.user?.sub);
+    const result = await staffService.verifyEmail({ userId: currentUserId, email: email.trim(), code });
+
+    if (!result.valid) {
+      return res.status(400).json({ error: result.error || 'Mã OTP không chính xác' });
     }
 
-    const currentUserId = Number(req.user?.id || req.user?.sub);
-    const updated = await usersRepository.updateUserEmail(currentUserId, cleanEmail);
+    // Fetch updated user
+    const updated = await usersRepository.findActiveUserById(currentUserId);
 
     res.json({
       success: true,
-      message: 'Xác thực và cập nhật email tài khoản thành công',
+      message: result.message || 'Xác thực và cập nhật email tài khoản thành công',
       user: customerPayload(updated),
     });
   } catch (err) {
-    next(err);
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/staff-invitation/accept
+ * Public: accept a staff invitation with token and new password
+ */
+router.post('/staff-invitation/accept', async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp token và mật khẩu mới' });
+    }
+
+    const result = await staffService.challengeService.acceptInvitation({ token, newPassword });
+    if (!result.valid) {
+      return res.status(400).json({ error: result.error || 'Lời mời không hợp lệ hoặc đã hết hạn' });
+    }
+
+    // Audit
+    const { logAudit } = await import('../services/audit.js');
+    await logAudit(result.userId, 'STAFF_INVITATION_ACCEPTED', null);
+
+    res.json({
+      success: true,
+      message: 'Kích hoạt tài khoản thành công! Bạn có thể đăng nhập ngay.',
+    });
+  } catch (err) {
+    const status = err.status || 400;
+    res.status(status).json({ error: err.message });
   }
 });
 
