@@ -144,7 +144,7 @@ describe('PostgreSQL production migration guard', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0028']), {
       apply: false, dryRun: true, toVersion: '0028', legacyManifest: null,
     });
-    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0029']), /supports only --to=0024, --to=0025, --to=0026, --to=0027, --to=0028/);
+    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0030']), /supports only --to=0024, --to=0025, --to=0026, --to=0027, --to=0028, --to=0029/);
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -353,8 +353,55 @@ describe('PostgreSQL production migration guard', () => {
     );
   });
 
-  it('keeps 0029 unsupported', () => {
-    assert.throws(() => parseProductionMigrationArgs(['--dry-run', '--to=0029']), /supports only/);
+  it('accepts 0029 and requires the already-applied P1 and Reviews prerequisites', async () => {
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0029']), {
+      apply: false, dryRun: true, toVersion: '0029', legacyManifest: null,
+    });
+    const migrations = await readProductionMigrationFiles({ toVersion: '0029' });
+    assert.ok(migrations.throughTarget.some((migration) => migration.version === '0029'));
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0029')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0029'], env: approvedEnvironment, pool: fake.pool,
+      logger: captureLogger().logger,
+    });
+    assert.deepEqual(result.pendingVersions, ['0029']);
+    assert.equal(result.preflight.filename, '0029_auth_email_staff_accounts_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+  });
+
+  it('keeps the 0029 migration and preflight additive/read-only', async () => {
+    const currentFile = fileURLToPath(import.meta.url);
+    const migration = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'migrations', '0029_auth_email_staff_accounts.sql'), 'utf8');
+    const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0029_auth_email_staff_accounts_preflight_readonly.sql'), 'utf8');
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS/);
+    const migrationSql = migration.replace(/--.*$/gm, '');
+    assert.doesNotMatch(migrationSql, /^\s*(?:DROP|TRUNCATE|DELETE|UPDATE)\b/im);
+    assert.match(preflight, /^\s*--[\s\S]*WITH required_columns/m);
+    assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
+  });
+
+  it('rejects 0029 when 0028 is missing or has a mismatched checksum', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0029' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => !['0028', '0029'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0029'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger }),
+      /target 0029 requires tracked migration 0028/,
+    );
+
+    const mismatchRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0029')
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0028' ? 'bad-checksum' : migration.checksum }));
+    const mismatch = createFakePool({ appliedRows: mismatchRows });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0029'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
+      /checksum mismatch for migration 0028/,
+    );
   });
 
   it('plans only 0027 after a tracked/checksummed 0026 and gates it with the enforcement preflight', async () => {
