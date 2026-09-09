@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "TeaPlus - Trà Trái Cây",
-    "slug": "teaplus-order",
+    "name": "TeaPlus Staff",
+    "slug": "teaplus-staff",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "teaplus",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,29 +15,17 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.teaplus.order",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Ứng dụng cần quyền Camera để quét mã QR tại bàn ở chi nhánh."
-      }
+      "bundleIdentifier": "com.teaplus.staff"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f97316"
       },
-      "package": "com.teaplus.order",
-      "permissions": [
-        "CAMERA"
-      ]
+      "package": "com.teaplus.staff"
     },
     "plugins": [
-      "expo-router",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Cho phép ứng dụng sử dụng Camera để quét mã QR tại bàn."
-        }
-      ]
+      "expo-router"
     ]
   }
 }

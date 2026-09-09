@@ -1,323 +1,399 @@
+/**
+ * Profile tab — Staff session info and logout
+ * Đồng bộ phong cách thiết kế với Web Admin
+ */
 import React from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
-  Image,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import {
-  User,
-  Crown,
-  Gift,
-  Heart,
-  Bell,
-  MapPin,
-  HelpCircle,
-  LogOut,
+  ChefHat,
+  ClipboardList,
+  ShoppingCart,
+  Package,
+  Tag,
+  Users,
+  Phone,
+  Mail,
+  Store,
+  ShieldCheck,
   ChevronRight,
-  QrCode,
+  LogOut,
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
-import { getTierBadge } from '../../src/lib/formatters';
+import { AdminHeader } from '../../src/components/AdminHeader';
 
 export default function ProfileScreen() {
-  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const router = useRouter();
+  const role = user?.role || 'unknown';
 
-  const tier = user?.tier || 'member';
-  const tierInfo = getTierBadge(tier);
-  const points = user?.points || 120; // demo points or live points
+  const roleLabels: Record<string, string> = {
+    super: 'Quản trị tối cao (Super Admin)',
+    manager: 'Quản lý cửa hàng (Manager)',
+    cashier: 'Thu ngân quầy (Cashier)',
+    kitchen: 'Nhân viên bếp (Kitchen)',
+    packing: 'Nhân viên đóng gói (Packing)',
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Đăng xuất tài khoản', 'Bạn có chắc chắn muốn đăng xuất khỏi ca làm việc?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Đăng xuất',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          router.replace('/login');
+        },
+      },
+    ]);
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Hội Viên & Tài Khoản</Text>
-      </View>
+    <View style={styles.container}>
+      {/* Top Header */}
+      <AdminHeader
+        title="Tài khoản nhân viên"
+        subtitle="Thông tin ca làm việc và điều hướng phân hệ vận hành"
+        branchName={user?.branch_name || 'Toàn hệ thống'}
+      />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Digital Membership Card */}
-        <View style={styles.cardContainer}>
-          <View style={styles.memberCard}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.brandName}>TEAPLUS LOYALTY</Text>
-                <Text style={styles.cardUserName}>{user?.fullname || 'Khách hàng thân thiết'}</Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>
+              {(user?.fullname || 'S').charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.nameText}>{user?.fullname || 'Nhân viên'}</Text>
+          <View style={styles.roleBadge}>
+            <ShieldCheck size={13} color="#ea580c" />
+            <Text style={styles.roleText}>{roleLabels[role] || role}</Text>
+          </View>
+        </View>
+
+        {/* Account Info Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Thông tin tài khoản</Text>
+          <View style={styles.infoCardWrapper}>
+            <View style={styles.infoCard}>
+              <View style={styles.infoLeft}>
+                <Phone size={15} color="#ea580c" />
+                <Text style={styles.infoLabel}>Số điện thoại</Text>
               </View>
-              <View style={[styles.tierTag, { backgroundColor: tierInfo.bg }]}>
-                <Crown size={14} color={tierInfo.color} />
-                <Text style={[styles.tierTagText, { color: tierInfo.color }]}>{tierInfo.label}</Text>
-              </View>
+              <Text style={styles.infoValue}>{user?.phone || '—'}</Text>
             </View>
 
-            <View style={styles.pointsWrap}>
-              <Text style={styles.pointsLabel}>Điểm tích lũy hiện tại</Text>
-              <Text style={styles.pointsValue}>{points} <Text style={styles.ptsUnit}>điểm</Text></Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoLeft}>
+                <Mail size={15} color="#ea580c" />
+                <Text style={styles.infoLabel}>Email</Text>
+              </View>
+              <Text style={styles.infoValue}>{user?.email || 'Chưa cập nhật'}</Text>
             </View>
 
-            <View style={styles.cardFooter}>
-              <View style={styles.qrPrompt}>
-                <QrCode size={18} color="#ffffff" />
-                <Text style={styles.qrPromptText}>Đưa mã cho thu ngân để tích điểm</Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoLeft}>
+                <Store size={15} color="#ea580c" />
+                <Text style={styles.infoLabel}>Chi nhánh làm việc</Text>
               </View>
-              <Text style={styles.cardNumber}>•••• {user?.phone?.slice(-4) || '8888'}</Text>
+              <Text style={styles.infoValue}>{user?.branch_name || 'Toàn hệ thống'}</Text>
             </View>
           </View>
         </View>
 
-        {/* Quick Balance & Vouchers */}
-        <View style={styles.loyaltyActions}>
-          <TouchableOpacity style={styles.loyaltyActionCard} activeOpacity={0.8}>
-            <Gift size={24} color="#ea580c" />
-            <Text style={styles.loyaltyActionTitle}>Đổi Voucher</Text>
-            <Text style={styles.loyaltyActionSub}>5 voucher khả dụng</Text>
-          </TouchableOpacity>
+        {/* Quick Nav Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Phân hệ vận hành được phân công</Text>
+          <View style={styles.navGroup}>
+            {['super', 'manager', 'kitchen'].includes(role) && (
+              <TouchableOpacity style={styles.navRow} onPress={() => router.push('/(tabs)')}>
+                <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <ChefHat size={18} color="#ea580c" />
+                </View>
+                <View style={styles.navInfo}>
+                  <Text style={styles.navTitle}>Màn hình Bếp KDS</Text>
+                  <Text style={styles.navSub}>Pha chế và hoàn thành món thời gian thực</Text>
+                </View>
+                <ChevronRight size={16} color="#ea580c" />
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity style={styles.loyaltyActionCard} activeOpacity={0.8}>
-            <Crown size={24} color="#d97706" />
-            <Text style={styles.loyaltyActionTitle}>Quyền lợi Hạng</Text>
-            <Text style={styles.loyaltyActionSub}>Xem ưu đãi bậc {tierInfo.label}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Menu Items */}
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionHeading}>Cá nhân</Text>
-
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
-            <View style={[styles.menuIconWrap, { backgroundColor: '#fee2e2' }]}>
-              <Heart size={18} color="#ef4444" />
-            </View>
-            <Text style={styles.menuTitle}>Món yêu thích (Wishlist)</Text>
-            <ChevronRight size={18} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
-            <View style={[styles.menuIconWrap, { backgroundColor: '#e0e7ff' }]}>
-              <Bell size={18} color="#4f46e5" />
-            </View>
-            <Text style={styles.menuTitle}>Thông báo khuyến mãi</Text>
-            <ChevronRight size={18} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
-            <View style={[styles.menuIconWrap, { backgroundColor: '#ffedd5' }]}>
-              <MapPin size={18} color="#ea580c" />
-            </View>
-            <Text style={styles.menuTitle}>Địa chỉ giao hàng đã lưu</Text>
-            <ChevronRight size={18} color="#9ca3af" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.menuSection}>
-          <Text style={styles.sectionHeading}>Hỗ trợ & Ứng dụng</Text>
-
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
-            <View style={[styles.menuIconWrap, { backgroundColor: '#f3f4f6' }]}>
-              <HelpCircle size={18} color="#4b5563" />
-            </View>
-            <Text style={styles.menuTitle}>Trung tâm hỗ trợ & Hotline</Text>
-            <ChevronRight size={18} color="#9ca3af" />
-          </TouchableOpacity>
-
-          {user ? (
-            <TouchableOpacity style={styles.menuRow} activeOpacity={0.7} onPress={logout}>
-              <View style={[styles.menuIconWrap, { backgroundColor: '#fee2e2' }]}>
-                <LogOut size={18} color="#dc2626" />
+            <TouchableOpacity
+              style={styles.navRow}
+              onPress={() => router.push('/(tabs)/orders')}
+            >
+              <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                <ClipboardList size={18} color="#ea580c" />
               </View>
-              <Text style={[styles.menuTitle, { color: '#dc2626' }]}>Đăng xuất</Text>
+              <View style={styles.navInfo}>
+                <Text style={styles.navTitle}>Quản lý Đơn hàng</Text>
+                <Text style={styles.navSub}>Điều phối shipper, xác nhận thu tiền</Text>
+              </View>
+              <ChevronRight size={16} color="#ea580c" />
             </TouchableOpacity>
-          ) : null}
+
+            {['super', 'manager', 'cashier'].includes(role) && (
+              <TouchableOpacity style={styles.navRow} onPress={() => router.push('/(tabs)/pos')}>
+                <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <ShoppingCart size={18} color="#ea580c" />
+                </View>
+                <View style={styles.navInfo}>
+                  <Text style={styles.navTitle}>POS Thu ngân gọi món</Text>
+                  <Text style={styles.navSub}>Tạo đơn nhanh tại quầy và quét mã VietQR</Text>
+                </View>
+                <ChevronRight size={16} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+
+            {['super', 'manager', 'packing'].includes(role) && (
+              <TouchableOpacity
+                style={styles.navRow}
+                onPress={() => router.push('/(tabs)/packing')}
+              >
+                <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <Package size={18} color="#ea580c" />
+                </View>
+                <View style={styles.navInfo}>
+                  <Text style={styles.navTitle}>Khu vực Đóng gói</Text>
+                  <Text style={styles.navSub}>Kiểm hàng xuất kho bàn giao tài xế</Text>
+                </View>
+                <ChevronRight size={16} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+
+            {['super', 'manager', 'cashier'].includes(role) && (
+              <TouchableOpacity
+                style={styles.navRow}
+                onPress={() => router.push('/(tabs)/stock')}
+              >
+                <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <Tag size={18} color="#ea580c" />
+                </View>
+                <View style={styles.navInfo}>
+                  <Text style={styles.navTitle}>Hàng bán & Tồn kho</Text>
+                  <Text style={styles.navSub}>Bật/Tắt hết hàng tức thì cho quán</Text>
+                </View>
+                <ChevronRight size={16} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+
+            {(role === 'super' || role === 'manager') && (
+              <TouchableOpacity
+                style={styles.navRow}
+                onPress={() => router.push('/(tabs)/accounts')}
+              >
+                <View style={[styles.navIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <Users size={18} color="#ea580c" />
+                </View>
+                <View style={styles.navInfo}>
+                  <Text style={styles.navTitle}>Quản lý tài khoản nhân sự</Text>
+                  <Text style={styles.navSub}>Thêm nhân viên, phân quyền chi nhánh (Super/Manager)</Text>
+                </View>
+                <ChevronRight size={16} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        <Text style={styles.versionText}>TeaPlus App v1.0.0 (Native Edition)</Text>
-        <View style={{ height: 40 }} />
+        {/* Logout Section */}
+        <View style={styles.logoutSection}>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.85}
+          >
+            <LogOut size={18} color="#dc2626" />
+            <Text style={styles.logoutButtonText}>Đăng xuất khỏi ca làm việc</Text>
+          </TouchableOpacity>
+          <Text style={styles.version}>TeaPlus Operations v2.0 · Đồng bộ Web Admin</Text>
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fafaf9',
+    backgroundColor: '#f8fafc',
   },
-  header: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1f2937',
-  },
-  content: {
+  scroll: {
     flex: 1,
   },
-  cardContainer: {
-    padding: 18,
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+    gap: 16,
   },
-  memberCard: {
-    backgroundColor: '#ea580c',
-    borderRadius: 24,
-    padding: 22,
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  brandName: {
-    color: '#fed7aa',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  cardUserName: {
-    color: '#ffffff',
-    fontSize: 19,
-    fontWeight: '900',
-    marginTop: 4,
-  },
-  tierTag: {
-    flexDirection: 'row',
+  profileCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 20,
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    gap: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  tierTagText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  pointsWrap: {
-    marginVertical: 20,
-  },
-  pointsLabel: {
-    color: '#ffedd5',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  pointsValue: {
-    color: '#ffffff',
-    fontSize: 32,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  ptsUnit: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fed7aa',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  avatarCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#f97316',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-    paddingTop: 14,
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#f97316',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  qrPrompt: {
+  avatarText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  nameText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 6,
+  },
+  roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
   },
-  qrPromptText: {
-    color: '#ffffff',
+  roleText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#ea580c',
   },
-  cardNumber: {
-    color: '#fed7aa',
+  section: {
+    gap: 8,
+  },
+  sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginLeft: 4,
   },
-  loyaltyActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 18,
-    gap: 12,
-    marginBottom: 16,
-  },
-  loyaltyActionCard: {
-    flex: 1,
+  infoCardWrapper: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 16,
     borderWidth: 1,
-    borderColor: '#f3f4f6',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
   },
-  loyaltyActionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1f2937',
-    marginTop: 8,
-  },
-  loyaltyActionSub: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  menuSection: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 18,
-    marginBottom: 14,
-    borderRadius: 18,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#f3f4f6',
-  },
-  sectionHeading: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
+  infoCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    letterSpacing: 0.5,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
-  menuRow: {
+  infoLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: 8,
   },
-  menuIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
+  infoLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  infoValue: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  navGroup: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+  },
+  navRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 12,
   },
-  menuTitle: {
+  navIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navInfo: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
   },
-  versionText: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#9ca3af',
+  navTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  navSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  logoutSection: {
     marginTop: 10,
+    gap: 12,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fee2e2',
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  logoutButtonText: {
+    color: '#dc2626',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  version: {
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: 11,
   },
 });

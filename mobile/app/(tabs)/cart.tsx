@@ -3,13 +3,13 @@ import { View, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 
 /**
- * Menu route redirect - Dành cho Staff, điều hướng trực tiếp sang POS Bán hàng
+ * Cart route redirect - Dành cho Staff, điều hướng sang Quản lý Đơn hàng
  */
-export default function MenuRedirect() {
+export default function CartRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/(tabs)/pos');
+    router.replace('/(tabs)/orders');
   }, [router]);
 
   return (
