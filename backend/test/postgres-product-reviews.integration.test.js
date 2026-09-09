@@ -209,6 +209,8 @@ describe('PostgreSQL Product Reviews Integration Suite', () => {
       let reviewList;
       try { reviewList = JSON.parse(reviewListText); } catch { reviewList = null; }
       assert.equal(reviewListRes.status, 200, `review list failed: status=${reviewListRes.status} content-type=${reviewListRes.headers.get('content-type')} body=${reviewListText.slice(0, 300)}`);
+      assert.equal(reviewListRes.headers.get('x-teaplus-reviews-contract'), 'v1-object');
+      assert.equal(Array.isArray(reviewList), false, 'review list must be an object, never a bare array');
       assert.ok(Array.isArray(reviewList.reviews));
 
       // The list response carries the public summary contract.

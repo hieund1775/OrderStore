@@ -44,6 +44,7 @@ router.get('/products/:productId/reviews', asyncHandler(async (req, res) => {
     }),
   ]);
 
+  res.set('X-TeaPlus-Reviews-Contract', 'v1-object');
   res.json({
     summary: toReviewSummaryDto(summary),
     reviews: reviews.items.map(toPublicReviewDto),

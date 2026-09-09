@@ -297,6 +297,19 @@ async function markTargetPaid(tx, target, paidAt) {
   return rows[0];
 }
 
+async function markGroupedChildOrdersPaid(tx, target, paidAt, reference = null) {
+  if (target.type !== 'checkout_group') return;
+  await tx.query(
+    `UPDATE orders
+     SET payment_status = 'paid',
+         paid_at = COALESCE($2, paid_at, CURRENT_TIMESTAMP),
+         transaction_id = COALESCE($3, transaction_id),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE checkout_group_id = $1 AND payment_status = 'unpaid'`,
+    [target.id, paidAt || null, reference || null],
+  );
+}
+
 async function markTargetExpiredIfCurrent(tx, target, attempt) {
   if (Number(target.current_payment_attempt_id) !== Number(attempt.id)) return;
   if (target.type === 'order') {
@@ -444,6 +457,21 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
+    async findCurrentAttemptForTarget(targetInput, { tx: externalTx = null, forUpdate = false } = {}) {
+      const target = normalizeTarget(targetInput);
+      const runner = async (tx) => {
+        const table = target.type === 'order' ? 'orders' : 'checkout_groups';
+        const [targetRows] = await tx.query(
+          `SELECT current_payment_attempt_id FROM ${table} WHERE id = $1${forUpdate ? ' FOR UPDATE' : ''}`,
+          [target.id],
+        );
+        const currentAttemptId = targetRows[0]?.current_payment_attempt_id;
+        if (currentAttemptId == null) return null;
+        return this.findAttemptById(currentAttemptId, { tx, forUpdate });
+      };
+      return inTransaction(database, externalTx, runner);
+    },
+
     async findAttemptsByProviderIdentifiers({
       provider = 'payos', paymentProfileCode = null, providerOrderCode = null, paymentLinkId = null,
     } = {}, { tx: externalTx = null, forUpdate = false } = {}) {
@@ -556,7 +584,7 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
       });
     },
 
-    async markAttemptPaid({ attemptId, paidAt = null }, { tx: externalTx } = {}) {
+    async markAttemptPaid({ attemptId, paidAt = null, reference = null }, { tx: externalTx } = {}) {
       return inTransaction(database, externalTx, async (tx) => {
         const existing = await this.findAttemptById(attemptId, { tx });
         if (!existing) throw new PaymentAttemptError('Payment attempt was not found', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
@@ -588,11 +616,110 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         } else {
           await markTargetPaid(tx, target, paidAt);
         }
+        await markGroupedChildOrdersPaid(tx, target, paidAt, reference);
         return paidAttempt;
       });
     },
 
+    async processSuccessfulAttemptEvent({
+      attemptId,
+      provider = 'payos',
+      providerPaymentIdentity,
+      amount,
+      reference = null,
+      paymentLinkId = null,
+      payload = {},
+      paidAt = null,
+    }, { tx: externalTx } = {}) {
+      const normalizedProvider = requireNonEmpty(provider, 'PAYMENT_ATTEMPT_PROVIDER_REQUIRED', 'provider');
+      const identity = requireNonEmpty(
+        providerPaymentIdentity,
+        'PAYMENT_ATTEMPT_EVENT_IDENTITY_REQUIRED',
+        'providerPaymentIdentity',
+      );
+      const paidAmount = requireFiniteAmount(amount);
+
+      return inTransaction(database, externalTx, async (tx) => {
+        const initialAttempt = await this.findAttemptById(attemptId, { tx });
+        if (!initialAttempt) throw new PaymentAttemptError('Payment attempt was not found', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
+        const eventKey = `${normalizedProvider}:${initialAttempt.payment_profile_code}:${identity}`;
+        const [eventRows] = await tx.query(
+          `INSERT INTO payment_events (
+             provider, provider_event_key, event_type, payload, order_id,
+             payment_attempt_id, checkout_group_id, payment_profile_code, provider_payment_identity
+           ) VALUES ($1, $2, 'payment.succeeded', $3::jsonb, $4, $5, $6, $7, $8)
+           ON CONFLICT (provider_event_key) DO NOTHING
+           RETURNING id`,
+          [
+            normalizedProvider, eventKey, JSON.stringify(payload), initialAttempt.order_id,
+            initialAttempt.id, initialAttempt.checkout_group_id, initialAttempt.payment_profile_code, identity,
+          ],
+        );
+        if (!eventRows[0]) return { kind: 'duplicate' };
+        const eventId = eventRows[0].id;
+        const finishEvent = async (status, errorCode = null) => {
+          await tx.query(
+            `UPDATE payment_events
+             SET processing_status = $1, error_code = $2, processed_at = CURRENT_TIMESTAMP
+             WHERE id = $3`,
+            [status, errorCode, eventId],
+          );
+        };
+
+        // Every lifecycle mutation locks target first, then its attempt. This
+        // ordering is shared with expiry so a PAID callback cannot deadlock
+        // with an expiry transition for the same QR.
+        const target = await lockTarget(tx, targetFromAttempt(initialAttempt));
+        if (!target) {
+          await finishEvent('ignored', 'TARGET_NOT_FOUND');
+          return { kind: 'not_found', eventId };
+        }
+        const attempt = await findAttemptForUpdate(tx, attemptId);
+        if (attempt.provider !== normalizedProvider) {
+          await finishEvent('ignored', 'PROVIDER_MISMATCH');
+          return { kind: 'provider_mismatch', eventId, attempt };
+        }
+        if (paymentLinkId
+          && String(paymentLinkId) !== String(attempt.provider_payment_link_id || '')) {
+          await finishEvent('ignored', 'PAYMENT_LINK_MISMATCH');
+          return { kind: 'payment_link_mismatch', eventId, attempt };
+        }
+        if (Math.round(Number(attempt.amount)) !== Math.round(paidAmount)) {
+          await finishEvent('ignored', 'AMOUNT_MISMATCH');
+          return { kind: 'amount_mismatch', eventId, attempt, target };
+        }
+        if (target.payment_status === 'cancelled' || target.current_status === 'Đã hủy') {
+          await finishEvent('ignored', 'TARGET_CANCELLED');
+          return { kind: 'cancelled', eventId, attempt, target };
+        }
+        if (attempt.status === 'paid') {
+          await finishEvent('processed', 'ALREADY_PAID');
+          return { kind: 'already_paid', eventId, attempt, target };
+        }
+        if (target.payment_status === 'paid') {
+          await finishEvent('ignored', 'TARGET_ALREADY_PAID');
+          return { kind: 'target_already_paid', eventId, attempt, target };
+        }
+        if (!isPaymentAttemptTransitionAllowed(attempt.status, 'paid')) {
+          await finishEvent('ignored', 'ATTEMPT_TRANSITION_INVALID');
+          return { kind: 'attempt_transition_invalid', eventId, attempt, target };
+        }
+
+        const paidAttempt = await this.markAttemptPaid({
+          attemptId: attempt.id,
+          paidAt,
+          reference,
+        }, { tx });
+        await finishEvent('processed');
+        return { kind: 'paid', eventId, attempt: paidAttempt, target };
+      });
+    },
+
     async expireAttempt({ attemptId, expiredAt = null }, { tx: externalTx } = {}) {
+      const effectiveExpiredAt = expiredAt == null ? new Date() : new Date(expiredAt);
+      if (!Number.isFinite(effectiveExpiredAt.getTime())) {
+        throw new PaymentAttemptError('expiredAt must be a valid timestamp', 400, 'PAYMENT_ATTEMPT_EXPIRED_AT_INVALID');
+      }
       return inTransaction(database, externalTx, async (tx) => {
         const existing = await this.findAttemptById(attemptId, { tx });
         if (!existing) throw new PaymentAttemptError('Payment attempt was not found', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
@@ -600,19 +727,50 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         const lockedTarget = await lockTarget(tx, target);
         const attempt = await findAttemptForUpdate(tx, attemptId);
         if (attempt.status === 'expired') return attempt;
-        if (!isPaymentAttemptTransitionAllowed(attempt.status, 'expired')) {
+        if (attempt.status !== 'active') {
           throw new PaymentAttemptError(`Cannot transition ${attempt.status} attempt to expired`, 409, 'PAYMENT_ATTEMPT_TRANSITION_INVALID');
         }
+        if (!attempt.expires_at || new Date(attempt.expires_at).getTime() > effectiveExpiredAt.getTime()) {
+          return attempt;
+        }
+        // A concurrent valid payment owns the terminal state. Normally it
+        // has already superseded open attempts; this guard is fail-safe.
+        if (lockedTarget.payment_status === 'paid') return attempt;
         const [rows] = await tx.query(
           `UPDATE payment_attempts
            SET status = 'expired', expired_at = COALESCE($2, expired_at, CURRENT_TIMESTAMP),
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $1 RETURNING *`,
-          [attempt.id, expiredAt],
+          [attempt.id, effectiveExpiredAt],
         );
         await markTargetExpiredIfCurrent(tx, target, rows[0]);
         return rows[0];
       });
+    },
+
+    async expireDuePaymentAttempts({ limit = 100, now = null } = {}) {
+      const batchSize = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 1000);
+      const effectiveNow = now == null ? new Date() : new Date(now);
+      if (!Number.isFinite(effectiveNow.getTime())) {
+        throw new PaymentAttemptError('now must be a valid timestamp', 400, 'PAYMENT_ATTEMPT_EXPIRED_AT_INVALID');
+      }
+      // Do not lock rows in this discovery query: the per-attempt lifecycle
+      // transaction locks target -> attempt. That shared ordering serializes
+      // expiry with PAID events without holding a batch transaction open.
+      const [dueRows] = await database.query(
+        `SELECT id
+         FROM payment_attempts
+         WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= $1
+         ORDER BY expires_at ASC, id ASC
+         LIMIT $2`,
+        [effectiveNow, batchSize],
+      );
+      const expired = [];
+      for (const due of dueRows) {
+        const attempt = await this.expireAttempt({ attemptId: due.id, expiredAt: effectiveNow });
+        if (attempt.status === 'expired') expired.push(attempt);
+      }
+      return expired;
     },
 
     async failAttempt({ attemptId, failureCode }, { tx: externalTx } = {}) {

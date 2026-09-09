@@ -54,6 +54,13 @@ export function createApp() {
     res.status(200).json({ status: 'ok', uptime: Math.floor(process.uptime()) });
   });
 
+  app.get('/api/runtime-build', (req, res) => {
+    res.json({
+      reviewsContract: 'v1-object',
+      buildMarker: 'reviews-runtime-provenance-20260909',
+    });
+  });
+
   // /ready: Readiness probe (checks DB connectivity with 3s timeout)
   app.get('/ready', async (req, res) => {
     let timeoutId;
