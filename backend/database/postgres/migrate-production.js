@@ -17,11 +17,27 @@ const MIGRATION_LOCK_SQL = "SELECT pg_advisory_lock(hashtext('teaplus_postgres_m
 const MIGRATION_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(hashtext('teaplus_postgres_migrations')) AS acquired";
 const MIGRATION_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))";
 export const PRODUCTION_MIGRATION_TARGET = '0024';
-export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(['0024', '0025', '0026', '0027']);
-const PRODUCTION_PREFLIGHT_FILES = Object.freeze({
-  '0026': '0026_payment_attempts_preflight_readonly.sql',
-  '0027': '0027_payment_attempts_preflight_readonly.sql',
+export const PRODUCTION_MIGRATION_REGISTRY = Object.freeze({
+  '0024': Object.freeze({}),
+  '0025': Object.freeze({}),
+  '0026': Object.freeze({
+    preflight: '0026_payment_attempts_preflight_readonly.sql',
+    requiresManifest: true,
+  }),
+  '0027': Object.freeze({
+    preflight: '0027_payment_attempts_preflight_readonly.sql',
+    prerequisites: Object.freeze(['0026']),
+  }),
+  '0028': Object.freeze({
+    preflight: '0028_product_reviews_preflight_readonly.sql',
+    prerequisites: Object.freeze(['0026', '0027']),
+  }),
 });
+export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(Object.keys(PRODUCTION_MIGRATION_REGISTRY));
+
+function getProductionMigrationSpec(version) {
+  return PRODUCTION_MIGRATION_REGISTRY[version] || null;
+}
 
 function sanitizeErrorMessage(error) {
   return String(error?.message || error || 'Unknown migration error')
@@ -61,7 +77,9 @@ export function parseProductionMigrationArgs(args = []) {
     throw new Error(`PRODUCTION MIGRATION CLI: this executor currently supports only --to=${PRODUCTION_MIGRATION_TARGETS.join(', --to=')}.`);
   }
 
-  if (toVersion === '0026' && !legacyManifest) throw new Error('PRODUCTION MIGRATION CLI: --legacy-manifest=<absolute path> is required for 0026.');
+  if (getProductionMigrationSpec(toVersion)?.requiresManifest && !legacyManifest) {
+    throw new Error(`PRODUCTION MIGRATION CLI: --legacy-manifest=<absolute path> is required for ${toVersion}.`);
+  }
   return { apply, dryRun: !apply, toVersion, legacyManifest };
 }
 
@@ -116,8 +134,11 @@ async function inspectProductionMigrationPlan(client, migrations, toVersion) {
     }
   }
 
-  if (toVersion === '0027' && !applied.has('0026')) {
-    throw new Error('PRODUCTION MIGRATION PREFLIGHT: target 0027 requires tracked migration 0026 with a verified checksum. Run a separately approved --to=0026 rollout first.');
+  const targetSpec = getProductionMigrationSpec(toVersion);
+  for (const prerequisite of targetSpec?.prerequisites || []) {
+    if (!applied.has(prerequisite)) {
+      throw new Error(`PRODUCTION MIGRATION PREFLIGHT: target ${toVersion} requires tracked migration ${prerequisite} with a verified checksum. Run a separately approved --to=${prerequisite} rollout first.`);
+    }
   }
 
   const pending = migrations.throughTarget.filter((migration) => !applied.has(migration.version));
@@ -130,7 +151,7 @@ async function inspectProductionMigrationPlan(client, migrations, toVersion) {
 }
 
 async function runProductionReadOnlyPreflight(client, toVersion) {
-  const filename = PRODUCTION_PREFLIGHT_FILES[toVersion];
+  const filename = getProductionMigrationSpec(toVersion)?.preflight || null;
   if (!filename) return { filename: null, rows: [] };
   const sql = await fs.readFile(path.join(__dirname, 'verification', filename), 'utf8');
   const result = await client.query(sql);

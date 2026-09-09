@@ -126,7 +126,10 @@ describe('PostgreSQL production migration guard', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--apply', '--to=0027']), {
       apply: true, dryRun: false, toVersion: '0027', legacyManifest: null,
     });
-    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0028']), /supports only --to=0024, --to=0025, --to=0026, --to=0027/);
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0028']), {
+      apply: false, dryRun: true, toVersion: '0028', legacyManifest: null,
+    });
+    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0029']), /supports only --to=0024, --to=0025, --to=0026, --to=0027, --to=0028/);
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -266,6 +269,77 @@ describe('PostgreSQL production migration guard', () => {
     );
     assert.equal(fake.calls.some((call) => call.sql.includes('WITH checks AS')), false);
     assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+  });
+
+  it('fails closed for 0028 when 0027 is not tracked', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0028' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => !['0027', '0028'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+
+    await assert.rejects(
+      () => runProductionMigrationExecutor({
+        args: ['--dry-run', '--to=0028'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+      }),
+      /target 0028 requires tracked migration 0027/,
+    );
+    assert.equal(fake.calls.some((call) => call.sql.includes('checks AS (')), false);
+  });
+
+  it('plans only 0028 and runs its read-only Reviews preflight', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0028' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0028')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0028'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+    });
+
+    assert.deepEqual(result.pendingVersions, ['0028']);
+    assert.equal(result.preflight.filename, '0028_product_reviews_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
+    assert.match(captured.logs.join('\n'), /0028 read-only preflight passed/);
+  });
+
+  it('rejects a mismatched tracked 0027 checksum before the 0028 preflight', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0028' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0028')
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0027' ? 'bad-checksum' : migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+
+    await assert.rejects(
+      () => runProductionMigrationExecutor({
+        args: ['--dry-run', '--to=0028'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+      }),
+      /checksum mismatch for migration 0027/,
+    );
+    assert.equal(fake.calls.some((call) => call.sql.includes('checks AS (')), false);
+  });
+
+  it('rejects a mismatched tracked 0028 checksum before preflight', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0028' });
+    const appliedRows = migrations.throughTarget
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0028' ? 'bad-checksum' : migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+
+    // A later version is rejected by plan ordering; the test asserts the target
+    // remains fail-closed if a future tracker row is supplied.
+    await assert.rejects(
+      () => runProductionMigrationExecutor({
+        args: ['--dry-run', '--to=0028'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+      }),
+      /checksum mismatch for migration 0028/,
+    );
+  });
+
+  it('keeps 0029 unsupported', () => {
+    assert.throws(() => parseProductionMigrationArgs(['--dry-run', '--to=0029']), /supports only/);
   });
 
   it('plans only 0027 after a tracked/checksummed 0026 and gates it with the enforcement preflight', async () => {
