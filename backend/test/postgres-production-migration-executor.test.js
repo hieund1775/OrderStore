@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
@@ -12,6 +13,7 @@ import {
   readProductionMigrationFiles,
   runProductionMigrationExecutor,
 } from '../database/postgres/migrate-production.js';
+import { calculateChecksum } from '../database/postgres/migrate.js';
 
 const approvedEnvironment = Object.freeze({
   NODE_ENV: 'production',
@@ -71,6 +73,19 @@ const loadTestManifest = async () => testManifest;
 const compareTestManifest = () => ({ count: testManifest.targets.length, fingerprints: {} });
 
 describe('PostgreSQL production migration guard', () => {
+  it('uses the canonical migration checksum contract for 0028, not the raw file hash', async () => {
+    const sql = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'database', 'postgres', 'migrations', '0028_product_reviews.sql'), 'utf8');
+    const rawHash = crypto.createHash('sha256').update(sql).digest('hex');
+    const canonicalHash = calculateChecksum(sql);
+    assert.notEqual(rawHash, canonicalHash);
+    assert.equal(canonicalHash, '70cef278ca765171cfeec93f8ca6043a19b294871f9769be32c898764db3db6e');
+  });
+
+  it('normalizes CRLF/LF and surrounding whitespace identically, while SQL changes mismatch', () => {
+    assert.equal(calculateChecksum('  SELECT 1;\r\n'), calculateChecksum('\nSELECT 1;\n'));
+    assert.notEqual(calculateChecksum('SELECT 1;'), calculateChecksum('SELECT 2;'));
+  });
+
   it('requires explicit production mode and exact host/database allowlists', () => {
     const target = validatePostgresProductionMigrationGuard(approvedEnvironment.PRODUCTION_DATABASE_URL, {
       env: approvedEnvironment.NODE_ENV,
