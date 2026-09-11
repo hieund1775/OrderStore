@@ -7,18 +7,23 @@ import preordersRepository from '../../repositories/postgres/preorders.js';
 import postgresDb from '../../config/db-postgres.js';
 import { getTodayBoundaries } from '../../services/business-time.js';
 
-const router = Router();
-
 function errorResponse(res, error) {
   return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
 }
+
+export function createAdminPreordersRouter({
+  service = preorderService,
+  repository = preordersRepository,
+  database = postgresDb,
+} = {}) {
+  const router = Router();
 
 router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
     const today = getTodayBoundaries();
     const view = req.query.view;
-    const rows = await preordersRepository.list({
+    const rows = await repository.list({
       storeId, status: req.query.status || null,
       includePendingOnly: view === 'pending',
       from: view === 'today' ? today.start : view === 'upcoming' ? today.end : null,
@@ -33,13 +38,19 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
 router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
-    const rows = await preordersRepository.list({ storeId, status: 'CONFIRMED' });
+    const rows = await repository.list({ storeId, status: 'CONFIRMED' });
     return res.json(rows);
   } catch (error) { return errorResponse(res, error); }
 }));
 
 // Store configuration is deliberately Super-only: a Manager cannot assign
 // themselves, another branch, or re-enable preorder after a strike.
+router.get('/settings', requireRole('super'), asyncHandler(async (_req, res) => {
+  try {
+    return res.json({ stores: await repository.listStoreSettingsForSuper() });
+  } catch (error) { return errorResponse(res, error); }
+}));
+
 router.put('/settings/:storeId', requireRole('super'), asyncHandler(async (req, res) => {
   try {
     const enabled = req.body?.is_enabled === true;
@@ -47,7 +58,7 @@ router.put('/settings/:storeId', requireRole('super'), asyncHandler(async (req, 
     if (enabled && !Number.isInteger(Number(managerId))) {
       return res.status(400).json({ error: 'Cần chọn Manager phụ trách đang hoạt động để bật đặt trước' });
     }
-    const setting = await preordersRepository.setStoreSetting({
+    const setting = await repository.setStoreSetting({
       storeId: Number(req.params.storeId), enabled, responsibleManagerId: managerId ?? null,
     });
     if (!setting) return res.status(404).json({ error: 'Không tìm thấy cấu hình preorder của cửa hàng' });
@@ -56,12 +67,12 @@ router.put('/settings/:storeId', requireRole('super'), asyncHandler(async (req, 
 }));
 
 router.post('/:id/confirm', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
-  try { res.json(await preorderService.confirm({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
+  try { res.json(await service.confirm({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
 }));
 
 router.post('/:id/reschedule', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   try {
-    res.json(await preorderService.reschedule({
+    res.json(await service.reschedule({
       preorderId: req.params.id, actor: req.user, date: req.body?.scheduled_date, hour: req.body?.scheduled_hour,
       tableId: Object.hasOwn(req.body || {}, 'table_id') ? req.body.table_id : undefined,
       reason: req.body?.reason, customerAgreementRecordedAt: new Date(),
@@ -70,12 +81,12 @@ router.post('/:id/reschedule', requireRole('super', 'manager'), asyncHandler(asy
 }));
 
 router.post('/:id/check-in', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
-  try { res.json(await preorderService.checkIn({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
+  try { res.json(await service.checkIn({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
 }));
 
 router.get('/incidents/list', requireRole('super'), asyncHandler(async (req, res) => {
   try {
-    const result = await postgresDb.query(
+    const result = await database.query(
       `SELECT i.*, p.preorder_code, p.status FROM preorder_confirmation_incidents i
        JOIN preorders p ON p.id = i.preorder_id ORDER BY i.scheduled_start_at DESC LIMIT 200`,
     );
@@ -85,7 +96,7 @@ router.get('/incidents/list', requireRole('super'), asyncHandler(async (req, res
 
 router.post('/managers/:id/preorder-strikes/reset', requireRole('super'), asyncHandler(async (req, res) => {
   try {
-    const result = await postgresDb.query(
+    const result = await database.query(
       `UPDATE manager_preorder_strikes
        SET confirmed_breach_count = 0, reset_by = $2, reset_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
        WHERE manager_id = $1 RETURNING *`, [Number(req.params.id), Number(req.user.sub)],
@@ -96,4 +107,7 @@ router.post('/managers/:id/preorder-strikes/reset', requireRole('super'), asyncH
   } catch (error) { return errorResponse(res, error); }
 }));
 
-export default router;
+  return router;
+}
+
+export default createAdminPreordersRouter();

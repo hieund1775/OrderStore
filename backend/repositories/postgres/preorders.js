@@ -67,6 +67,38 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
+    // This view is intentionally for Super configuration only. The eligible
+    // Manager list is assembled by the database from canonical staff fields,
+    // rather than trusting a client-provided branch or role.
+    async listStoreSettingsForSuper() {
+      const rows = rowsOf(await database.query(
+        `SELECT s.id AS store_id,
+                s.name AS store_name,
+                s.is_active AS store_is_active,
+                COALESCE(pss.is_enabled, FALSE) AS is_enabled,
+                pss.responsible_manager_id,
+                COALESCE(managers.eligible_managers, '[]'::jsonb) AS eligible_managers
+         FROM stores s
+         LEFT JOIN preorder_store_settings pss ON pss.store_id = s.id
+         LEFT JOIN LATERAL (
+           SELECT jsonb_agg(
+                    jsonb_build_object('id', u.id, 'fullname', u.fullname)
+                    ORDER BY u.fullname, u.id
+                  ) AS eligible_managers
+           FROM users u
+           WHERE u.admin_role = 'manager'
+             AND u.admin_branch_id = s.id
+             AND u.is_active = TRUE
+         ) managers ON TRUE
+         WHERE s.is_active = TRUE
+         ORDER BY s.name, s.id`,
+      ));
+      return rows.map((row) => ({
+        ...row,
+        eligible_managers: Array.isArray(row.eligible_managers) ? row.eligible_managers : [],
+      }));
+    },
+
     async findByCustomerIdempotency({ customerUserId, idempotencyKey }, { tx = null, forUpdate = false } = {}) {
       const executor = tx || database;
       const rows = rowsOf(await executor.query(
