@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeAndValidatePhone,
   normalizeAndValidateFullName,
+  normalizeGoogleProfileName,
   validateCustomerRegisterInput,
   CustomerValidationError,
 } from '../validation/customer-schemas.js';
@@ -87,29 +88,38 @@ describe('Customer & Order Validation Hardening Suite', () => {
   });
 
   describe('Vietnamese Full Name Validation', () => {
-    it('accepts properly formatted Vietnamese full names (2+ words, capitalized, with accents)', () => {
+    it('normalizes customer names to title case and accepts one-word Google-compatible names', () => {
       const validNames = [
-        'Nguyễn Du',
-        'Trần Thị Mỹ Duyên',
-        'Đặng Văn Lâm',
-        'Lê Hoàng Long',
-        'Phan Thị Bích Ngọc',
-        'John Smith',
+        ['an', 'An'],
+        ['nguyễn văn a', 'Nguyễn Văn A'],
+        ['NGUYỄN VĂN AN', 'Nguyễn Văn An'],
+        ['  Trần   Thị Mỹ   Duyên  ', 'Trần Thị Mỹ Duyên'],
+        ['John Smith', 'John Smith'],
       ];
 
-      for (const name of validNames) {
-        assert.equal(normalizeAndValidateFullName(name), name);
+      for (const [name, expected] of validNames) {
+        assert.equal(normalizeAndValidateFullName(name, { allowSingleWord: true }), expected);
       }
     });
 
-    it('normalizes multiple spaces between words in full name', () => {
-      assert.equal(normalizeAndValidateFullName('  Nguyễn   Văn   An  '), 'Nguyễn Văn An');
+    it('enforces the 2–50 character bound and rejects non-letter characters', () => {
+      assert.throws(() => normalizeAndValidateFullName('A', { allowSingleWord: true }), CustomerValidationError);
+      assert.throws(() => normalizeAndValidateFullName('A'.repeat(51), { allowSingleWord: true }), CustomerValidationError);
+      assert.throws(() => normalizeAndValidateFullName('Nguyễn 123', { allowSingleWord: true }), CustomerValidationError);
+      assert.throws(() => normalizeAndValidateFullName('Nguyễn @ An', { allowSingleWord: true }), CustomerValidationError);
     });
 
-    it('rejects improperly formatted names (single word, lowercase, numbers, special characters)', () => {
+    it('keeps two-word requirements for callers that do not opt in to single-word names', () => {
+      assert.throws(() => normalizeAndValidateFullName('An'), CustomerValidationError);
+    });
+
+    it('uses a valid generic fallback instead of an invalid Google email prefix', () => {
+      assert.equal(normalizeGoogleProfileName('john'), 'John');
+      assert.equal(normalizeGoogleProfileName('abc.123'), 'Khách Google');
+    });
+
+    it('rejects invalid customer names', () => {
       const invalidNames = [
-        'nguyen van an',   // lowercase
-        'Nguyễn',          // single word
         'Nguyễn Văn A123', // contains numbers
         'Lê @ Hoàng',      // special character
         'Trần-Thị-Mai',    // hyphens instead of spaces
@@ -119,7 +129,7 @@ describe('Customer & Order Validation Hardening Suite', () => {
 
       for (const name of invalidNames) {
         assert.throws(
-          () => normalizeAndValidateFullName(name),
+          () => normalizeAndValidateFullName(name, { allowSingleWord: true }),
           CustomerValidationError,
           `Expected name "${name}" to be rejected`
         );
@@ -131,23 +141,19 @@ describe('Customer & Order Validation Hardening Suite', () => {
     it('accepts valid registration input payload', () => {
       const input = {
         phone: '0901234567',
-        fullname: 'Nguyễn Văn An',
+        fullname: 'an',
         password: 'Password123!',
       };
 
       const result = validateCustomerRegisterInput(input);
       assert.equal(result.phone, '0901234567');
-      assert.equal(result.fullname, 'Nguyễn Văn An');
+      assert.equal(result.fullname, 'An');
       assert.equal(result.password, 'Password123!');
     });
 
     it('rejects registration with invalid phone or name or short password', () => {
       assert.throws(
         () => validateCustomerRegisterInput({ phone: '123', fullname: 'Nguyễn Văn An', password: 'Password123!' }),
-        CustomerValidationError
-      );
-      assert.throws(
-        () => validateCustomerRegisterInput({ phone: '0901234567', fullname: 'nguyen', password: 'Password123!' }),
         CustomerValidationError
       );
       assert.throws(
@@ -172,13 +178,17 @@ describe('Customer & Order Validation Hardening Suite', () => {
       assert.equal(result.storeId, 1);
     });
 
-    it('rejects order creation with uncapitalized name or invalid phone', () => {
-      const invalidNamePayload = {
+    it('uses the customer name contract for checkout, including a one-word Google name', () => {
+      const oneWordPayload = {
         store_id: 1,
-        customer_name: 'tran van binh',
+        customer_name: 'an',
         customer_phone: '0987654321',
         items: [{ product_id: 1, qty: 1 }],
       };
+      const normalized = validateCreateOrderInput(oneWordPayload);
+      assert.equal(normalized.customerName, 'An');
+
+      const invalidNamePayload = { ...oneWordPayload, customer_name: 'tran 123' };
       assert.throws(() => validateCreateOrderInput(invalidNamePayload));
 
       const invalidPhonePayload = {

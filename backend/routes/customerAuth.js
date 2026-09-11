@@ -10,6 +10,7 @@ import {
   validateCustomerRegisterInput,
   normalizeAndValidatePhone,
   normalizeAndValidateFullName,
+  normalizeGoogleProfileName,
 } from '../validation/customer-schemas.js';
 import bcrypt from 'bcryptjs';
 
@@ -81,7 +82,7 @@ router.post('/login', async (req, res, next) => {
 router.post('/send-otp', async (req, res, next) => {
   try {
     const { phone, fullname } = req.body || {};
-    const cleanName = normalizeAndValidateFullName(fullname);
+    const cleanName = normalizeAndValidateFullName(fullname, { allowSingleWord: true });
     const cleanPhone = normalizeAndValidatePhone(phone);
 
     const result = await requestOtpCode({ phone: cleanPhone });
@@ -116,7 +117,7 @@ router.post('/verify-otp', async (req, res, next) => {
 
     let displayName = `Khách hàng ${cleanPhone.slice(-4)}`;
     if (fullname && String(fullname).trim()) {
-      displayName = normalizeAndValidateFullName(fullname);
+      displayName = normalizeAndValidateFullName(fullname, { allowSingleWord: true });
     }
 
     const user = await usersRepository.findOrCreateCustomerByPhone({ phone: cleanPhone, fullname: displayName });
@@ -173,7 +174,7 @@ router.post('/google', async (req, res, next) => {
     }
 
     const email = String(payload.email).toLowerCase();
-    const fullname = payload.name || email.split('@')[0];
+    const fullname = normalizeGoogleProfileName(payload.name || email.split('@')[0]);
 
     const user = await usersRepository.findOrCreateGoogleCustomer({
       subject: String(payload.sub),

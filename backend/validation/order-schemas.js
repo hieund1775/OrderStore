@@ -136,7 +136,7 @@ export function validateCreateOrderInput(body = {}) {
     validName = customerName?.trim() || 'Khách Tại Quầy';
   } else {
     try {
-      validName = normalizeAndValidateFullName(customerName);
+      validName = normalizeAndValidateFullName(customerName, { allowSingleWord: true });
     } catch (err) {
       throw new OrderValidationError(err.message, 'ORDER_INVALID_NAME');
     }

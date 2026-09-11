@@ -520,7 +520,7 @@ function Checkout() {
     if (checkoutItems.some((item) => item.stockMode === 'tracked' || item.fulfillmentLane === 'packing')) {
       return toast.error("Thanh toán hàng SKU đang chờ hoàn thiện giữ kho và checkout group ở backend.");
     }
-    const cleanName = name.trim().replace(/\s+/g, " ");
+    const cleanName = name.trim().replace(/\s+/g, ' ');
     let cleanPhone = phone.trim().replace(/[\s\(\)\.-]/g, "");
     if (cleanPhone.startsWith("+84") && cleanPhone.length === 12) {
       cleanPhone = "0" + cleanPhone.slice(3);
@@ -530,10 +530,8 @@ function Checkout() {
 
     const isVnPhone = /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone);
     const isIntlPhone = /^\+[1-9][0-9]{7,14}$/.test(cleanPhone);
-    const vnNameRegex = /^([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*)(\s([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*))+$/;
-
-    if (!cleanName || !vnNameRegex.test(cleanName)) {
-      return toast.error("Họ và tên không hợp lệ (tối thiểu 2 từ, viết hoa chữ cái đầu và không chứa số/ký tự lạ)");
+    if (cleanName.length < 2 || cleanName.length > 50) {
+      return toast.error("Họ và tên phải dài từ 2 đến 50 ký tự");
     }
     if (!cleanPhone || (!isVnPhone && !isIntlPhone)) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");

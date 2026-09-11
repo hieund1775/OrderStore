@@ -439,9 +439,11 @@ function ProfileButton() {
 
   async function handlePasswordAuth() {
     const cleanName = nameInput.trim();
-    if (authMode === 'register' && (cleanName.length < 2 || !/^[\p{L}\s']+$/u.test(cleanName))) {
-      setError('Vui lòng nhập họ tên hợp lệ');
-      return;
+    if (authMode === 'register') {
+      if (cleanName.length < 2 || cleanName.length > 50) {
+        setError('Họ và tên phải dài từ 2 đến 50 ký tự');
+        return;
+      }
     }
     if (phone.replace(/\s/g, '').length < 10) {
       setError('Vui lòng nhập số điện thoại hợp lệ (ít nhất 10 số)');

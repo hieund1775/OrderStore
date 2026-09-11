@@ -51,6 +51,7 @@ import {
   updateBranchCapability,
 } from "@/lib/api";
 import { formatFullAddress } from "@/lib/data";
+import { canDeleteBranch } from "@/lib/branch-permissions";
 import { parseHours } from "@/lib/store-hours";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
@@ -525,15 +526,17 @@ function StoresAdminPage() {
                     </div>
                     <div className="flex items-center gap-2">
                     <Switch checked={Boolean(s.is_active)} onCheckedChange={() => toggleActive(s)} />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-destructive h-8 w-8"
-                      onClick={() => setDeleting(s)}
-                      aria-label={`Xóa chi nhánh ${s.name}`}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                    {canDeleteBranch(user?.role) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive h-8 w-8"
+                        onClick={() => setDeleting(s)}
+                        aria-label={`Xóa chi nhánh ${s.name}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
                   </div>
                   </div>
                   <ul className="text-muted-foreground mt-4 space-y-2 text-sm">

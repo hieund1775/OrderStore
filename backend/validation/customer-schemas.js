@@ -43,18 +43,37 @@ export function normalizeAndValidatePhone(rawPhone, { required = true } = {}) {
   return str;
 }
 
-export function normalizeAndValidateFullName(rawName, { required = true } = {}) {
+export function normalizeAndValidateFullName(rawName, { required = true, allowSingleWord = false } = {}) {
   if (rawName === undefined || rawName === null || rawName === '') {
     if (required) throw new CustomerValidationError('Họ và tên không được để trống', 'CUSTOMER_INVALID_NAME');
     return null;
   }
-  const clean = String(rawName).trim().replace(/\s+/g, ' ');
-  const vnNameRegex = /^([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*)(\s([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*))+$/;
 
-  if (clean.length < 2 || clean.length > 120 || !vnNameRegex.test(clean)) {
-    throw new CustomerValidationError('Họ và tên không hợp lệ (tối thiểu 2 từ, viết hoa chữ cái đầu và không chứa ký tự đặc biệt/số)', 'CUSTOMER_INVALID_NAME');
+  const clean = String(rawName)
+    .normalize('NFC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((word) => word.charAt(0).toLocaleUpperCase('vi-VN') + word.slice(1).toLocaleLowerCase('vi-VN'))
+    .join(' ');
+
+  const words = clean ? clean.split(' ') : [];
+  const hasOnlyLetters = words.every((word) => /^[\p{L}\p{M}]+$/u.test(word));
+  const hasRequiredWordCount = allowSingleWord ? words.length >= 1 : words.length >= 2;
+
+  if (clean.length < 2 || clean.length > 50 || !hasRequiredWordCount || !hasOnlyLetters) {
+    throw new CustomerValidationError('Họ và tên không hợp lệ (từ 2 đến 50 ký tự, chỉ gồm chữ cái và khoảng trắng)', 'CUSTOMER_INVALID_NAME');
   }
   return clean;
+}
+
+/** Google profile names may be single-word but must never persist an invalid email prefix. */
+export function normalizeGoogleProfileName(rawName) {
+  try {
+    return normalizeAndValidateFullName(rawName, { allowSingleWord: true });
+  } catch {
+    return 'Khách Google';
+  }
 }
 
 export function validateCustomerRegisterInput(body = {}) {
@@ -62,7 +81,7 @@ export function validateCustomerRegisterInput(body = {}) {
     throw new CustomerValidationError('Dữ liệu đăng ký không hợp lệ');
   }
   const phone = normalizeAndValidatePhone(body.phone);
-  const fullname = normalizeAndValidateFullName(body.fullname);
+  const fullname = normalizeAndValidateFullName(body.fullname, { allowSingleWord: true });
   const password = body.password;
   if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
     throw new CustomerValidationError('Mật khẩu phải dài từ 8 đến 128 ký tự', 'CUSTOMER_INVALID_PASSWORD');
