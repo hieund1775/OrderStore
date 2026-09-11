@@ -294,6 +294,7 @@ export function createCustomerOrderService({
               phone: input.customer_phone,
               storeId: input.store_id,
               tx,
+              checkoutChannel: input.checkout_channel || 'normal',
             });
             totalDiscount = Number(voucher?.discount_amount || 0);
           }

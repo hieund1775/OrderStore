@@ -144,7 +144,10 @@ describe('PostgreSQL production migration guard', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0028']), {
       apply: false, dryRun: true, toVersion: '0028', legacyManifest: null,
     });
-    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0030']), /supports only --to=0024, --to=0025, --to=0026, --to=0027, --to=0028, --to=0029/);
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0030']), {
+      apply: false, dryRun: true, toVersion: '0030', legacyManifest: null,
+    });
+    assert.throws(() => parseProductionMigrationArgs(['--apply', '--to=0031']), /supports only/);
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -401,6 +404,43 @@ describe('PostgreSQL production migration guard', () => {
     await assert.rejects(
       runProductionMigrationExecutor({ args: ['--dry-run', '--to=0029'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
       /checksum mismatch for migration 0028/,
+    );
+  });
+
+  it('plans only 0030 after all finalized P1, Reviews, and Auth prerequisites', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0030' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0030')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0030'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+    });
+    assert.deepEqual(result.pendingVersions, ['0030']);
+    assert.equal(result.preflight.filename, '0030_preorder_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
+  });
+
+  it('fails closed for 0030 before preflight when 0029 is absent or checksum-mismatched', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0030' });
+    const withoutAuth = migrations.throughTarget
+      .filter((migration) => !['0029', '0030'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const missing = createFakePool({ appliedRows: withoutAuth });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0030'], env: approvedEnvironment, pool: missing.pool, logger: captureLogger().logger }),
+      /target 0030 requires tracked migration 0029/,
+    );
+    assert.equal(missing.calls.some((call) => call.sql.includes('checks AS (')), false);
+
+    const mismatchRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0030')
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0029' ? 'bad-checksum' : migration.checksum }));
+    const mismatch = createFakePool({ appliedRows: mismatchRows });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0030'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
+      /checksum mismatch for migration 0029/,
     );
   });
 

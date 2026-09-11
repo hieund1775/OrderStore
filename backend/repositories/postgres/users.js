@@ -283,8 +283,9 @@ export function createUsersRepository(database = postgresDb) {
     /**
      * Update staff account status (enable/disable)
      */
-    async updateStaffStatus(userId, isActive) {
-      const [rows] = await database.query(
+    async updateStaffStatus(userId, isActive, { tx = null } = {}) {
+      const executor = tx || database;
+      const [rows] = await executor.query(
         `UPDATE users
          SET is_active = $2, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND is_admin = TRUE

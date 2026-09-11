@@ -26,7 +26,7 @@ function calculateDiscount(promotion, subtotal) {
   return Math.max(0, Math.min(discount, subtotal));
 }
 
-async function findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock = false }) {
+async function findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock = false, checkoutChannel = 'normal' }) {
   const normalizedCode = String(code || '').trim();
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedCode) return null;
@@ -50,6 +50,9 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, businessD
     [normalizedCode, Number(storeId), targetDate],
   );
   const promotion = rows[0];
+  if (promotion && checkoutChannel === 'preorder' && promotion.applies_to_preorder !== true) {
+    throw new PromotionError('MÃ£ giáº£m giÃ¡ nÃ y khÃ´ng Ã¡p dá»¥ng cho Ä‘Æ¡n Ä‘áº·t trÆ°á»›c');
+  }
   if (!promotion) throw new PromotionError('Mã giảm giá không tồn tại, đã hết hạn hoặc không áp dụng cho chi nhánh này');
   if (Number(promotion.min_order || 0) > Number(subtotal)) throw new PromotionError('Đơn hàng chưa đạt giá trị tối thiểu');
   if (promotion.voucher_type === 'single_use' && !normalizedPhone) throw new PromotionError('Cần số điện thoại để dùng mã giảm giá này');
@@ -86,10 +89,10 @@ export function createPromotionsRepository(database = postgresDb, { clock = () =
       return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx: database });
     },
 
-    async validateForOrder({ code, subtotal, phone, storeId, tx }) {
+    async validateForOrder({ code, subtotal, phone, storeId, tx, checkoutChannel = 'normal' }) {
       if (!code || !String(code).trim()) return null;
       const businessDate = formatVietnamBusinessDate(clock());
-      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock: true });
+      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx, lock: true, checkoutChannel });
     },
 
     async consumeForOrder({ voucher, orderId, tx }) {

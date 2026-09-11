@@ -7,6 +7,8 @@ import {
   isValidDateString,
   parseVietnamSingleDateBoundary,
   parseVietnamDateRange,
+  buildVietnamPreorderSlot,
+  validateVietnamPreorderSlot,
 } from '../services/business-time.js';
 
 describe('Vietnam Business Time Service', () => {
@@ -122,5 +124,18 @@ describe('Vietnam Business Time Service', () => {
       assert.equal(err.status, 400);
       return true;
     });
+  });
+
+  it('constructs locked preorder slots without manual timezone arithmetic', () => {
+    const slot = buildVietnamPreorderSlot('2026-09-12', 9);
+    assert.equal(slot.start.toISOString(), '2026-09-12T02:00:00.000Z');
+    assert.equal(slot.end.toISOString(), '2026-09-12T03:00:00.000Z');
+    assert.throws(() => buildVietnamPreorderSlot('2026-09-12', 23), /09:00/);
+
+    const now = new Date('2026-09-11T02:00:00.000Z'); // 09:00 Vietnam
+    assert.equal(validateVietnamPreorderSlot({ date: '2026-09-11', hour: 12, now }).hour, 12);
+    assert.throws(() => validateVietnamPreorderSlot({ date: '2026-09-11', hour: 11, now }), (error) => error.code === 'PREORDER_MIN_LEAD_TIME');
+    assert.equal(validateVietnamPreorderSlot({ date: '2026-09-18', hour: 9, now }).calendarDays, 7);
+    assert.throws(() => validateVietnamPreorderSlot({ date: '2026-09-19', hour: 9, now }), (error) => error.code === 'PREORDER_MAX_HORIZON');
   });
 });

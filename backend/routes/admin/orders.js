@@ -9,6 +9,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus } from '../../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../../validation/order-schemas.js';
 import adminOrderService from '../../services/orders/admin-order-service.js';
+import preorderService from '../../services/preorders/preorder-service.js';
 import { toAdminOrderListItemDto, toAdminOrderDetailDto } from '../../dto/order-dto.js';
 
 const router = Router();
@@ -82,6 +83,13 @@ export const updateOrderStatus = async (req, res) => {
       driverPhone: validatedInput.driverPhone,
       trackingUrl: validatedInput.trackingUrl,
     });
+    // The normal order contract stays untouched. Only an explicit preorder
+    // marker returned by the transactional repository enters the preorder
+    // completion bridge; legacy/test DTOs without it do not trigger a second
+    // database transaction.
+    if (status === 'Hoàn thành' && result.preorder_id != null) {
+      await preorderService.refreshCompletionForOrder(req.params.id);
+    }
     await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${req.params.id}`, `→ ${status}`, req);
     res.json({ ...result, message: `Đơn hàng → ${status}` });
   } catch (err) {

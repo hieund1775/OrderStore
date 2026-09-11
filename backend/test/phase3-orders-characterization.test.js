@@ -8,6 +8,7 @@ import postgresDb from '../config/db-postgres.js';
 import adminOrdersRepository from '../repositories/postgres/admin-orders.js';
 import ordersRepository from '../repositories/postgres/orders.js';
 import paymentsRepository from '../repositories/postgres/payments.js';
+import directPayOSAttemptService from '../services/direct-payos-attempt.js';
 import { setPayOSForTest } from '../services/payos.js';
 
 const order = {
@@ -40,6 +41,7 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
       admin: Object.fromEntries(['list', 'detail', 'transition', 'cancel', 'confirmPayment', 'markPrinted', 'listKitchen'].map((name) => [name, adminOrdersRepository[name]])),
       orders: Object.fromEntries(['findPublicOrder', 'loadPublicDetails', 'loadStatusHistory', 'cancelCustomerOrder', 'listCustomerOrders', 'createPublicOrder'].map((name) => [name, ordersRepository[name]])),
       payments: Object.fromEntries(['reservePayOSOrder', 'attachPaymentLink'].map((name) => [name, paymentsRepository[name]])),
+      directCreate: directPayOSAttemptService.createForOrder,
     };
     payosEnv = {
       clientId: process.env.PAYOS_CLIENT_ID, apiKey: process.env.PAYOS_API_KEY, checksum: process.env.PAYOS_CHECKSUM_KEY,
@@ -90,6 +92,7 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
     Object.assign(adminOrdersRepository, originals.admin);
     Object.assign(ordersRepository, originals.orders);
     Object.assign(paymentsRepository, originals.payments);
+    directPayOSAttemptService.createForOrder = originals.directCreate;
     postgresDb.resetMockAdapter();
     setPayOSForTest();
     for (const [name, value] of Object.entries(payosEnv)) {
@@ -158,6 +161,16 @@ describe('Phase 3 slice 1 Orders/KDS HTTP characterization', () => {
       calls.payment.push({ name: 'attach', args });
       return { payment_link_id: args.paymentLinkId, payos_order_code: args.payosOrderCode, payment_expires_at: args.paymentExpiresAt };
     };
+    // This HTTP characterization fixture owns only the legacy response DTO.
+    // P1's real direct-attempt lifecycle is covered by its focused integration tests.
+    directPayOSAttemptService.createForOrder = async ({ order: createdOrder }) => ({
+      id: createdOrder.id,
+      payment_checkout_url: 'https://payos.test/checkout',
+      payment_qr_code: 'qr-77',
+      payment_link_id: 'link-77',
+      payos_order_code: 900077,
+      payment_expires_at: new Date('2026-08-18T10:00:00Z'),
+    });
   });
 
   it('locks admin list legacy/cursor modes plus detail and branch isolation', async () => {

@@ -17,6 +17,7 @@ import variantInventoryRouter from './admin/variant-inventory.js';
 import adminFulfillmentRouter from './admin/fulfillment.js';
 import { createFulfillmentCapabilitiesRoutes } from './admin/fulfillment-capabilities.js';
 import adminPaymentProfilesRouter from './admin/payment-profiles.js';
+import adminPreordersRouter from './admin/preorders.js';
 
 const router = Router();
 router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier', 'packing'));
@@ -32,6 +33,7 @@ router.use('/catalog', adminCatalogV2Router);
 router.use('/branch-offers', branchOffersRouter);
 router.use('/variant-inventory', variantInventoryRouter);
 router.use('/payment-profiles', adminPaymentProfilesRouter);
+router.use('/preorders', adminPreordersRouter);
 router.use('/branches', branchesRouter);
 router.use('/tables', tablesRouter);
 router.use('/', createFulfillmentCapabilitiesRoutes());

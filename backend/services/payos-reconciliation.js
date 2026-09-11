@@ -1,6 +1,7 @@
 import paymentAttemptsRepository from '../repositories/postgres/payment-attempts.js';
 import { getPaymentLinkInformation } from './payos.js';
 import { settleVerifiedPayOSAttempt } from './payment-attempt-settlement.js';
+import preorderService from './preorders/preorder-service.js';
 
 // Avoid hammering PayOS when several browser polls arrive at the same time.
 const lastChecks = new Map();
@@ -18,6 +19,7 @@ export async function reconcilePayOSAttempt({
   attempt,
   attemptsRepository = paymentAttemptsRepository,
   getPaymentInfo = getPaymentLinkInformation,
+  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
 } = {}) {
   if (!attempt || attempt.provider !== 'payos'
     || !['active', 'expired', 'superseded'].includes(attempt.status)
@@ -55,6 +57,13 @@ export async function reconcilePayOSAttempt({
     attemptsRepository,
     payload: payosInfo,
   });
+  if (preorderBridge && ['paid', 'already_paid', 'duplicate'].includes(result?.kind)) {
+    await preorderBridge.onPaymentSettled({
+      orderId: attempt.order_id,
+      checkoutGroupId: attempt.checkout_group_id,
+      late: ['expired', 'superseded'].includes(attempt.status),
+    });
+  }
   return { changed: result?.kind === 'paid' || result?.kind === 'already_paid', result };
 }
 
@@ -67,25 +76,27 @@ export async function reconcilePayOSOrder({
   order,
   attemptsRepository = paymentAttemptsRepository,
   getPaymentInfo = getPaymentLinkInformation,
+  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
 } = {}) {
   if (!order || !order.id || order.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(order.payment_status)) {
     return { changed: false, skipped: true };
   }
   const attempt = await attemptsRepository.findCurrentAttemptForTarget({ orderId: order.id });
-  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo });
+  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo, preorderBridge });
 }
 
 export async function reconcilePayOSCheckoutGroup({
   checkoutGroup,
   attemptsRepository = paymentAttemptsRepository,
   getPaymentInfo = getPaymentLinkInformation,
+  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
 } = {}) {
   if (!checkoutGroup || !checkoutGroup.id || checkoutGroup.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(checkoutGroup.payment_status)) {
     return { changed: false, skipped: true };
   }
   const attempt = await attemptsRepository.findCurrentAttemptForTarget({ checkoutGroupId: checkoutGroup.id });
-  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo });
+  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo, preorderBridge });
 }
 

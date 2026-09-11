@@ -18,6 +18,7 @@
     "db:pg:catalog-v2:backfill": "node commands/backfill-catalog-v2.js",
     "db:pg:otp:cleanup": "node database/postgres/cleanup-otp.js",
     "payos:expire": "node commands/expire-payos-orders.js",
+    "preorder:due": "node commands/process-preorders-due.js",
     "perf:seed": "node perf/seed-performance-data.js",
     "perf:bench": "node perf/run-query-benchmarks.js",
     "db:init": "node init-db.js"

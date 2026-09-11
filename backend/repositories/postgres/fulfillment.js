@@ -115,10 +115,12 @@ export function createFulfillmentRepository(database = postgresDb) {
            t.assigned_to, t.started_at, t.completed_at, t.notes,
            t.created_at, t.updated_at,
            o.order_code, o.order_type, o.table_id, o.location_name,
+           p.preorder_code, p.scheduled_start_at AS preorder_scheduled_start_at,
            o.user_id, u.fullname AS customer_name, u.phone AS customer_phone,
            s.name AS store_name
          FROM fulfillment_tasks t
          JOIN orders o ON o.id = t.order_id
+         LEFT JOIN preorders p ON p.id = o.preorder_id
          JOIN stores s ON s.id = t.branch_id
          LEFT JOIN users u ON u.id = o.user_id
          ${whereClause}
@@ -169,10 +171,12 @@ export function createFulfillmentRepository(database = postgresDb) {
            t.assigned_to, t.started_at, t.completed_at, t.notes,
            t.created_at, t.updated_at,
            o.order_code, o.order_type, o.table_id, o.location_name,
+           p.preorder_code, p.scheduled_start_at AS preorder_scheduled_start_at,
            o.user_id, u.fullname AS customer_name, u.phone AS customer_phone,
            s.name AS store_name
          FROM fulfillment_tasks t
          JOIN orders o ON o.id = t.order_id
+         LEFT JOIN preorders p ON p.id = o.preorder_id
          JOIN stores s ON s.id = t.branch_id
          LEFT JOIN users u ON u.id = o.user_id
          WHERE t.id = $1`,

@@ -5,6 +5,7 @@ import {
   doesPayOSDataMatchAttempt,
   extractPayOSIdentifiers,
 } from './payment-attempt-provider-identity.js';
+import preorderService from './preorders/preorder-service.js';
 
 export async function resolveVerifiedPayOSAttempt({
   body,
@@ -64,15 +65,26 @@ export async function processPayOSWebhookWithAttempts({
   body,
   attemptsRepository = paymentAttemptsRepository,
   verifyWebhook = verifyWebhookData,
+  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
 } = {}) {
   const resolution = await resolveVerifiedPayOSAttempt({ body, attemptsRepository, verifyWebhook });
   if (resolution.kind !== 'resolved') return resolution;
   const { code } = resolution.data || {};
   if (code !== '00') return { kind: 'not_successful', attempt: resolution.attempt, data: resolution.data };
-  return settleVerifiedPayOSAttempt({
+  const settled = await settleVerifiedPayOSAttempt({
     attempt: resolution.attempt,
     data: resolution.data,
     attemptsRepository,
     payload: resolution.data,
   });
+  // Payment attempts remain the source of truth. The preorder bridge is an
+  // idempotent post-settlement projection and never changes P1 state.
+  if (preorderBridge && ['paid', 'duplicate', 'already_paid'].includes(settled.kind)) {
+    await preorderBridge.onPaymentSettled({
+      orderId: resolution.attempt.order_id,
+      checkoutGroupId: resolution.attempt.checkout_group_id,
+      late: ['expired', 'superseded'].includes(resolution.attempt.status),
+    });
+  }
+  return settled;
 }

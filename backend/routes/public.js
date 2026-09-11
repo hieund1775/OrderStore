@@ -13,6 +13,7 @@ import publicCatalogV2Router from './public/catalog-v2.js';
 import publicStoresRouter from './public/stores.js';
 import publicPromotionsRouter from './public/promotions.js';
 import publicEngagementRouter from './public/engagement.js';
+import publicPreordersRouter from './public/preorders.js';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.use('/', publicStoresRouter);
 router.use('/', publicPromotionsRouter);
 router.use('/', publicEngagementRouter);
 router.use('/orders', publicOrdersRouter);
+router.use('/preorders', publicPreordersRouter);
 
 function requireCustomerSelf(req, res, next) {
   const requestedId = Number(req.params.id);
