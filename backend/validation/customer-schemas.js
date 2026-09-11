@@ -43,15 +43,25 @@ export function normalizeAndValidatePhone(rawPhone, { required = true } = {}) {
   return str;
 }
 
-export function normalizeAndValidateFullName(rawName, { required = true } = {}) {
+export function normalizeAndValidateFullName(rawName, { required = true, allowSingleWord = false } = {}) {
   if (rawName === undefined || rawName === null || rawName === '') {
     if (required) throw new CustomerValidationError('Họ và tên không được để trống', 'CUSTOMER_INVALID_NAME');
     return null;
   }
-  const clean = String(rawName).trim().replace(/\s+/g, ' ');
+  // Auto Title Case: viết hoa chữ cái đầu mỗi từ
+  const clean = String(rawName)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
   const vnNameRegex = /^([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*)(\s([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*))+$/;
+  // Regex 1 từ: chấp nhận nếu allowSingleWord (dùng cho Google Auth)
+  const singleWordRegex = /^[A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*$/;
 
-  if (clean.length < 2 || clean.length > 120 || !vnNameRegex.test(clean)) {
+  const isValid = vnNameRegex.test(clean) || (allowSingleWord && singleWordRegex.test(clean));
+
+  if (clean.length < 2 || clean.length > 120 || !isValid) {
     throw new CustomerValidationError('Họ và tên không hợp lệ (tối thiểu 2 từ, viết hoa chữ cái đầu và không chứa ký tự đặc biệt/số)', 'CUSTOMER_INVALID_NAME');
   }
   return clean;

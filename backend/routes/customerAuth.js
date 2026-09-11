@@ -173,7 +173,15 @@ router.post('/google', async (req, res, next) => {
     }
 
     const email = String(payload.email).toLowerCase();
-    const fullname = payload.name || email.split('@')[0];
+    // Tên từ Google có thể chỉ có 1 từ → dùng allowSingleWord để không bị block
+    const rawGoogleName = payload.name || email.split('@')[0];
+    let fullname;
+    try {
+      fullname = normalizeAndValidateFullName(rawGoogleName, { allowSingleWord: true });
+    } catch {
+      // Nếu tên Google chứa ký tự lạ hoàn toàn, fallback về email prefix
+      fullname = email.split('@')[0];
+    }
 
     const user = await usersRepository.findOrCreateGoogleCustomer({
       subject: String(payload.sub),

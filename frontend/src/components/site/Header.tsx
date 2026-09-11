@@ -439,9 +439,18 @@ function ProfileButton() {
 
   async function handlePasswordAuth() {
     const cleanName = nameInput.trim();
-    if (authMode === 'register' && (cleanName.length < 2 || !/^[\p{L}\s']+$/u.test(cleanName))) {
-      setError('Vui lòng nhập họ tên hợp lệ');
-      return;
+    if (authMode === 'register') {
+      // Auto Title Case trước khi validate (giống backend)
+      const titled = cleanName
+        .split(' ')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      setNameInput(titled);
+      const vnNameRegex = /^([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*)(\s([A-Z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9][a-z\u00C0-\u00FF\u0102\u0103\u0110\u0111\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]*))+$/;
+      if (titled.length < 2 || !vnNameRegex.test(titled)) {
+        setError('Họ và tên tối thiểu 2 từ, mỗi từ viết hoa chữ đầu (ví dụ: Nguyễn Văn An)');
+        return;
+      }
     }
     if (phone.replace(/\s/g, '').length < 10) {
       setError('Vui lòng nhập số điện thoại hợp lệ (ít nhất 10 số)');
@@ -459,7 +468,7 @@ function ProfileButton() {
         user: { id: number; fullname: string; phone: string; tier: string; points: number; is_admin?: boolean; admin_role?: string; admin_branch_id?: number | null };
       }>(authMode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         phone,
-        ...(authMode === 'register' ? { fullname: cleanName } : {}),
+        ...(authMode === 'register' ? { fullname: nameInput.trim() } : {}),
         password,
       });
       setUserName(data.user.fullname);
