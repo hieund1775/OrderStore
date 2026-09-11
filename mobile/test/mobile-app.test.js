@@ -1,5 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { vnd, formatDateTime } from '../src/lib/formatters.js';
 
 // ══════════════════════════════════════════════════════════════
@@ -230,5 +232,28 @@ describe('Role Navigation', () => {
   it('Packing has no accounts tab', () => {
     const tabs = getAllowedTabs('packing');
     assert.ok(!tabs.includes('accounts'));
+  });
+});
+
+describe('Preorder Store Operations contract', () => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const apiSource = fs.readFileSync(path.join(root, 'src', 'lib', 'api.ts'), 'utf8');
+  const screenSource = fs.readFileSync(path.join(root, 'app', '(tabs)', 'preorders.tsx'), 'utf8');
+  const tabsSource = fs.readFileSync(path.join(root, 'app', '(tabs)', '_layout.tsx'), 'utf8');
+
+  it('uses only canonical operational preorder APIs', () => {
+    assert.match(apiSource, /\/admin\/preorders/);
+    assert.match(apiSource, /\/admin\/preorders\/kitchen\/confirmed/);
+    assert.match(apiSource, /\/confirm/);
+    assert.match(apiSource, /\/check-in/);
+    assert.match(apiSource, /\/reschedule/);
+    assert.doesNotMatch(apiSource, /\/mobile\/preorders/);
+  });
+
+  it('keeps cashier and packing out of preorder operations while Kitchen sees confirmed work only', () => {
+    assert.match(screenSource, /\['super', 'manager', 'kitchen'\]/);
+    assert.match(screenSource, /fetchKitchenPreorders/);
+    assert.match(tabsSource, /canOperatePreorders = \['super', 'manager', 'kitchen'\]/);
+    assert.doesNotMatch(screenSource, /fake|mock.*preorder|offline.*mutation/i);
   });
 });

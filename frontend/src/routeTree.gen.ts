@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
+import { Route as DatTruocRouteImport } from './routes/dat-truoc'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
 import { Route as HoSoRouteImport } from './routes/ho-so'
 import { Route as MenuRouteImport } from './routes/menu'
@@ -25,6 +26,7 @@ import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
 import { Route as AdminChiNhanhRouteImport } from './routes/admin.chi-nhanh'
 import { Route as AdminDanhGiaRouteImport } from './routes/admin.danh-gia'
+import { Route as AdminDatTruocRouteImport } from './routes/admin.dat-truoc'
 import { Route as AdminDonHangRouteImport } from './routes/admin.don-hang'
 import { Route as AdminDongGoiRouteImport } from './routes/admin.dong-goi'
 import { Route as AdminHangDangBanRouteImport } from './routes/admin.hang-dang-ban'
@@ -50,6 +52,11 @@ const AdminRoute = AdminRouteImport.update({
 const CuaHangRoute = CuaHangRouteImport.update({
   id: '/cua-hang',
   path: '/cua-hang',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DatTruocRoute = DatTruocRouteImport.update({
+  id: '/dat-truoc',
+  path: '/dat-truoc',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GioiThieuRoute = GioiThieuRouteImport.update({
@@ -117,6 +124,11 @@ const AdminDanhGiaRoute = AdminDanhGiaRouteImport.update({
   path: '/danh-gia',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDatTruocRoute = AdminDatTruocRouteImport.update({
+  id: '/dat-truoc',
+  path: '/dat-truoc',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDonHangRoute = AdminDonHangRouteImport.update({
   id: '/don-hang',
   path: '/don-hang',
@@ -177,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
+  '/dat-truoc': typeof DatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -189,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
+  '/admin/dat-truoc': typeof AdminDatTruocRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -205,6 +219,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cua-hang': typeof CuaHangRoute
+  '/dat-truoc': typeof DatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -217,6 +232,7 @@ export interface FileRoutesByTo {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
+  '/admin/dat-truoc': typeof AdminDatTruocRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -235,6 +251,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
+  '/dat-truoc': typeof DatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -247,6 +264,7 @@ export interface FileRoutesById {
   '/admin/catalog': typeof AdminCatalogRoute
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
+  '/admin/dat-truoc': typeof AdminDatTruocRoute
   '/admin/don-hang': typeof AdminDonHangRoute
   '/admin/dong-goi': typeof AdminDongGoiRoute
   '/admin/hang-dang-ban': typeof AdminHangDangBanRoute
@@ -266,6 +284,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/cua-hang'
+    | '/dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -278,6 +297,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/danh-gia'
+    | '/admin/dat-truoc'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -294,6 +314,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/cua-hang'
+    | '/dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -306,6 +327,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/danh-gia'
+    | '/admin/dat-truoc'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -323,6 +345,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/cua-hang'
+    | '/dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -335,6 +358,7 @@ export interface FileRouteTypes {
     | '/admin/catalog'
     | '/admin/chi-nhanh'
     | '/admin/danh-gia'
+    | '/admin/dat-truoc'
     | '/admin/don-hang'
     | '/admin/dong-goi'
     | '/admin/hang-dang-ban'
@@ -353,6 +377,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   CuaHangRoute: typeof CuaHangRoute
+  DatTruocRoute: typeof DatTruocRoute
   GioiThieuRoute: typeof GioiThieuRoute
   HoSoRoute: typeof HoSoRoute
   MenuRoute: typeof MenuRoute
@@ -384,6 +409,13 @@ declare module '@tanstack/react-router' {
       path: '/cua-hang'
       fullPath: '/cua-hang'
       preLoaderRoute: typeof CuaHangRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dat-truoc': {
+      id: '/dat-truoc'
+      path: '/dat-truoc'
+      fullPath: '/dat-truoc'
+      preLoaderRoute: typeof DatTruocRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gioi-thieu': {
@@ -477,6 +509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDanhGiaRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/dat-truoc': {
+      id: '/admin/dat-truoc'
+      path: '/dat-truoc'
+      fullPath: '/admin/dat-truoc'
+      preLoaderRoute: typeof AdminDatTruocRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/don-hang': {
       id: '/admin/don-hang'
       path: '/don-hang'
@@ -563,6 +602,7 @@ interface AdminRouteChildren {
   AdminCatalogRoute: typeof AdminCatalogRoute
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
   AdminDanhGiaRoute: typeof AdminDanhGiaRoute
+  AdminDatTruocRoute: typeof AdminDatTruocRoute
   AdminDonHangRoute: typeof AdminDonHangRoute
   AdminDongGoiRoute: typeof AdminDongGoiRoute
   AdminHangDangBanRoute: typeof AdminHangDangBanRoute
@@ -582,6 +622,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCatalogRoute: AdminCatalogRoute,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
   AdminDanhGiaRoute: AdminDanhGiaRoute,
+  AdminDatTruocRoute: AdminDatTruocRoute,
   AdminDonHangRoute: AdminDonHangRoute,
   AdminDongGoiRoute: AdminDongGoiRoute,
   AdminHangDangBanRoute: AdminHangDangBanRoute,
@@ -601,6 +642,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   CuaHangRoute: CuaHangRoute,
+  DatTruocRoute: DatTruocRoute,
   GioiThieuRoute: GioiThieuRoute,
   HoSoRoute: HoSoRoute,
   MenuRoute: MenuRoute,

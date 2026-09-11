@@ -23,6 +23,12 @@ export class ProductReviewsService {
     this.storage = storage || createReviewStorage();
   }
 
+  _assertPreorderReviewEligibility(ownership) {
+    if (ownership?.preorder_id != null && ownership.preorder_checked_in_at == null) {
+      throw new IdentityError('PREORDER_NOT_CHECKED_IN', 'Preorder must be checked in before review');
+    }
+  }
+
   /**
    * Check if a customer can review an order item.
    */
@@ -36,6 +42,10 @@ export class ProductReviewsService {
     const status = await this.repo.getLatestOrderStatus(ownership.order_id);
     if (status !== 'Hoàn thành') {
       return { eligible: false, reason: 'Đơn hàng chưa hoàn thành, chưa thể đánh giá' };
+    }
+
+    if (ownership.preorder_id != null && ownership.preorder_checked_in_at == null) {
+      return { eligible: false, reason: 'Preorder must be checked in before review' };
     }
 
     // Check existing review
@@ -82,6 +92,8 @@ export class ProductReviewsService {
     if (status !== 'Hoàn thành') {
       throw new IdentityError('NOT_COMPLETED', 'Đơn hàng chưa hoàn thành');
     }
+
+    this._assertPreorderReviewEligibility(ownership);
 
     // Verify objects in storage before creating the review
     if (intentIds && intentIds.length > 0) {
@@ -248,6 +260,7 @@ export class ProductReviewsService {
       if (status !== 'Hoàn thành') {
         throw new IdentityError('NOT_COMPLETED', 'Đơn hàng chưa hoàn thành');
       }
+      this._assertPreorderReviewEligibility(ownership);
       reviewId = null;
     } else {
       if (!reviewId || orderId || orderItemId) {

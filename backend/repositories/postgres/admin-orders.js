@@ -40,7 +40,7 @@ export function createAdminOrdersRepository(
         const params = [orderId];
         let filter = 'WHERE id = $1';
         filter = appendScope(filter, params, scopedStoreId, 'store_id');
-        const [orders] = await tx.query(`SELECT id, order_code, user_id, store_id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
+        const [orders] = await tx.query(`SELECT id, order_code, user_id, store_id, preorder_id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
         const order = orders[0];
         if (!order) throw new AdminOrderError('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
         const [current] = await tx.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE', [order.id]);
@@ -130,7 +130,7 @@ export function createAdminOrdersRepository(
           }
         }
 
-        return { order_id: Number(order.id), status: targetStatus };
+        return { order_id: Number(order.id), preorder_id: order.preorder_id == null ? null : Number(order.preorder_id), status: targetStatus };
       });
     },
 

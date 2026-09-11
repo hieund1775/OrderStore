@@ -13,6 +13,7 @@ import {
   Tag,
   User,
   Users,
+  CalendarClock,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../src/store/authStore';
 
@@ -34,6 +35,8 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
       return <Tag size={size} color={color} strokeWidth={strokeWidth} />;
     case 'accounts':
       return <Users size={size} color={color} strokeWidth={strokeWidth} />;
+    case 'preorders':
+      return <CalendarClock size={size} color={color} strokeWidth={strokeWidth} />;
     case 'profile':
       return <User size={size} color={color} strokeWidth={strokeWidth} />;
     default:
@@ -51,6 +54,7 @@ export default function StaffTabLayout() {
   const canViewPacking = ['super', 'manager', 'packing'].includes(role);
   const canViewStock = ['super', 'manager', 'cashier'].includes(role);
   const canManageAccounts = ['super', 'manager'].includes(role);
+  const canOperatePreorders = ['super', 'manager', 'kitchen'].includes(role);
 
   return (
     <Tabs
@@ -91,6 +95,14 @@ export default function StaffTabLayout() {
           title: 'Đóng gói',
           href: canViewPacking ? undefined : null,
           tabBarIcon: ({ focused }) => <TabIcon name="packing" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="preorders"
+        options={{
+          title: 'Đặt trước',
+          href: canOperatePreorders ? undefined : null,
+          tabBarIcon: ({ focused }) => <TabIcon name="preorders" focused={focused} />,
         }}
       />
       <Tabs.Screen

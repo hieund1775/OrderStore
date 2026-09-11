@@ -17,6 +17,7 @@ import {
   PackageCheck,
   Package,
   Star,
+  CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchBranchCapabilities, getUser } from '@/lib/api';
@@ -32,6 +33,7 @@ export const adminNav = [
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat, section: 'operations', roles: ['super', 'manager', 'kitchen'] as AdminRole[], lane: 'kitchen' },
   { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'operations', roles: ['super', 'manager', 'packing'] as AdminRole[], lane: 'packing' },
   { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode, section: 'operations', roles: MANAGEMENT_ROLES },
+  { to: '/admin/dat-truoc', label: 'Đơn đặt trước', icon: CalendarClock, section: 'operations', roles: MANAGEMENT_ROLES },
   // Nhóm 2: Hàng hóa
   { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog', roles: MANAGEMENT_ROLES },
   { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck, section: 'catalog', roles: MANAGEMENT_ROLES },

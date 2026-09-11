@@ -171,6 +171,7 @@ export function createOrdersRepository(
         } else {
           voucher = await promotions.validateForOrder({
             code: input.voucher_code, subtotal, phone: input.customer_phone, storeId: input.store_id, tx,
+            checkoutChannel: input.checkout_channel || 'normal',
           });
           discountAmount = Number(voucher?.discount_amount || 0);
         }
@@ -193,16 +194,16 @@ export function createOrdersRepository(
           await tx.query('SAVEPOINT order_code_attempt');
           try {
             const [orders] = await tx.query(
-              `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, order_type,
+              `INSERT INTO orders (order_code, user_id, store_id, table_id, location_name, preorder_id, order_type,
                  payment_method, payment_status, payment_provider, paid_at, cancel_token_hash, customer_name, customer_phone,
                  delivery_addr, voucher_code, discount_amount, points_earned, subtotal, total, note,
                  root_category_id, payment_profile_id, payment_profile_code, payment_profile_version,
                  receiver_bank_name, receiver_account_number, receiver_account_holder,
                  original_payment_profile_code, group_allocated_amount)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
                RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider,
                          root_category_id, payment_profile_code`,
-              [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.order_type || 'Take-away',
+              [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.preorder_id || null, input.order_type || 'Take-away',
                 input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
                 (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
                 input.delivery_addr || null, input.voucher_code || null, discountAmount, pointsEarned, subtotal, total, input.note || null,
@@ -260,7 +261,7 @@ export function createOrdersRepository(
             note: line.item.note || null,
           });
         }
-        if (typeof fulfillment?.createTasksForOrder === 'function') {
+        if (!input.defer_fulfillment && typeof fulfillment?.createTasksForOrder === 'function') {
           await fulfillment.createTasksForOrder({
             orderId: order.id,
             branchId: input.store_id,
@@ -272,7 +273,9 @@ export function createOrdersRepository(
         }
         await tx.query("INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')", [order.id]);
 
-        if (userId) {
+        // A preorder becomes operational work only at Manager confirmation.
+        // Its payment bridge owns the later customer/Manager notification.
+        if (userId && !input.preorder_id) {
           await notifications.insertForUser({
             userId,
             type: 'order',
@@ -281,7 +284,7 @@ export function createOrdersRepository(
             link: `/theo-doi-don?code=${order.order_code}`,
           }, { tx });
         }
-        await notifications.fanOutToOrderAdmins(input.store_id, {
+        if (!input.preorder_id) await notifications.fanOutToOrderAdmins(input.store_id, {
           type: 'order',
           title: `Đơn hàng mới — #${order.order_code}`,
           body: `Đơn #${order.order_code} (${input.order_type || 'Take-away'}) đã sẵn sàng cho bếp chuẩn bị.`,
