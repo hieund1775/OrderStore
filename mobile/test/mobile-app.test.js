@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { vnd, formatDateTime } from '../src/lib/formatters.js';
+import { isVoucherContextCurrent, resolvePosStoreId } from '../src/lib/pos-contract.js';
 
 // ══════════════════════════════════════════════════════════════
 // Formatter Tests (keep existing)
@@ -255,5 +256,50 @@ describe('Preorder Store Operations contract', () => {
     assert.match(screenSource, /fetchKitchenPreorders/);
     assert.match(tabsSource, /canOperatePreorders = \['super', 'manager', 'kitchen'\]/);
     assert.doesNotMatch(screenSource, /fake|mock.*preorder|offline.*mutation/i);
+  });
+});
+
+describe('Mobile POS branch, voucher, and live-order contracts', () => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const posSource = fs.readFileSync(path.join(root, 'app', '(tabs)', 'pos.tsx'), 'utf8');
+  const ordersSource = fs.readFileSync(path.join(root, 'app', '(tabs)', 'orders.tsx'), 'utf8');
+  const apiSource = fs.readFileSync(path.join(root, 'src', 'lib', 'api.ts'), 'utf8');
+
+  it('pins a non-super POS session to its JWT branch instead of the first store', () => {
+    assert.equal(resolvePosStoreId({
+      role: 'cashier', branchId: 2, selectedStoreId: 1, availableStoreIds: [1, 2],
+    }), 2);
+  });
+
+  it('allows Super to select an available POS branch only', () => {
+    assert.equal(resolvePosStoreId({
+      role: 'super', branchId: null, selectedStoreId: 2, availableStoreIds: [1, 2],
+    }), 2);
+    assert.equal(resolvePosStoreId({
+      role: 'super', branchId: null, selectedStoreId: 9, availableStoreIds: [1, 2],
+    }), 1);
+  });
+
+  it('invalidates a quoted voucher when its order context changes', () => {
+    const voucher = { discountAmount: 12000, subtotal: 100000, storeId: 2, customerPhone: '0909000000' };
+    assert.equal(isVoucherContextCurrent(voucher, { subtotal: 100000, storeId: 2, customerPhone: '0909000000' }), true);
+    assert.equal(isVoucherContextCurrent(voucher, { subtotal: 110000, storeId: 2, customerPhone: '0909000000' }), false);
+    assert.equal(isVoucherContextCurrent(voucher, { subtotal: 100000, storeId: 1, customerPhone: '0909000000' }), false);
+  });
+
+  it('uses scoped branches, server-validated vouchers, and an inline table selector', () => {
+    assert.match(posSource, /fetchScopedBranches/);
+    assert.match(posSource, /voucher_code: voucherIsCurrent/);
+    assert.match(posSource, /renderInlineTableSelect/);
+    assert.doesNotMatch(posSource, /<Modal visible=\{isTablePickerOpen\}/);
+    assert.match(apiSource, /customer_phone: customerPhone/);
+    assert.match(apiSource, /store_id: storeId/);
+  });
+
+  it('never replaces a real empty or failed order response with demo orders and refreshes on focus', () => {
+    assert.match(ordersSource, /useFocusEffect/);
+    assert.doesNotMatch(ordersSource, /setOrders\(DEFAULT_ORDERS\)/);
+    assert.doesNotMatch(ordersSource, /prev\.length > 0 \? prev : DEFAULT_ORDERS/);
+    assert.doesNotMatch(apiSource, /store_id: Number\(payload\.store_id \|\| 1\)/);
   });
 });

@@ -161,6 +161,16 @@ export async function fetchBranches() {
   return fetchStores();
 }
 
+/**
+ * Branches available to the authenticated staff member. Unlike the public
+ * store catalogue, this endpoint applies the server's branch-scope policy.
+ * POS must use this when deciding where a staff order may be created.
+ */
+export async function fetchScopedBranches() {
+  const { data } = await apiClient.get('/admin/branches');
+  return Array.isArray(data) ? data : [];
+}
+
 // ═══════════ STAFF OPERATIONS API (KDS, ORDERS, POS) ═══════════
 
 /** Fetch Kitchen KDS orders */
@@ -395,12 +405,16 @@ export async function fetchStores() {
 /** Create order */
 export async function createOrder(payload: any) {
   const idempotencyKey = `pos_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  const storeId = Number(payload.store_id);
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    throw { status: 400, message: 'POS cần một chi nhánh hợp lệ trước khi tạo đơn.' };
+  }
   const cleanPayload = {
     ...payload,
     payment_method: payload.payment_method === 'QR' ? 'VietQR' : (payload.payment_method || 'COD'),
     order_type: payload.order_type || 'POS',
     source: payload.source || 'pos',
-    store_id: Number(payload.store_id || 1),
+    store_id: storeId,
     customer_name: payload.customer_name?.trim() || 'Khách Tại Quầy',
     customer_phone: payload.customer_phone?.trim() || '0000000000',
   };
@@ -444,8 +458,17 @@ export async function lookupOrder(codeOrPhone: string) {
 }
 
 /** Apply voucher */
-export async function applyVoucher(code: string, subtotal: number) {
-  const { data } = await apiClient.post('/api/vouchers/apply', { code, subtotal });
+export async function applyVoucher(
+  code: string,
+  subtotal: number,
+  { customerPhone, storeId }: { customerPhone?: string; storeId: number },
+) {
+  const { data } = await apiClient.post('/api/vouchers/apply', {
+    code,
+    subtotal,
+    customer_phone: customerPhone || undefined,
+    store_id: storeId,
+  });
   return data;
 }
 

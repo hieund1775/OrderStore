@@ -22,15 +22,15 @@ import { AdminHeader } from '../../src/components/AdminHeader';
 import {
   fetchProducts,
   fetchCategories,
-  fetchStores,
+  fetchScopedBranches,
   fetchSizes,
   fetchToppings,
   fetchTables,
   createOrder,
-  FALLBACK_CATEGORIES,
-  FALLBACK_PRODUCTS,
+  applyVoucher,
 } from '../../src/lib/api';
 import { Product, Category, Store } from '../../src/types';
+import { isVoucherContextCurrent, resolvePosStoreId } from '../../src/lib/pos-contract.js';
 
 interface SizeOption {
   id: number;
@@ -63,21 +63,16 @@ interface CartItem {
   toppings: { topping_id: number; name: string; price: number; qty: number }[];
 }
 
+interface AppliedVoucher {
+  code: string;
+  discountAmount: number;
+  subtotal: number;
+  storeId: number;
+  customerPhone: string;
+}
+
 const SUGAR_OPTIONS = ['100%', '70%', '50%', '30%', '0%'];
 const ICE_OPTIONS = ['100%', '70%', '50%', '30%', '0% (Không đá)'];
-
-const DEFAULT_TABLE_OPTIONS = [
-  { id: 1, name: 'Bàn 01 (Tầng 1)' },
-  { id: 2, name: 'Bàn 02 (Tầng 1)' },
-  { id: 3, name: 'Bàn 03 (Tầng 1)' },
-  { id: 4, name: 'Bàn 04 (Tầng 1)' },
-  { id: 5, name: 'Bàn 05 (Tầng 1)' },
-  { id: 6, name: 'Bàn 06 (Tầng 1)' },
-  { id: 7, name: 'Bàn 07 (Tầng 2)' },
-  { id: 8, name: 'Bàn 08 (Tầng 2)' },
-  { id: 9, name: 'Bàn VIP 01 (Tầng 2)' },
-  { id: 10, name: 'Bàn VIP 02 (Tầng 2)' },
-];
 
 export default function StaffPosScreen() {
   const user = useAuthStore((state) => state.user);
@@ -90,6 +85,7 @@ export default function StaffPosScreen() {
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [customTableNumber, setCustomTableNumber] = useState('');
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  // Kept for the legacy picker markup below; POS now renders the live inline selector.
   const [tableSearchQuery, setTableSearchQuery] = useState('');
   const [tableFloorFilter, setTableFloorFilter] = useState<'all' | 't1' | 't2' | 'vip'>('all');
 
@@ -116,6 +112,10 @@ export default function StaffPosScreen() {
   const [cashReceived, setCashReceived] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [packagingOption, setPackagingOption] = useState<'bag' | 'box' | 'cup_holder' | 'none'>('none');
+  const [voucherCode, setVoucherCode] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucher | null>(null);
+  const [applyingVoucher, setApplyingVoucher] = useState(false);
+  const [masterDataError, setMasterDataError] = useState<string | null>(null);
 
   // Modals
   const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
@@ -135,45 +135,43 @@ export default function StaffPosScreen() {
       setLoading(true);
       try {
         const [storesData, catData, prodData, sizesData, toppingsData] = await Promise.all([
-          fetchStores().catch(() => []),
-          fetchCategories().catch(() => []),
-          fetchProducts().catch(() => []),
-          fetchSizes().catch(() => []),
-          fetchToppings().catch(() => []),
+          fetchScopedBranches(),
+          fetchCategories(),
+          fetchProducts(),
+          fetchSizes(),
+          fetchToppings(),
         ]);
-
-        setStores(storesData && storesData.length > 0 ? storesData : [
-          { id: 1, name: 'TeaPlus Quận 1 - Nguyễn Huệ', address: '123 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh', phone: '02838221101', hours: '08:00 - 22:00' }
-        ]);
-        if (storesData && storesData.length > 0) {
-          setSelectedStoreId(storesData[0].id);
-        } else {
-          setSelectedStoreId(1);
+        const effectiveStoreId = resolvePosStoreId({
+          role: user?.role,
+          branchId: user?.branch_id,
+          selectedStoreId: null,
+          availableStoreIds: storesData.map((store: Store) => Number(store.id)),
+        });
+        if (!effectiveStoreId) {
+          throw new Error('Tài khoản không có chi nhánh POS hợp lệ. Vui lòng liên hệ Quản trị viên.');
         }
 
-        setCategories(catData && catData.length > 0 ? catData : FALLBACK_CATEGORIES);
-        setProducts(prodData && prodData.length > 0 ? prodData : FALLBACK_PRODUCTS);
-        setSizes(sizesData && sizesData.length > 0 ? sizesData : [
-          { id: 1, label: 'M (Chuẩn)', base_price_multiplier: 1.0 },
-          { id: 2, label: 'L (Lớn)', base_price_multiplier: 1.2 },
-        ]);
-        setToppings(toppingsData && toppingsData.length > 0 ? toppingsData : [
-          { id: 1, name: 'Trân châu đen', price: 6000 },
-          { id: 2, name: 'Trân châu trắng 3Q', price: 8000 },
-          { id: 3, name: 'Thạch nha đam', price: 6000 },
-          { id: 4, name: 'Pudding trứng', price: 10000 },
-          { id: 5, name: 'Kem Macchiato Cheese', price: 12000 },
-        ]);
-      } catch (err) {
-        console.warn('Error loading POS data:', err);
-        setCategories(FALLBACK_CATEGORIES);
-        setProducts(FALLBACK_PRODUCTS);
+        setStores(storesData);
+        setSelectedStoreId(effectiveStoreId);
+        setCategories(catData);
+        setProducts(prodData);
+        setSizes(sizesData);
+        setToppings(toppingsData);
+        setMasterDataError(null);
+      } catch (err: any) {
+        setStores([]);
+        setSelectedStoreId(null);
+        setCategories([]);
+        setProducts([]);
+        setSizes([]);
+        setToppings([]);
+        setMasterDataError(err?.message || 'Không thể tải dữ liệu POS. Vui lòng kiểm tra kết nối và thử lại.');
       } finally {
         setLoading(false);
       }
     }
     loadData();
-  }, []);
+  }, [user?.branch_id, user?.role]);
 
   // Load tables when store changes
   useEffect(() => {
@@ -199,27 +197,7 @@ export default function StaffPosScreen() {
     });
   }, [products, selectedCategoryId, searchQuery]);
 
-  // Filter tables for dropdown picker by search and floor/area
-  const availableFilteredTables = useMemo(() => {
-    const list = tables && tables.length > 0 ? tables : DEFAULT_TABLE_OPTIONS;
-    return list.filter((t) => {
-      const matchSearch =
-        !tableSearchQuery.trim() ||
-        t.name.toLowerCase().includes(tableSearchQuery.toLowerCase().trim());
-
-      let matchFloor = true;
-      const lower = t.name.toLowerCase();
-      if (tableFloorFilter === 't1') {
-        matchFloor = lower.includes('tầng 1') || (!lower.includes('tầng 2') && !lower.includes('vip'));
-      } else if (tableFloorFilter === 't2') {
-        matchFloor = lower.includes('tầng 2');
-      } else if (tableFloorFilter === 'vip') {
-        matchFloor = lower.includes('vip');
-      }
-
-      return matchSearch && matchFloor;
-    });
-  }, [tables, tableSearchQuery, tableFloorFilter]);
+  const availableFilteredTables = tables;
 
   // Open Customization Modal
   const openCustomizer = (product: Product) => {
@@ -305,11 +283,64 @@ export default function StaffPosScreen() {
     return cart.reduce((sum, item) => sum + item.qty, 0);
   }, [cart]);
 
+  const effectiveStoreId = resolvePosStoreId({
+    role: user?.role,
+    branchId: user?.branch_id,
+    selectedStoreId,
+    availableStoreIds: stores.map((store) => Number(store.id)),
+  });
+  const normalizedCustomerPhone = customerPhone.trim();
+  const voucherIsCurrent = isVoucherContextCurrent(appliedVoucher, {
+    subtotal: totalCartAmount,
+    storeId: effectiveStoreId,
+    customerPhone: normalizedCustomerPhone,
+  });
+  const discountAmount = voucherIsCurrent ? Math.max(0, Number(appliedVoucher?.discountAmount || 0)) : 0;
+  const payableAmount = Math.max(0, totalCartAmount - discountAmount);
+
   const cashReceivedNum = useMemo(() => {
     return parseFloat(cashReceived.replace(/[^0-9]/g, '')) || 0;
   }, [cashReceived]);
 
-  const changeDue = Math.max(0, cashReceivedNum - totalCartAmount);
+  const changeDue = Math.max(0, cashReceivedNum - payableAmount);
+
+  const handleApplyVoucher = async () => {
+    const code = voucherCode.trim();
+    if (!code) {
+      Alert.alert('Thiếu mã ưu đãi', 'Vui lòng nhập mã ưu đãi do Quản trị viên tạo.');
+      return;
+    }
+    if (!effectiveStoreId || totalCartAmount <= 0) {
+      Alert.alert('Chưa thể áp dụng mã', 'Vui lòng chọn chi nhánh hợp lệ và thêm món trước.');
+      return;
+    }
+
+    setApplyingVoucher(true);
+    try {
+      const result = await applyVoucher(code, totalCartAmount, {
+        customerPhone: normalizedCustomerPhone || undefined,
+        storeId: effectiveStoreId,
+      });
+      setAppliedVoucher({
+        code: result.code || code.toUpperCase(),
+        discountAmount: Number(result.discount_amount || 0),
+        subtotal: totalCartAmount,
+        storeId: effectiveStoreId,
+        customerPhone: normalizedCustomerPhone,
+      });
+      setVoucherCode(result.code || code.toUpperCase());
+    } catch (err: any) {
+      setAppliedVoucher(null);
+      Alert.alert('Không áp dụng được mã', err?.message || 'Mã ưu đãi không hợp lệ hoặc không áp dụng cho đơn này.');
+    } finally {
+      setApplyingVoucher(false);
+    }
+  };
+
+  const clearVoucher = () => {
+    setVoucherCode('');
+    setAppliedVoucher(null);
+  };
 
   // Adjust Cart item quantity
   const updateCartItemQty = (uid: string, delta: number) => {
@@ -328,9 +359,13 @@ export default function StaffPosScreen() {
 
   // Submit POS Order
   const handleCheckout = async () => {
-    const effectiveStoreId = Number(selectedStoreId || user?.branch_id || 1);
     if (cart.length === 0) {
       Alert.alert('Giỏ hàng trống', 'Vui lòng chọn món trước khi tạo đơn.');
+      return;
+    }
+
+    if (!effectiveStoreId) {
+      Alert.alert('Không thể tạo đơn', 'Tài khoản chưa có chi nhánh POS hợp lệ.');
       return;
     }
 
@@ -356,6 +391,7 @@ export default function StaffPosScreen() {
         customer_phone: customerPhone.trim() || '0000000000',
         source: 'pos',
         note: finalNote || undefined,
+        voucher_code: voucherIsCurrent ? appliedVoucher?.code : undefined,
         ...(orderType === 'Takeaway' && packagingOption !== 'none' ? { packaging_option: packagingOption } : {}),
         items: cart.map((item) => ({
           product_id: Number(item.product_id),
@@ -379,6 +415,7 @@ export default function StaffPosScreen() {
       setCashReceived('');
       setCustomTableNumber('');
       setPackagingOption('none');
+      clearVoucher();
       resetCustomerLookup();
 
       if (isVietQr || res?.qr_code) {
@@ -391,7 +428,7 @@ export default function StaffPosScreen() {
       } else {
         Alert.alert(
           'Tạo đơn POS thành công!',
-          `Mã đơn: ${assignedOrderCode}\nPhương thức: Tiền mặt (${totalCartAmount.toLocaleString('vi-VN')} đ)\nĐã gửi trực tiếp tới Bếp KDS.`,
+          `Mã đơn: ${assignedOrderCode}\nPhương thức: Tiền mặt (${payableAmount.toLocaleString('vi-VN')} đ)\nĐã gửi trực tiếp tới Bếp KDS.`,
           [{ text: 'Hoàn tất' }],
         );
       }
@@ -425,6 +462,40 @@ export default function StaffPosScreen() {
     setNewCustomerName('');
   };
 
+  const selectTable = (table: TableData | null) => {
+    setSelectedTableId(table?.id || null);
+    setCustomTableNumber(table?.name || '');
+    if (table) setCustomerName(`Khách ${table.name}`);
+    setIsTablePickerOpen(false);
+  };
+
+  const renderInlineTableSelect = () => {
+    if (!isTablePickerOpen || orderType !== 'DineIn') return null;
+    return (
+      <View style={styles.inlineTableMenu}>
+        <ScrollView nestedScrollEnabled style={styles.inlineTableScroll}>
+          <TouchableOpacity
+            style={[styles.inlineTableOption, !selectedTableId && styles.inlineTableOptionActive]}
+            onPress={() => selectTable(null)}
+          >
+            <Text style={styles.inlineTableOptionText}>Không chọn bàn</Text>
+          </TouchableOpacity>
+          {tables.map((table) => (
+            <TouchableOpacity
+              key={table.id}
+              style={[styles.inlineTableOption, selectedTableId === table.id && styles.inlineTableOptionActive]}
+              onPress={() => selectTable(table)}
+            >
+              <Text style={styles.inlineTableOptionText}>{table.name}</Text>
+              {selectedTableId === table.id ? <Check size={15} color="#ea580c" /> : null}
+            </TouchableOpacity>
+          ))}
+          {tables.length === 0 ? <Text style={styles.inlineTableEmpty}>Chưa có bàn hoạt động ở chi nhánh này.</Text> : null}
+        </ScrollView>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Admin Top Header */}
@@ -449,6 +520,27 @@ export default function StaffPosScreen() {
           ) : null
         }
       />
+
+      {user?.role === 'super' && stores.length > 1 ? (
+        <View style={styles.storeSelectSection}>
+          <Text style={styles.storeSelectLabel}>Chi nhánh POS</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storeSelectScroll}>
+            {stores.map((store) => (
+              <TouchableOpacity
+                key={store.id}
+                style={[styles.storeSelectOption, selectedStoreId === store.id && styles.storeSelectOptionActive]}
+                onPress={() => {
+                  setSelectedStoreId(Number(store.id));
+                  setSelectedTableId(null);
+                  setCustomTableNumber('');
+                }}
+              >
+                <Text style={[styles.storeSelectOptionText, selectedStoreId === store.id && styles.storeSelectOptionTextActive]}>{store.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
 
       {/* Dine-In / Takeaway Toggle & Table Dropdown Select */}
       <View style={styles.topControlRow}>
@@ -483,7 +575,7 @@ export default function StaffPosScreen() {
               styles.tableDropdownTrigger,
               Boolean(selectedTableId || customTableNumber) && styles.tableDropdownTriggerActive,
             ]}
-            onPress={() => setIsTablePickerOpen(true)}
+            onPress={() => setIsTablePickerOpen((open) => !open)}
             activeOpacity={0.7}
           >
             <View style={styles.dropdownLeft}>
@@ -506,6 +598,8 @@ export default function StaffPosScreen() {
           </View>
         )}
       </View>
+
+      {renderInlineTableSelect()}
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -556,6 +650,10 @@ export default function StaffPosScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#f97316" />
           <Text style={styles.loadingText}>Đang tải thực đơn...</Text>
+        </View>
+      ) : masterDataError ? (
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>{masterDataError}</Text>
         </View>
       ) : (
         <ScrollView style={styles.productScroll} contentContainerStyle={styles.productGrid}>
@@ -623,7 +721,7 @@ export default function StaffPosScreen() {
             <View style={styles.floatingBarInfo}>
               <Text style={styles.floatingBarLabel}>Xem hóa đơn tạm tính</Text>
               <Text style={styles.floatingBarTotal}>
-                {totalCartAmount.toLocaleString('vi-VN')} đ
+                {payableAmount.toLocaleString('vi-VN')} đ
               </Text>
             </View>
             <View style={styles.floatingBarAction}>
@@ -634,7 +732,7 @@ export default function StaffPosScreen() {
       )}
 
       {/* Table Dropdown Select Picker Modal */}
-      <Modal visible={isTablePickerOpen} animationType="fade" transparent>
+      <Modal visible={false} animationType="fade" transparent>
         <View style={styles.pickerModalOverlay}>
           <View style={styles.pickerModalCard}>
             {/* Modal Header */}
@@ -1077,7 +1175,7 @@ export default function StaffPosScreen() {
                         styles.tableDrawerDropdown,
                         Boolean(selectedTableId || customTableNumber) && styles.tableDrawerDropdownActive,
                       ]}
-                      onPress={() => setIsTablePickerOpen(true)}
+                      onPress={() => setIsTablePickerOpen((open) => !open)}
                       activeOpacity={0.7}
                     >
                       <View style={styles.dropdownLeft}>
@@ -1094,6 +1192,7 @@ export default function StaffPosScreen() {
                       </View>
                       <ChevronDown size={18} color={selectedTableId || customTableNumber ? '#ea580c' : '#6b7280'} />
                     </TouchableOpacity>
+                    {renderInlineTableSelect()}
                   </View>
                 )}
 
@@ -1237,6 +1336,41 @@ export default function StaffPosScreen() {
                 </View>
               </View>
 
+              <View style={styles.voucherBox}>
+                <Text style={styles.customerInfoTitle}>Ưu đãi / Mã giảm giá</Text>
+                <Text style={styles.voucherHint}>Không bắt buộc. Mã sẽ được máy chủ kiểm tra lại khi tạo đơn.</Text>
+                <View style={styles.voucherInputRow}>
+                  <TextInput
+                    style={styles.voucherInput}
+                    placeholder="Nhập mã ưu đãi"
+                    placeholderTextColor="#94a3b8"
+                    autoCapitalize="characters"
+                    value={voucherCode}
+                    onChangeText={setVoucherCode}
+                    editable={!applyingVoucher}
+                  />
+                  <TouchableOpacity
+                    style={[styles.voucherApplyButton, (!voucherCode.trim() || applyingVoucher) && styles.voucherApplyButtonDisabled]}
+                    onPress={handleApplyVoucher}
+                    disabled={!voucherCode.trim() || applyingVoucher}
+                  >
+                    {applyingVoucher ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.voucherApplyButtonText}>Áp dụng</Text>}
+                  </TouchableOpacity>
+                </View>
+                {appliedVoucher ? (
+                  voucherIsCurrent ? (
+                    <View style={styles.voucherAppliedRow}>
+                      <Text style={styles.voucherAppliedText}>Đã áp dụng {appliedVoucher.code}: -{discountAmount.toLocaleString('vi-VN')} đ</Text>
+                      <TouchableOpacity onPress={clearVoucher}><Text style={styles.voucherRemoveText}>Bỏ mã</Text></TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.voucherStaleRow}>
+                      <Text style={styles.voucherStaleText}>Giỏ hàng, khách hoặc chi nhánh đã đổi. Hãy áp dụng lại mã.</Text>
+                      <TouchableOpacity onPress={() => setAppliedVoucher(null)}><Text style={styles.voucherRemoveText}>Xóa</Text></TouchableOpacity>
+                    </View>
+                  )
+                ) : null}
+              </View>
 
               {/* Payment Method Selector */}
               <View style={styles.paymentMethodSection}>
@@ -1290,21 +1424,21 @@ export default function StaffPosScreen() {
                     <TouchableOpacity
                       style={[
                         styles.quickCashChip,
-                        cashReceivedNum === totalCartAmount && styles.quickCashChipActive,
+                        cashReceivedNum === payableAmount && styles.quickCashChipActive,
                       ]}
-                      onPress={() => setCashReceived(String(totalCartAmount))}
+                      onPress={() => setCashReceived(String(payableAmount))}
                     >
                       <Text
                         style={[
                           styles.quickCashText,
-                          cashReceivedNum === totalCartAmount && styles.quickCashTextActive,
+                          cashReceivedNum === payableAmount && styles.quickCashTextActive,
                         ]}
                       >
-                        Đủ tiền ({totalCartAmount.toLocaleString('vi-VN')} đ)
+                        Đủ tiền ({payableAmount.toLocaleString('vi-VN')} đ)
                       </Text>
                     </TouchableOpacity>
                     {[50000, 100000, 200000, 500000]
-                      .filter((val) => val >= totalCartAmount || val === 500000)
+                      .filter((val) => val >= payableAmount || val === 500000)
                       .slice(0, 3)
                       .map((amt) => (
                         <TouchableOpacity
@@ -1332,7 +1466,7 @@ export default function StaffPosScreen() {
                     <Text style={styles.cashInputLabel}>Khách đưa:</Text>
                     <TextInput
                       style={styles.cashInput}
-                      placeholder={totalCartAmount > 0 ? `${totalCartAmount.toLocaleString('vi-VN')}` : '0'}
+                      placeholder={payableAmount > 0 ? `${payableAmount.toLocaleString('vi-VN')}` : '0'}
                       placeholderTextColor="#94a3b8"
                       keyboardType="numeric"
                       value={cashReceived}
@@ -1347,16 +1481,16 @@ export default function StaffPosScreen() {
                     <Text
                       style={[
                         styles.changeDueValue,
-                        cashReceivedNum >= totalCartAmount && cashReceivedNum > 0
+                        cashReceivedNum >= payableAmount && cashReceivedNum > 0
                           ? styles.changeDueSuccess
                           : styles.changeDueNotice,
                       ]}
                     >
                       {cashReceivedNum === 0
                         ? '0 đ (Chờ nhận tiền)'
-                        : cashReceivedNum >= totalCartAmount
+                        : cashReceivedNum >= payableAmount
                         ? `${changeDue.toLocaleString('vi-VN')} đ`
-                        : `Còn thiếu ${(totalCartAmount - cashReceivedNum).toLocaleString('vi-VN')} đ`}
+                        : `Còn thiếu ${(payableAmount - cashReceivedNum).toLocaleString('vi-VN')} đ`}
                     </Text>
                   </View>
                 </View>
@@ -1385,7 +1519,7 @@ export default function StaffPosScreen() {
                     <View style={styles.vietQrRow}>
                       <Text style={styles.vietQrLabel}>Số tiền tự động:</Text>
                       <Text style={[styles.vietQrValBold, { color: '#ea580c' }]}>
-                        {totalCartAmount.toLocaleString('vi-VN')} đ
+                        {payableAmount.toLocaleString('vi-VN')} đ
                       </Text>
                     </View>
                   </View>
@@ -1460,7 +1594,7 @@ export default function StaffPosScreen() {
                 </View>
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>Ưu đãi / Giảm giá:</Text>
-                  <Text style={[styles.breakdownVal, { color: '#16a34a' }]}>- 0 đ</Text>
+                  <Text style={[styles.breakdownVal, { color: '#16a34a' }]}>- {discountAmount.toLocaleString('vi-VN')} đ</Text>
                 </View>
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>Thuế VAT & Phí dịch vụ:</Text>
@@ -1491,7 +1625,7 @@ export default function StaffPosScreen() {
               <View style={styles.cartSummaryRow}>
                 <Text style={styles.cartSummaryLabel}>Tổng cộng thanh toán:</Text>
                 <Text style={styles.cartSummaryValue}>
-                  {totalCartAmount.toLocaleString('vi-VN')} đ
+                  {payableAmount.toLocaleString('vi-VN')} đ
                 </Text>
               </View>
               <TouchableOpacity
@@ -1549,6 +1683,81 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f9fafb',
   },
+  inlineTableMenu: {
+    marginHorizontal: 16,
+    marginTop: -2,
+    marginBottom: 8,
+    maxHeight: 210,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  inlineTableScroll: { maxHeight: 210 },
+  inlineTableOption: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inlineTableOptionActive: { backgroundColor: '#fff7ed' },
+  inlineTableOptionText: { color: '#334155', fontSize: 13, fontWeight: '600' },
+  inlineTableEmpty: { padding: 14, color: '#64748b', fontSize: 13 },
+  voucherBox: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  voucherHint: { color: '#64748b', fontSize: 11, marginTop: -5, marginBottom: 9 },
+  voucherInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  voucherInput: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    color: '#0f172a',
+    fontSize: 13,
+  },
+  voucherApplyButton: {
+    backgroundColor: '#ea580c', minWidth: 82, minHeight: 38, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10,
+  },
+  voucherApplyButtonDisabled: { backgroundColor: '#cbd5e1' },
+  voucherApplyButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  voucherAppliedRow: {
+    marginTop: 9, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+  },
+  voucherAppliedText: { flex: 1, color: '#15803d', fontSize: 12, fontWeight: '700' },
+  voucherStaleRow: { marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  voucherStaleText: { flex: 1, color: '#b45309', fontSize: 12 },
+  voucherRemoveText: { color: '#dc2626', fontSize: 12, fontWeight: '700' },
+  storeSelectSection: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingTop: 9,
+    paddingBottom: 10,
+  },
+  storeSelectLabel: { color: '#475569', fontSize: 12, fontWeight: '700', paddingHorizontal: 16, marginBottom: 7 },
+  storeSelectScroll: { paddingHorizontal: 16, gap: 8 },
+  storeSelectOption: {
+    maxWidth: 210, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#ffffff',
+  },
+  storeSelectOptionActive: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
+  storeSelectOptionText: { color: '#475569', fontSize: 12, fontWeight: '600' },
+  storeSelectOptionTextActive: { color: '#c2410c', fontWeight: '700' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

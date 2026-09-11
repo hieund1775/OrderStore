@@ -7,7 +7,8 @@
  * - Thẻ đơn hàng hiện đại, thông tin rõ ràng, tiền tệ VND
  * - Xem chi tiết & thao tác chuyển trạng thái / Gán Shipper / Xác nhận thanh toán
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -60,79 +61,6 @@ function isStatusMatching(orderStatus: string | undefined, tabKey: string): bool
   return tab.match.some((m) => m.toLowerCase() === normalized);
 }
 
-const DEFAULT_ORDERS = [
-  {
-    id: 201,
-    order_code: 'TP-8921',
-    order_type: 'Takeaway',
-    customer_name: 'Nguyễn Văn Nam',
-    customer_phone: '0901234567',
-    current_status: 'Đang chuẩn bị',
-    status: 'preparing',
-    payment_status: 'paid',
-    payment_method: 'VietQR',
-    total_amount: 98000,
-    created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-    items: [
-      { product_name: 'Trà Đào Cam Sả', quantity: 2, size_label: 'Size L', item_total: 90000 },
-      { product_name: 'Trân châu trắng', quantity: 1, item_total: 8000 },
-    ],
-  },
-  {
-    id: 202,
-    order_code: 'TP-8919',
-    order_type: 'Delivery',
-    customer_name: 'Trần Thị Mai',
-    customer_phone: '0912345678',
-    current_status: 'Đang giao',
-    status: 'delivering',
-    payment_status: 'unpaid',
-    payment_method: 'COD',
-    shipping_address: '45 Lê Duẩn, Bến Nghé, Quận 1',
-    shipping_driver_name: 'Nguyễn Văn Giao (AhaMove)',
-    shipping_driver_phone: '0988776655',
-    total_amount: 113000,
-    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    items: [
-      { product_name: 'Trà Sữa Ô Long Nướng', quantity: 2, size_label: 'Size M', item_total: 98000 },
-      { product_name: 'Kem Cheese', quantity: 1, item_total: 15000 },
-    ],
-  },
-  {
-    id: 203,
-    order_code: 'TP-8910',
-    order_type: 'DineIn',
-    customer_name: 'Bàn 02 - Khách lẻ',
-    customer_phone: '0933221100',
-    current_status: 'Hoàn thành',
-    status: 'completed',
-    payment_status: 'paid',
-    payment_method: 'Tiền mặt (POS)',
-    total_amount: 45000,
-    created_at: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
-    items: [
-      { product_name: 'Trà Lài Hoàng Kim', quantity: 1, size_label: 'Size M', item_total: 45000 },
-    ],
-  },
-  {
-    id: 204,
-    order_code: 'TP-8890',
-    order_type: 'Takeaway',
-    customer_name: 'Lê Hoàng Long',
-    customer_phone: '0977665544',
-    current_status: 'Đã hủy',
-    status: 'cancelled',
-    payment_status: 'unpaid',
-    payment_method: 'COD',
-    cancel_reason: 'Khách đổi ý hủy đơn',
-    total_amount: 52000,
-    created_at: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
-    items: [
-      { product_name: 'Trà Xoài Chanh Dây', quantity: 1, size_label: 'Size L', item_total: 52000 },
-    ],
-  },
-];
-
 export default function StaffOrdersScreen() {
   const user = useAuthStore((state) => state.user);
   const [orders, setOrders] = useState<any[]>([]);
@@ -140,6 +68,7 @@ export default function StaffOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Order Detail Modal
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -151,28 +80,26 @@ export default function StaffOrdersScreen() {
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       const data = await fetchAdminOrders({
         search: searchQuery.trim() || undefined,
         store_id: user?.branch_id || null,
       });
-      if (Array.isArray(data) && data.length > 0) {
-        setOrders(data);
-      } else {
-        setOrders(DEFAULT_ORDERS);
-      }
-    } catch {
-      setOrders((prev) => (prev.length > 0 ? prev : DEFAULT_ORDERS));
+      setOrders(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (error: any) {
+      setOrders([]);
+      setLoadError(error?.message || 'Không thể tải đơn hàng. Vui lòng thử lại.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [searchQuery, user?.branch_id]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     loadOrders();
-  }, []);
+  }, [loadOrders]));
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -365,8 +292,9 @@ export default function StaffOrdersScreen() {
           </View>
           <Text style={styles.emptyTitle}>Không tìm thấy đơn hàng nào</Text>
           <Text style={styles.emptySubtitle}>
-            Thử thay đổi bộ lọc trạng thái hoặc từ khóa tìm kiếm.
+            {loadError || 'Thử thay đổi bộ lọc trạng thái hoặc từ khóa tìm kiếm.'}
           </Text>
+          {loadError ? <TouchableOpacity onPress={onRefresh}><Text style={styles.retryText}>Thử tải lại</Text></TouchableOpacity> : null}
         </View>
       ) : (
         <ScrollView
@@ -730,6 +658,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     textAlign: 'center',
+  },
+  retryText: {
+    marginTop: 12,
+    color: '#ea580c',
+    fontSize: 13,
+    fontWeight: '700',
   },
   scroll: {
     flex: 1,
