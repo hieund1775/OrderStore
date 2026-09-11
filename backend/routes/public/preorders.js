@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
+import { isValidDateString } from '../../services/business-time.js';
 import preorderService from '../../services/preorders/preorder-service.js';
 
 const router = Router();
@@ -16,12 +17,47 @@ function sendError(res, error) {
   return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
 }
 
-router.get('/availability', asyncHandler(async (req, res) => {
-  try {
-    const result = await preorderService.availability({ storeId: req.query.store_id, date: req.query.date });
-    res.json(result);
-  } catch (error) { sendError(res, error); }
-}));
+function invalidQuery(field, code) {
+  const error = new Error(`${field} khÃ´ng há»£p lá»‡`);
+  error.status = 400;
+  error.code = code;
+  return error;
+}
+
+export function validateAvailabilityQuery(query = {}) {
+  const rawStoreId = typeof query.store_id === 'string' ? query.store_id.trim() : '';
+  if (!/^[1-9]\d*$/.test(rawStoreId)) {
+    throw invalidQuery('store_id', 'PREORDER_STORE_ID_INVALID');
+  }
+  const storeId = Number(rawStoreId);
+  if (!Number.isSafeInteger(storeId)) {
+    throw invalidQuery('store_id', 'PREORDER_STORE_ID_INVALID');
+  }
+
+  const date = typeof query.date === 'string' ? query.date.trim() : '';
+  if (!isValidDateString(date)) {
+    throw invalidQuery('date', 'PREORDER_DATE_INVALID');
+  }
+  return { storeId, date };
+}
+
+function mountAvailabilityRoute(targetRouter, service) {
+  targetRouter.get('/availability', asyncHandler(async (req, res) => {
+    try {
+      const { storeId, date } = validateAvailabilityQuery(req.query);
+      const result = await service.availability({ storeId, date });
+      res.json(result);
+    } catch (error) { sendError(res, error); }
+  }));
+}
+
+export function createPublicPreordersAvailabilityRouter({ service } = {}) {
+  const availabilityRouter = Router();
+  mountAvailabilityRoute(availabilityRouter, service || preorderService);
+  return availabilityRouter;
+}
+
+mountAvailabilityRoute(router, preorderService);
 
 router.get('/tables', asyncHandler(async (req, res) => {
   try {
