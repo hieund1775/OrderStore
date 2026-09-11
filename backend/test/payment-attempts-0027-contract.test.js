@@ -25,8 +25,10 @@ describe('P1 phase 0027 enforcement migration contract', () => {
 
   it('has a stable migration-runner checksum across Windows and Unix line endings', async () => {
     const migration = await readFile(migrationPath, 'utf8');
-    const checksum = calculateChecksum(migration);
+    const unixLineEndings = migration.replace(/\r\n/g, '\n');
+    const windowsLineEndings = unixLineEndings.replace(/\n/g, '\r\n');
+    const checksum = calculateChecksum(unixLineEndings);
     assert.match(checksum, /^[a-f0-9]{64}$/);
-    assert.equal(checksum, calculateChecksum(migration.replace(/\n/g, '\r\n')));
+    assert.equal(checksum, calculateChecksum(windowsLineEndings));
   });
 });
