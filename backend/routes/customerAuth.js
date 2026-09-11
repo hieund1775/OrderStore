@@ -68,8 +68,16 @@ router.post('/login', async (req, res, next) => {
     const user = await usersRepository.findActiveUserByPhone(cleanPhone);
     const matches = user?.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
     if (!matches) return res.status(401).json({ error: 'Số điện thoại hoặc mật khẩu không đúng' });
-    const token = user.is_admin ? signToken(user) : signCustomerToken(user);
-    res.json({ token, user: customerPayload(user) });
+    const isStaff = Boolean(user.is_admin);
+    const token = isStaff ? signToken(user) : signCustomerToken(user);
+    // This endpoint is shared by the web customer dialog and staff phone login.
+    // The server, not client role inference, determines which session surface
+    // receives the token.
+    res.json({
+      token,
+      user: customerPayload(user),
+      login_destination: isStaff ? 'admin' : 'customer',
+    });
   } catch (err) {
     next(err);
   }

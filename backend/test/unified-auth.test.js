@@ -14,9 +14,32 @@ describe('Unified Customer & Admin Auth Suite', () => {
 
   before(async () => {
     const passwordHash = await bcrypt.hash('admin123', 10);
+    const operationalStaff = new Map([
+      ['0909000002', { id: 3, role: 'manager', branchId: 1 }],
+      ['0909000003', { id: 4, role: 'cashier', branchId: 1 }],
+      ['0909000004', { id: 5, role: 'kitchen', branchId: 1 }],
+      ['0909000005', { id: 6, role: 'packing', branchId: 1 }],
+    ]);
     originalFindActiveUserByPhone = usersRepository.findActiveUserByPhone;
 
     usersRepository.findActiveUserByPhone = async (phone) => {
+      const staff = operationalStaff.get(phone);
+      if (staff) {
+        return {
+          id: staff.id,
+          fullname: `Staff ${staff.role}`,
+          phone,
+          email: `${staff.role}@teaplus.vn`,
+          password_hash: passwordHash,
+          tier: 'Đồng',
+          points: 0,
+          is_admin: true,
+          admin_role: staff.role,
+          admin_branch_id: staff.branchId,
+          is_active: true,
+          token_version: 0,
+        };
+      }
       if (phone === '0909000001') {
         return {
           id: 1,
@@ -74,6 +97,7 @@ describe('Unified Customer & Admin Auth Suite', () => {
     assert.equal(body.user.is_admin, true);
     assert.equal(body.user.admin_role, 'super');
     assert.equal(body.user.fullname, 'Super Admin');
+    assert.equal(body.login_destination, 'admin');
 
     const decoded = jwt.verify(body.token, JWT_SECRET);
     assert.equal(decoded.sub, 1);
@@ -91,10 +115,31 @@ describe('Unified Customer & Admin Auth Suite', () => {
     const body = await res.json();
     assert.equal(body.user.is_admin, false);
     assert.equal(body.user.fullname, 'Khách Hàng Thân Thiết');
+    assert.equal(body.login_destination, 'customer');
 
     const decoded = jwt.verify(body.token, JWT_SECRET);
     assert.equal(decoded.sub, 2);
     assert.equal(decoded.role, 'customer');
+  });
+
+  it('directs every operational staff role to the admin surface', async () => {
+    for (const [phone, role] of [
+      ['0909000002', 'manager'],
+      ['0909000003', 'cashier'],
+      ['0909000004', 'kitchen'],
+      ['0909000005', 'packing'],
+    ]) {
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password: 'admin123' }),
+      });
+
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.login_destination, 'admin');
+      assert.equal(jwt.verify(body.token, JWT_SECRET).role, role);
+    }
   });
 
   it('rejects wrong password with 401', async () => {

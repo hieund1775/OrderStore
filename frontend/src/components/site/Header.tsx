@@ -50,12 +50,16 @@ import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/li
 import { toast } from 'sonner';
 import {
   apiPost,
+  clearToken,
   getCustomerToken,
   getCustomerUser,
+  setToken,
+  setUser,
   setCustomerToken,
   setCustomerUser,
   clearCustomerToken,
 } from '@/lib/api';
+import { resolveLoginDestination } from '@/lib/auth-login-destination';
 import { brand, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import { CategoryMenu, MobileCategoryMenu } from '@/components/navigation';
@@ -353,6 +357,7 @@ function NotificationButton() {
 const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.googleusercontent.com';
 
 function ProfileButton() {
+  const navigate = useNavigate();
   // Keep the first render identical between SSR and the browser. Reading
   // localStorage in a state initializer makes Render hydration disagree with
   // the server whenever a user already has a session.
@@ -459,11 +464,35 @@ function ProfileButton() {
       const data = await apiPost<{
         token: string;
         user: { id: number; fullname: string; phone: string; tier: string; points: number; is_admin?: boolean; admin_role?: string; admin_branch_id?: number | null };
+        login_destination?: 'admin' | 'customer';
       }>(authMode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         phone,
         ...(authMode === 'register' ? { fullname: cleanName } : {}),
         password,
       });
+
+      if (resolveLoginDestination(data) === 'admin') {
+        // Staff must never establish a customer web session. Preserve only the
+        // canonical admin token/claims needed by the protected admin router.
+        clearCustomerToken();
+        setToken(data.token);
+        setUser({
+          id: data.user.id,
+          fullname: data.user.fullname,
+          phone: data.user.phone,
+          role: data.user.admin_role || 'super',
+          branch_id: data.user.admin_branch_id ?? null,
+        });
+        setLoggedIn(false);
+        setOpen(false);
+        toast.success('Đăng nhập nhân sự thành công');
+        void navigate({ to: '/admin/' });
+        return;
+      }
+
+      // A customer login must not inherit an older staff session in the same
+      // browser profile.
+      clearToken();
       setUserName(data.user.fullname);
       setUserTier(data.user.tier);
       setCustomerToken(data.token);
