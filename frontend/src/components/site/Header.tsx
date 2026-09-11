@@ -772,6 +772,13 @@ export function Header() {
           >
             Tuyển dụng
           </Link>
+          <Link
+            to="/dat-truoc"
+            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+            activeProps={{ className: 'bg-accent text-accent-foreground' }}
+          >
+            Đặt trước
+          </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">

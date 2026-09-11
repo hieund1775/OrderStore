@@ -122,6 +122,36 @@ export async function updateStaffStatus(id: number, isActive: boolean) {
   return data;
 }
 
+// ───────── PREORDER OPERATIONS ─────────
+export async function fetchOperationalPreorders(params?: { view?: 'pending' | 'today' | 'upcoming'; store_id?: number | null }) {
+  const query = new URLSearchParams();
+  if (params?.view) query.set('view', params.view);
+  if (params?.store_id) query.set('store_id', String(params.store_id));
+  const { data } = await apiClient.get(`/admin/preorders${query.size ? `?${query}` : ''}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchKitchenPreorders(storeId?: number | null) {
+  const query = storeId ? `?store_id=${storeId}` : '';
+  const { data } = await apiClient.get(`/admin/preorders/kitchen/confirmed${query}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function confirmPreorder(id: number) {
+  const { data } = await apiClient.post(`/admin/preorders/${id}/confirm`, {});
+  return data;
+}
+
+export async function checkInPreorder(id: number) {
+  const { data } = await apiClient.post(`/admin/preorders/${id}/check-in`, {});
+  return data;
+}
+
+export async function reschedulePreorder(id: number, payload: { scheduled_date: string; scheduled_hour: number; reason: string; table_id?: number | null }) {
+  const { data } = await apiClient.post(`/admin/preorders/${id}/reschedule`, payload);
+  return data;
+}
+
 /** Fetch branches list */
 export async function fetchBranches() {
   try {

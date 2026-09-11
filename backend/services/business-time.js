@@ -227,3 +227,53 @@ export function getTodayBoundaries(instant = new Date()) {
   const todayStr = formatVietnamBusinessDate(instant);
   return parseVietnamSingleDateBoundary(todayStr);
 }
+
+/**
+ * Builds a one-hour preorder slot from a Vietnam calendar date and hour.
+ * This deliberately derives the instant from the IANA-aware Vietnam midnight
+ * helper above; callers must not add a manual UTC+7 offset.
+ */
+export function buildVietnamPreorderSlot(dateStr, hour) {
+  if (!isValidDateString(dateStr)) {
+    const error = new Error('NgÃ y nháº­n Ä‘Æ¡n trÆ°á»›c khÃ´ng há»£p lá»‡');
+    error.status = 400;
+    error.code = 'PREORDER_DATE_INVALID';
+    throw error;
+  }
+  const normalizedHour = Number(hour);
+  if (!Number.isInteger(normalizedHour) || normalizedHour < 9 || normalizedHour > 22) {
+    const error = new Error('Khung giá» Ä‘áº·t trÆ°á»›c chá»‰ tá»« 09:00 Ä‘áº¿n 23:00');
+    error.status = 400;
+    error.code = 'PREORDER_SLOT_HOUR_INVALID';
+    throw error;
+  }
+  const boundary = parseVietnamSingleDateBoundary(dateStr);
+  const start = new Date(boundary.startDate.getTime() + (normalizedHour * 60 * 60 * 1000));
+  const end = new Date(start.getTime() + (60 * 60 * 1000));
+  return { start, end, date: dateStr.trim(), hour: normalizedHour };
+}
+
+/** Validates the locked preorder lead/horizon rules against a real instant. */
+export function validateVietnamPreorderSlot({ date, hour, now = new Date() } = {}) {
+  const slot = buildVietnamPreorderSlot(date, hour);
+  const nowDate = coerceDate(now);
+  if (!nowDate) throw new TypeError('Invalid now instant for preorder validation');
+  const leadMs = slot.start.getTime() - nowDate.getTime();
+  if (leadMs < 3 * 60 * 60 * 1000) {
+    const error = new Error('Thá»i gian Ä‘áº·t trÆ°á»›c cÃ²n dÆ°á»›i 3 giá», vui lÃ²ng sá»­ dá»¥ng Ä‘áº·t Ä‘Æ¡n thÃ´ng thÆ°á»ng');
+    error.status = 422;
+    error.code = 'PREORDER_MIN_LEAD_TIME';
+    throw error;
+  }
+  const nowDateKey = formatVietnamBusinessDate(nowDate);
+  const nowBoundary = parseVietnamSingleDateBoundary(nowDateKey).startDate;
+  const slotBoundary = parseVietnamSingleDateBoundary(slot.date).startDate;
+  const calendarDays = Math.round((slotBoundary.getTime() - nowBoundary.getTime()) / (24 * 60 * 60 * 1000));
+  if (calendarDays < 0 || calendarDays > 7) {
+    const error = new Error('Chá»‰ nháº­n Ä‘áº·t trÆ°á»›c trong vÃ²ng 7 ngÃ y');
+    error.status = 422;
+    error.code = 'PREORDER_MAX_HORIZON';
+    throw error;
+  }
+  return { ...slot, calendarDays };
+}
