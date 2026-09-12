@@ -29,6 +29,15 @@ function assertTransition(from, to) {
   }
 }
 
+function tagCheckoutError(error, stage) {
+  // Diagnostic-only metadata used by the preorder route. Preserve the original
+  // error instance, status, and payment behavior.
+  if (error && typeof error === 'object' && !error.preorderCheckoutStage) {
+    try { error.preorderCheckoutStage = stage; } catch { /* frozen error: route uses generic stage */ }
+  }
+  return error;
+}
+
 function preorderCode() {
   return `PO${Date.now().toString().slice(-8)}${crypto.randomInt(1000, 10000)}`;
 }
@@ -216,7 +225,9 @@ export function createPreorderService({
         // The unique customer/idempotency key is the race-safe boundary. A
         // concurrent request must recover canonical checkout rather than
         // create another preorder, reservation, QR, or payment attempt.
-        if (error?.code !== '23505' || error?.constraint !== 'uq_preorders_customer_checkout_idempotency') throw error;
+        if (error?.code !== '23505' || error?.constraint !== 'uq_preorders_customer_checkout_idempotency') {
+          throw tagCheckoutError(error, 'PREORDER_CREATE');
+        }
         preorder = await repository.findByCustomerIdempotency({ customerUserId, idempotencyKey });
         if (!preorder) throw new PreorderError('Cannot recover creating preorder', 409, 'PREORDER_IDEMPOTENCY_RECOVERY_FAILED');
         const checkout = await (await getOrderService()).create({
@@ -265,7 +276,10 @@ export function createPreorderService({
             await repository.transition(preorder.id, { from: 'AWAITING_PAYMENT', to: 'PAYMENT_EXPIRED', fields: { payment_expired_at: now() } }, { tx });
           });
         }
-        throw error;
+        throw tagCheckoutError(
+          error,
+          error?.code === 'PREORDER_GROUP_LINK_FAILED' ? 'PREORDER_GROUP_LINK' : 'P1_CHECKOUT',
+        );
       }
     },
 
