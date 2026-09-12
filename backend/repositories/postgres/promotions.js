@@ -53,9 +53,16 @@ async function findEligiblePromotion({ code, subtotal, phone, storeId, businessD
   if (promotion && checkoutChannel === 'preorder' && promotion.applies_to_preorder !== true) {
     throw new PromotionError('MÃ£ giáº£m giÃ¡ nÃ y khÃ´ng Ã¡p dá»¥ng cho Ä‘Æ¡n Ä‘áº·t trÆ°á»›c');
   }
+  if (promotion && checkoutChannel === 'table_qr' && promotion.applies_to_table_qr !== true) {
+    throw new PromotionError('Mã giảm giá này không áp dụng cho đơn đặt tại bàn');
+  }
   if (!promotion) throw new PromotionError('Mã giảm giá không tồn tại, đã hết hạn hoặc không áp dụng cho chi nhánh này');
   if (Number(promotion.min_order || 0) > Number(subtotal)) throw new PromotionError('Đơn hàng chưa đạt giá trị tối thiểu');
   if (promotion.voucher_type === 'single_use' && !normalizedPhone) throw new PromotionError('Cần số điện thoại để dùng mã giảm giá này');
+
+  if (promotion.voucher_type === 'single_use' && checkoutChannel === 'table_qr') {
+    throw new PromotionError('Mã giảm giá dùng một lần không áp dụng cho đơn đặt tại bàn');
+  }
 
   if (promotion.voucher_type === 'single_use') {
     const [used] = await tx.query(
@@ -84,9 +91,9 @@ export function createPromotionsRepository(database = postgresDb, { clock = () =
       return rows;
     },
 
-    async preview({ code, subtotal, phone, storeId }) {
+    async preview({ code, subtotal, phone, storeId, checkoutChannel = 'normal' }) {
       const businessDate = formatVietnamBusinessDate(clock());
-      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx: database });
+      return findEligiblePromotion({ code, subtotal, phone, storeId, businessDate, tx: database, checkoutChannel });
     },
 
     async validateForOrder({ code, subtotal, phone, storeId, tx, checkoutChannel = 'normal' }) {

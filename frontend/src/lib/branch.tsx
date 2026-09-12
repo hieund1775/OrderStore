@@ -11,6 +11,7 @@ import { apiGet } from './api';
 
 export const STORE_STORAGE_KEY = 'teaplus_store_id';
 export const TABLE_STORAGE_KEY = 'teaplus_table_id';
+export const TABLE_TOKEN_STORAGE_KEY = 'teaplus_table_checkout_token';
 
 export type PublicStore = {
   id: number;
@@ -28,9 +29,10 @@ type BranchContextValue = {
   selectedStoreId: number | null;
   selectedStore: PublicStore | null;
   activeTableId: string | null;
+  activeTableToken: string | null;
   status: BranchStatus;
   selectStore: (storeId: number | string) => boolean;
-  bindTable: (tableId: number | string, storeId: number | string) => boolean;
+  bindTable: (tableId: number | string, storeId: number | string, tableToken?: string | null) => boolean;
   clearTable: () => void;
 };
 
@@ -53,6 +55,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   const [stores, setStores] = useState<PublicStore[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
+  const [activeTableToken, setActiveTableToken] = useState<string | null>(null);
   const [status, setStatus] = useState<BranchStatus>('loading');
 
   useEffect(() => {
@@ -60,6 +63,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       const savedStoreId = Number(sessionStorage.getItem(STORE_STORAGE_KEY));
       if (Number.isInteger(savedStoreId) && savedStoreId > 0) setSelectedStoreId(savedStoreId);
       setActiveTableId(sessionStorage.getItem(TABLE_STORAGE_KEY));
+      setActiveTableToken(sessionStorage.getItem(TABLE_TOKEN_STORAGE_KEY));
     } catch {
       // Browser storage may be unavailable; API data still remains usable in memory.
     }
@@ -109,8 +113,10 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
   const clearTable = useCallback(() => {
     setActiveTableId(null);
+    setActiveTableToken(null);
     try {
       sessionStorage.removeItem(TABLE_STORAGE_KEY);
+      sessionStorage.removeItem(TABLE_TOKEN_STORAGE_KEY);
     } catch {
       // Keep the in-memory state authoritative for this session.
     }
@@ -133,16 +139,19 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   );
 
   const bindTable = useCallback(
-    (tableId: number | string, storeId: number | string) => {
+    (tableId: number | string, storeId: number | string, tableToken: string | null = null) => {
       const normalizedTableId = String(tableId);
       const parsedStoreId = Number(storeId);
       if (!normalizedTableId || !Number.isInteger(parsedStoreId) || parsedStoreId <= 0) return false;
       if (status === 'ready' && !stores.some((store) => store.id === parsedStoreId)) return false;
 
       setActiveTableId(normalizedTableId);
+      setActiveTableToken(tableToken || null);
       setSelectedStoreId(parsedStoreId);
       try {
         sessionStorage.setItem(TABLE_STORAGE_KEY, normalizedTableId);
+        if (tableToken) sessionStorage.setItem(TABLE_TOKEN_STORAGE_KEY, tableToken);
+        else sessionStorage.removeItem(TABLE_TOKEN_STORAGE_KEY);
         sessionStorage.setItem(STORE_STORAGE_KEY, String(parsedStoreId));
       } catch {
         // The resolved table remains active in memory.
@@ -163,12 +172,13 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       selectedStoreId,
       selectedStore,
       activeTableId,
+      activeTableToken,
       status,
       selectStore,
       bindTable,
       clearTable,
     }),
-    [activeTableId, bindTable, clearTable, selectStore, selectedStore, selectedStoreId, status, stores],
+    [activeTableId, activeTableToken, bindTable, clearTable, selectStore, selectedStore, selectedStoreId, status, stores],
   );
 
   return <BranchContext.Provider value={value}>{children}</BranchContext.Provider>;

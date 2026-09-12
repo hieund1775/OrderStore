@@ -81,10 +81,22 @@ tablesRouter.post('/', requireRole('super', 'manager'), asyncHandler(async (req,
     const targetStoreId = resolveStoreScope(req.user, validated.store_id);
     const created = await adminStoreService.createTable({ store_id: targetStoreId, name: validated.name }, { scopedStoreId: targetStoreId });
     await logAudit(req.user.sub, 'Tạo vị trí bàn', `${validated.name} (store ${targetStoreId})`, req);
-    res.status(201).json(toTableDto(created));
+    res.status(201).json({ ...toTableDto(created.table), qr_checkout_token: created.qrToken });
   } catch (err) {
     const status = err.status || 400;
     res.status(status).json({ error: err.message });
+  }
+}));
+
+tablesRouter.post('/:id/rotate-qr', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    const id = validateTableId(req.params.id);
+    const scopedStoreId = resolveStoreScope(req.user);
+    const rotated = await adminStoreService.rotateTableCheckoutToken(id, { scopedStoreId });
+    await logAudit(req.user.sub, `Rotate table checkout QR #${id}`, '', req);
+    res.json({ ...toTableDto(rotated.table), qr_checkout_token: rotated.qrToken });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
   }
 }));
 

@@ -8,7 +8,7 @@ import { mapApiProduct } from '@/lib/data';
 
 interface CatalogSectionProps {
   section: PublicCatalogSection;
-  searchParams: { store_id?: string; table_id?: string };
+  searchParams: { store_id?: string; table_id?: string; table_token?: string };
 }
 
 export function CatalogSection({ section, searchParams }: CatalogSectionProps) {

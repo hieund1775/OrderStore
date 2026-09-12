@@ -26,6 +26,9 @@ function normalizeRows(rows) {
 
 function idempotencyScope(userId, input) {
   if (userId) return `online-order:user:${userId}`;
+  if (input.source === 'table_qr' && input.table_qr_token_hash) {
+    return `table-qr-order:${input.table_qr_token_hash}`;
+  }
   const guestFingerprint = crypto.createHash('sha256').update(String(input.customer_phone || '')).digest('hex');
   return `online-order:guest:${guestFingerprint}`;
 }
@@ -62,15 +65,28 @@ export function createOrdersRepository(
         });
         if (idempotency.replay) return { replay: true, ...idempotency.response };
 
-        const [stores] = await tx.query('SELECT id FROM stores WHERE id = $1 AND is_active = TRUE', [input.store_id]);
+        const [stores] = await tx.query(
+          input.source === 'table_qr'
+            ? 'SELECT id FROM stores WHERE id = $1 AND is_active = TRUE FOR KEY SHARE'
+            : 'SELECT id FROM stores WHERE id = $1 AND is_active = TRUE',
+          [input.store_id],
+        );
         if (!stores[0]) throw new OrderError('Chi nhánh không tồn tại hoặc đã ngừng hoạt động');
 
         let locationName = null;
         if (input.table_id) {
-          const [tables] = await tx.query(
-            'SELECT name FROM tables WHERE id = $1 AND store_id = $2 AND is_active = TRUE',
-            [input.table_id, input.store_id],
-          );
+          const tableSql = input.source === 'table_qr'
+            ? `SELECT name FROM tables
+               WHERE id = $1
+                 AND store_id = $2
+                 AND qr_checkout_token_hash = $3
+                 AND is_active = TRUE
+               FOR KEY SHARE`
+            : 'SELECT name FROM tables WHERE id = $1 AND store_id = $2 AND is_active = TRUE';
+          const tableParams = input.source === 'table_qr'
+            ? [input.table_id, input.store_id, input.table_qr_token_hash]
+            : [input.table_id, input.store_id];
+          const [tables] = await tx.query(tableSql, tableParams);
           if (!tables[0]) throw new OrderError('Bàn không thuộc chi nhánh đã chọn hoặc đã ngừng hoạt động');
           locationName = tables[0].name;
         }

@@ -19,6 +19,8 @@ import {
   allocateVoucherDiscount,
 } from '../payment-profiles/payment-profile-resolver.js';
 import config from '../../config/env.js';
+import defaultStoresRepository from '../../repositories/postgres/stores.js';
+import { hashTableQrToken, TableQrTokenError } from '../table-qr-token.js';
 
 let customResolvePaymentProfileForTest = null;
 export function setResolvePaymentProfileForTest(resolver = null) {
@@ -173,6 +175,7 @@ export function createCustomerOrderService({
   checkoutGroupsRepo = defaultCheckoutGroupsRepository,
   resolvePaymentProfile = defaultResolvePaymentProfile,
   promotionsRepo = defaultPromotionsRepository,
+  storesRepository = defaultStoresRepository,
   database = defaultPostgresDb,
 } = {}) {
   return {
@@ -186,12 +189,43 @@ export function createCustomerOrderService({
       const normalizedOrderType = input.order_type || 'Take-away';
       const normalizedPaymentMethod = input.payment_method || 'VietQR';
       const isPosOrder = normalizedOrderType === 'POS' || normalizedSource === 'pos';
+      const isTableQrOrder = normalizedSource === 'table_qr';
+      const isPayOSCheckout = (normalizedSource === 'online' || isTableQrOrder) && normalizedPaymentMethod === 'VietQR';
+
+      if (isTableQrOrder) {
+        if (userId || normalizedOrderType !== 'Dine-in' || normalizedPaymentMethod !== 'VietQR' || input.delivery_addr) {
+          throw new OrderDomainError('Đơn QR tại bàn không hợp lệ', { status: 400, code: 'TABLE_QR_INVALID_CHECKOUT', expose: true });
+        }
+        let table;
+        let tableTokenHash;
+        try {
+          tableTokenHash = hashTableQrToken(input.table_token);
+          table = await storesRepository.resolveTableByCheckoutToken(tableTokenHash);
+        } catch (error) {
+          if (error instanceof TableQrTokenError) {
+            throw new OrderDomainError(error.message, { status: error.status, code: error.code, expose: true });
+          }
+          throw error;
+        }
+        if (!table) {
+          throw new OrderDomainError('Mã QR bàn không hợp lệ hoặc bàn đã ngừng hoạt động', { status: 404, code: 'TABLE_QR_NOT_FOUND', expose: true });
+        }
+        input = {
+          ...input,
+          store_id: Number(table.store_id),
+          table_id: Number(table.id),
+          customer_name: `Khách tại ${table.name}`.slice(0, 120),
+          customer_phone: '0000000000',
+          table_qr_token_hash: tableTokenHash,
+          checkout_channel: 'table_qr',
+        };
+      }
 
       if (!input.store_id || !Array.isArray(input.items) || input.items.length === 0) {
         throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (store_id, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
       }
 
-      if (!isPosOrder && (!input.customer_name || !input.customer_phone)) {
+      if (!isPosOrder && !isTableQrOrder && (!input.customer_name || !input.customer_phone)) {
         throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (tên, SĐT, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
       }
 
@@ -205,7 +239,7 @@ export function createCustomerOrderService({
 
       let rawCancelToken = null;
       let cancelTokenHash = null;
-      if (!userId && normalizedSource === 'online') {
+      if (!userId && (normalizedSource === 'online' || isTableQrOrder)) {
         rawCancelToken = crypto.randomBytes(32).toString('hex');
         cancelTokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
       }
@@ -246,7 +280,9 @@ export function createCustomerOrderService({
       if (resolved.isGrouped) {
         const groupScope = userId
           ? `online-group:user:${userId}`
-          : `online-group:guest:${rawCancelToken ? crypto.createHash('sha256').update(rawCancelToken).digest('hex') : input.customer_phone}`;
+          : isTableQrOrder
+            ? `table-qr-group:${input.table_qr_token_hash}`
+            : `online-group:guest:${rawCancelToken ? crypto.createHash('sha256').update(rawCancelToken).digest('hex') : input.customer_phone}`;
         const groupRequestHash = hashOrderRequest(input);
 
         // Execute entire multi-industry order creation and allocation in ONE atomic transaction
@@ -435,7 +471,7 @@ export function createCustomerOrderService({
         // If replay: verify if PayOS link is attached and usable (C2)
         if (txnResult.replay) {
           const replayResp = txnResult.response;
-          if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+          if (isPayOSCheckout) {
             if (!replayResp.checkout_url && replayResp.group_code) {
               const refreshed = await regenerateGroupPayOSAttempt({
                 groupCode: replayResp.group_code,
@@ -472,7 +508,7 @@ export function createCustomerOrderService({
 
         const { group, childOrders, baseResponse } = txnResult;
 
-        if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+        if (isPayOSCheckout) {
           const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
           const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
 
@@ -547,7 +583,7 @@ export function createCustomerOrderService({
       const rootCategoryId = resolved.rootCategory?.rootCategoryId || null;
       const paymentProfile = resolved.profile;
 
-      if (normalizedSource === 'online' && normalizedPaymentMethod === 'VietQR') {
+      if (isPayOSCheckout) {
         const payosOrder = await createPayOSOrder({
           input,
           userId,

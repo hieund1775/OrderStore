@@ -20,6 +20,10 @@ export function createStoreService(repository = defaultStoresRepository) {
       if (!tableId) return null;
       return repository.resolveTable(tableId);
     },
+
+    async resolveTableByCheckoutToken(tokenHash, options = {}) {
+      return repository.resolveTableByCheckoutToken(tokenHash, options);
+    },
   };
 }
 

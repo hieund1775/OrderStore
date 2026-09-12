@@ -5,8 +5,8 @@ import crypto from 'crypto';
  * Ensures strict encapsulation and prevents sensitive PII / internal data leakage.
  */
 
-export const VALID_SOURCES = ['online', 'pos'];
-export const VALID_ORDER_TYPES = ['Delivery', 'Take-away', 'POS'];
+export const VALID_SOURCES = ['online', 'pos', 'table_qr'];
+export const VALID_ORDER_TYPES = ['Delivery', 'Take-away', 'POS', 'Dine-in'];
 export const VALID_PAYMENT_METHODS = ['COD', 'VietQR', 'MoMo', 'ZaloPay'];
 
 /**

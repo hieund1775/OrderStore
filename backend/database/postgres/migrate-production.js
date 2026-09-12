@@ -40,6 +40,10 @@ export const PRODUCTION_MIGRATION_REGISTRY = Object.freeze({
     preflight: '0030_preorder_preflight_readonly.sql',
     prerequisites: Object.freeze(['0026', '0027', '0028', '0029']),
   }),
+  '0031': Object.freeze({
+    preflight: '0031_table_qr_guest_dinein_preflight_readonly.sql',
+    prerequisites: Object.freeze(['0026', '0027', '0028', '0029', '0030']),
+  }),
 });
 export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(Object.keys(PRODUCTION_MIGRATION_REGISTRY));
 

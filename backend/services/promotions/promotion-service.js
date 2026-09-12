@@ -6,8 +6,8 @@ export function createPromotionService(repository = defaultPromotionsRepository)
       return repository.listActivePromotions();
     },
 
-    async previewVoucher({ code, subtotal, phone, storeId }) {
-      return repository.preview({ code, subtotal, phone, storeId });
+    async previewVoucher({ code, subtotal, phone, storeId, checkoutChannel = 'normal' }) {
+      return repository.preview({ code, subtotal, phone, storeId, checkoutChannel });
     },
   };
 }

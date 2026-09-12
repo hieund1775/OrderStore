@@ -22,6 +22,7 @@ import menuBannerImg from "@/assets/menu.jpg";
 export const Route = createFileRoute("/menu")({
   validateSearch: (search: Record<string, unknown>): {
     table_id?: string;
+    table_token?: string;
     store_id?: string;
     category?: string;
     page?: number;
@@ -32,6 +33,9 @@ export const Route = createFileRoute("/menu")({
         : typeof search.table_id === "number"
           ? String(search.table_id)
           : undefined,
+    table_token: typeof search.table_token === "string" && search.table_token.trim()
+      ? search.table_token.trim()
+      : undefined,
     store_id:
       typeof search.store_id === "string"
         ? search.store_id
@@ -63,7 +67,7 @@ export const Route = createFileRoute("/menu")({
 });
 
 function MenuPage() {
-  const { table_id, store_id, category, page } = useSearch({ from: "/menu" });
+  const { table_id, table_token, store_id, category, page } = useSearch({ from: "/menu" });
   const { selectedStore: storeInfo, status: branchStatus, selectStore, bindTable, clearTable } = useBranch();
   const { items, subtotal, count } = useCart();
 
@@ -93,21 +97,23 @@ function MenuPage() {
 
   // 2. Resolve table if present in URL
   useEffect(() => {
-    if (!table_id && store_id && branchStatus === "ready") selectStore(store_id);
-  }, [branchStatus, selectStore, store_id, table_id]);
+    if (!table_id && !table_token && store_id && branchStatus === "ready") selectStore(store_id);
+  }, [branchStatus, selectStore, store_id, table_id, table_token]);
 
   useEffect(() => {
-    if (!table_id) {
+    if (!table_id && !table_token) {
       setTableInfo(null);
       return;
     }
     let cancelled = false;
     apiGet<{ table: { id: number; name: string; store_id: number; store_name: string; store_address: string } }>(
-      `/api/table/resolve?table_id=${encodeURIComponent(table_id)}`,
+      table_token
+        ? `/api/table/resolve?token=${encodeURIComponent(table_token)}`
+        : `/api/table/resolve?table_id=${encodeURIComponent(table_id!)}`,
     )
       .then((res) => {
         if (!cancelled) {
-          if (bindTable(res.table.id, res.table.store_id)) setTableInfo(res);
+          if (bindTable(res.table.id, res.table.store_id, table_token || null)) setTableInfo(res);
           else setTableInfo(null);
         }
       })
@@ -118,7 +124,7 @@ function MenuPage() {
         }
       });
     return () => { cancelled = true; };
-  }, [table_id, bindTable, clearTable]);
+  }, [table_id, table_token, bindTable, clearTable]);
 
   // 3. Fetch Catalog Data (Grouped Sections if no category, Subtree Products if category selected)
   const loadCatalogData = useCallback(async () => {
@@ -217,7 +223,7 @@ function MenuPage() {
           <CategorySelector
             categoryTree={categoryTree}
             activeCategorySlug={category}
-            searchParams={{ store_id, table_id }}
+            searchParams={{ store_id, table_id, table_token }}
           />
           {categoryTreeQuery.isError && (
             <Button variant="outline" size="sm" onClick={() => void categoryTreeQuery.refetch()}>
@@ -261,7 +267,7 @@ function MenuPage() {
             <p className="text-xs text-muted-foreground mt-1 max-w-md">
               Danh mục "{category}" không tồn tại hoặc đã ngừng phục vụ. Vui lòng quay lại trang danh mục chính.
             </p>
-            <Link to="/menu" search={{ store_id, table_id, category: undefined, page: undefined }} className="mt-4">
+            <Link to="/menu" search={{ store_id, table_id, table_token, category: undefined, page: undefined }} className="mt-4">
               <Button variant="hero" size="sm">
                 Xem tất cả danh mục
               </Button>
@@ -283,7 +289,7 @@ function MenuPage() {
                 <CatalogSection
                   key={section.root_id}
                   section={section}
-                  searchParams={{ store_id, table_id }}
+                  searchParams={{ store_id, table_id, table_token }}
                 />
               ))}
             </div>
@@ -322,7 +328,7 @@ function MenuPage() {
                   <Button asChild variant="outline" size="sm">
                     <Link
                       to="/menu"
-                      search={{ store_id, table_id, category, page: currentPage > 2 ? currentPage - 1 : undefined }}
+                      search={{ store_id, table_id, table_token, category, page: currentPage > 2 ? currentPage - 1 : undefined }}
                     >
                       <ChevronLeft className="mr-1 size-4" /> Trang trước
                     </Link>
@@ -339,7 +345,7 @@ function MenuPage() {
                   <Button asChild variant="outline" size="sm">
                     <Link
                       to="/menu"
-                      search={{ store_id, table_id, category, page: currentPage + 1 }}
+                      search={{ store_id, table_id, table_token, category, page: currentPage + 1 }}
                     >
                       Trang sau <ChevronRight className="ml-1 size-4" />
                     </Link>

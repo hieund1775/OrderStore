@@ -86,6 +86,7 @@ router.post('/', asyncHandler(async (req, res) => {
       ...req.body,
       store_id: validated.storeId,
       table_id: validated.tableId,
+      table_token: validated.tableToken,
       source: validated.source,
       order_type: validated.orderType,
       payment_method: validated.paymentMethod,
@@ -94,7 +95,7 @@ router.post('/', asyncHandler(async (req, res) => {
       note: validated.note,
       delivery_addr: validated.deliveryAddress,
     };
-    const customerUserId = extractCustomerUserId(req);
+    const customerUserId = validated.source === 'table_qr' ? null : extractCustomerUserId(req);
     const idempotencyKey = String(req.headers['idempotency-key'] || '');
     const order = await customerOrderService.create({
       input,

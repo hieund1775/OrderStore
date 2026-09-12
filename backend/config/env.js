@@ -82,6 +82,7 @@ if (!isProduction && (!rawJwtSecret || rawJwtSecret === DEV_DEFAULT_SECRET || ra
 const payosClientId = process.env.PAYOS_CLIENT_ID?.trim();
 const payosApiKey = process.env.PAYOS_API_KEY?.trim();
 const payosChecksumKey = process.env.PAYOS_CHECKSUM_KEY?.trim();
+const tableQrTokenPepper = process.env.TABLE_QR_TOKEN_PEPPER?.trim();
 
 const JWT_SECRET = rawJwtSecret || DEV_DEFAULT_SECRET;
 
@@ -112,6 +113,7 @@ export const config = {
     timeoutMinutes: parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10),
     isConfigured: Boolean(payosClientId && payosApiKey && payosChecksumKey),
   },
+  tableQrTokenPepper: tableQrTokenPepper || '',
   storage: {
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',

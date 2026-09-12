@@ -19,6 +19,7 @@ router.post('/vouchers/apply', asyncHandler(async (req, res) => {
       subtotal: validated.subtotal,
       phone: validated.phone,
       storeId: validated.storeId,
+      checkoutChannel: validated.checkoutChannel,
     });
     res.json({ valid: true, discount_amount, code: validated.code, message: 'Áp dụng thành công' });
   } catch (err) {

@@ -34,6 +34,21 @@ export function createStoresRepository(database = postgresDb) {
       );
       return rows[0] || null;
     },
+
+    async resolveTableByCheckoutToken(tokenHash, { tx = null, forUpdate = false } = {}) {
+      const runner = tx || database;
+      const [rows] = await runner.query(
+        `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address
+         FROM tables t
+         JOIN stores s ON s.id = t.store_id
+         WHERE t.qr_checkout_token_hash = $1
+           AND t.is_active = TRUE
+           AND s.is_active = TRUE
+         ${forUpdate ? 'FOR KEY SHARE OF t, s' : ''}`,
+        [tokenHash],
+      );
+      return rows[0] || null;
+    },
   };
 }
 

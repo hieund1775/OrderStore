@@ -113,14 +113,18 @@ export function validateVoucherApplyInput(body = {}) {
   if (typeof body !== 'object' || body === null) {
     throw new PromotionValidationError('Dữ liệu áp dụng mã không hợp lệ');
   }
-  const { code, subtotal, customer_phone, store_id } = body;
+  const { code, subtotal, customer_phone, store_id, checkout_channel } = body;
   if (!code || !String(code).trim()) {
     throw new PromotionValidationError('Thiếu mã voucher');
+  }
+  if (checkout_channel !== undefined && !['normal', 'table_qr'].includes(checkout_channel)) {
+    throw new PromotionValidationError('Kênh checkout không hợp lệ', 'PROMOTION_INVALID_CHECKOUT_CHANNEL');
   }
   return {
     code: String(code).trim().toUpperCase(),
     subtotal: Number(subtotal) || 0,
     phone: customer_phone ? String(customer_phone).trim() : '',
     storeId: store_id ? Number(store_id) : undefined,
+    checkoutChannel: checkout_channel === 'table_qr' ? 'table_qr' : 'normal',
   };
 }

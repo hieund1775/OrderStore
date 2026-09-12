@@ -30,13 +30,16 @@ import {
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
-  validateSearch: (search: Record<string, unknown>): { table_id?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { table_id?: string; table_token?: string } => ({
     table_id:
       typeof search.table_id === "string"
         ? search.table_id
         : typeof search.table_id === "number"
           ? String(search.table_id)
           : undefined,
+    table_token: typeof search.table_token === "string" && search.table_token.trim()
+      ? search.table_token.trim()
+      : undefined,
   }),
   head: () => ({
     meta: [
@@ -94,13 +97,14 @@ function Checkout() {
     stores: storeOptions,
     selectedStoreId,
     activeTableId,
+    activeTableToken,
     status: branchStatus,
     selectStore,
     bindTable,
     clearTable,
   } = useBranch();
   const navigate = useNavigate();
-  const { table_id: searchTableId } = useSearch({ from: "/thanh-toan" });
+  const { table_id: searchTableId, table_token: searchTableToken } = useSearch({ from: "/thanh-toan" });
 
   const [method, setMethod] = useState<"delivery" | "takeaway">("delivery");
   const [name, setName] = useState("");
@@ -160,10 +164,12 @@ function Checkout() {
   }, []);
   const [countdownSec, setCountdownSec] = useState<number>(900);
   const tableId = searchTableId || activeTableId;
+  const tableToken = searchTableToken || activeTableToken;
   const boundTableInfo =
     tableId != null && tableInfo != null && String(tableInfo.table.id) === String(tableId)
       ? tableInfo
       : null;
+  const isTableQrCheckout = Boolean(tableToken && boundTableInfo);
   const effectiveStoreId = boundTableInfo?.table.store_id ??
     (branchStatus === "ready" ? selectedStoreId : null);
   const checkoutStoreIds = Array.from(
@@ -394,15 +400,17 @@ function Checkout() {
 
   // Quét QR bàn → tự nhận diện bàn, mặc định "Tại bàn"
   useEffect(() => {
-    if (!tableId) {
+    if (!tableId && !tableToken) {
       setTableInfo(null);
       return;
     }
     let cancelled = false;
-    apiGet<TableInfo>(`/api/table/resolve?table_id=${encodeURIComponent(tableId)}`)
+    apiGet<TableInfo>(tableToken
+      ? `/api/table/resolve?token=${encodeURIComponent(tableToken)}`
+      : `/api/table/resolve?table_id=${encodeURIComponent(tableId!)}`)
       .then((res) => {
         if (cancelled) return;
-        if (bindTable(res.table.id, res.table.store_id)) {
+        if (bindTable(res.table.id, res.table.store_id, tableToken || null)) {
           setTableInfo(res);
           setMethod("takeaway");
         } else {
@@ -418,7 +426,7 @@ function Checkout() {
     return () => {
       cancelled = true;
     };
-  }, [bindTable, clearTable, tableId]);
+  }, [bindTable, clearTable, tableId, tableToken]);
 
   const discount = Math.min(voucherDiscount, checkoutSubtotal);
   const total = Math.max(0, checkoutSubtotal - discount);
@@ -496,6 +504,7 @@ function Checkout() {
           subtotal: checkoutSubtotal,
           customer_phone: phone || "khach",
           store_id: storeAtRequest,
+          checkout_channel: isTableQrCheckout ? "table_qr" : "normal",
         },
       );
       if (checkoutStoreIdRef.current !== storeAtRequest) return;
@@ -511,7 +520,7 @@ function Checkout() {
 
   async function submitOrder() {
     if (checkoutItems.length === 0) return;
-    if (!getCustomerToken()) {
+    if (!isTableQrCheckout && !getCustomerToken()) {
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
     }
     if (hasMultipleCheckoutStores) {
@@ -530,10 +539,10 @@ function Checkout() {
 
     const isVnPhone = /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone);
     const isIntlPhone = /^\+[1-9][0-9]{7,14}$/.test(cleanPhone);
-    if (cleanName.length < 2 || cleanName.length > 50) {
+    if (!isTableQrCheckout && (cleanName.length < 2 || cleanName.length > 50)) {
       return toast.error("Họ và tên phải dài từ 2 đến 50 ký tự");
     }
-    if (!cleanPhone || (!isVnPhone && !isIntlPhone)) {
+    if (!isTableQrCheckout && (!cleanPhone || (!isVnPhone && !isIntlPhone))) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
     }
     if (checkoutStoreId == null) {
@@ -558,20 +567,7 @@ function Checkout() {
       const sizeIdByLabel = new Map(sizes.map((s) => [s.label.toLowerCase(), s.id]));
       const toppingIdByName = new Map(toppings.map((t) => [t.name.toLowerCase(), t.id]));
 
-      const payload = {
-        store_id: checkoutStoreId,
-        table_id: boundTableInfo ? boundTableInfo.table.id : null,
-        order_type: method === "delivery" ? "Delivery" : "Take-away",
-        payment_method: "VietQR",
-        customer_name: name.trim(),
-        customer_phone: phone.trim(),
-        delivery_addr: method === "delivery" && addr.trim() ? addr.trim() : null,
-        voucher_code: appliedCode || null,
-        note: note.trim() || null,
-        source: "online",
-        return_url: `${window.location.origin}/theo-doi-don`,
-        cancel_url: `${window.location.origin}/thanh-toan`,
-        items: checkoutItems.map((i) => ({
+      const items = checkoutItems.map((i) => ({
           product_id: productIdBySlug.get(i.productId) ?? Number(i.productId),
           size_id: i.size ? sizeIdByLabel.get(i.size.toLowerCase()) ?? null : null,
           base_tea: i.base || "Lục Trà Lài",
@@ -582,8 +578,34 @@ function Checkout() {
             .filter((id): id is number => id != null),
           qty: i.qty,
           note: i.note,
-        })),
-      };
+        }));
+      const payload = isTableQrCheckout
+        ? {
+            table_token: tableToken,
+            order_type: "Dine-in",
+            payment_method: "VietQR",
+            voucher_code: appliedCode || null,
+            note: note.trim() || null,
+            source: "table_qr",
+            return_url: `${window.location.origin}/theo-doi-don`,
+            cancel_url: `${window.location.origin}/thanh-toan`,
+            items,
+          }
+        : {
+            store_id: checkoutStoreId,
+            table_id: boundTableInfo ? boundTableInfo.table.id : null,
+            order_type: method === "delivery" ? "Delivery" : "Take-away",
+            payment_method: "VietQR",
+            customer_name: name.trim(),
+            customer_phone: phone.trim(),
+            delivery_addr: method === "delivery" && addr.trim() ? addr.trim() : null,
+            voucher_code: appliedCode || null,
+            note: note.trim() || null,
+            source: "online",
+            return_url: `${window.location.origin}/theo-doi-don`,
+            cancel_url: `${window.location.origin}/thanh-toan`,
+            items,
+          };
 
       const signature = JSON.stringify(payload);
       const previousRequest = orderRequestRef.current;
@@ -931,6 +953,13 @@ function Checkout() {
           {/* Fulfilment */}
           <section className="bg-card rounded-2xl border p-5">
             <h2 className="font-display mb-4 text-lg font-bold">Hình thức nhận hàng</h2>
+            {isTableQrCheckout && (
+              <div className="mb-4 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
+                <p className="font-semibold">Ăn tại bàn {boundTableInfo?.table.name}</p>
+                <p className="text-muted-foreground mt-1">Thanh toán đầy đủ bằng VietQR trước khi quầy/bếp nhận đơn.</p>
+              </div>
+            )}
+            {!isTableQrCheckout && <>
             <div className="grid gap-3 sm:grid-cols-2">
               <button
                 onClick={() => setMethod("delivery")}
@@ -1020,16 +1049,17 @@ function Checkout() {
                   )}
                 </div>
               )}
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="note">Ghi chú</Label>
-                <Textarea
-                  id="note"
-                  rows={2}
-                  placeholder="VD: Ít đá hơn, gọi trước khi giao…"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </div>
+            </div>
+            </>}
+            <div className="mt-4 space-y-1.5">
+              <Label htmlFor="note">Ghi chú</Label>
+              <Textarea
+                id="note"
+                rows={2}
+                placeholder={isTableQrCheckout ? "VD: Ít đá hơn…" : "VD: Ít đá hơn, gọi trước khi giao…"}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </div>
           </section>
 

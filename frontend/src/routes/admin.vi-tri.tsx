@@ -55,12 +55,14 @@ type TableRow = {
   store_id: number;
   store_name: string;
   name: string;
-  qr_code_token: string;
+  has_checkout_qr?: boolean;
   is_active: boolean;
 };
 
-function qrUrl(table: TableRow) {
-  return `${window.location.origin}/menu?table_id=${table.id}`;
+type TableQrResponse = TableRow & { qr_checkout_token: string };
+
+function qrUrl(token: string) {
+  return `${window.location.origin}/menu?table_token=${encodeURIComponent(token)}`;
 }
 
 function storeQrUrl(storeId: number) {
@@ -88,13 +90,7 @@ function TablesPage() {
       const rawRows = await apiGet<TableRow[]>("/admin/tables");
       const rows = Array.isArray(rawRows) ? rawRows : [];
       setTables(rows);
-      const map: Record<number, string> = {};
-      await Promise.all(
-        rows.map(async (t) => {
-          map[t.id] = await QRCode.toDataURL(qrUrl(t), { width: 200, margin: 1 });
-        }),
-      );
-      setQrMap(map);
+      setQrMap({});
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được danh sách bàn");
     } finally {
@@ -172,19 +168,37 @@ function TablesPage() {
 
     setSaving(true);
     try {
+      let createdQr: { id: number; token: string } | null = null;
       if (editing) {
         await apiPut(`/admin/tables/${editing.id}`, { name, store_id: Number(formStore) });
         toast.success(`Đã cập nhật ${name}`);
       } else {
-        await apiPost("/admin/tables", { name, store_id: Number(formStore) });
+        const created = await apiPost<TableQrResponse>("/admin/tables", { name, store_id: Number(formStore) });
+        const dataUrl = await QRCode.toDataURL(qrUrl(created.qr_checkout_token), { width: 200, margin: 1 });
+        createdQr = { id: created.id, token: dataUrl };
         toast.success(`Đã tạo ${name}`);
       }
       setDialogOpen(false);
-      load();
+      await load();
+      if (createdQr) {
+        setQrMap((current) => ({ ...current, [createdQr.id]: createdQr.token }));
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function rotateQr(t: TableRow) {
+    try {
+      const rotated = await apiPost<TableQrResponse>(`/admin/tables/${t.id}/rotate-qr`, {});
+      const dataUrl = await QRCode.toDataURL(qrUrl(rotated.qr_checkout_token), { width: 200, margin: 1 });
+      setQrMap((current) => ({ ...current, [t.id]: dataUrl }));
+      setTables((current) => current.map((row) => row.id === t.id ? { ...row, has_checkout_qr: true } : row));
+      toast.success(`Đã tạo QR checkout mới cho ${t.name}. Hãy in lại QR cũ.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không thể tạo QR checkout mới");
     }
   }
 
@@ -379,7 +393,7 @@ function TablesPage() {
                   {qrMap[t.id] ? (
                     <img src={qrMap[t.id]} alt={`QR ${t.name}`} className="size-32" />
                   ) : (
-                    <div className="bg-muted size-32" />
+                    <div className="bg-muted flex size-32 items-center justify-center p-2 text-center text-xs text-muted-foreground">Tạo QR mới để in</div>
                   )}
                 </div>
                 <div className="text-center">
@@ -389,6 +403,9 @@ function TablesPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => rotateQr(t)} aria-label={`Tạo QR mới cho ${t.name}`} title="Tạo QR checkout mới">
+                    <QrIcon className="size-3.5" />
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => downloadQr(t)} aria-label={`Tải mã QR ${t.name}`} title="Tải PNG">
                     <Download className="size-3.5" />
                   </Button>

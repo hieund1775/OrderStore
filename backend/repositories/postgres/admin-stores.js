@@ -103,7 +103,8 @@ export function createAdminStoresRepository(database = postgresDb) {
         where += ` AND t.store_id = $${params.length}`;
       }
       const [rows] = await database.query(
-        `SELECT t.id, t.store_id, s.name AS store_name, t.name, t.qr_code_token, t.is_active
+        `SELECT t.id, t.store_id, s.name AS store_name, t.name,
+                (t.qr_checkout_token_hash IS NOT NULL) AS has_checkout_qr, t.is_active
          FROM tables t
          JOIN stores s ON s.id = t.store_id
          ${where}
@@ -113,7 +114,7 @@ export function createAdminStoresRepository(database = postgresDb) {
       return rows;
     },
 
-    async createTable({ store_id, name }) {
+    async createTable({ store_id, name, qrCheckoutTokenHash = null }) {
       if (!name) throw new AdminStoreError('Thiếu name');
       if (!store_id) throw new AdminStoreError('Vui lòng chỉ định store_id');
       const num = extractTableNumber(name);
@@ -124,12 +125,30 @@ export function createAdminStoresRepository(database = postgresDb) {
           const dup = existing.find((t) => extractTableNumber(t.name) === num);
           if (dup) throw new AdminStoreError('Số bàn này đã tồn tại trong chi nhánh');
         }
-        const token = crypto.randomBytes(16).toString('hex');
+        const legacyToken = crypto.randomBytes(16).toString('hex');
         const [rows] = await tx.query(
-          `INSERT INTO tables (store_id, name, qr_code_token, is_active)
-           VALUES ($1, $2, $3, TRUE)
+          `INSERT INTO tables (store_id, name, qr_code_token, qr_checkout_token_hash, qr_checkout_token_rotated_at, is_active)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, TRUE)
            RETURNING *`,
-          [store_id, name.trim(), token],
+          [store_id, name.trim(), legacyToken, qrCheckoutTokenHash],
+        );
+        return rows[0];
+      });
+    },
+
+    async rotateTableCheckoutToken(id, { qrCheckoutTokenHash, scopedStoreId } = {}) {
+      return database.transaction(async (tx) => {
+        const [current] = await tx.query('SELECT id, store_id FROM tables WHERE id = $1 FOR UPDATE', [id]);
+        if (!current[0]) throw new AdminStoreError('Không tìm thấy bàn', 404);
+        if (scopedStoreId && Number(current[0].store_id) !== Number(scopedStoreId)) {
+          throw new AdminStoreError('Không có quyền thao tác bàn của chi nhánh khác', 403);
+        }
+        const [rows] = await tx.query(
+          `UPDATE tables
+           SET qr_checkout_token_hash = $1, qr_checkout_token_rotated_at = CURRENT_TIMESTAMP
+           WHERE id = $2
+           RETURNING *`,
+          [qrCheckoutTokenHash, id],
         );
         return rows[0];
       });

@@ -93,6 +93,35 @@ export function validateCreateOrderInput(body = {}) {
     throw new OrderValidationError('Thông tin đơn hàng không hợp lệ', 'ORDER_INVALID_ENUM');
   }
 
+  const isTableQrOrder = source === 'table_qr';
+  if (isTableQrOrder) {
+    const tableToken = typeof body.table_token === 'string' ? body.table_token.trim() : '';
+    if (!/^[A-Za-z0-9_-]{32,200}$/.test(tableToken)) {
+      throw new OrderValidationError('Mã QR bàn không hợp lệ', 'TABLE_QR_INVALID_TOKEN');
+    }
+    if (orderType !== 'Dine-in' || paymentMethod !== 'VietQR') {
+      throw new OrderValidationError('Đơn QR tại bàn chỉ hỗ trợ ăn tại chỗ và thanh toán VietQR', 'TABLE_QR_INVALID_CHECKOUT');
+    }
+    if (body.store_id != null || body.table_id != null || body.delivery_addr != null || body.customer_name != null || body.customer_phone != null) {
+      throw new OrderValidationError('Đơn QR tại bàn không nhận thông tin bàn, chi nhánh hoặc khách do trình duyệt tự khai', 'TABLE_QR_UNTRUSTED_FIELDS');
+    }
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      throw new OrderValidationError('Danh sách món không được để trống', 'ORDER_REQUIRED_FIELDS');
+    }
+    return {
+      storeId: null,
+      tableId: null,
+      tableToken,
+      source,
+      orderType,
+      paymentMethod,
+      note: boundedText(body.note, 'Ghi chú'),
+      deliveryAddress: null,
+      customerName: null,
+      customerPhone: null,
+    };
+  }
+
   const storeId = validateStoreId(body.store_id);
   const tableId = validateTableId(body.table_id);
   const customerName = boundedText(body.customer_name, 'Tên khách hàng', 200);
@@ -152,5 +181,6 @@ export function validateCreateOrderInput(body = {}) {
     deliveryAddress,
     customerName: validName,
     customerPhone: validPhone,
+    tableToken: null,
   };
 }

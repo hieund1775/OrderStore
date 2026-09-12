@@ -1,4 +1,5 @@
 import defaultAdminStoresRepository from '../../repositories/postgres/admin-stores.js';
+import { createTableQrToken, hashTableQrToken } from '../table-qr-token.js';
 
 export function createAdminStoreService(repository = defaultAdminStoresRepository) {
   return {
@@ -33,7 +34,21 @@ export function createAdminStoreService(repository = defaultAdminStoresRepositor
     },
 
     async createTable(data, { scopedStoreId } = {}) {
-      return repository.createTable(data, { scopedStoreId });
+      const qrToken = createTableQrToken();
+      const table = await repository.createTable({
+        ...data,
+        qrCheckoutTokenHash: hashTableQrToken(qrToken),
+      }, { scopedStoreId });
+      return { table, qrToken };
+    },
+
+    async rotateTableCheckoutToken(id, { scopedStoreId } = {}) {
+      const qrToken = createTableQrToken();
+      const table = await repository.rotateTableCheckoutToken(id, {
+        scopedStoreId,
+        qrCheckoutTokenHash: hashTableQrToken(qrToken),
+      });
+      return { table, qrToken };
     },
 
     async updateTable(id, data, { scopedStoreId } = {}) {
