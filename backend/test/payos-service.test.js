@@ -160,4 +160,40 @@ describe('PayOS SDK boundary', () => {
       console.warn = originalWarn;
     }
   });
+
+  it('treats PayOS HTTP 200 business code 101 as a conclusive missing payment link only', async () => {
+    const originalWarn = console.warn;
+    const diagnostics = [];
+    console.warn = (...args) => diagnostics.push(args);
+    try {
+      setPayOSForTest({ paymentRequests: { get: async () => {
+        const error = new Error('provider payload must not be logged');
+        error.name = 'APIError';
+        error.status = 200;
+        error.code = '101';
+        throw error;
+      } } });
+      assert.deepEqual(await lookupPaymentLinkForRecovery(12345, 'DEFAULT_PROFILE'), {
+        kind: 'not_found',
+      });
+      assert.equal(diagnostics.length, 0);
+
+      setPayOSForTest({ paymentRequests: { get: async () => {
+        const error = new Error('provider failure must remain fail-closed');
+        error.name = 'APIError';
+        error.status = 401;
+        error.code = '101';
+        throw error;
+      } } });
+      assert.deepEqual(await lookupPaymentLinkForRecovery(12345, 'DEFAULT_PROFILE'), {
+        kind: 'unknown', reason: 'LOOKUP_UNCERTAIN',
+      });
+      assert.equal(diagnostics.length, 1);
+      assert.equal(diagnostics[0][1].outcome, 'LOOKUP_UNCERTAIN');
+      assert.equal(diagnostics[0][1].errorStatus, 401);
+      assert.equal(diagnostics[0][1].errorCode, '101');
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });

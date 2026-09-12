@@ -255,7 +255,17 @@ export async function getPaymentLinkInformation(orderCode, paymentLinkId = null,
 
 function isConclusiveNotFound(error) {
   const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
-  return status === 404 || error?.code === 'NOT_FOUND' || error?.code === 'PAYMENT_LINK_NOT_FOUND';
+  const code = String(error?.code ?? '').trim();
+
+  // PayOS v2 can return an application-level "101" for a payment-link lookup
+  // whose reserved order code has not been created yet, while keeping HTTP 200.
+  // This is the only non-404 provider response that permits a new link to be
+  // created. Authentication, rate-limit, timeout, and other provider failures
+  // remain fail-closed as LOOKUP_UNCERTAIN.
+  return status === 404
+    || code === 'NOT_FOUND'
+    || code === 'PAYMENT_LINK_NOT_FOUND'
+    || (status === 200 && code === '101');
 }
 
 /**
