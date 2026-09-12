@@ -2,7 +2,7 @@ import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
-import { createPublicPreordersAvailabilityRouter } from '../routes/public/preorders.js';
+import { buildSafePreorderCheckoutDiagnostic, createPublicPreordersAvailabilityRouter } from '../routes/public/preorders.js';
 
 const servers = [];
 
@@ -121,5 +121,31 @@ describe('GET /api/preorders/availability validation', () => {
     const result = await response(`${unavailableUrl}/tables?store_id=1&date=2026-09-15&hour=20`);
     assert.equal(result.status, 409);
     assert.equal(result.body.error, 'Preorder store unavailable');
+  });
+});
+
+describe('preorder checkout diagnostic contract', () => {
+  it('uses only fixed metadata and excludes unsafe error details', () => {
+    const diagnostic = buildSafePreorderCheckoutDiagnostic(Object.assign(new Error('customer=private@example.com'), {
+      preorderCheckoutStage: 'P1_CHECKOUT',
+      code: '23505',
+      detail: 'must not be present',
+    }));
+
+    assert.deepEqual(diagnostic, {
+      stage: 'P1_CHECKOUT',
+      errorName: 'Error',
+      errorCode: '23505',
+      postgresCode: '23505',
+    });
+    assert.equal(JSON.stringify(diagnostic).includes('private@example.com'), false);
+    assert.equal(JSON.stringify(diagnostic).includes('must not be present'), false);
+  });
+
+  it('falls back to a generic stage for an untrusted stage value', () => {
+    const diagnostic = buildSafePreorderCheckoutDiagnostic({ preorderCheckoutStage: 'SQL_QUERY_TEXT', code: 'credential=secret' });
+    assert.equal(diagnostic.stage, 'PREORDER_CHECKOUT');
+    assert.equal(diagnostic.errorCode, null);
+    assert.equal(diagnostic.postgresCode, null);
   });
 });

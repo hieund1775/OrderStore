@@ -175,6 +175,23 @@ describe('Preorder service lifecycle and authorization', () => {
     assert.equal(checkoutCalls, 1);
   });
 
+  it('tags an unexpected preorder aggregate creation failure without changing its error contract', async () => {
+    const databaseFailure = Object.assign(new Error('database failure'), { code: 'XX000' });
+    const { service } = harness({
+      async findByCustomerIdempotency() { return null; },
+      async createAwaitingPayment() { throw databaseFailure; },
+    });
+
+    await assert.rejects(
+      () => service.checkout({
+        input: { store_id: 1, scheduled_date: '2026-09-11', scheduled_hour: 15, items: [] },
+        customerUserId: 5,
+        idempotencyKey: 'diagnostic-create-failure',
+      }),
+      (error) => error === databaseFailure && error.preorderCheckoutStage === 'PREORDER_CREATE',
+    );
+  });
+
   it('expires an unpaid preorder and releases only its pending table hold', async () => {
     const { service, calls } = harness({
       async findByPaymentTarget() { return { id: 10, status: 'AWAITING_PAYMENT', store_id: 1, customer_user_id: 5, responsible_manager_id: 9 }; },

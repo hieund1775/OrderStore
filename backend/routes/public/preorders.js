@@ -17,6 +17,47 @@ function sendError(res, error) {
   return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
 }
 
+const SAFE_CHECKOUT_STAGES = new Set([
+  'PREORDER_CHECKOUT',
+  'PREORDER_CREATE',
+  'P1_CHECKOUT',
+  'PREORDER_GROUP_LINK',
+]);
+
+function safeSymbolicCode(value) {
+  const normalized = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+  return /^[A-Z0-9_]{1,80}$/.test(normalized) ? normalized : null;
+}
+
+/**
+ * This metadata is limited to fixed symbols for correlation. It never
+ * contains request data, PII, secrets, provider payloads, or SQL text.
+ */
+export function buildSafePreorderCheckoutDiagnostic(error) {
+  const candidateStage = typeof error?.preorderCheckoutStage === 'string'
+    ? error.preorderCheckoutStage
+    : 'PREORDER_CHECKOUT';
+  return {
+    stage: SAFE_CHECKOUT_STAGES.has(candidateStage) ? candidateStage : 'PREORDER_CHECKOUT',
+    errorName: safeSymbolicCode(error?.name) || 'Error',
+    errorCode: safeSymbolicCode(error?.code),
+    postgresCode: /^[0-9A-Z]{5}$/.test(String(error?.code || '')) ? String(error.code) : null,
+  };
+}
+
+function sendCheckoutError(req, res, error) {
+  const status = Number(error?.status || error?.statusCode || 500);
+  if (status >= 500) {
+    const diagnostic = buildSafePreorderCheckoutDiagnostic(error);
+    res.setHeader('X-TeaPlus-Preorder-Stage', diagnostic.stage);
+    console.error('[PREORDER_CHECKOUT_FAILURE]', JSON.stringify({
+      requestId: req.id || 'req_unknown',
+      ...diagnostic,
+    }));
+  }
+  return sendError(res, error);
+}
+
 function invalidQuery(field, code) {
   const error = new Error(`${field} khÃ´ng há»£p lá»‡`);
   error.status = 400;
@@ -102,7 +143,7 @@ router.post('/checkout', authenticate, customerOnly, asyncHandler(async (req, re
       idempotencyKey: req.headers['idempotency-key'],
     });
     res.status(result.replay ? 200 : 201).json(result);
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendCheckoutError(req, res, error); }
 }));
 
 router.get('/:code', authenticate, customerOnly, asyncHandler(async (req, res) => {
