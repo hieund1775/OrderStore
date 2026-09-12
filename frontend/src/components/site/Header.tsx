@@ -60,6 +60,7 @@ import {
   clearCustomerToken,
 } from '@/lib/api';
 import { resolveLoginDestination } from '@/lib/auth-login-destination';
+import { googleClientId, hasGoogleSignIn } from '@/lib/google-signin';
 import { brand, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import { fetchPreorderStoreAvailability, hasAvailablePreorderStore } from '@/lib/preorder-store-availability';
@@ -354,9 +355,6 @@ function NotificationButton() {
   );
 }
 
-// Client ID Google OAuth — công khai, chỉ backend verify mới dùng secret
-const GOOGLE_CLIENT_ID = '443383680289-fadvfm00s63umkb06mjtffeuilufs1ic.apps.googleusercontent.com';
-
 function ProfileButton() {
   const navigate = useNavigate();
   // Keep the first render identical between SSR and the browser. Reading
@@ -385,7 +383,7 @@ function ProfileButton() {
 
   // Load Google Identity Services script (chỉ 1 lần)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !hasGoogleSignIn) return;
     const w = window as any;
     if (w.google?.accounts?.id) {
       setGoogleScriptLoaded(true);
@@ -401,13 +399,13 @@ function ProfileButton() {
 
   // Render nút Google khi dialog mở + script sẵn sàng + ô chứa đã mount
   useEffect(() => {
-    if (!open || !googleScriptLoaded || !googleBtnNode) return;
+    if (!hasGoogleSignIn || !open || !googleScriptLoaded || !googleBtnNode) return;
     const w = window as any;
     if (!w.google?.accounts?.id) return;
     try {
       googleBtnNode.innerHTML = '';
       w.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
+        client_id: googleClientId,
         callback: handleGoogleCredential,
       });
       const width = Math.min(400, Math.max(250, googleBtnNode.clientWidth || 340));
@@ -588,10 +586,12 @@ function ProfileButton() {
               >
                 {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
               </button>
-              <div className="text-muted-foreground flex items-center gap-3 text-xs">
-                <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
-              </div>
-              <div ref={setGoogleBtnNode} className="w-full flex justify-center min-h-[44px] items-center" />
+              {hasGoogleSignIn && <>
+                <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                  <Separator className="flex-1" /> hoặc <Separator className="flex-1" />
+                </div>
+                <div ref={setGoogleBtnNode} className="w-full flex justify-center min-h-[44px] items-center" />
+              </>}
             </>
           </div>
         </DialogContent>

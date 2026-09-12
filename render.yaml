@@ -72,6 +72,8 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false # Set to the deployed backend URL in Render Dashboard
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false # Must equal backend GOOGLE_CLIENT_ID; public OAuth client identifier
       - key: VITE_STANDALONE
         value: "false"
 
