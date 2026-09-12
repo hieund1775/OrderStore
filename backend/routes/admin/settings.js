@@ -49,7 +49,42 @@ router.get('/accounts', requireRole('super', 'manager'), asyncHandler(async (req
       active: r.is_active,
       email_verified_at: r.email_verified_at,
       created_at: r.created_at,
-    })));
+})));
+
+router.patch('/accounts/:id', requireRole('super'), asyncHandler(async (req, res) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'ID tài khoản không hợp lệ' });
+    const { fullname, email, role, branch_id } = req.body || {};
+    const updated = await staffService.updateStaffBySuper({
+      actorId: req.user.sub,
+      actorRole: req.user.role,
+      targetUserId,
+      fullname,
+      email,
+      role,
+      branchId: branch_id ?? null,
+    });
+    return res.json({
+      id: updated.id, fullname: updated.fullname, email: updated.email,
+      role: updated.admin_role, branch_id: updated.admin_branch_id,
+      active: updated.is_active, email_changed: updated.emailChanged,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+}));
+
+router.post('/accounts/:id/password-reset', requireRole('super'), asyncHandler(async (req, res) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'ID tài khoản không hợp lệ' });
+    await staffService.sendSuperPasswordReset({ actorId: req.user.sub, actorRole: req.user.role, targetUserId });
+    return res.json({ success: true, message: 'Email đặt lại mật khẩu đã được gửi' });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+}));
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });

@@ -160,6 +160,27 @@ function createMockUsersRepo() {
       const clean = (email || '').trim().toLowerCase();
       return users.find(u => u.email?.toLowerCase() === clean && u.is_admin) || null;
     },
+    async findUserByEmail(email) {
+      const clean = (email || '').trim().toLowerCase();
+      return users.find(u => u.email?.toLowerCase() === clean) || null;
+    },
+    async updateStaffAccount(userId, { fullname, email, adminRole, branchId }) {
+      const u = users.find(x => x.id === Number(userId) && x.is_admin);
+      if (!u) return null;
+      const emailChanged = u.email !== email;
+      u.fullname = fullname;
+      u.email = email;
+      u.admin_role = adminRole;
+      u.admin_branch_id = branchId;
+      u.email_verified_at = emailChanged ? null : u.email_verified_at;
+      u.token_version += 1;
+      return u;
+    },
+    async incrementTokenVersion(userId) {
+      const u = users.find(x => x.id === Number(userId));
+      if (u) u.token_version += 1;
+      return u || null;
+    },
   };
 }
 
@@ -185,6 +206,9 @@ test('Staff Service Authorization Suite', async (t) => {
     async transaction(callback) {
       const tx = {
         async query(sqlText, params) {
+          if (sqlText.includes('FROM stores')) {
+            return [[{ id: params[0] }], 1];
+          }
           if (sqlText.includes('FOR UPDATE')) {
             return [[{ id: params[0] }], 1];
           }
@@ -361,6 +385,57 @@ test('Staff Service Authorization Suite', async (t) => {
       }),
       /chi nhánh khác/,
     );
+  });
+
+  await t.test('Super can change staff name, email, role and branch while invalidating their session', async () => {
+    const beforeVersion = mockUsersRepo.users.find((user) => user.id === 3).token_version;
+    const updated = await staffService.updateStaffBySuper({
+      actorId: 1,
+      actorRole: 'super',
+      targetUserId: 3,
+      fullname: 'nguyễn văn a',
+      email: 'cashier-new@branch2.com',
+      role: 'packing',
+      branchId: 2,
+    });
+    assert.equal(updated.fullname, 'Nguyễn Văn A');
+    assert.equal(updated.email, 'cashier-new@branch2.com');
+    assert.equal(updated.admin_role, 'packing');
+    assert.equal(updated.admin_branch_id, 2);
+    assert.equal(updated.emailChanged, true);
+    assert.equal(mockUsersRepo.users.find((user) => user.id === 3).token_version, beforeVersion + 1);
+  });
+
+  await t.test('Manager cannot use Super account edit or password reset operations', async () => {
+    await assert.rejects(
+      () => staffService.updateStaffBySuper({
+        actorId: 2, actorRole: 'manager', targetUserId: 3,
+        fullname: 'Cashier B', email: 'cashier@branch1.com', role: 'cashier', branchId: 1,
+      }),
+      /Chỉ Super Admin/,
+    );
+    await assert.rejects(
+      () => staffService.sendSuperPasswordReset({ actorId: 2, actorRole: 'manager', targetUserId: 3 }),
+      /Chỉ Super Admin/,
+    );
+  });
+
+  await t.test('Super cannot change a Super Admin role or branch', async () => {
+    await assert.rejects(
+      () => staffService.updateStaffBySuper({
+        actorId: 1, actorRole: 'super', targetUserId: 1,
+        fullname: 'Super Admin', email: 'super@teaplus.vn', role: 'manager', branchId: 1,
+      }),
+      /Không được thay đổi vai trò hoặc chi nhánh/,
+    );
+  });
+
+  await t.test('Super password reset invalidates active staff sessions and sends no secret in the response', async () => {
+    const beforeVersion = mockUsersRepo.users.find((user) => user.id === 2).token_version;
+    const result = await staffService.sendSuperPasswordReset({ actorId: 1, actorRole: 'super', targetUserId: 2 });
+    assert.deepEqual(result, { success: true });
+    assert.equal(mockUsersRepo.users.find((user) => user.id === 2).token_version, beforeVersion + 1);
+    assert.ok(fakeTransport.sentEmails.some((message) => message.to === 'manager@branch1.com'));
   });
 
   await t.test('forgotPasswordSendOtp: returns generic success for non-existing email', async () => {

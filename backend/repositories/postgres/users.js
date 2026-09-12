@@ -212,6 +212,19 @@ export function createUsersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
+    async findUserByEmail(email) {
+      if (!email || typeof email !== 'string') return null;
+      const cleanEmail = email.trim().toLowerCase();
+      const [rows] = await database.query(
+        `SELECT id, is_admin, admin_role, admin_branch_id, is_active
+         FROM users
+         WHERE LOWER(email) = $1
+         LIMIT 1`,
+        [cleanEmail],
+      );
+      return rows[0] || null;
+    },
+
     /**
      * Find admin by id regardless of active status
      */
@@ -291,6 +304,27 @@ export function createUsersRepository(database = postgresDb) {
          WHERE id = $1 AND is_admin = TRUE
          RETURNING ${ADMIN_COLUMNS}`,
         [userId, isActive],
+      );
+      return rows[0] || null;
+    },
+
+    async updateStaffAccount(userId, { fullname, email, adminRole, branchId }, { tx = null } = {}) {
+      const executor = tx || database;
+      const [rows] = await executor.query(
+        `UPDATE users
+         SET fullname = $2,
+             email = $3,
+             admin_role = $4,
+             admin_branch_id = $5,
+             email_verified_at = CASE
+               WHEN LOWER(email) IS DISTINCT FROM LOWER($3) THEN NULL
+               ELSE email_verified_at
+             END,
+             token_version = token_version + 1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND is_admin = TRUE
+         RETURNING ${ADMIN_COLUMNS}`,
+        [userId, fullname, email, adminRole, branchId],
       );
       return rows[0] || null;
     },

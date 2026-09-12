@@ -4,6 +4,7 @@ import { authEmailChallengeRepository, generateSecureOtp, generateInviteToken, c
 import { usersRepository } from '../../repositories/postgres/users.js';
 import { logAudit } from '../audit.js';
 import postgresDb from '../../config/db-postgres.js';
+import { normalizeAndValidateFullName } from '../../validation/customer-schemas.js';
 
 /**
  * Authorization errors
@@ -16,6 +17,15 @@ export class AuthError extends Error {
 }
 
 const BCRYPT_COST = 12;
+const STAFF_ROLES = Object.freeze(['manager', 'cashier', 'kitchen', 'packing']);
+
+function normalizeStaffFullName(fullname) {
+  try {
+    return normalizeAndValidateFullName(fullname, { allowSingleWord: true });
+  } catch {
+    throw new AuthError('Họ và tên không hợp lệ', 400);
+  }
+}
 
 /**
  * Resolve email transport based on environment
@@ -284,13 +294,10 @@ export function createStaffService({
         throw new AuthError('Email không hợp lệ', 400);
       }
 
-      if (!fullname || typeof fullname !== 'string' || !fullname.trim()) {
-        throw new AuthError('Vui lòng nhập họ tên', 400);
-      }
+      const cleanFullname = normalizeStaffFullName(fullname);
 
       // Validate role
-      const VALID_ROLES = ['manager', 'cashier', 'kitchen', 'packing'];
-      if (!VALID_ROLES.includes(role)) {
+      if (!STAFF_ROLES.includes(role)) {
         throw new AuthError('Vai trò không hợp lệ', 400);
       }
 
@@ -311,13 +318,13 @@ export function createStaffService({
         throw new AuthError('Super admin phải chọn chi nhánh khi tạo tài khoản', 400);
       }
 
-      const user = await usersRepo.createStaff({ fullname: fullname.trim(), email: cleanEmail, adminRole: role, branchId });
+      const user = await usersRepo.createStaff({ fullname: cleanFullname, email: cleanEmail, adminRole: role, branchId });
 
       // Send invitation
       await challengeService.createAndSendInvitation({
         userId: user.id,
         email: cleanEmail,
-        metadata: { fullname: fullname.trim(), role, branch_id: branchId },
+        metadata: { fullname: cleanFullname, role, branch_id: branchId },
         actorId,
       });
 
@@ -326,6 +333,102 @@ export function createStaffService({
         JSON.stringify({ target_id: user.id, role, branch_id: branchId }));
 
       return user;
+    },
+
+    async updateStaffBySuper({ actorId, actorRole, targetUserId, fullname, email, role, branchId }) {
+      if (actorRole !== 'super') throw new AuthError('Chỉ Super Admin được chỉnh sửa tài khoản nhân sự', 403);
+      const target = await usersRepo.findAdminById(targetUserId);
+      if (!target) throw new AuthError('Không tìm thấy tài khoản', 404);
+
+      const cleanFullname = normalizeStaffFullName(fullname);
+      const cleanEmail = normalizeEmail(email);
+      if (!cleanEmail || !cleanEmail.includes('@')) throw new AuthError('Email không hợp lệ', 400);
+      const normalizedBranchId = Number(branchId);
+      const emailChanged = cleanEmail !== normalizeEmail(target.email);
+
+      if (target.admin_role === 'super') {
+        if (role !== 'super' || branchId !== null) {
+          throw new AuthError('Không được thay đổi vai trò hoặc chi nhánh của Super Admin', 403);
+        }
+      } else {
+        if (!STAFF_ROLES.includes(role)) throw new AuthError('Vai trò không hợp lệ', 400);
+        if (!Number.isInteger(normalizedBranchId) || normalizedBranchId <= 0) {
+          throw new AuthError('Vui lòng chọn chi nhánh hợp lệ', 400);
+        }
+      }
+
+      const sameEmailOwner = await usersRepo.findUserByEmail(cleanEmail);
+      if (sameEmailOwner && Number(sameEmailOwner.id) !== Number(targetUserId)) {
+        throw new AuthError('Email đã được sử dụng', 409);
+      }
+
+      const updated = await database.transaction(async (tx) => {
+        if (target.admin_role !== 'super') {
+          const [storeRows] = await tx.query(
+            'SELECT id FROM stores WHERE id = $1 AND is_active = TRUE FOR KEY SHARE',
+            [normalizedBranchId],
+          );
+          if (!storeRows[0]) throw new AuthError('Chi nhánh không tồn tại hoặc đã ngừng hoạt động', 400);
+        }
+        const result = await usersRepo.updateStaffAccount(targetUserId, {
+          fullname: cleanFullname,
+          email: cleanEmail,
+          adminRole: target.admin_role === 'super' ? 'super' : role,
+          branchId: target.admin_role === 'super' ? null : normalizedBranchId,
+        }, { tx });
+        if (!result) throw new AuthError('Không thể cập nhật tài khoản', 409);
+        if (emailChanged) {
+          await tx.query(
+            `UPDATE auth_email_challenges
+             SET revoked_at = CURRENT_TIMESTAMP
+             WHERE user_id = $1 AND consumed_at IS NULL AND revoked_at IS NULL`,
+            [targetUserId],
+          );
+        }
+        return result;
+      });
+
+      if (emailChanged) await auditLogger(actorId, 'STAFF_EMAIL_CHANGED', JSON.stringify({ target_id: Number(targetUserId) }));
+      if (updated.admin_role !== target.admin_role) await auditLogger(actorId, 'STAFF_ROLE_CHANGED', JSON.stringify({ target_id: Number(targetUserId) }));
+      if (Number(updated.admin_branch_id) !== Number(target.admin_branch_id)) {
+        await auditLogger(actorId, 'STAFF_BRANCH_CHANGED', JSON.stringify({ target_id: Number(targetUserId) }));
+      }
+
+      if (emailChanged) {
+        try {
+          if (updated.is_active) {
+            await challengeService.createAndSendOtp({ userId: updated.id, email: cleanEmail, purpose: 'PASSWORD_RESET' });
+          } else {
+            await challengeService.createAndSendInvitation({
+              userId: updated.id,
+              email: cleanEmail,
+              metadata: { fullname: updated.fullname, role: updated.admin_role, branch_id: updated.admin_branch_id },
+              actorId,
+            });
+          }
+        } catch {
+          throw new AuthError('Tài khoản đã được cập nhật nhưng chưa gửi được email thiết lập lại. Hãy gửi lại sau.', 503);
+        }
+      }
+
+      return { ...updated, emailChanged };
+    },
+
+    async sendSuperPasswordReset({ actorId, actorRole, targetUserId }) {
+      if (actorRole !== 'super') throw new AuthError('Chỉ Super Admin được đặt lại mật khẩu nhân sự', 403);
+      const target = await usersRepo.findAdminById(targetUserId);
+      if (!target) throw new AuthError('Không tìm thấy tài khoản', 404);
+      if (!target.is_active) throw new AuthError('Tài khoản đang chờ lời mời; hãy gửi lại lời mời thay vì đặt lại mật khẩu', 409);
+      if (!target.email) throw new AuthError('Tài khoản chưa có email', 400);
+
+      await usersRepo.incrementTokenVersion(targetUserId);
+      try {
+        await challengeService.createAndSendOtp({ userId: target.id, email: target.email, purpose: 'PASSWORD_RESET' });
+      } catch {
+        throw new AuthError('Không thể gửi email đặt lại mật khẩu. Hãy thử lại sau.', 503);
+      }
+      await auditLogger(actorId, 'STAFF_PASSWORD_RESET_SENT', JSON.stringify({ target_id: Number(targetUserId) }));
+      return { success: true };
     },
 
     /**

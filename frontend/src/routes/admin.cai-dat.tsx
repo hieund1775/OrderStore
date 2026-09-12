@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PaymentProfileManager } from "@/components/admin/payment-profiles/PaymentProfileManager";
+import { StaffAccountsPanel } from "@/components/admin/StaffAccountsPanel";
 import {
   Table,
   TableBody,
@@ -130,7 +131,8 @@ function SettingsPage() {
         )}
 
         <TabsContent value="accounts" className="mt-5">
-          <Card className="shadow-soft overflow-hidden">
+          <StaffAccountsPanel />
+          <Card className="hidden">
             <div className="flex items-center justify-between border-b p-4">
               <p className="font-display font-bold text-sm sm:text-base">Tài khoản nội bộ ({accounts.length})</p>
             </div>
