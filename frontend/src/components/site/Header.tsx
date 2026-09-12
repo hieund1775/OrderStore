@@ -62,6 +62,7 @@ import {
 import { resolveLoginDestination } from '@/lib/auth-login-destination';
 import { brand, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
+import { fetchPreorderStoreAvailability, hasAvailablePreorderStore } from '@/lib/preorder-store-availability';
 import { CategoryMenu, MobileCategoryMenu } from '@/components/navigation';
 import {
   isSafeInternalLink,
@@ -659,6 +660,17 @@ export function Header() {
   const currentCategorySlug = search?.category;
   const categoryTreeQuery = usePublicCategoryTree();
   const categoryTree = categoryTreeQuery.data || [];
+  const [canPreorder, setCanPreorder] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchPreorderStoreAvailability()
+      .then((stores) => { if (active) setCanPreorder(hasAvailablePreorderStore(stores)); })
+      // Unknown configuration is intentionally hidden. The server remains the
+      // authorization boundary for direct checkout requests.
+      .catch(() => { if (active) setCanPreorder(false); });
+    return () => { active = false; };
+  }, []);
 
   return (
     <header className="bg-background/85 sticky top-0 z-50 border-b backdrop-blur-md">
@@ -745,6 +757,16 @@ export function Header() {
               >
                 Tuyển dụng
               </Link>
+              {canPreorder && (
+                <Link
+                  to="/dat-truoc"
+                  onClick={() => setMobileSheetOpen(false)}
+                  className="hover:text-primary border-b py-3 text-sm font-medium"
+                  activeProps={{ className: 'text-primary' }}
+                >
+                  Đặt trước
+                </Link>
+              )}
               <Link
                 to="/ho-so"
                 onClick={() => setMobileSheetOpen(false)}
@@ -803,13 +825,15 @@ export function Header() {
           >
             Tuyển dụng
           </Link>
-          <Link
-            to="/dat-truoc"
-            className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
-            activeProps={{ className: 'bg-accent text-accent-foreground' }}
-          >
-            Đặt trước
-          </Link>
+          {canPreorder && (
+            <Link
+              to="/dat-truoc"
+              className="hover:bg-accent rounded-full px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors"
+              activeProps={{ className: 'bg-accent text-accent-foreground' }}
+            >
+              Đặt trước
+            </Link>
+          )}
         </nav>
 
         <div className="ml-auto flex items-center gap-2">

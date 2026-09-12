@@ -112,6 +112,10 @@ export function createPreorderService({
   }
 
   return {
+    async listStoreAvailability() {
+      return repository.listPublicStoreAvailability();
+    },
+
     async getForCustomer({ preorderCode, customerUserId }) {
       const preorder = await repository.findForCustomer(preorderCode, customerUserId);
       if (!preorder) throw new PreorderError('KhÃ´ng tÃ¬m tháº¥y preorder', 404, 'PREORDER_NOT_FOUND');

@@ -52,6 +52,28 @@ export function createPreordersRepository(database = postgresDb) {
       return setting;
     },
 
+    // Public configuration state only. It intentionally exposes neither the
+    // responsible Manager nor any staff data; checkout revalidates the same
+    // conditions inside its transaction.
+    async listPublicStoreAvailability() {
+      const rows = rowsOf(await database.query(
+        `SELECT s.id AS store_id,
+                (pss.is_enabled = TRUE
+                 AND u.is_active = TRUE
+                 AND u.admin_role = 'manager'
+                 AND u.admin_branch_id = s.id) AS is_available
+           FROM stores s
+           LEFT JOIN preorder_store_settings pss ON pss.store_id = s.id
+           LEFT JOIN users u ON u.id = pss.responsible_manager_id
+          WHERE s.is_active = TRUE
+          ORDER BY s.id`,
+      ));
+      return rows.map((row) => ({
+        store_id: Number(row.store_id),
+        is_available: row.is_available === true,
+      }));
+    },
+
     async setStoreSetting({ storeId, enabled, responsibleManagerId }, { tx = null } = {}) {
       const executor = tx || database;
       const rows = rowsOf(await executor.query(

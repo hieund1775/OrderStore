@@ -9,6 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useBranch } from '@/lib/branch';
 import { useCart } from '@/lib/cart';
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from '@/lib/api';
+import {
+  fetchPreorderStoreAvailability,
+  hasAvailablePreorderStore,
+  isPreorderAvailableForStore,
+  type PreorderStoreAvailability,
+} from '@/lib/preorder-store-availability';
 
 export const Route = createFileRoute('/dat-truoc')({ component: PreorderCheckoutPage });
 
@@ -29,6 +35,7 @@ function PreorderCheckoutPage() {
   const [date, setDate] = useState(vietnamToday());
   const [hour, setHour] = useState<string>('');
   const [availability, setAvailability] = useState<Availability | null>(null);
+  const [preorderStores, setPreorderStores] = useState<PreorderStoreAvailability[] | null>(null);
   const [tables, setTables] = useState<StoreTable[]>([]);
   const [tableId, setTableId] = useState<string>('none');
   const [name, setName] = useState('');
@@ -39,6 +46,10 @@ function PreorderCheckoutPage() {
 
   const storeId = Number(selectedStoreId);
   const selectedStore = stores.find((store) => store.id === storeId);
+  const selectedStorePreorderAvailable = preorderStores == null
+    ? null
+    : isPreorderAvailableForStore(preorderStores, storeId);
+  const anyStorePreorderAvailable = preorderStores != null && hasAvailablePreorderStore(preorderStores);
   const cartIsSingleStore = useMemo(
     () => selectedItems.length > 0 && selectedItems.every((item) => !item.storeId || Number(item.storeId) === storeId),
     [selectedItems, storeId],
@@ -51,13 +62,31 @@ function PreorderCheckoutPage() {
 
   useEffect(() => {
     let active = true;
+    fetchPreorderStoreAvailability()
+      .then((rows) => { if (active) setPreorderStores(rows); })
+      .catch(() => { if (active) setPreorderStores([]); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     if (!Number.isInteger(storeId) || storeId <= 0 || !date) return undefined;
     setAvailability(null); setHour(''); setTables([]); setTableId('none');
+    // Do not issue a request that is guaranteed to be rejected with 409 while
+    // the public store configuration is still loading.
+    if (preorderStores == null) return undefined;
+    if (selectedStorePreorderAvailable === false) return undefined;
     apiGet<Availability>(`/api/preorders/availability?store_id=${storeId}&date=${encodeURIComponent(date)}`)
       .then((value) => { if (active) setAvailability(value); })
-      .catch((error) => { if (active) toast.error(error instanceof Error ? error.message : 'Không thể tải khung giờ đặt trước'); });
+      .catch((error) => {
+        if (!active) return;
+        setPreorderStores((current) => current?.map((store) => Number(store.store_id) === storeId
+          ? { ...store, is_available: false }
+          : store) ?? current);
+        toast.error(error instanceof Error ? error.message : 'Không thể tải khung giờ đặt trước');
+      });
     return () => { active = false; };
-  }, [date, storeId]);
+  }, [date, preorderStores, selectedStorePreorderAvailable, storeId]);
 
   useEffect(() => {
     let active = true;
@@ -70,6 +99,7 @@ function PreorderCheckoutPage() {
 
   async function submit() {
     if (!getCustomerToken()) { toast.error('Vui lòng đăng nhập để đặt trước.'); return; }
+    if (selectedStorePreorderAvailable !== true) { toast.error('Đặt trước hiện chưa áp dụng tại chi nhánh này.'); return; }
     if (!cartIsSingleStore) { toast.error('Đặt trước chỉ nhận món của đúng một chi nhánh.'); return; }
     if (!name.trim() || !phone.trim() || !date || !hour) { toast.error('Vui lòng điền thông tin nhận món và khung giờ.'); return; }
     const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour && slot.available);
@@ -120,16 +150,20 @@ function PreorderCheckoutPage() {
   return <div className="container-page max-w-3xl space-y-6 py-8">
     <div className="flex items-start gap-3"><CalendarClock className="mt-1 size-7 text-primary" /><div><h1 className="text-2xl font-bold">Đặt trước tại cửa hàng</h1><p className="text-muted-foreground">Thanh toán 100% ngay. Manager sẽ xác nhận sau khi thanh toán thành công.</p></div></div>
     {!getCustomerToken() && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">Bạn cần <Link className="font-semibold underline" to="/ho-so">đăng nhập</Link> trước khi đặt trước.</div>}
+    {preorderStores != null && !anyStorePreorderAvailable && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">Đặt trước hiện chưa áp dụng tại các cửa hàng. Vui lòng quay lại sau.</div>}
     <section className="grid gap-4 rounded-xl border bg-card p-5 md:grid-cols-2">
-      <div><Label>Chi nhánh</Label><Select value={storeId ? String(storeId) : ''} onValueChange={(value) => selectStore(value)}><SelectTrigger><SelectValue placeholder="Chọn chi nhánh" /></SelectTrigger><SelectContent>{stores.map((store) => <SelectItem key={store.id} value={String(store.id)}>{store.name}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Chi nhánh</Label><Select value={storeId ? String(storeId) : ''} onValueChange={(value) => selectStore(value)}><SelectTrigger><SelectValue placeholder="Chọn chi nhánh" /></SelectTrigger><SelectContent>{stores.map((store) => {
+        const available = preorderStores == null ? true : isPreorderAvailableForStore(preorderStores, store.id);
+        return <SelectItem key={store.id} value={String(store.id)} disabled={!available}>{store.name}{available ? '' : ' · Chưa áp dụng đặt trước'}</SelectItem>;
+      })}</SelectContent></Select>{selectedStorePreorderAvailable === false && <p className="mt-1 text-xs text-amber-700">Đặt trước hiện chưa áp dụng tại {selectedStore?.name || 'chi nhánh này'}. Hãy chọn chi nhánh khác.</p>}</div>
       <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} onChange={(event) => setDate(event.target.value)} /></div>
-      <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
       <div><Label><Table2 className="mr-1 inline size-4" />Bàn (không bắt buộc)</Label><Select value={tableId} onValueChange={setTableId} disabled={!hour}><SelectTrigger><SelectValue placeholder="Chưa chọn bàn" /></SelectTrigger><SelectContent><SelectItem value="none">Để cửa hàng sắp xếp</SelectItem>{tables.map((table) => <SelectItem key={table.id} value={String(table.id)}>{table.name}</SelectItem>)}</SelectContent></Select></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
       <div className="md:col-span-2"><Label>Mã voucher (chỉ voucher hỗ trợ đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value)} /></div>
     </section>
     <section className="rounded-xl border bg-card p-5"><div className="mb-3 flex items-center gap-2 font-semibold"><Store className="size-4" />{selectedStore?.name || 'Chưa chọn chi nhánh'}</div><p className="text-sm text-muted-foreground">{selectedItems.length} món được chọn. Không giữ tồn kho; mọi giá và voucher được backend chốt khi thanh toán.</p>{!cartIsSingleStore && <p className="mt-2 text-sm text-destructive">Giỏ hiện có món khác chi nhánh. Hãy chỉ chọn món của một chi nhánh.</p>}</section>
-    <Button className="w-full" size="lg" disabled={submitting || !cartIsSingleStore || selectedItems.length === 0} onClick={submit}><CreditCard className="mr-2 size-4" />{submitting ? 'Đang tạo thanh toán…' : 'Thanh toán preorder bằng VietQR'}</Button>
+    <Button className="w-full" size="lg" disabled={submitting || selectedStorePreorderAvailable !== true || !cartIsSingleStore || selectedItems.length === 0} onClick={submit}><CreditCard className="mr-2 size-4" />{submitting ? 'Đang tạo thanh toán…' : 'Thanh toán preorder bằng VietQR'}</Button>
   </div>;
 }

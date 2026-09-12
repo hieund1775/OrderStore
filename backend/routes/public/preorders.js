@@ -53,11 +53,25 @@ function mountAvailabilityRoute(targetRouter, service) {
 
 export function createPublicPreordersAvailabilityRouter({ service } = {}) {
   const availabilityRouter = Router();
-  mountAvailabilityRoute(availabilityRouter, service || preorderService);
+  const targetService = service || preorderService;
+  availabilityRouter.get('/stores', asyncHandler(async (_req, res) => {
+    try {
+      const stores = await targetService.listStoreAvailability();
+      res.json({ stores });
+    } catch (error) { sendError(res, error); }
+  }));
+  mountAvailabilityRoute(availabilityRouter, targetService);
   return availabilityRouter;
 }
 
 mountAvailabilityRoute(router, preorderService);
+
+router.get('/stores', asyncHandler(async (_req, res) => {
+  try {
+    const stores = await preorderService.listStoreAvailability();
+    res.json({ stores });
+  } catch (error) { sendError(res, error); }
+}));
 
 router.get('/tables', asyncHandler(async (req, res) => {
   try {
