@@ -58,6 +58,31 @@ function harness(overrides = {}) {
 }
 
 describe('Preorder service lifecycle and authorization', () => {
+  it('queries table availability with an explicit timestamptz parameter', async () => {
+    let capturedSql = '';
+    const database = {
+      async query(sql) {
+        capturedSql = sql;
+        return { rows: [] };
+      },
+      async transaction(callback) { return callback({ query: async () => ({ rows: [] }) }); },
+    };
+    const service = createPreorderService({
+      database,
+      repository: {
+        async getActiveStoreSetting() {
+          return { store_id: 1, is_enabled: true, responsible_manager_id: 9, admin_role: 'manager', admin_branch_id: 1 };
+        },
+      },
+      now: () => now,
+    });
+
+    const result = await service.availableTables({ storeId: 1, date: '2026-09-12', hour: 20 });
+    assert.deepEqual(result.tables, []);
+    assert.match(capturedSql, /\$2::timestamptz\s*-\s*INTERVAL '30 minutes'/i);
+    assert.match(capturedSql, /\$2::timestamptz\s*\+\s*INTERVAL '60 minutes'/i);
+  });
+
   it('bridges canonical paid evidence exactly once into manager confirmation', async () => {
     const preorder = { id: 10, status: 'AWAITING_PAYMENT', store_id: 1, customer_user_id: 5, responsible_manager_id: 9, preorder_code: 'PO1' };
     const { service, calls } = harness({ async findByPaymentTarget() { return preorder; } });

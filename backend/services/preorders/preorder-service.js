@@ -155,7 +155,7 @@ export function createPreorderService({
              SELECT 1 FROM preorder_table_reservations r
              WHERE r.table_id = t.id
                AND r.status IN ('pending_payment','held','checked_in')
-               AND tstzrange(r.reserved_from, r.reserved_until, '[)') && tstzrange($2 - INTERVAL '30 minutes', $2 + INTERVAL '60 minutes', '[)')
+               AND tstzrange(r.reserved_from, r.reserved_until, '[)') && tstzrange($2::timestamptz - INTERVAL '30 minutes', $2::timestamptz + INTERVAL '60 minutes', '[)')
            )
          ORDER BY t.name, t.id`, [Number(storeId), slot.start],
       ));
