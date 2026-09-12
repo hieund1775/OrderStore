@@ -4,6 +4,7 @@ import {
   createPaymentLinkForOrder,
   getPayOS,
   isPayOSConfigured,
+  lookupPaymentLinkForRecovery,
   setPayOSForTest,
   SYSTEM_FALLBACK_PROFILE_CODES,
   verifyWebhookData,
@@ -84,5 +85,79 @@ describe('PayOS SDK boundary', () => {
 
     assert.equal(isPayOSConfigured('TEA_INDUSTRY'), false);
     assert.equal(getPayOS('TEA_INDUSTRY'), null);
+  });
+
+  it('reports only sanitized safe metadata for ambiguous provider lookup failures', async () => {
+    const originalWarn = console.warn;
+    const diagnostics = [];
+    console.warn = (...args) => diagnostics.push(args);
+    try {
+      const cases = [
+        { status: 401, code: 'AUTH_FAILED' },
+        { status: 403, code: 'FORBIDDEN' },
+        { status: 429, code: 'RATE_LIMITED' },
+        { status: 503, code: 'UPSTREAM_UNAVAILABLE' },
+        { code: 'ECONNRESET' },
+        { status: 'not-a-status', code: 'unsafe code with payload 123' },
+      ];
+
+      for (const failure of cases) {
+        setPayOSForTest({ paymentRequests: { get: async () => {
+          const error = new Error('raw provider response must never be logged');
+          error.name = 'APIError';
+          error.status = failure.status;
+          error.code = failure.code;
+          error.response = { data: { code: 'raw-provider-payload-code', orderCode: 12345 } };
+          throw error;
+        } } });
+        const result = await lookupPaymentLinkForRecovery(12345, 'DEFAULT_PROFILE');
+        assert.deepEqual(result, { kind: 'unknown', reason: 'LOOKUP_UNCERTAIN' });
+      }
+
+      assert.equal(diagnostics.length, cases.length);
+      for (let index = 0; index < cases.length; index += 1) {
+        const [marker, diagnostic] = diagnostics[index];
+        assert.equal(marker, '[PAYOS_RECOVERY_DIAGNOSTIC]');
+        assert.equal(diagnostic.outcome, 'LOOKUP_UNCERTAIN');
+        assert.equal(diagnostic.profileCode, 'DEFAULT_PROFILE');
+        assert.equal(diagnostic.errorName, 'APIError');
+        assert.equal(Object.hasOwn(diagnostic, 'message'), false);
+        assert.equal(Object.hasOwn(diagnostic, 'response'), false);
+      }
+      assert.deepEqual(diagnostics.map(([, diagnostic]) => diagnostic.errorStatus), [401, 403, 429, 503, null, null]);
+      assert.deepEqual(diagnostics.map(([, diagnostic]) => diagnostic.errorCode), [
+        'AUTH_FAILED', 'FORBIDDEN', 'RATE_LIMITED', 'UPSTREAM_UNAVAILABLE', 'ECONNRESET', null,
+      ]);
+      assert.equal(JSON.stringify(diagnostics).includes('raw-provider-payload-code'), false);
+      assert.equal(JSON.stringify(diagnostics).includes('raw provider response'), false);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it('reports configuration, unsupported SDK, and empty responses without identifiers or payloads', async () => {
+    const originalWarn = console.warn;
+    const diagnostics = [];
+    console.warn = (...args) => diagnostics.push(args);
+    try {
+      assert.deepEqual(await lookupPaymentLinkForRecovery(12345, 'TEA_INDUSTRY'), {
+        kind: 'unknown', reason: 'PROFILE_NOT_CONFIGURED',
+      });
+      setPayOSForTest({});
+      assert.deepEqual(await lookupPaymentLinkForRecovery(12345, 'DEFAULT_PROFILE'), {
+        kind: 'unknown', reason: 'LOOKUP_UNSUPPORTED',
+      });
+      setPayOSForTest({ paymentRequests: { get: async () => null } });
+      assert.deepEqual(await lookupPaymentLinkForRecovery(12345, 'DEFAULT_PROFILE'), {
+        kind: 'unknown', reason: 'EMPTY_RESPONSE',
+      });
+
+      assert.deepEqual(diagnostics.map(([, diagnostic]) => diagnostic.outcome), [
+        'PROFILE_NOT_CONFIGURED', 'LOOKUP_UNSUPPORTED', 'EMPTY_RESPONSE',
+      ]);
+      assert.equal(JSON.stringify(diagnostics).includes('12345'), false);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });
