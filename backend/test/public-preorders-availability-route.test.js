@@ -82,4 +82,44 @@ describe('GET /api/preorders/availability validation', () => {
     assert.deepEqual(result.body, { stores: [{ store_id: 1, is_available: false }, { store_id: 2, is_available: true }] });
     assert.equal(JSON.stringify(result.body).includes('manager'), false);
   });
+
+  it('rejects missing or malformed table-availability query values before calling the service', async () => {
+    let calls = 0;
+    const url = await start({
+      availability: async () => ({ slots: [] }),
+      availableTables: async () => { calls += 1; return { tables: [] }; },
+    });
+
+    const missingStore = await response(`${url}/tables?date=2026-09-15&hour=20`);
+    const invalidHour = await response(`${url}/tables?store_id=1&date=2026-09-15&hour=23`);
+    const invalidDate = await response(`${url}/tables?store_id=1&date=not-a-date&hour=20`);
+
+    assert.equal(missingStore.status, 400);
+    assert.equal(invalidHour.status, 400);
+    assert.equal(invalidDate.status, 400);
+    assert.equal(calls, 0);
+    assert.equal(Object.hasOwn(missingStore.body, 'stack'), false);
+  });
+
+  it('returns an empty table list for a valid slot and preserves store-unavailable business errors', async () => {
+    const emptyUrl = await start({
+      availability: async () => ({ slots: [] }),
+      availableTables: async (input) => {
+        assert.deepEqual(input, { storeId: 1, date: '2026-09-15', hour: 20 });
+        return { scheduled_start_at: '2026-09-15T13:00:00.000Z', tables: [] };
+      },
+    });
+    const empty = await response(`${emptyUrl}/tables?store_id=1&date=2026-09-15&hour=20`);
+    assert.equal(empty.status, 200);
+    assert.deepEqual(empty.body.tables, []);
+
+    const unavailable = Object.assign(new Error('Preorder store unavailable'), { status: 409, code: 'PREORDER_STORE_UNAVAILABLE' });
+    const unavailableUrl = await start({
+      availability: async () => ({ slots: [] }),
+      availableTables: async () => { throw unavailable; },
+    });
+    const result = await response(`${unavailableUrl}/tables?store_id=1&date=2026-09-15&hour=20`);
+    assert.equal(result.status, 409);
+    assert.equal(result.body.error, 'Preorder store unavailable');
+  });
 });

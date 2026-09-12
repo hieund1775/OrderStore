@@ -41,11 +41,30 @@ export function validateAvailabilityQuery(query = {}) {
   return { storeId, date };
 }
 
+export function validateTablesQuery(query = {}) {
+  const { storeId, date } = validateAvailabilityQuery(query);
+  const rawHour = typeof query.hour === 'string' ? query.hour.trim() : '';
+  if (!/^(?:9|1\d|2[0-2])$/.test(rawHour)) {
+    throw invalidQuery('hour', 'PREORDER_SLOT_HOUR_INVALID');
+  }
+  return { storeId, date, hour: Number(rawHour) };
+}
+
 function mountAvailabilityRoute(targetRouter, service) {
   targetRouter.get('/availability', asyncHandler(async (req, res) => {
     try {
       const { storeId, date } = validateAvailabilityQuery(req.query);
       const result = await service.availability({ storeId, date });
+      res.json(result);
+    } catch (error) { sendError(res, error); }
+  }));
+}
+
+function mountTablesRoute(targetRouter, service) {
+  targetRouter.get('/tables', asyncHandler(async (req, res) => {
+    try {
+      const { storeId, date, hour } = validateTablesQuery(req.query);
+      const result = await service.availableTables({ storeId, date, hour });
       res.json(result);
     } catch (error) { sendError(res, error); }
   }));
@@ -61,6 +80,7 @@ export function createPublicPreordersAvailabilityRouter({ service } = {}) {
     } catch (error) { sendError(res, error); }
   }));
   mountAvailabilityRoute(availabilityRouter, targetService);
+  mountTablesRoute(availabilityRouter, targetService);
   return availabilityRouter;
 }
 
@@ -73,14 +93,7 @@ router.get('/stores', asyncHandler(async (_req, res) => {
   } catch (error) { sendError(res, error); }
 }));
 
-router.get('/tables', asyncHandler(async (req, res) => {
-  try {
-    const result = await preorderService.availableTables({
-      storeId: req.query.store_id, date: req.query.date, hour: req.query.hour,
-    });
-    res.json(result);
-  } catch (error) { sendError(res, error); }
-}));
+mountTablesRoute(router, preorderService);
 
 router.post('/checkout', authenticate, customerOnly, asyncHandler(async (req, res) => {
   try {
