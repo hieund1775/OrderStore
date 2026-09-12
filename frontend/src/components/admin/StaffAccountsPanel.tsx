@@ -176,7 +176,7 @@ export function StaffAccountsPanel() {
       </div>
       {loading ? <div className="py-16 text-center text-muted-foreground"><Loader2 className="mx-auto size-5 animate-spin" /></div> : <div className="divide-y">
         {accounts.map((account) => {
-          const mayOperate = isSuper || canManagerOperate(account);
+          const mayOperate = isSuper ? account.role !== 'super' : canManagerOperate(account);
           const isPending = !account.active && !account.email_verified_at;
           return <div key={account.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{account.fullname}</p><Badge variant="secondary">{roleLabels[account.role] || account.role}</Badge><Badge variant={account.active ? 'outline' : 'secondary'}>{accountStatus(account)}</Badge></div><p className="mt-1 truncate text-sm text-muted-foreground">{account.email || 'Chưa có email'} · {account.branch}</p></div>

@@ -475,6 +475,10 @@ export function createStaffService({
         throw new AuthError('Không tìm thấy tài khoản', 404);
       }
 
+      if (target.admin_role === 'super') {
+        throw new AuthError('Không thể thay đổi trạng thái của Super Admin', 403);
+      }
+
       // Authorization
       if (actorRole === 'manager') {
         if (target.id === actorId) {

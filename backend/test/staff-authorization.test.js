@@ -387,6 +387,19 @@ test('Staff Service Authorization Suite', async (t) => {
     );
   });
 
+  await t.test('setStaffStatus: no actor can disable a Super Admin', async () => {
+    await assert.rejects(
+      () => staffService.setStaffStatus({
+        actorId: 1,
+        actorRole: 'super',
+        actorBranchId: null,
+        targetUserId: 1,
+        isActive: false,
+      }),
+      /Không thể thay đổi trạng thái của Super Admin/,
+    );
+  });
+
   await t.test('Super can change staff name, email, role and branch while invalidating their session', async () => {
     const beforeVersion = mockUsersRepo.users.find((user) => user.id === 3).token_version;
     const updated = await staffService.updateStaffBySuper({
