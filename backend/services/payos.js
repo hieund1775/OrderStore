@@ -7,6 +7,15 @@ dotenv.config();
 let payOSInstance = null;
 const profileInstancesCache = new Map();
 
+// These are infrastructure profiles, not merchant-specific industry profiles.
+// They are intentionally allowed to use the root PAYOS_* deployment credentials.
+export const SYSTEM_FALLBACK_PROFILE_CODES = new Set([
+  'LONG_GROUPED_CHECKOUT',
+  'DEFAULT_LONG',
+  'DEFAULT_PROFILE',
+  'GROUP_CHECKOUT',
+]);
+
 function appendQueryParam(value, key, paramValue) {
   if (!value) return value;
   const hashIndex = value.indexOf('#');
@@ -20,6 +29,7 @@ function appendQueryParam(value, key, paramValue) {
 
 export function setPayOSForTest(instance = null) {
   payOSInstance = instance;
+  profileInstancesCache.clear();
 }
 
 export function isPayOSConfigured(profileCode = null) {
@@ -31,8 +41,7 @@ export function isPayOSConfigured(profileCode = null) {
     const cs = process.env[`${envPrefix}_CHECKSUM_KEY`]?.trim();
     if (cid && key && cs) return true;
 
-    // Only system profiles LONG_GROUPED_CHECKOUT / DEFAULT_LONG can fallback to legacy PAYOS_*
-    if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
+    if (SYSTEM_FALLBACK_PROFILE_CODES.has(normalizedCode)) {
       const rootCid = process.env.PAYOS_CLIENT_ID?.trim();
       const rootKey = process.env.PAYOS_API_KEY?.trim();
       const rootCs = process.env.PAYOS_CHECKSUM_KEY?.trim();
@@ -69,8 +78,7 @@ export function getPayOS(profileCode = null) {
       return instance;
     }
 
-    // Only system default profiles can fallback to root PAYOS_* instance
-    if (normalizedCode === 'LONG_GROUPED_CHECKOUT' || normalizedCode === 'DEFAULT_LONG') {
+    if (SYSTEM_FALLBACK_PROFILE_CODES.has(normalizedCode)) {
       if (isPayOSConfigured()) {
         const defaultInstance = new PayOS({
           clientId: process.env.PAYOS_CLIENT_ID.trim(),
