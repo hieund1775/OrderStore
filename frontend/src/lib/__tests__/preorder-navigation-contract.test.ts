@@ -18,4 +18,12 @@ describe('preorder availability navigation contract', () => {
     expect(checkout).toContain('if (preorderStores == null) return undefined;');
     expect(checkout).toContain('selectedStorePreorderAvailable !== true');
   });
+
+  it('lets customers select products and review their preorder cart without a separate checkout flow', () => {
+    expect(checkout).toContain("ProductCard");
+    expect(checkout).toContain("apiGet<ApiCatalogProduct[]>('/api/products')");
+    expect(checkout).toContain('Chọn món cho đơn đặt trước');
+    expect(checkout).toContain('Giỏ preorder');
+    expect(checkout).toContain('selectedSubtotal');
+  });
 });
