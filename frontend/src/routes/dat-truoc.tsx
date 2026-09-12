@@ -32,6 +32,15 @@ function vietnamToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 }
 
+function vietnamTomorrow() {
+  const [year, month, day] = vietnamToday().split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+}
+
+function hasAnyAvailableSlot(slots: PreorderSlot[] | undefined) {
+  return Boolean(slots?.some((slot) => slot.available));
+}
+
 function PreorderCheckoutPage() {
   const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty } = useCart();
   const { stores, selectedStoreId, selectStore } = useBranch();
@@ -61,6 +70,9 @@ function PreorderCheckoutPage() {
     ? null
     : isPreorderAvailableForStore(preorderStores, storeId);
   const anyStorePreorderAvailable = preorderStores != null && hasAvailablePreorderStore(preorderStores);
+  const noAvailableSlotsToday = date === vietnamToday()
+    && availability != null
+    && !hasAnyAvailableSlot(availability.slots);
   const cartIsSingleStore = useMemo(
     () => selectedItems.length > 0 && selectedItems.every((item) => !item.storeId || Number(item.storeId) === storeId),
     [selectedItems, storeId],
@@ -135,12 +147,17 @@ function PreorderCheckoutPage() {
 
   useEffect(() => {
     let active = true;
-    if (!hour || !Number.isInteger(storeId)) return undefined;
+    const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour);
+    if (!hour || !Number.isInteger(storeId) || selectedSlot?.available !== true) {
+      setTables([]);
+      setTableId('none');
+      return undefined;
+    }
     apiGet<{ tables: StoreTable[] }>(`/api/preorders/tables?store_id=${storeId}&date=${encodeURIComponent(date)}&hour=${hour}`)
       .then((value) => { if (active) setTables(value.tables || []); })
       .catch((error) => { if (active) toast.error(error instanceof Error ? error.message : 'Không thể tải bàn trống'); });
     return () => { active = false; };
-  }, [date, hour, storeId]);
+  }, [availability, date, hour, storeId]);
 
   async function submit() {
     if (!getCustomerToken()) { toast.error('Vui lòng đăng nhập để đặt trước.'); return; }
@@ -202,6 +219,7 @@ function PreorderCheckoutPage() {
         return <SelectItem key={store.id} value={String(store.id)} disabled={!available}>{store.name}{available ? '' : ' · Chưa áp dụng đặt trước'}</SelectItem>;
       })}</SelectContent></Select>{selectedStorePreorderAvailable === false && <p className="mt-1 text-xs text-amber-700">Đặt trước hiện chưa áp dụng tại {selectedStore?.name || 'chi nhánh này'}. Hãy chọn chi nhánh khác.</p>}</div>
       <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} onChange={(event) => setDate(event.target.value)} /></div>
+      {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
       <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
       <div><Label><Table2 className="mr-1 inline size-4" />Bàn (không bắt buộc)</Label><Select value={tableId} onValueChange={setTableId} disabled={!hour}><SelectTrigger><SelectValue placeholder="Chưa chọn bàn" /></SelectTrigger><SelectContent><SelectItem value="none">Để cửa hàng sắp xếp</SelectItem>{tables.map((table) => <SelectItem key={table.id} value={String(table.id)}>{table.name}</SelectItem>)}</SelectContent></Select></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
