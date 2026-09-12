@@ -6,6 +6,7 @@ dotenv.config();
 
 let payOSInstance = null;
 const profileInstancesCache = new Map();
+const SAFE_DIAGNOSTIC_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 // These are infrastructure profiles, not merchant-specific industry profiles.
 // They are intentionally allowed to use the root PAYOS_* deployment credentials.
@@ -25,6 +26,41 @@ function appendQueryParam(value, key, paramValue) {
     ? (base.endsWith('?') || base.endsWith('&') ? '' : '&')
     : '?';
   return `${base}${separator}${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}${hash}`;
+}
+
+function rootPayOSCredentialsPresent() {
+  return Boolean(
+    process.env.PAYOS_CLIENT_ID?.trim()
+    && process.env.PAYOS_API_KEY?.trim()
+    && process.env.PAYOS_CHECKSUM_KEY?.trim(),
+  );
+}
+
+function safeDiagnosticToken(value) {
+  const normalized = String(value || '').trim();
+  return SAFE_DIAGNOSTIC_TOKEN.test(normalized) ? normalized : null;
+}
+
+function safeHttpStatus(error) {
+  const status = Number(error?.statusCode || error?.status || error?.response?.status || 0);
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+function logRecoveryDiagnostic(outcome, profileCode, error = null) {
+  const profile = safeDiagnosticToken(String(profileCode || 'default').toUpperCase()) || 'UNKNOWN_PROFILE';
+  const diagnostic = {
+    outcome,
+    profileCode: profile,
+    rootPayOSCredentialsPresent: rootPayOSCredentialsPresent(),
+  };
+
+  if (error) {
+    diagnostic.errorName = safeDiagnosticToken(error.name) || 'Error';
+    diagnostic.errorStatus = safeHttpStatus(error);
+    diagnostic.errorCode = safeDiagnosticToken(error.code);
+  }
+
+  console.warn('[PAYOS_RECOVERY_DIAGNOSTIC]', diagnostic);
 }
 
 export function setPayOSForTest(instance = null) {
@@ -228,7 +264,10 @@ function isConclusiveNotFound(error) {
  */
 export async function lookupPaymentLinkForRecovery(orderCode, profileCode = null) {
   const instance = getPayOS(profileCode);
-  if (!instance) return { kind: 'unknown', reason: 'PROFILE_NOT_CONFIGURED' };
+  if (!instance) {
+    logRecoveryDiagnostic('PROFILE_NOT_CONFIGURED', profileCode);
+    return { kind: 'unknown', reason: 'PROFILE_NOT_CONFIGURED' };
+  }
 
   try {
     let payment;
@@ -237,11 +276,15 @@ export async function lookupPaymentLinkForRecovery(orderCode, profileCode = null
     } else if (typeof instance.getPaymentLinkInformation === 'function') {
       payment = await instance.getPaymentLinkInformation(Number(orderCode));
     } else {
+      logRecoveryDiagnostic('LOOKUP_UNSUPPORTED', profileCode);
       return { kind: 'unknown', reason: 'LOOKUP_UNSUPPORTED' };
     }
-    return payment ? { kind: 'found', payment } : { kind: 'unknown', reason: 'EMPTY_RESPONSE' };
+    if (payment) return { kind: 'found', payment };
+    logRecoveryDiagnostic('EMPTY_RESPONSE', profileCode);
+    return { kind: 'unknown', reason: 'EMPTY_RESPONSE' };
   } catch (error) {
     if (isConclusiveNotFound(error)) return { kind: 'not_found' };
+    logRecoveryDiagnostic('LOOKUP_UNCERTAIN', profileCode, error);
     return { kind: 'unknown', reason: 'LOOKUP_UNCERTAIN' };
   }
 }
