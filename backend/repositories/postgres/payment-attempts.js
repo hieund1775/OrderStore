@@ -5,6 +5,22 @@ export const PAYMENT_ATTEMPT_STATUSES = Object.freeze([
 ]);
 
 const OPEN_ATTEMPT_STATUSES = Object.freeze(['creating', 'active']);
+const LATEST_ORDER_STATUS_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT osh.status
+    FROM order_status_history osh
+    WHERE osh.order_id = o.id
+    ORDER BY osh.created_at DESC, osh.id DESC
+    LIMIT 1
+  ) latest_status ON TRUE`;
+const orderIsNotCancelledSql = (orderAlias = 'o') => `
+  COALESCE((
+    SELECT osh.status
+    FROM order_status_history osh
+    WHERE osh.order_id = ${orderAlias}.id
+    ORDER BY osh.created_at DESC, osh.id DESC
+    LIMIT 1
+  ), '') IS DISTINCT FROM 'Đã hủy'`;
 const PAYMENT_ATTEMPT_TRANSITIONS = Object.freeze({
   creating: new Set(['active', 'expired', 'superseded', 'paid', 'failed']),
   active: new Set(['expired', 'superseded', 'paid', 'failed']),
@@ -68,11 +84,14 @@ async function inTransaction(database, externalTx, runner) {
 async function lockTarget(tx, target) {
   if (target.type === 'order') {
     const [rows] = await tx.query(
-      `SELECT id, order_code, total, payment_provider, payment_status, checkout_group_id,
-              current_status, current_payment_attempt_id, payment_profile_code, payment_profile_version,
-              user_id, cancel_token_hash, payment_link_id, payos_order_code,
-              payment_checkout_url, payment_qr_code, payment_expires_at
-       FROM orders WHERE id = $1 FOR UPDATE`,
+      `SELECT o.id, o.order_code, o.total, o.payment_provider, o.payment_status, o.checkout_group_id,
+              latest_status.status AS current_status, o.current_payment_attempt_id,
+              o.payment_profile_code, o.payment_profile_version,
+              o.user_id, o.cancel_token_hash, o.payment_link_id, o.payos_order_code,
+              o.payment_checkout_url, o.payment_qr_code, o.payment_expires_at
+       FROM orders o${LATEST_ORDER_STATUS_JOIN}
+       WHERE o.id = $1
+       FOR UPDATE OF o`,
       [target.id],
     );
     return rows[0] ? { ...rows[0], target_type: 'order' } : null;
@@ -223,7 +242,7 @@ async function mirrorActiveAttemptToLegacyTarget(tx, target, attempt, {
 
   if (target.type === 'order') {
     const [rows] = await tx.query(
-      `UPDATE orders
+      `UPDATE orders o
        SET payment_provider = $2,
            payment_status = $3,
            payos_order_code = $4,
@@ -235,7 +254,7 @@ async function mirrorActiveAttemptToLegacyTarget(tx, target, attempt, {
            current_payment_attempt_id = $10,
            paid_at = CASE WHEN $3::varchar = 'paid' THEN COALESCE($11, paid_at, CURRENT_TIMESTAMP) ELSE paid_at END,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND checkout_group_id IS NULL AND current_status IS DISTINCT FROM 'Đã hủy'
+       WHERE o.id = $1 AND o.checkout_group_id IS NULL AND ${orderIsNotCancelledSql('o')}
        RETURNING *`,
       [
         target.id, attempt.provider, paymentStatus, attempt.provider_order_code, attempt.provider_payment_link_id,
@@ -275,10 +294,10 @@ async function mirrorActiveAttemptToLegacyTarget(tx, target, attempt, {
 async function markTargetPaid(tx, target, paidAt) {
   if (target.type === 'order') {
     const [rows] = await tx.query(
-      `UPDATE orders
+      `UPDATE orders o
        SET payment_status = 'paid', paid_at = COALESCE($2, paid_at, CURRENT_TIMESTAMP),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND current_status IS DISTINCT FROM 'Đã hủy'
+       WHERE o.id = $1 AND ${orderIsNotCancelledSql('o')}
        RETURNING *`,
       [target.id, paidAt || null],
     );
@@ -314,8 +333,8 @@ async function markTargetExpiredIfCurrent(tx, target, attempt) {
   if (Number(target.current_payment_attempt_id) !== Number(attempt.id)) return;
   if (target.type === 'order') {
     await tx.query(
-      `UPDATE orders SET payment_status = 'expired', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND payment_status <> 'paid' AND current_status IS DISTINCT FROM 'Đã hủy'`,
+      `UPDATE orders o SET payment_status = 'expired', updated_at = CURRENT_TIMESTAMP
+       WHERE o.id = $1 AND o.payment_status <> 'paid' AND ${orderIsNotCancelledSql('o')}`,
       [target.id],
     );
     return;
@@ -407,13 +426,13 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
       const normalizedCode = requireNonEmpty(orderCode, 'PAYMENT_ATTEMPT_ORDER_CODE_REQUIRED', 'orderCode');
       const runner = async (tx) => {
         const [rows] = await tx.query(
-          `SELECT id, order_code, user_id, cancel_token_hash, total, payment_provider,
-                  payment_status, current_status, checkout_group_id,
-                  payment_profile_code, payment_profile_version,
-                  current_payment_attempt_id, payment_link_id, payos_order_code,
-                  payment_checkout_url, payment_qr_code, payment_expires_at
-           FROM orders
-           WHERE order_code = $1`,
+          `SELECT o.id, o.order_code, o.user_id, o.cancel_token_hash, o.total, o.payment_provider,
+                  o.payment_status, latest_status.status AS current_status, o.checkout_group_id,
+                  o.payment_profile_code, o.payment_profile_version,
+                  o.current_payment_attempt_id, o.payment_link_id, o.payos_order_code,
+                  o.payment_checkout_url, o.payment_qr_code, o.payment_expires_at
+           FROM orders o${LATEST_ORDER_STATUS_JOIN}
+           WHERE o.order_code = $1`,
           [normalizedCode],
         );
         return rows[0] || null;
