@@ -146,8 +146,8 @@ export function createPreordersRepository(database = postgresDb) {
         if (tableId != null) {
           await runner.query(
             `INSERT INTO preorder_table_reservations
-               (preorder_id, table_id, reserved_from, reserved_until, status)
-             VALUES ($1,$2,$3 - INTERVAL '30 minutes',$3 + INTERVAL '60 minutes','pending_payment')`,
+             (preorder_id, table_id, reserved_from, reserved_until, status)
+             VALUES ($1,$2,$3::timestamptz - INTERVAL '30 minutes',$3::timestamptz + INTERVAL '60 minutes','pending_payment')`,
             [preorder.id, Number(tableId), scheduledStartAt],
           );
         }
@@ -301,7 +301,7 @@ export function createPreordersRepository(database = postgresDb) {
         if (existing) {
           const rows = rowsOf(await runner.query(
             `UPDATE preorder_table_reservations
-             SET table_id = $2, reserved_from = $3 - INTERVAL '30 minutes', reserved_until = $3 + INTERVAL '60 minutes',
+             SET table_id = $2, reserved_from = $3::timestamptz - INTERVAL '30 minutes', reserved_until = $3::timestamptz + INTERVAL '60 minutes',
                  status = CASE WHEN status IN ('released','cancelled','expired') THEN 'held' ELSE status END,
                  released_at = NULL, updated_at = CURRENT_TIMESTAMP
              WHERE preorder_id = $1 RETURNING *`,
@@ -310,8 +310,8 @@ export function createPreordersRepository(database = postgresDb) {
           return rows[0] || null;
         }
         const rows = rowsOf(await runner.query(
-          `INSERT INTO preorder_table_reservations (preorder_id,table_id,reserved_from,reserved_until,status)
-           VALUES ($1,$2,$3 - INTERVAL '30 minutes',$3 + INTERVAL '60 minutes','held') RETURNING *`,
+           `INSERT INTO preorder_table_reservations (preorder_id,table_id,reserved_from,reserved_until,status)
+           VALUES ($1,$2,$3::timestamptz - INTERVAL '30 minutes',$3::timestamptz + INTERVAL '60 minutes','held') RETURNING *`,
           [Number(preorderId), Number(tableId), scheduledStartAt],
         ));
         return rows[0] || null;

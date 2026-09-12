@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { CalendarClock, CreditCard, Store, Table2 } from 'lucide-react';
+import { CalendarClock, CreditCard, Minus, Plus, ShoppingBag, Store, Table2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useBranch } from '@/lib/branch';
 import { useCart } from '@/lib/cart';
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from '@/lib/api';
+import { ProductCard } from '@/components/menu/ProductCard';
+import { mapApiProduct, type ApiCatalogProduct, type Product, vnd } from '@/lib/data';
 import {
   fetchPreorderStoreAvailability,
   hasAvailablePreorderStore,
@@ -30,7 +32,7 @@ function vietnamToday() {
 }
 
 function PreorderCheckoutPage() {
-  const { selectedItems, removeItems } = useCart();
+  const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty } = useCart();
   const { stores, selectedStoreId, selectStore } = useBranch();
   const [date, setDate] = useState(vietnamToday());
   const [hour, setHour] = useState<string>('');
@@ -41,6 +43,9 @@ function PreorderCheckoutPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [voucherCode, setVoucherCode] = useState('');
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const request = useRef<{ signature: string; key: string } | null>(null);
 
@@ -58,6 +63,24 @@ function PreorderCheckoutPage() {
   useEffect(() => {
     const user = getCustomerUser();
     if (user) { setName(user.fullname || ''); setPhone(user.phone || ''); }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setCatalogLoading(true);
+    apiGet<ApiCatalogProduct[]>('/api/products')
+      .then((rows) => {
+        if (!active) return;
+        setCatalogProducts((rows || []).map(mapApiProduct));
+        setCatalogError(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setCatalogProducts([]);
+        setCatalogError(error instanceof Error ? error.message : 'Không thể tải thực đơn');
+      })
+      .finally(() => { if (active) setCatalogLoading(false); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -163,7 +186,27 @@ function PreorderCheckoutPage() {
       <div><Label>Số điện thoại</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
       <div className="md:col-span-2"><Label>Mã voucher (chỉ voucher hỗ trợ đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value)} /></div>
     </section>
-    <section className="rounded-xl border bg-card p-5"><div className="mb-3 flex items-center gap-2 font-semibold"><Store className="size-4" />{selectedStore?.name || 'Chưa chọn chi nhánh'}</div><p className="text-sm text-muted-foreground">{selectedItems.length} món được chọn. Không giữ tồn kho; mọi giá và voucher được backend chốt khi thanh toán.</p>{!cartIsSingleStore && <p className="mt-2 text-sm text-destructive">Giỏ hiện có món khác chi nhánh. Hãy chỉ chọn món của một chi nhánh.</p>}</section>
+    <section className="rounded-xl border bg-card p-5">
+      <div className="mb-3 flex items-center gap-2 font-semibold"><ShoppingBag className="size-4" />Chọn món cho đơn đặt trước</div>
+      {!selectedStore ? <p className="text-sm text-muted-foreground">Hãy chọn chi nhánh trước để xem và thêm món.</p> : null}
+      {selectedStore && selectedStorePreorderAvailable !== true ? <p className="text-sm text-amber-700">Chi nhánh này chưa nhận đặt trước nên chưa thể thêm món cho preorder.</p> : null}
+      {selectedStorePreorderAvailable === true && catalogLoading ? <p className="text-sm text-muted-foreground">Đang tải thực đơn…</p> : null}
+      {selectedStorePreorderAvailable === true && catalogError ? <p className="text-sm text-destructive">{catalogError}</p> : null}
+      {selectedStorePreorderAvailable === true && !catalogLoading && !catalogError ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} />)}</div> : null}
+    </section>
+
+    <section className="rounded-xl border bg-card p-5">
+      <div className="mb-3 flex items-center gap-2 font-semibold"><Store className="size-4" />Giỏ preorder · {selectedStore?.name || 'Chưa chọn chi nhánh'}</div>
+      {selectedItems.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có món nào. Hãy chọn món ở phần thực đơn phía trên.</p> : <div className="space-y-3">
+        {selectedItems.map((item) => <div key={item.key} className="flex items-center gap-3 rounded-lg border p-3">
+          <div className="min-w-0 flex-1"><p className="truncate font-medium">{item.name}</p><p className="text-xs text-muted-foreground">{item.size || 'M'} · {vnd(item.unitPrice)}</p></div>
+          <div className="flex items-center gap-1 rounded-md border"><Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`Giảm số lượng ${item.name}`} onClick={() => setQty(item.key, item.qty - 1)}><Minus className="size-4" /></Button><span className="w-6 text-center text-sm font-medium">{item.qty}</span><Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`Tăng số lượng ${item.name}`} onClick={() => setQty(item.key, item.qty + 1)}><Plus className="size-4" /></Button></div>
+          <Button type="button" variant="ghost" size="icon" className="text-destructive" aria-label={`Xóa ${item.name}`} onClick={() => removeItem(item.key)}><Trash2 className="size-4" /></Button>
+        </div>)}
+        <div className="flex items-center justify-between border-t pt-3 font-semibold"><span>Tạm tính</span><span>{vnd(selectedSubtotal)}</span></div>
+      </div>}
+      {!cartIsSingleStore && <p className="mt-3 text-sm text-destructive">Giỏ hiện có món khác chi nhánh. Hãy bỏ các món khác chi nhánh trước khi thanh toán preorder.</p>}
+    </section>
     <Button className="w-full" size="lg" disabled={submitting || selectedStorePreorderAvailable !== true || !cartIsSingleStore || selectedItems.length === 0} onClick={submit}><CreditCard className="mr-2 size-4" />{submitting ? 'Đang tạo thanh toán…' : 'Thanh toán preorder bằng VietQR'}</Button>
   </div>;
 }
