@@ -21,7 +21,11 @@ describe('preorder availability navigation contract', () => {
 
   it('lets customers select products and review their preorder cart without a separate checkout flow', () => {
     expect(checkout).toContain("ProductCard");
-    expect(checkout).toContain("apiGet<ApiCatalogProduct[]>('/api/products')");
+    expect(checkout).toContain('fetchPublicProducts({');
+    expect(checkout).toContain('usePublicCategoryTree');
+    expect(checkout).toContain('activeCatalogCategory');
+    expect(checkout).toContain('Tất cả món');
+    expect(checkout).toContain('Tìm món preorder');
     expect(checkout).toContain('Chọn món cho đơn đặt trước');
     expect(checkout).toContain('Giỏ preorder');
     expect(checkout).toContain('selectedSubtotal');

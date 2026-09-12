@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { CalendarClock, CreditCard, Minus, Plus, ShoppingBag, Store, Table2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,9 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBranch } from '@/lib/branch';
 import { useCart } from '@/lib/cart';
-import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from '@/lib/api';
+import { apiGet, apiPost, createIdempotencyKey, fetchPublicProducts, getCustomerToken, getCustomerUser } from '@/lib/api';
 import { ProductCard } from '@/components/menu/ProductCard';
-import { mapApiProduct, type ApiCatalogProduct, type Product, vnd } from '@/lib/data';
+import { mapApiProduct, type Product, vnd } from '@/lib/data';
+import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import {
   fetchPreorderStoreAvailability,
   hasAvailablePreorderStore,
@@ -23,7 +24,7 @@ export const Route = createFileRoute('/dat-truoc')({ component: PreorderCheckout
 type PreorderSlot = { hour: number; available: boolean; reason?: string; scheduled_start_at?: string };
 type Availability = { slots: PreorderSlot[] };
 type StoreTable = { id: number; name: string };
-type Product = { id: number; slug?: string };
+type CheckoutProduct = { id: number; slug?: string };
 type Option = { id: number; label?: string; name?: string };
 type CheckoutResponse = { preorder?: { preorder_code?: string }; checkout_url?: string; qr_code?: string; group_code?: string; order_code?: string };
 
@@ -44,13 +45,18 @@ function PreorderCheckoutPage() {
   const [phone, setPhone] = useState('');
   const [voucherCode, setVoucherCode] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [activeCatalogCategory, setActiveCatalogCategory] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const request = useRef<{ signature: string; key: string } | null>(null);
 
   const storeId = Number(selectedStoreId);
+  const deferredCatalogSearch = useDeferredValue(catalogSearch.trim());
   const selectedStore = stores.find((store) => store.id === storeId);
+  const categoryTreeQuery = usePublicCategoryTree(Number.isInteger(storeId) && storeId > 0 ? storeId : null);
+  const preorderCategories = categoryTreeQuery.data || [];
   const selectedStorePreorderAvailable = preorderStores == null
     ? null
     : isPreorderAvailableForStore(preorderStores, storeId);
@@ -67,11 +73,22 @@ function PreorderCheckoutPage() {
 
   useEffect(() => {
     let active = true;
+    if (!Number.isInteger(storeId) || storeId <= 0 || selectedStorePreorderAvailable !== true) {
+      setCatalogProducts([]);
+      setCatalogError(null);
+      setCatalogLoading(false);
+      return () => { active = false; };
+    }
     setCatalogLoading(true);
-    apiGet<ApiCatalogProduct[]>('/api/products')
-      .then((rows) => {
+    fetchPublicProducts({
+      store_id: storeId,
+      category: activeCatalogCategory || undefined,
+      search: deferredCatalogSearch || undefined,
+      limit: 100,
+    })
+      .then((result) => {
         if (!active) return;
-        setCatalogProducts((rows || []).map(mapApiProduct));
+        setCatalogProducts((result.products || []).map(mapApiProduct));
         setCatalogError(null);
       })
       .catch((error) => {
@@ -81,7 +98,12 @@ function PreorderCheckoutPage() {
       })
       .finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [activeCatalogCategory, deferredCatalogSearch, selectedStorePreorderAvailable, storeId]);
+
+  useEffect(() => {
+    setActiveCatalogCategory('');
+    setCatalogSearch('');
+  }, [storeId]);
 
   useEffect(() => {
     let active = true;
@@ -130,7 +152,7 @@ function PreorderCheckoutPage() {
     setSubmitting(true);
     try {
       const [products, sizes, toppings] = await Promise.all([
-        apiGet<Product[]>('/api/products'), apiGet<Option[]>('/api/options/sizes'), apiGet<Option[]>('/api/options/toppings'),
+        apiGet<CheckoutProduct[]>('/api/products'), apiGet<Option[]>('/api/options/sizes'), apiGet<Option[]>('/api/options/toppings'),
       ]);
       const productId = new Map<string, number>();
       for (const product of products) {
@@ -192,7 +214,16 @@ function PreorderCheckoutPage() {
       {selectedStore && selectedStorePreorderAvailable !== true ? <p className="text-sm text-amber-700">Chi nhánh này chưa nhận đặt trước nên chưa thể thêm món cho preorder.</p> : null}
       {selectedStorePreorderAvailable === true && catalogLoading ? <p className="text-sm text-muted-foreground">Đang tải thực đơn…</p> : null}
       {selectedStorePreorderAvailable === true && catalogError ? <p className="text-sm text-destructive">{catalogError}</p> : null}
-      {selectedStorePreorderAvailable === true && !catalogLoading && !catalogError ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} />)}</div> : null}
+      {selectedStorePreorderAvailable === true && !catalogLoading && !catalogError ? <>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex max-w-full gap-1.5 overflow-x-auto py-1 no-scrollbar" aria-label="Lọc theo danh mục">
+            <Button type="button" size="sm" variant={activeCatalogCategory ? 'outline' : 'default'} onClick={() => setActiveCatalogCategory('')}>Tất cả món</Button>
+            {preorderCategories.map((category) => <Button key={category.id} type="button" size="sm" variant={activeCatalogCategory === category.slug ? 'default' : 'outline'} className="shrink-0" onClick={() => setActiveCatalogCategory(category.slug)}>{category.name}</Button>)}
+          </div>
+          <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Tìm món…" className="sm:max-w-52" aria-label="Tìm món preorder" />
+        </div>
+        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} />)}</div>}
+      </> : null}
     </section>
 
     <section className="rounded-xl border bg-card p-5">
