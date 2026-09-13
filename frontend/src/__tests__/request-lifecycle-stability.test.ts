@@ -190,6 +190,10 @@ describe('Request lifecycle stability and single-flight containment', () => {
   });
 
   describe('Order tracking (theo-doi-don) single-flight & timer lifecycle', () => {
+    it('imports useRef for its in-flight and lifecycle refs', () => {
+      expect(theoDoiDonSource).toMatch(/import\s*\{[^}]*useRef[^}]*\}\s*from\s*["']react["']/);
+    });
+
     it('contains in-flight deduplication map for lookup requests', () => {
       expect(theoDoiDonSource).toContain('inFlightLoadRef = useRef<Map<string, Promise<{ ok: boolean; status?: number }>>>(new Map())');
       expect(theoDoiDonSource).toContain('inFlightLoadRef.current.get(codeKey)');
