@@ -75,6 +75,78 @@ describe('Request lifecycle stability and single-flight containment', () => {
     });
   });
 
+  describe('Generic mutation single-flight guard', () => {
+    it('sends one request for a duplicate mutation on the same resource', async () => {
+      let networkCalls = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        networkCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }));
+
+      const [first, second] = await Promise.all([
+        apiModule.apiFetch('/admin/branches/1', {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: 0 }),
+        }),
+        apiModule.apiFetch('/admin/branches/1', {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: 0 }),
+        }),
+      ]);
+
+      expect(networkCalls).toBe(1);
+      expect(second).toEqual(first);
+      vi.unstubAllGlobals();
+    });
+
+    it('keeps different resource mutations independent', async () => {
+      let networkCalls = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        networkCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }));
+
+      await Promise.all([
+        apiModule.apiFetch('/admin/branches/1', { method: 'PUT', body: '{}' }),
+        apiModule.apiFetch('/admin/branches/2', { method: 'PUT', body: '{}' }),
+      ]);
+
+      expect(networkCalls).toBe(2);
+      vi.unstubAllGlobals();
+    });
+
+    it('releases a failed mutation so the user can retry', async () => {
+      let networkCalls = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        networkCalls += 1;
+        if (networkCalls === 1) {
+          return new Response(JSON.stringify({ error: 'temporary failure' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }));
+
+      await expect(apiModule.apiFetch('/admin/branches/1', { method: 'PUT', body: '{}' })).rejects.toThrow();
+      await expect(apiModule.apiFetch('/admin/branches/1', { method: 'PUT', body: '{}' })).resolves.toEqual({ ok: true });
+
+      expect(networkCalls).toBe(2);
+      vi.unstubAllGlobals();
+    });
+  });
+
   describe('Order tracking (theo-doi-don) single-flight & timer lifecycle', () => {
     it('contains in-flight deduplication map for lookup requests', () => {
       expect(theoDoiDonSource).toContain('inFlightLoadRef = useRef<Map<string, Promise<{ ok: boolean; status?: number }>>>(new Map())');
