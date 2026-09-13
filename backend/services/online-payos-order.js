@@ -48,6 +48,8 @@ export async function createOnlinePayOSOrder({
   idempotencyKey,
   rootCategoryId = null,
   paymentProfile = null,
+  ordersRepository: repository = ordersRepository,
+  directPayOSAttempts = directPayOSAttemptService,
 }) {
   const requestHash = hashOrderRequest(input);
   let rawCancelToken = cancelToken;
@@ -56,7 +58,7 @@ export async function createOnlinePayOSOrder({
     rawCancelToken = crypto.randomBytes(32).toString('hex');
     tokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
   }
-  const order = await ordersRepository.createPublicOrder({
+  const order = await repository.createPublicOrder({
     input,
     userId,
     cancelTokenHash: tokenHash,
@@ -67,9 +69,14 @@ export async function createOnlinePayOSOrder({
     rootCategoryId,
     paymentProfile,
   });
+  // Fully voucher-covered orders are already settled by the repository. Do
+  // not call PayOS or create a payment attempt for a 0 VND amount.
+  if (order.payment_status === 'paid' && order.payment_provider === 'promotion') {
+    return { ...order, payment_required: false };
+  }
   const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, order.order_code);
   const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, order.order_code);
-  const payment = await directPayOSAttemptService.createForOrder({
+  const payment = await directPayOSAttempts.createForOrder({
     order,
     paymentProfile,
     returnUrl: effectiveReturnUrl,
@@ -82,5 +89,6 @@ export async function createOnlinePayOSOrder({
     payment_link_id: payment.payment_link_id,
     payos_order_code: payment.payos_order_code,
     payment_expires_at: payment.payment_expires_at,
+    payment_required: true,
   };
 }

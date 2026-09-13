@@ -65,6 +65,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       voucherCode = null,
       paymentProfile,
       allocations = [],
+      paymentProvider = 'payos',
+      paymentStatus = 'unpaid',
     }, { tx: externalTx } = {}) {
       const runner = async (tx) => {
         const paymentProfileCode = String(paymentProfile?.code || '').trim();
@@ -75,17 +77,20 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
 
         const [groupRows] = await tx.query(
           `INSERT INTO checkout_groups
-             (group_code, store_id, user_id, payment_provider, payment_status,
+             (group_code, store_id, user_id, payment_provider, payment_status, paid_at,
               payment_profile_id, payment_profile_code, payment_profile_version,
               receiver_bank_name, receiver_account_number, receiver_account_holder,
               subtotal, discount_amount, shipping_fee, total_amount, voucher_code,
               created_at, updated_at)
-           VALUES ($1, $2, $3, 'payos', 'unpaid', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+           VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 = 'paid' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                   $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
            RETURNING *`,
           [
             groupCode,
             Number(storeId),
             userId ? Number(userId) : null,
+            paymentProvider,
+            paymentStatus,
             paymentProfile?.id ? Number(paymentProfile.id) : null,
             paymentProfileCode,
             Number(paymentProfile?.version || 1),

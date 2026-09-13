@@ -235,4 +235,9 @@ describe('Request lifecycle stability and single-flight containment', () => {
       expect(thanhToanSource).toContain('setAppliedCode("")');
     });
   });
+
+  it('handles a fully voucher-covered order without requesting a PayOS QR', () => {
+    expect(thanhToanSource).toContain('res.payment_required === false && createdPaymentCode');
+    expect(thanhToanSource).toContain('to: "/theo-doi-don", search: { code: createdPaymentCode }');
+  });
 });

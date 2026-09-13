@@ -194,6 +194,15 @@ export function createOrdersRepository(
         const total = Math.max(0, subtotal - discountAmount);
         const pointsEarned = Math.floor(total / 1000);
         const orderInstant = clock();
+        // PayOS cannot create a 0 VND link. A voucher that fully covers an
+        // otherwise payable order is settled atomically with the order and
+        // therefore owns no provider payment attempt or QR artifact.
+        const isPromotionSettled = discountAmount > 0 && total === 0;
+        const effectivePaymentStatus = (isPromotionSettled || input.order_type === 'POS' || input.source === 'pos')
+          ? 'paid'
+          : 'unpaid';
+        const effectivePaymentProvider = isPromotionSettled ? 'promotion' : paymentProvider;
+        const effectivePaidAt = effectivePaymentStatus === 'paid' ? orderInstant : null;
 
         const profileId = paymentProfile?.id ? Number(paymentProfile.id) : null;
         const profileCode = paymentProfile?.code || null;
@@ -220,8 +229,8 @@ export function createOrdersRepository(
                RETURNING id, order_code, subtotal, discount_amount, total, payment_status, payment_provider,
                          root_category_id, payment_profile_code`,
               [candidateCode, userId, input.store_id, input.table_id || null, locationName, input.preorder_id || null, input.order_type || 'Take-away',
-                input.payment_method || 'COD', (input.order_type === 'POS' || input.source === 'pos') ? 'paid' : 'unpaid', paymentProvider,
-                (input.order_type === 'POS' || input.source === 'pos') ? orderInstant : null, cancelTokenHash, input.customer_name, input.customer_phone,
+                input.payment_method || 'COD', effectivePaymentStatus, effectivePaymentProvider,
+                effectivePaidAt, cancelTokenHash, input.customer_name, input.customer_phone,
                 input.delivery_addr || null, input.voucher_code || null, discountAmount, pointsEarned, subtotal, total, input.note || null,
                 rootCategoryId ? Number(rootCategoryId) : null, profileId, profileCode, profileVersion,
                 bankName, accountNumber, accountHolder, originalProfileCode,

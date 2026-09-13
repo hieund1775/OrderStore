@@ -341,6 +341,7 @@ export function createCustomerOrderService({
             voucherDiscount: totalDiscount,
             shippingFee: 0,
           });
+          const isPromotionSettled = allocationPlan.discountAmount > 0 && allocationPlan.totalAmount === 0;
 
           // 4. Create child orders atomically
           const createdChildOrders = [];
@@ -417,6 +418,8 @@ export function createCustomerOrderService({
             voucherCode: input.voucher_code || null,
             paymentProfile: resolved.profile,
             allocations: groupAllocations,
+            paymentProvider: isPromotionSettled ? 'promotion' : 'payos',
+            paymentStatus: isPromotionSettled ? 'paid' : 'unpaid',
           }, { tx });
 
           const paymentSummary = {
@@ -457,6 +460,8 @@ export function createCustomerOrderService({
             total_amount: Number(createdGroup.total_amount),
             child_orders: createdChildOrders,
             status: 'Đang chuẩn bị',
+            payment_status: createdGroup.payment_status,
+            payment_required: !isPromotionSettled,
             payment_summary: paymentSummary,
           };
 
@@ -471,7 +476,7 @@ export function createCustomerOrderService({
         // If replay: verify if PayOS link is attached and usable (C2)
         if (txnResult.replay) {
           const replayResp = txnResult.response;
-          if (isPayOSCheckout) {
+          if (isPayOSCheckout && replayResp.payment_required !== false) {
             if (!replayResp.checkout_url && replayResp.group_code) {
               const refreshed = await regenerateGroupPayOSAttempt({
                 groupCode: replayResp.group_code,
@@ -508,7 +513,7 @@ export function createCustomerOrderService({
 
         const { group, childOrders, baseResponse } = txnResult;
 
-        if (isPayOSCheckout) {
+        if (isPayOSCheckout && Number(group.total_amount) > 0) {
           const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, group.group_code);
           const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
 

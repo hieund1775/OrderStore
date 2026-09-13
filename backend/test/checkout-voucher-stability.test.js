@@ -6,6 +6,7 @@ import { createPromotionsRepository, PromotionError } from '../repositories/post
 import { createOrdersRepository } from '../repositories/postgres/orders.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
 import { OrderDomainError, orderErrorStatus } from '../services/orders/order-errors.js';
+import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
 
 describe('Checkout Voucher Stability Suite', () => {
   const basePromotionRow = {
@@ -95,8 +96,8 @@ describe('Checkout Voucher Stability Suite', () => {
                 subtotal,
                 discount_amount: discount,
                 total,
-                payment_status: 'unpaid',
-                payment_provider: 'cod',
+                payment_status: params[8],
+                payment_provider: params[9],
                 root_category_id: 1,
                 payment_profile_code: 'DEFAULT_LONG',
               }], 1];
@@ -199,6 +200,41 @@ describe('Checkout Voucher Stability Suite', () => {
     assert.equal(order.subtotal, 60000);
     assert.equal(order.discount_amount, 0);
     assert.equal(order.total, 60000);
+  });
+
+  it('fully voucher-covered checkout settles as promotion and creates no PayOS link', async () => {
+    const fullDiscountPromo = { ...basePromotionRow, discount_value: 100, max_discount: null };
+    const mockDb = createMockDatabase({ promotion: fullDiscountPromo });
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    const ordersRepo = createOrdersRepository(mockDb, promoRepo, {
+      async insertForUser() {},
+      async fanOutToOrderAdmins() {},
+    }, { clock: () => new Date('2026-09-13T12:00:00Z') });
+
+    const order = await ordersRepo.createPublicOrder({
+      input: {
+        store_id: 1, source: 'online', order_type: 'Take-away', payment_method: 'VietQR',
+        customer_name: 'Nguyen Van A', customer_phone: '0901234567', voucher_code: 'SALE20',
+        items: [{ product_id: 1, qty: 1 }],
+      },
+      paymentProvider: 'payos',
+      idempotencyKey: 'test-full-discount',
+    });
+
+    assert.equal(order.total, 0);
+    assert.equal(order.payment_status, 'paid');
+    assert.equal(order.payment_provider, 'promotion');
+
+    let payosCalls = 0;
+    const result = await createOnlinePayOSOrder({
+      input: { return_url: 'https://example.test/return', cancel_url: 'https://example.test/cancel' },
+      userId: 1,
+      idempotencyKey: 'test-full-discount-online',
+      ordersRepository: { async createPublicOrder() { return order; } },
+      directPayOSAttempts: { async createForOrder() { payosCalls += 1; } },
+    });
+    assert.equal(result.payment_required, false);
+    assert.equal(payosCalls, 0);
   });
 
   it('checkout-time expired voucher fails with 400 PROMOTION_NOT_FOUND rather than 500', async () => {
@@ -434,6 +470,70 @@ describe('Checkout Voucher Stability Suite', () => {
     assert.equal(ind1.total_amount, 48000);
     assert.equal(ind2.discount_amount, 8000);
     assert.equal(ind2.total_amount, 32000);
+  });
+
+  it('fully voucher-covered grouped checkout is paid by promotion without a group PayOS attempt', async () => {
+    const fullDiscountPromo = { ...basePromotionRow, discount_value: 100, max_discount: null };
+    const mockDb = createMockDatabase({ promotion: fullDiscountPromo });
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    let payosAttempts = 0;
+    let groupInput = null;
+    let childCount = 0;
+    const service = createCustomerOrderService({
+      repository: {
+        async createPublicOrder({ input }) {
+          childCount += 1;
+          const subtotal = input.items.reduce(
+            (sum, item) => sum + (Number(item.product_id) === 2 ? 40000 : 60000) * Number(item.qty),
+            0,
+          );
+          const discount = Number(input.allocatedDiscount || 0);
+          return {
+            id: 300 + childCount, order_code: `ZERO-GROUP-${childCount}`,
+            subtotal, discount_amount: discount, total: subtotal - discount,
+            payment_status: 'paid', payment_provider: 'promotion',
+          };
+        },
+      },
+      checkoutGroupsRepo: {
+        async createCheckoutGroup(input) {
+          groupInput = input;
+          return {
+            id: 90, group_code: 'ZERO-GROUP', total_amount: input.totalAmount,
+            subtotal: input.subtotal, discount_amount: input.discountAmount,
+            payment_status: input.paymentStatus, payment_provider: input.paymentProvider,
+          };
+        },
+      },
+      promotionsRepo: promoRepo,
+      database: mockDb,
+      resolvePaymentProfile: async () => ({
+        isGrouped: true,
+        profile: { id: 99, code: 'GROUP_CHECKOUT', status: 'active' },
+        rootGroups: [
+          { rootCategoryId: 1, rootCategoryName: 'A', rootCategorySlug: 'a', originalPaymentProfile: { code: 'A' }, items: [{ product_id: 1, qty: 1 }] },
+          { rootCategoryId: 2, rootCategoryName: 'B', rootCategorySlug: 'b', originalPaymentProfile: { code: 'B' }, items: [{ product_id: 2, qty: 1 }] },
+        ],
+      }),
+      checkPayOSConfigured: () => true,
+      createGroupPayOSAttempt: async () => { payosAttempts += 1; },
+    });
+
+    const result = await service.create({
+      userId: 1,
+      idempotencyKey: 'test-full-discount-group',
+      input: {
+        store_id: 1, source: 'online', order_type: 'Take-away', payment_method: 'VietQR',
+        customer_name: 'Group Customer', customer_phone: '0901234567', voucher_code: 'SALE20',
+        items: [{ product_id: 1, qty: 1 }, { product_id: 2, qty: 1 }],
+      },
+    });
+
+    assert.equal(result.payment_required, false);
+    assert.equal(result.payment_status, 'paid');
+    assert.equal(groupInput.paymentProvider, 'promotion');
+    assert.equal(groupInput.paymentStatus, 'paid');
+    assert.equal(payosAttempts, 0);
   });
 
   function makeHttpRequest(app, { method, path, headers = {}, body = null }) {

@@ -86,6 +86,7 @@ type CreateOrderResponse = {
   checkout_url?: string;
   qr_code?: string;
   payment_expires_at?: string;
+  payment_required?: boolean;
   payment_summary?: PaymentSummary;
 };
 
@@ -651,6 +652,14 @@ function Checkout() {
         } catch {}
         toast.success("Đang chuyển hướng sang cổng thanh toán PayOS...");
         window.location.href = res.checkout_url;
+        return;
+      } else if (res.payment_required === false && createdPaymentCode) {
+        removeItems(checkoutItems.map((item) => item.key));
+        try {
+          sessionStorage.removeItem("teaplus_pending_payment");
+        } catch {}
+        toast.success("Đơn hàng đã được thanh toán hoàn toàn bằng ưu đãi.");
+        void navigate({ to: "/theo-doi-don", search: { code: createdPaymentCode } });
         return;
       } else if (res.qr_code) {
         removeItems(checkoutItems.map((item) => item.key));
