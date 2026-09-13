@@ -29,16 +29,17 @@ const MANAGEMENT_ROLES: AdminRole[] = ['super', 'manager'];
 export const adminNav = [
   // Nhóm 1: Vận hành
   { to: '/admin/pos', label: 'Gọi món (POS)', icon: ShoppingCart, section: 'operations', roles: ['super', 'manager', 'cashier'] as AdminRole[] },
-  { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList, section: 'operations', roles: ALL_ROLES },
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat, section: 'operations', roles: ['super', 'manager', 'kitchen'] as AdminRole[], lane: 'kitchen' },
-  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'operations', roles: ['super', 'manager', 'packing'] as AdminRole[], lane: 'packing' },
-  { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode, section: 'operations', roles: MANAGEMENT_ROLES },
   { to: '/admin/dat-truoc', label: 'Đơn đặt trước', icon: CalendarClock, section: 'operations', roles: MANAGEMENT_ROLES },
   // Nhóm 2: Hàng hóa
+  { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList, section: 'catalog', roles: ALL_ROLES },
+  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'catalog', roles: ['super', 'manager', 'packing'] as AdminRole[], lane: 'packing' },
   { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog', roles: MANAGEMENT_ROLES },
   { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck, section: 'catalog', roles: MANAGEMENT_ROLES },
-  // Nhóm 3: Quản trị
-  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'management', roles: MANAGEMENT_ROLES },
+  // Nhóm 3: Quản lý cửa hàng
+  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'store_management', roles: MANAGEMENT_ROLES },
+  { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode, section: 'store_management', roles: MANAGEMENT_ROLES },
+  // Nhóm 4: Quản trị
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone, section: 'management', roles: MANAGEMENT_ROLES },
   { to: '/admin/danh-gia', label: 'Quản lý đánh giá', icon: Star, section: 'management', roles: MANAGEMENT_ROLES },
   { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase, section: 'management', roles: MANAGEMENT_ROLES },
@@ -49,6 +50,7 @@ export const adminNav = [
 const sectionLabels = {
   operations: 'Vận hành',
   catalog: 'Hàng hóa',
+  store_management: 'Quản lý cửa hàng',
   management: 'Quản trị',
 } as const;
 
