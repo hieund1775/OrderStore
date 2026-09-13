@@ -122,6 +122,25 @@ export function createApp() {
     message: { error: 'Quá nhiều yêu cầu xác thực, vui lòng thử lại sau 15 phút' },
   });
 
+  // Admin mutation limiter is deliberately separate from read/polling limits.
+  // Client-side single-flight prevents accidental double-clicks; this is the
+  // server-side safety net for repeated writes from a faulty or noisy client.
+  const adminMutationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+      const method = String(req.method || 'GET').toUpperCase();
+      const path = req.originalUrl || req.url || '';
+      return (
+        ['GET', 'HEAD', 'OPTIONS'].includes(method) ||
+        path.startsWith('/admin/login')
+      );
+    },
+    message: { error: 'Quá nhiều thao tác quản trị, vui lòng thử lại sau' },
+  });
+
   // 2d. General Limiter: Áp dụng cho các route duyệt web thông thường (Catalog, Stores...)
   // Tự động bỏ qua các route đã có limiter chuyên biệt để chống double-limiting
   const generalLimiter = rateLimit({
@@ -156,6 +175,8 @@ export function createApp() {
 
   app.use('/admin/login', authLimiter);
   app.use('/api/auth', authLimiter);
+
+  app.use('/admin', adminMutationLimiter);
 
   // General limiter cho toàn bộ /api còn lại
   app.use('/api', generalLimiter);

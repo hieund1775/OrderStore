@@ -635,6 +635,9 @@ function ProfileButton() {
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/don-dat-truoc">Đơn đặt trước của tôi</Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={resetLogin}>Đăng xuất</DropdownMenuItem>
       </DropdownMenuContent>

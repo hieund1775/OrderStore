@@ -14,6 +14,48 @@ export const apiClient = axios.create({
   },
 });
 
+const MUTATION_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+const inFlightMutations = new Map<string, Promise<unknown>>();
+
+function getMutationKey(config: { method?: string; url?: string; data?: unknown }) {
+  const method = String(config.method || 'get').toLowerCase();
+  const path = String(config.url || '').split('?')[0];
+  const hasResourceId = /\/\d+(?:\/|$)/.test(path);
+  const payload = hasResourceId ? '' : typeof config.data === 'string' ? config.data : JSON.stringify(config.data ?? '');
+  return `${method}:${path}:${payload}`;
+}
+
+type MutationDeferred = {
+  key: string;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+};
+
+// A duplicate mutation receives the first request's eventual Axios response,
+// so rapid taps cannot create a second write while independent resources stay
+// usable. The map is released by the response/error interceptor below.
+apiClient.interceptors.request.use((config) => {
+  const method = String(config.method || 'get').toLowerCase();
+  if (!MUTATION_METHODS.has(method)) return config;
+
+  const key = getMutationKey(config);
+  const existing = inFlightMutations.get(key);
+  if (existing) {
+    config.adapter = async () => existing as any;
+    return config;
+  }
+
+  let resolve!: (value: unknown) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  inFlightMutations.set(key, promise);
+  (config as any).__teaplusMutationDeferred = { key, resolve, reject } satisfies MutationDeferred;
+  return config;
+});
+
 // Request interceptor: attach Bearer token from SecureStore
 apiClient.interceptors.request.use(async (config) => {
   try {
@@ -29,8 +71,20 @@ apiClient.interceptors.request.use(async (config) => {
 
 // Response interceptor: handle 401/403/network errors
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const deferred = (response.config as any).__teaplusMutationDeferred as MutationDeferred | undefined;
+    if (deferred) {
+      deferred.resolve(response);
+      inFlightMutations.delete(deferred.key);
+    }
+    return response;
+  },
   async (error: AxiosError<{ error?: string; message?: string }>) => {
+    const deferred = (error.config as any)?.__teaplusMutationDeferred as MutationDeferred | undefined;
+    if (deferred) {
+      deferred.reject(error);
+      inFlightMutations.delete(deferred.key);
+    }
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;

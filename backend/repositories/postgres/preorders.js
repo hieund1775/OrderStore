@@ -1,4 +1,5 @@
 import postgresDb from '../../config/db-postgres.js';
+import { batchLoadPostgresOrderDetails } from '../../services/order-batch-loader.js';
 
 export const PREORDER_STATUSES = Object.freeze([
   'AWAITING_PAYMENT',
@@ -30,6 +31,57 @@ async function inTransaction(database, tx, runner) {
 }
 
 export function createPreordersRepository(database = postgresDb) {
+  async function attachLinkedOrders(preorders) {
+    if (!preorders.length) return preorders;
+    const preorderIds = preorders.map((preorder) => Number(preorder.id));
+    const orders = rowsOf(await database.query(
+      `SELECT o.id, o.preorder_id, o.order_code, o.order_type, o.payment_status,
+              o.subtotal, o.discount_amount, o.total,
+              latest.status AS current_status
+         FROM orders o
+         LEFT JOIN LATERAL (
+           SELECT status FROM order_status_history osh
+            WHERE osh.order_id = o.id
+            ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1
+         ) latest ON TRUE
+        WHERE o.preorder_id = ANY($1::bigint[])
+        ORDER BY o.preorder_id, o.id`,
+      [preorderIds],
+    ));
+    await batchLoadPostgresOrderDetails(orders, database.query.bind(database));
+    const ordersByPreorder = new Map();
+    for (const order of orders) {
+      const key = String(order.preorder_id);
+      const list = ordersByPreorder.get(key) || [];
+      list.push(order);
+      ordersByPreorder.set(key, list);
+    }
+    return preorders.map((preorder) => ({
+      ...preorder,
+      orders: ordersByPreorder.get(String(preorder.id)) || [],
+    }));
+  }
+
+  async function loadCustomerPreorders(customerUserId, preorderCode = null) {
+    const values = [Number(customerUserId)];
+    const codeFilter = preorderCode == null ? '' : ` AND p.preorder_code = $${values.push(String(preorderCode))}`;
+    const preorders = rowsOf(await database.query(
+      `SELECT p.*, s.name AS store_name,
+              r.table_id, t.name AS table_name, r.status AS reservation_status,
+              r.reserved_from, r.reserved_until
+         FROM preorders p
+         JOIN stores s ON s.id = p.store_id
+         LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
+         LEFT JOIN tables t ON t.id = r.table_id
+        WHERE p.customer_user_id = $1${codeFilter}
+        ORDER BY p.scheduled_start_at DESC, p.id DESC`,
+      values,
+    ));
+    if (!preorders.length) return [];
+
+    return attachLinkedOrders(preorders);
+  }
+
   return {
     async getActiveStoreSetting(storeId, { tx = null, forUpdate = false } = {}) {
       const executor = tx || database;
@@ -184,25 +236,21 @@ export function createPreordersRepository(database = postgresDb) {
     },
 
     async findForCustomer(code, customerUserId) {
-      const rows = rowsOf(await database.query(
-        `SELECT p.*, r.table_id, r.status AS reservation_status,
-                COALESCE(jsonb_agg(DISTINCT o.order_code) FILTER (WHERE o.id IS NOT NULL), '[]'::jsonb) AS order_codes
-         FROM preorders p
-         LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
-         LEFT JOIN orders o ON o.preorder_id = p.id
-         WHERE p.preorder_code = $1 AND p.customer_user_id = $2
-         GROUP BY p.id, r.table_id, r.status`,
-        [String(code), Number(customerUserId)],
-      ));
+      const rows = await loadCustomerPreorders(customerUserId, code);
       return rows[0] || null;
     },
 
-    async list({ storeId = null, status = null, from = null, to = null, includePendingOnly = false } = {}) {
+    async listForCustomer(customerUserId) {
+      return loadCustomerPreorders(customerUserId);
+    },
+
+    async list({ storeId = null, status = null, statuses = null, from = null, to = null, includePendingOnly = false } = {}) {
       const values = [];
       const where = [];
       const add = (value) => { values.push(value); return `$${values.length}`; };
       if (storeId != null) where.push(`p.store_id = ${add(Number(storeId))}`);
       if (status) where.push(`p.status = ${add(String(status))}`);
+      if (Array.isArray(statuses) && statuses.length) where.push(`p.status = ANY(${add(statuses.map(String))}::varchar[])`);
       if (from) where.push(`p.scheduled_start_at >= ${add(from)}`);
       if (to) where.push(`p.scheduled_start_at < ${add(to)}`);
       if (includePendingOnly) where.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
@@ -216,7 +264,7 @@ export function createPreordersRepository(database = postgresDb) {
          ORDER BY p.scheduled_start_at ASC, p.id ASC`,
         values,
       ));
-      return rows;
+      return attachLinkedOrders(rows);
     },
 
     async findByPaymentTarget({ orderId = null, checkoutGroupId = null }, { tx = null, forUpdate = false } = {}) {

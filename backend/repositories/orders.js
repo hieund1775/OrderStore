@@ -18,7 +18,9 @@ export function createOrderReadRepository(database = postgresDb) {
   return {
     async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
       const params = [];
-      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS')";
+      // Preorders have their own operational archive. They must not be mixed
+      // into the ordinary order-management list, even after check-in.
+      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS') AND o.preorder_id IS NULL";
       if (status) {
         params.push(status);
         filters += ` AND latest.status = $${params.length}`;
@@ -82,7 +84,10 @@ export function createOrderReadRepository(database = postgresDb) {
     async listKitchen({ scopedStoreId }) {
       const params = [];
       let filter = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS') AND latest.status IN ('Đang chuẩn bị', 'Chờ xác nhận', 'Đang giao') AND (kt.id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM fulfillment_tasks any_task WHERE any_task.order_id = o.id)) AND (kt.status IS NULL OR kt.status <> 'cancelled')";
-      filter += " AND (o.preorder_id IS NULL OR p.status IN ('CONFIRMED', 'CHECKED_IN', 'COMPLETED'))";
+      // Manager confirmation makes a preorder visible in the separate kitchen
+      // preview only. Its actual order cannot enter the actionable KDS queue
+      // before an authorized Manager/Super checks the customer in.
+      filter += " AND (o.preorder_id IS NULL OR p.checked_in_at IS NOT NULL)";
       filter = appendScope(filter, params, scopedStoreId);
       const [orders] = await database.query(
         `SELECT o.id, o.order_code, o.order_type, o.customer_name, o.customer_phone, o.delivery_addr, o.table_id, o.store_id, o.location_name, o.note, o.subtotal, o.discount_amount, o.total, o.payment_method, o.payment_status, o.payment_provider, o.paid_at, o.created_at, o.shipping_driver_name, o.shipping_driver_phone, o.shipping_tracking_url, s.name AS store_name, latest.status AS current_status,

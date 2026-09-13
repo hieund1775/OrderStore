@@ -186,7 +186,7 @@ function PreorderCheckoutPage() {
         customer_name: name.trim(), customer_phone: phone.trim(),
         voucher_code: voucherCode.trim() || null,
         source: 'online',
-        return_url: `${window.location.origin}/theo-doi-don`,
+        return_url: `${window.location.origin}/don-dat-truoc`,
         cancel_url: `${window.location.origin}/dat-truoc`,
         items: selectedItems.map((item) => ({
           product_id: productId.get(item.productId) ?? Number(item.productId),
