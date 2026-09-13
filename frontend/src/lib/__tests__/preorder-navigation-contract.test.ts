@@ -13,6 +13,13 @@ describe('preorder availability navigation contract', () => {
     expect(header).toContain('onClick={() => setMobileSheetOpen(false)}');
   });
 
+  it('keeps normal order history and customer preorder tracking discoverable in both account menus', () => {
+    expect(header).toContain("search={{ tab: 'orders' }}");
+    expect(header).toContain('Đơn hàng của tôi');
+    expect(header.match(/to="\/don-dat-truoc"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(header).toContain('Đơn đặt trước của tôi');
+  });
+
   it('labels unavailable stores and prevents a 409 availability request while configuration loads', () => {
     expect(checkout).toContain('Chưa áp dụng đặt trước');
     expect(checkout).toContain('if (preorderStores == null) return undefined;');

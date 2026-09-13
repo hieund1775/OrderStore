@@ -291,6 +291,13 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
+          <div className="rounded-2xl border bg-card p-5 shadow-sm">
+            <p className="font-semibold">Đơn đặt trước</p>
+            <p className="mt-1 text-sm text-muted-foreground">Xem riêng lịch nhận món, trạng thái xác nhận và các món đã đặt.</p>
+            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
+              <Link to="/don-dat-truoc">Xem đơn đặt trước</Link>
+            </Button>
+          </div>
         </aside>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
