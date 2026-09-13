@@ -15,6 +15,10 @@ import {
 } from '@/components/profile/CustomerPreordersTab';
 import * as api from '@/lib/api';
 
+const customerSession = vi.hoisted(() => ({
+  current: null as { userId: number; token: string } | null,
+}));
+
 vi.mock('@/lib/api', () => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
@@ -23,6 +27,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/lib/customer-session', () => ({
   openCustomerLoginModal: vi.fn(),
+  useCustomerSession: () => customerSession.current,
 }));
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
@@ -40,6 +45,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    customerSession.current = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -201,7 +207,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
 
   describe('4. Component Lifecycle & Isolation Behavior', () => {
     it('does not fetch preorders when user is guest (token null)', async () => {
-      vi.mocked(api.getCustomerToken).mockReturnValue(null);
+      customerSession.current = null;
 
       await act(async () => {
         root?.render(<CustomerPreordersTab isActive={true} />);
@@ -213,7 +219,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
     });
 
     it('does not fetch preorders when tab is inactive', async () => {
-      vi.mocked(api.getCustomerToken).mockReturnValue('mock-token');
+      customerSession.current = { userId: 1, token: 'mock-token' };
 
       await act(async () => {
         root?.render(<CustomerPreordersTab isActive={false} />);
@@ -223,7 +229,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
     });
 
     it('fetches preorders when active and customer is authenticated', async () => {
-      vi.mocked(api.getCustomerToken).mockReturnValue('mock-token');
+      customerSession.current = { userId: 1, token: 'mock-token' };
       vi.mocked(api.apiGet).mockResolvedValueOnce({
         preorders: [
           {
@@ -264,7 +270,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
     });
 
     it('safely handles 200 responses with missing orders and items without crashing', async () => {
-      vi.mocked(api.getCustomerToken).mockReturnValue('mock-token');
+      customerSession.current = { userId: 1, token: 'mock-token' };
       vi.mocked(api.apiGet).mockResolvedValueOnce({
         preorders: [
           {
@@ -291,7 +297,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
     });
 
     it('contains API error locally and provides retry button', async () => {
-      vi.mocked(api.getCustomerToken).mockReturnValue('mock-token');
+      customerSession.current = { userId: 1, token: 'mock-token' };
       vi.mocked(api.apiGet).mockRejectedValueOnce(new Error('Network failure'));
 
       await act(async () => {
@@ -319,6 +325,27 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
 
       expect(api.apiGet).toHaveBeenCalledTimes(2);
       expect(container?.textContent).toContain('Chưa có đơn đặt trước');
+    });
+
+    it('clears customer A data across logout and ignores A response that settles after customer B signs in', async () => {
+      let resolveA: ((value: any) => void) | undefined;
+      vi.mocked(api.apiGet).mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve; }));
+      customerSession.current = { userId: 1, token: 'token-a' };
+
+      await act(async () => { root?.render(<CustomerPreordersTab isActive={true} />); });
+      customerSession.current = null;
+      await act(async () => { root?.render(<CustomerPreordersTab isActive={true} />); });
+
+      await act(async () => { resolveA?.({ preorders: [{ id: 1, preorder_code: 'A-ONLY' }] }); });
+      expect(container?.textContent).not.toContain('A-ONLY');
+      expect(container?.textContent).toContain('Đăng nhập để theo dõi riêng');
+
+      vi.mocked(api.apiGet).mockResolvedValueOnce({ preorders: [{ id: 2, preorder_code: 'B-ONLY' }] });
+      customerSession.current = { userId: 2, token: 'token-b' };
+      await act(async () => { root?.render(<CustomerPreordersTab isActive={true} />); });
+      await act(async () => { await Promise.resolve(); });
+      expect(container?.textContent).toContain('B-ONLY');
+      expect(container?.textContent).not.toContain('A-ONLY');
     });
   });
 });

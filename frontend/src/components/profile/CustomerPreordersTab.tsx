@@ -12,8 +12,8 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { apiGet, apiPost, getCustomerToken } from '@/lib/api';
-import { openCustomerLoginModal } from '@/lib/customer-session';
+import { apiGet, apiPost } from '@/lib/api';
+import { openCustomerLoginModal, useCustomerSession } from '@/lib/customer-session';
 import { vnd } from '@/lib/data';
 
 export type PreorderItem = {
@@ -228,28 +228,46 @@ export function CustomerPreordersTab({
   isActive: boolean;
   highlightedCode?: string | null;
 }) {
+  const session = useCustomerSession();
+  const sessionKey = session ? `${session.userId}:${session.token}` : null;
   const [rows, setRows] = useState<CustomerPreorder[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
   const hasLoadedRef = useRef(false);
   const inFlightRef = useRef(false);
+  const inFlightSessionKeyRef = useRef<string | null>(null);
+  const sessionKeyRef = useRef<string | null>(sessionKey);
+  // Keep the identity boundary current during render so a late response from
+  // a previous customer cannot commit before the effect below has run.
+  sessionKeyRef.current = sessionKey;
+
+  useEffect(() => {
+    setRows([]);
+    setError(null);
+    setCancelling(null);
+    hasLoadedRef.current = false;
+    inFlightRef.current = false;
+    inFlightSessionKeyRef.current = null;
+  }, [sessionKey]);
 
   const load = useCallback(async () => {
-    const token = getCustomerToken();
-    if (!token) {
+    if (!session) {
       setRows([]);
       setLoading(false);
       setError(null);
       return;
     }
     if (inFlightRef.current) return;
+    const requestSessionKey = `${session.userId}:${session.token}`;
     inFlightRef.current = true;
+    inFlightSessionKeyRef.current = requestSessionKey;
     setLoading(true);
     setError(null);
 
     try {
       const result = await apiGet<{ preorders?: unknown }>('/api/preorders/mine');
+      if (sessionKeyRef.current !== requestSessionKey) return;
       if (result && typeof result === 'object' && 'preorders' in result) {
         if (Array.isArray(result.preorders)) {
           setRows(normalizeCustomerPreorders(result.preorders));
@@ -259,8 +277,9 @@ export function CustomerPreordersTab({
       } else {
         setRows([]);
       }
-      hasLoadedRef.current = true;
+      if (sessionKeyRef.current === requestSessionKey) hasLoadedRef.current = true;
     } catch (err: any) {
+      if (sessionKeyRef.current !== requestSessionKey) return;
       if (err?.status === 401 || err?.statusCode === 401) {
         openCustomerLoginModal();
         setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -268,33 +287,19 @@ export function CustomerPreordersTab({
         setError('Không thể tải đơn đặt trước. Vui lòng thử lại.');
       }
     } finally {
-      setLoading(false);
-      inFlightRef.current = false;
+      if (sessionKeyRef.current === requestSessionKey) setLoading(false);
+      if (inFlightSessionKeyRef.current === requestSessionKey) {
+        inFlightRef.current = false;
+        inFlightSessionKeyRef.current = null;
+      }
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
-    if (isActive && !hasLoadedRef.current) {
+    if (isActive && session && !hasLoadedRef.current) {
       void load();
     }
-  }, [isActive, load]);
-
-  useEffect(() => {
-    const handleSessionChange = () => {
-      const token = getCustomerToken();
-      if (!token) {
-        setRows([]);
-        hasLoadedRef.current = false;
-        setError(null);
-      } else if (isActive) {
-        void load();
-      }
-    };
-    window.addEventListener('teaplus:customer-session-change', handleSessionChange);
-    return () => {
-      window.removeEventListener('teaplus:customer-session-change', handleSessionChange);
-    };
-  }, [isActive, load]);
+  }, [isActive, load, session]);
 
   const activeHighlightedCode = useMemo(() => highlightedCode?.trim() || null, [highlightedCode]);
 
@@ -312,8 +317,7 @@ export function CustomerPreordersTab({
     }
   }
 
-  const token = getCustomerToken();
-  if (!token) {
+  if (!session) {
     return (
       <section className="rounded-2xl border bg-card p-8 text-center shadow-sm">
         <PackageOpen className="mx-auto mb-3 size-8 text-primary" />
