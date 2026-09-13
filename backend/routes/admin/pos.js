@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireRole } from '../../middleware/auth.js';
 import { resolveStoreScope } from '../../middleware/branch-scope.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
-import { orderErrorStatus } from '../../services/orders/order-errors.js';
+import { orderErrorStatus, isOrderBusinessError } from '../../services/orders/order-errors.js';
 import { validateCreateOrderInput } from '../../validation/order-schemas.js';
 import customerOrderService from '../../services/orders/customer-order-service.js';
 import { logAudit } from '../../services/audit.js';
@@ -56,7 +56,10 @@ export function createAdminPosRouter({
       await auditLogger(req.user.sub, 'Tạo đơn POS', `store_id=${storeId}`, req);
       return res.status(order.replay ? 200 : 201).json(order);
     } catch (err) {
-      return res.status(orderErrorStatus(err)).json({ error: err.message });
+      return res.status(orderErrorStatus(err)).json({
+        error: err.message,
+        code: err.code || (isOrderBusinessError(err) ? 'POS_ORDER_BUSINESS_RULE' : 'INTERNAL_SERVER_ERROR'),
+      });
     }
   }));
 
