@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { ApiError, apiDelete, apiGet, apiPut, clearCustomerToken } from "./api";
 import { useCustomerIdentity } from "./notifications";
+import { getCustomerSession, openCustomerLoginModal } from "./customer-session";
 import type { CartItem } from "./cart";
 import type { Product } from "./data";
 
@@ -123,7 +124,12 @@ export function buildWishlistQuickCartItem(item: WishlistItem): Omit<CartItem, "
 }
 
 export async function fetchUserWishlist(userId: number): Promise<WishlistItem[]> {
-  return apiGet<WishlistItem[]>(`/api/users/${userId}/wishlist`);
+  const res = await apiGet<WishlistItem[]>(`/api/users/${userId}/wishlist`);
+  const currentSession = getCustomerSession();
+  if (currentSession && currentSession.userId !== userId) {
+    return [];
+  }
+  return res;
 }
 
 export async function ensureUserWishlist(
@@ -167,7 +173,12 @@ export function useWishlist() {
   useEffect(() => {
     const previous = previousUserId.current;
     if (previous && previous !== userId) {
+      void queryClient.cancelQueries({ queryKey: customerWishlistKey(previous), exact: true });
       queryClient.removeQueries({ queryKey: customerWishlistKey(previous), exact: true });
+    }
+    if (!userId) {
+      void queryClient.cancelQueries({ queryKey: ["customer-wishlist", "signed-out"], exact: true });
+      queryClient.removeQueries({ queryKey: ["customer-wishlist", "signed-out"], exact: true });
     }
     previousUserId.current = userId;
   }, [queryClient, userId]);
@@ -290,12 +301,15 @@ export function useWishlist() {
     },
   });
 
-  const items = query.data ?? [];
+  const isGuest = !token || !userId;
+  const items = isGuest ? [] : (query.data ?? []);
   const isFavorite = (productId: string | number): boolean => {
+    if (isGuest) return false;
     const normalizedId = normalizeWishlistProductId(productId);
     return normalizedId !== null && items.some((item) => Number(item.product_id) === normalizedId);
   };
   const isPending = (productId: string | number): boolean => {
+    if (isGuest) return false;
     const normalizedId = normalizeWishlistProductId(productId);
     return (
       normalizedId !== null &&
@@ -304,8 +318,9 @@ export function useWishlist() {
   };
 
   const setFavorite = (product: ProductSnapshot, desiredState: boolean) => {
-    if (!token || !userId) {
+    if (isGuest) {
       toast.error("Vui lòng đăng nhập để lưu món yêu thích");
+      openCustomerLoginModal();
       return;
     }
     const productId = normalizeWishlistProductId(product.id);
@@ -326,8 +341,9 @@ export function useWishlist() {
   };
 
   const removeFavorite = (productIdValue: string | number) => {
-    if (!token || !userId) {
+    if (isGuest) {
       toast.error("Vui lòng đăng nhập để thực hiện thao tác này");
+      openCustomerLoginModal();
       return;
     }
     const productId = normalizeWishlistProductId(productIdValue);
@@ -338,14 +354,14 @@ export function useWishlist() {
   return {
     items,
     count: items.length,
-    isLoading: query.isLoading,
-    isError: query.isError,
-    error: query.error,
+    isLoading: isGuest ? false : query.isLoading,
+    isError: isGuest ? false : query.isError,
+    error: isGuest ? null : query.error,
     refetch: query.refetch,
     isFavorite,
     isPending,
     setFavorite,
     removeFavorite,
-    user,
+    user: isGuest ? null : user,
   };
 }

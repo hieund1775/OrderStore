@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { getCustomerToken } from './api';
+import { getCustomerSession, openCustomerLoginModal } from './customer-session';
 
 export type AppliedModifier = {
   attribute_code: string;
@@ -98,35 +98,167 @@ type CartContextValue = {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-const CART_STORAGE_KEY = 'teaplus_smart_cart_v2';
+export const V3_STORAGE_KEY_PREFIX = 'teaplus_smart_cart_v3:user:';
+export const LEGACY_V2_STORAGE_KEY = 'teaplus_smart_cart_v2';
+
+export function getCartStorageKey(userId: number): string {
+  return `${V3_STORAGE_KEY_PREFIX}${userId}`;
+}
+
+export function parseStoredCart(raw: string | null): CartItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is CartItem => {
+        return Boolean(
+          item &&
+          typeof item === 'object' &&
+          typeof item.productId === 'string' &&
+          typeof item.name === 'string' &&
+          typeof item.unitPrice === 'number' &&
+          Number.isFinite(item.unitPrice) &&
+          typeof item.qty === 'number' &&
+          item.qty > 0
+        );
+      })
+      .map((item) => ({
+        ...item,
+        key: item.key || buildCartItemKey(item),
+        selected: item.selected !== false,
+        addedAt: item.addedAt || new Date().toISOString(),
+        appliedModifiers: Array.isArray(item.appliedModifiers) ? item.appliedModifiers : [],
+      }));
+  } catch {
+    return [];
+  }
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem(CART_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.map((i) => ({
-            ...i,
-            selected: i.selected !== false,
-            addedAt: i.addedAt || new Date().toISOString(),
-          }));
-        }
-      }
-    } catch {}
-    return [];
-  });
+  // Always initialize empty for SSR hydration safety and guest default
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [activeUserId, setActiveUserId] = useState<number | null>(null);
+  const hydratedUserRef = useRef<number | null>(null);
 
-  // Sync to localStorage
+  // Synchronize cart with current customer session
   useEffect(() => {
+    // Safely remove legacy V2 storage key; never migrate or render it
     try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
+      localStorage.removeItem(LEGACY_V2_STORAGE_KEY);
     } catch {}
-  }, [items]);
+
+    const syncWithSession = () => {
+      const currentSession = getCustomerSession();
+      const currentId = currentSession?.userId ?? null;
+
+      if (currentId === null) {
+        // Guest: immediately clear visible items; do not persist
+        hydratedUserRef.current = null;
+        setActiveUserId(null);
+        setItems([]);
+        return;
+      }
+
+      if (hydratedUserRef.current !== currentId) {
+        // Logged in as new/different user:
+        // 1. Reset visible state synchronously before loading to avoid leaking prior user's items
+        setItems([]);
+        // 2. Hydrate exact active user key only
+        let loaded: CartItem[] = [];
+        try {
+          const raw = localStorage.getItem(getCartStorageKey(currentId));
+          loaded = parseStoredCart(raw);
+        } catch {
+          loaded = [];
+        }
+        hydratedUserRef.current = currentId;
+        setActiveUserId(currentId);
+        setItems(loaded);
+      }
+    };
+
+    syncWithSession();
+
+    window.addEventListener('teaplus:customer-auth-changed', syncWithSession);
+    window.addEventListener('storage', syncWithSession);
+
+    return () => {
+      window.removeEventListener('teaplus:customer-auth-changed', syncWithSession);
+      window.removeEventListener('storage', syncWithSession);
+    };
+  }, []);
+
+  // Persist only after active user has been hydrated!
+  useEffect(() => {
+    const currentSession = getCustomerSession();
+    if (!currentSession || activeUserId !== currentSession.userId || hydratedUserRef.current !== currentSession.userId) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(getCartStorageKey(currentSession.userId), JSON.stringify(items));
+    } catch {
+      // Storage quota or disabled: maintain private in-memory cart safely without shared fallback
+    }
+  }, [items, activeUserId]);
 
   const value = useMemo<CartContextValue>(() => {
+    const session = getCustomerSession();
+    const isGuest = !session || activeUserId === null || activeUserId !== session.userId;
+
+    // For guests, always expose empty counts/totals/items
+    if (isGuest) {
+      return {
+        items: [],
+        groups: [],
+        count: 0,
+        subtotal: 0,
+        selectedItems: [],
+        selectedCount: 0,
+        selectedSubtotal: 0,
+        allSelected: false,
+        addItem: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
+          openCustomerLoginModal();
+          return false;
+        },
+        updateItem: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+          return false;
+        },
+        removeItem: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        removeItems: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        setQty: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        toggleSelect: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        toggleSelectStore: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        toggleSelectAll: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+        clear: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
+      };
+    }
+
     const count = items.reduce((s, i) => s + i.qty, 0);
     const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
 
@@ -172,9 +304,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       selectedSubtotal,
       allSelected,
       addItem: (item) => {
-        const token = getCustomerToken();
-        if (!token) {
+        const currentSession = getCustomerSession();
+        if (!currentSession) {
           toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
+          openCustomerLoginModal();
           return false;
         }
         setItems((prev) => {
@@ -200,13 +333,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return true;
       },
       updateItem: (oldKey, newItem) => {
+        const currentSession = getCustomerSession();
+        if (!currentSession) {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+          return false;
+        }
         setItems((prev) => {
           const newKey = buildCartItemKey(newItem);
           const oldIndex = prev.findIndex((p) => p.key === oldKey);
           if (oldIndex === -1) return prev;
 
           const oldItem = prev[oldIndex];
-          // If key changed and matching item exists elsewhere, merge them
           const conflictIndex = prev.findIndex((p) => p.key === newKey && p.key !== oldKey);
           if (conflictIndex !== -1) {
             return prev
@@ -218,7 +356,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
               );
           }
 
-          // Otherwise update in place
           return prev.map((p) =>
             p.key === oldKey
               ? {
@@ -232,18 +369,37 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
         return true;
       },
-      removeItem: (key) => setItems((prev) => prev.filter((p) => p.key !== key)),
+      removeItem: (key) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
+        setItems((prev) => prev.filter((p) => p.key !== key));
+      },
       removeItems: (keys) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         const keySet = new Set(keys);
         setItems((prev) => prev.filter((item) => !keySet.has(item.key)));
       },
-      setQty: (key, qty) =>
+      setQty: (key, qty) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         setItems((prev) =>
           qty <= 0
             ? prev.filter((p) => p.key !== key)
             : prev.map((p) => (p.key === key ? { ...p, qty } : p)),
-        ),
+        );
+      },
       toggleSelect: (key, selected) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         setItems((prev) =>
           prev.map((p) =>
             p.key === key ? { ...p, selected: selected !== undefined ? selected : !p.selected } : p,
@@ -251,6 +407,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
         );
       },
       toggleSelectStore: (storeId, selected) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         setItems((prev) =>
           prev.map((p) => {
             const itemStoreId = p.storeId ? String(p.storeId) : '1';
@@ -259,9 +419,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
         );
       },
       toggleSelectAll: (selected) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         setItems((prev) => prev.map((p) => ({ ...p, selected })));
       },
       clear: (storeId?: string) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
         if (!storeId) {
           setItems([]);
         } else {
@@ -274,7 +442,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
       },
     };
-  }, [items]);
+  }, [items, activeUserId]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

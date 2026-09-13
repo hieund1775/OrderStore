@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiGet, apiPatch, apiPost, apiDelete, getCustomerToken, getCustomerUser } from './api';
+import { getCustomerSession } from './customer-session';
 
 export type AppNotification = {
   id: number;
@@ -45,6 +46,18 @@ export function isSafeInternalLink(link: string | null | undefined): boolean {
 const inFlightCustomerNotifications = new Map<string, Promise<NotificationResponse>>();
 const inFlightAdminNotifications = new Map<number, Promise<NotificationResponse>>();
 
+export function clearCustomerNotificationsInFlight(userId?: number) {
+  if (typeof userId === 'number') {
+    for (const key of inFlightCustomerNotifications.keys()) {
+      if (key.startsWith(`${userId}:`)) {
+        inFlightCustomerNotifications.delete(key);
+      }
+    }
+  } else {
+    inFlightCustomerNotifications.clear();
+  }
+}
+
 export async function fetchCustomerNotifications(userId: number, limit = 50): Promise<NotificationResponse> {
   const cacheKey = `${userId}:${limit}`;
   const existing = inFlightCustomerNotifications.get(cacheKey);
@@ -53,6 +66,10 @@ export async function fetchCustomerNotifications(userId: number, limit = 50): Pr
   const promise = (async () => {
     try {
       const res = await apiGet<NotificationResponse | AppNotification[]>(`/api/users/${userId}/notifications?limit=${limit}`);
+      const currentSession = getCustomerSession();
+      if (currentSession && currentSession.userId !== userId) {
+        return { notifications: [], unread_count: 0 };
+      }
       if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
       return {
         notifications: Array.isArray(res?.notifications) ? res.notifications : [],
@@ -103,7 +120,9 @@ export const clearAllAdminNotifications = () =>
   apiDelete<{ ok: boolean; count: number }>(`/admin/notifications`);
 
 function readCustomerIdentity(): CustomerIdentity {
-  return { token: getCustomerToken(), user: getCustomerUser() };
+  const session = getCustomerSession();
+  if (!session) return { token: null, user: null };
+  return { token: session.token, user: getCustomerUser() };
 }
 
 export function useCustomerIdentity() {
@@ -134,7 +153,13 @@ export function useCustomerNotifications() {
   useEffect(() => {
     const previous = previousUserId.current;
     if (previous && previous !== userId) {
+      void queryClient.cancelQueries({ queryKey: customerNotificationsKey(previous), exact: true });
       queryClient.removeQueries({ queryKey: customerNotificationsKey(previous), exact: true });
+      clearCustomerNotificationsInFlight(previous);
+    }
+    if (!userId) {
+      void queryClient.cancelQueries({ queryKey: ['account-notifications', 'signed-out'], exact: true });
+      queryClient.removeQueries({ queryKey: ['account-notifications', 'signed-out'], exact: true });
     }
     previousUserId.current = userId;
   }, [queryClient, userId]);
@@ -211,11 +236,19 @@ export function useCustomerNotifications() {
     },
   });
 
+  const isGuest = !token || !userId;
+  const notifications = isGuest ? [] : (query.data?.notifications ?? []);
+  const unreadCount = isGuest ? 0 : (query.data?.unread_count ?? 0);
+  const data = isGuest ? { notifications: [], unread_count: 0 } : query.data;
+
   return {
     ...query,
-    token,
-    user,
-    userId,
+    data,
+    notifications,
+    unreadCount,
+    token: isGuest ? null : token,
+    user: isGuest ? null : user,
+    userId: isGuest ? null : userId,
     markRead: markReadMutation.mutateAsync,
     markAllRead: markAllMutation.mutateAsync,
     clearAll: clearMutation.mutateAsync,

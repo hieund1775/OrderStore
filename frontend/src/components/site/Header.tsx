@@ -49,6 +49,7 @@ import { useBranch } from '@/lib/branch';
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
 import { toast } from 'sonner';
 import { explicitCustomerLogout } from '@/lib/auth-logout';
+import { getCustomerSession, useCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 import {
   apiPost,
   clearToken,
@@ -142,8 +143,24 @@ function QuickCart() {
 }
 
 function WishlistButton() {
+  const [open, setOpen] = useState(false);
+  const session = useCustomerSession();
   const { addItem } = useCart();
   const { items, count, isLoading, isError, refetch, removeFavorite, isPending } = useWishlist();
+
+  useEffect(() => {
+    if (!session) {
+      setOpen(false);
+    }
+  }, [session]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && !session) {
+      openCustomerLoginModal();
+      return;
+    }
+    setOpen(nextOpen);
+  };
 
   const handleQuickAdd = (item: WishlistItem) => {
     const cartItem = buildWishlistQuickCartItem(item);
@@ -158,8 +175,17 @@ function WishlistButton() {
   };
 
   return (
-    <Sheet>
-      <SheetTrigger asChild>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetTrigger
+        asChild
+        onClickCapture={(e) => {
+          if (!session) {
+            e.preventDefault();
+            e.stopPropagation();
+            openCustomerLoginModal();
+          }
+        }}
+      >
         <Button
           variant="ghost"
           size="icon"
@@ -302,6 +328,17 @@ function NotificationButton() {
             <Bell className="size-8 mx-auto mb-2 opacity-30" />
             <p className="font-medium text-foreground">Chưa đăng nhập</p>
             <p className="mt-1">Đăng nhập tài khoản để theo dõi thông báo đơn hàng và ưu đãi.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 text-xs"
+              onClick={() => {
+                setOpen(false);
+                openCustomerLoginModal();
+              }}
+            >
+              Đăng nhập ngay
+            </Button>
           </div>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -377,10 +414,31 @@ function ProfileButton() {
   const [googleBtnNode, setGoogleBtnNode] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const customerUser = getCustomerUser();
-    setLoggedIn(Boolean(getCustomerToken()));
-    setUserName(customerUser?.fullname || '');
-    setUserTier(customerUser?.tier || 'Đồng');
+    const syncAuth = () => {
+      const session = getCustomerSession();
+      const customerUser = getCustomerUser();
+      setLoggedIn(Boolean(session));
+      setUserName(customerUser?.fullname || '');
+      setUserTier(customerUser?.tier || 'Đồng');
+    };
+
+    const handleOpenModal = () => {
+      setAuthMode('login');
+      setError('');
+      setOpen(true);
+    };
+
+    syncAuth();
+
+    window.addEventListener('teaplus:customer-auth-changed', syncAuth);
+    window.addEventListener('storage', syncAuth);
+    window.addEventListener('teaplus:open-customer-auth', handleOpenModal);
+
+    return () => {
+      window.removeEventListener('teaplus:customer-auth-changed', syncAuth);
+      window.removeEventListener('storage', syncAuth);
+      window.removeEventListener('teaplus:open-customer-auth', handleOpenModal);
+    };
   }, []);
 
   // Load Google Identity Services script (chỉ 1 lần)

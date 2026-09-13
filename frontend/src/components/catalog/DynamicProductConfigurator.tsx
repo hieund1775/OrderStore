@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { vnd } from '@/lib/data';
 import { toast } from 'sonner';
+import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 
 export interface DynamicProductConfiguratorProps {
   open: boolean;
@@ -153,6 +154,12 @@ export function DynamicProductConfigurator({
   };
 
   const handleConfirmAddToCart = () => {
+    const session = getCustomerSession();
+    if (!session) {
+      toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
+      openCustomerLoginModal();
+      return;
+    }
     if (!resolvedConfig) return;
     const resolvedProduct = resolvedConfig.product;
     const resolvedVariant = resolvedConfig.variant;

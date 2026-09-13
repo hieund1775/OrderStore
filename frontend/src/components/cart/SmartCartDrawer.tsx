@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   ShoppingCart,
@@ -25,6 +25,7 @@ import {
 import { useCart, type CartItem } from '@/lib/cart';
 import { vnd } from '@/lib/data';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
+import { useCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 
 function formatAddedTime(isoString?: string): string {
   if (!isoString) return '';
@@ -70,6 +71,22 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
   } = useCart();
 
   const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+  const [open, setOpen] = useState(false);
+  const session = useCustomerSession();
+
+  useEffect(() => {
+    if (!session) {
+      setOpen(false);
+    }
+  }, [session]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && !session) {
+      openCustomerLoginModal();
+      return;
+    }
+    setOpen(nextOpen);
+  };
 
   const handleEditClick = (item: CartItem) => {
     setEditingItem(item);
@@ -110,8 +127,17 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
 
   return (
     <>
-      <Sheet>
-        <SheetTrigger asChild>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetTrigger
+          asChild
+          onClickCapture={(e) => {
+            if (!session) {
+              e.preventDefault();
+              e.stopPropagation();
+              openCustomerLoginModal();
+            }
+          }}
+        >
           {children || (
             <Button
               variant="ghost"

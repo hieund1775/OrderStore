@@ -20,6 +20,7 @@ import { useCart } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
 import { vnd } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
+import { getCustomerSession, useCustomerSession, openCustomerLoginModal } from "@/lib/customer-session";
 import { getOrderRequestHeaders } from "@/lib/order-access";
 import {
   PendingPayOSPayment,
@@ -91,6 +92,7 @@ type CreateOrderResponse = {
 };
 
 function Checkout() {
+  const session = useCustomerSession();
   const { removeItems, selectedItems, selectedSubtotal } = useCart();
   const checkoutItems = selectedItems;
   const checkoutSubtotal = selectedSubtotal;
@@ -507,6 +509,11 @@ function Checkout() {
   }, [checkoutItems, productMetaMap, voucherDiscount]);
 
   async function applyVoucher() {
+    if (!isTableQrCheckout && !getCustomerSession()) {
+      toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản để áp dụng ưu đãi");
+      openCustomerLoginModal();
+      return;
+    }
     if (!voucherCode.trim()) return toast.error("Nhập mã ưu đãi trước");
     if (hasMultipleCheckoutStores) {
       return toast.error("Checkout đa chi nhánh chưa được backend kích hoạt. Vui lòng thanh toán từng chi nhánh.");
@@ -538,7 +545,8 @@ function Checkout() {
 
   async function submitOrder() {
     if (checkoutItems.length === 0) return;
-    if (!isTableQrCheckout && !getCustomerToken()) {
+    if (!isTableQrCheckout && !getCustomerSession()) {
+      openCustomerLoginModal();
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
     }
     if (hasMultipleCheckoutStores) {
@@ -861,6 +869,35 @@ function Checkout() {
             <p className="text-xs text-muted-foreground italic">
               Hệ thống sẽ tự động chuyển trang ngay sau khi nhận tiền về thành công (0ms webhook).
             </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!isTableQrCheckout && !session && !pendingOrder) {
+    return (
+      <>
+        <PageHeader eyebrow="Checkout" title="Giỏ hàng & Thanh toán" />
+        <div className="container-page py-16 max-w-lg mx-auto text-center space-y-4">
+          <div className="mx-auto grid size-16 place-items-center rounded-full bg-primary/10 text-primary">
+            <Store className="size-8" />
+          </div>
+          <h2 className="font-display text-xl font-bold">Yêu cầu đăng nhập tài khoản</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            Vui lòng đăng nhập hoặc đăng ký tài khoản khách hàng để truy cập giỏ hàng và thực hiện thanh toán đơn hàng trực tuyến.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+            <Button
+              variant="hero"
+              className="font-semibold"
+              onClick={() => openCustomerLoginModal()}
+            >
+              Đăng nhập ngay
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/menu">Khám phá thực đơn</Link>
+            </Button>
           </div>
         </div>
       </>

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useBranch } from '@/lib/branch';
 import { useCart } from '@/lib/cart';
 import { apiGet, apiPost, createIdempotencyKey, fetchPublicProducts, getCustomerToken, getCustomerUser } from '@/lib/api';
+import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 import { ProductCard } from '@/components/menu/ProductCard';
 import { mapApiProduct, type Product, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
@@ -160,7 +161,11 @@ function PreorderCheckoutPage() {
   }, [availability, date, hour, storeId]);
 
   async function submit() {
-    if (!getCustomerToken()) { toast.error('Vui lòng đăng nhập để đặt trước.'); return; }
+    if (!getCustomerSession()) {
+      toast.error('Vui lòng đăng nhập để đặt trước.');
+      openCustomerLoginModal();
+      return;
+    }
     if (selectedStorePreorderAvailable !== true) { toast.error('Đặt trước hiện chưa áp dụng tại chi nhánh này.'); return; }
     if (!cartIsSingleStore) { toast.error('Đặt trước chỉ nhận món của đúng một chi nhánh.'); return; }
     if (!name.trim() || !phone.trim() || !date || !hour) { toast.error('Vui lòng điền thông tin nhận món và khung giờ.'); return; }

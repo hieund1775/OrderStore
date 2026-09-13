@@ -4,6 +4,7 @@ import { ArrowUp, MessageCircle, Phone, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/lib/cart';
 import { vnd } from '@/lib/data';
+import { useCustomerSession } from '@/lib/customer-session';
 
 export function FloatingWidgets() {
   const [show, setShow] = useState(false);
@@ -42,8 +43,9 @@ export function FloatingWidgets() {
 }
 
 export function MobileCartBar() {
+  const session = useCustomerSession();
   const { count, subtotal } = useCart();
-  if (count === 0) return null;
+  if (!session || count === 0) return null;
   return (
     <div className="bg-card/95 fixed inset-x-0 bottom-0 z-50 border-t p-3 backdrop-blur md:hidden">
       <div className="flex items-center gap-3">
