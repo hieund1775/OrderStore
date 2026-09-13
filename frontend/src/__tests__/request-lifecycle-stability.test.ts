@@ -216,6 +216,13 @@ describe('Request lifecycle stability and single-flight containment', () => {
   });
 
   describe('PayOS checkout polling deduplication in thanh-toan.tsx', () => {
+    it('imports every React hook used by the checkout route', () => {
+      expect(thanhToanSource).toMatch(
+        /import\s*\{[^}]*\buseCallback\b[^}]*\}\s*from\s*["']react["']/s,
+      );
+      expect(thanhToanSource).toContain('const fetchPaymentStatus = useCallback(');
+    });
+
     it('shares in-flight status requests between periodic polling and manual checkPaymentNow', () => {
       expect(thanhToanSource).toContain('inFlightPaymentStatusRef = useRef(new Map());');
       expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current.get(key)');
