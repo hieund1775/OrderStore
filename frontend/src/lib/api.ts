@@ -34,7 +34,17 @@ export function setUser(u: { id: number; fullname: string; phone: string; role: 
   }
 }
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const inFlightMutations = new Map<string, Promise<unknown>>();
+
+function getMutationKey(path: string, method: string, body: BodyInit | null | undefined) {
+  const normalizedPath = path.split('?')[0];
+  const hasResourceId = /\/\d+(?:\/|$)/.test(normalizedPath);
+  const payload = hasResourceId ? '' : String(body || '');
+  return `${method}:${normalizedPath}:${payload}`;
+}
+
+async function apiFetchCore<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
@@ -88,6 +98,22 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     }
     throw new Error(err instanceof Error ? err.message : 'Không thể kết nối đến máy chủ backend');
   }
+}
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = String(options?.method || 'GET').toUpperCase();
+  if (!MUTATION_METHODS.has(method)) return apiFetchCore<T>(path, options);
+
+  const key = getMutationKey(path, method, options?.body);
+  const existing = inFlightMutations.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const request = apiFetchCore<T>(path, options);
+  inFlightMutations.set(key, request);
+  request.finally(() => {
+    if (inFlightMutations.get(key) === request) inFlightMutations.delete(key);
+  }).catch(() => undefined);
+  return request;
 }
 
 export class ApiError extends Error {
