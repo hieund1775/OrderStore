@@ -521,16 +521,51 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
   // 11. Stores & Products & Options fallback
   if (path.startsWith('/admin/stores') || path.startsWith('/api/stores') || path.startsWith('/admin/branches')) {
-    return Promise.resolve(stores as T);
+    const orders = getLocalOrders();
+    const todayStr = formatVietnamOrderDatePrefix();
+    const branchList = stores.map((s, idx) => {
+      const storeIdNum = idx + 1;
+      const storeOrders = orders.filter((o: any) =>
+        o.store_id === s.id || o.store_id === storeIdNum || String(o.store_id) === String(s.id) || String(o.store_id) === String(storeIdNum)
+      );
+      const todayBranchOrders = storeOrders.filter((o: any) => {
+        const orderPrefix = String(o.order_code || '').slice(0, 6);
+        return orderPrefix === todayStr || (o.created_at && String(o.created_at).startsWith(new Date().toISOString().slice(0, 10)));
+      });
+      const completedTodayOrders = todayBranchOrders.filter((o: any) =>
+        o.status === 'Hoàn thành' || o.status === 'COMPLETED' || o.payment_status === 'paid'
+      );
+      const todayRevenue = completedTodayOrders.reduce((sum: number, o: any) => sum + Number(o.total || o.total_amount || 0), 0);
+      return {
+        ...s,
+        id: storeIdNum,
+        is_active: true,
+        table_count: 6,
+        today_orders: todayBranchOrders.length,
+        today_revenue: todayRevenue,
+      };
+    });
+    return Promise.resolve(branchList as T);
   }
-  if (path.startsWith('/admin/tables') || path.startsWith('/api/tables')) {
+  if (path.startsWith('/admin/tables') || path.startsWith('/api/tables') || path.startsWith('/api/preorders/tables')) {
     const mockTables = [
       { id: 1, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 01', qr_code_token: 'TBL-1-01', is_active: true },
       { id: 2, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 02', qr_code_token: 'TBL-1-02', is_active: true },
       { id: 3, store_id: 1, store_name: 'Trà Trái Cây Tô – Nguyễn Huệ', name: 'Bàn 03', qr_code_token: 'TBL-1-03', is_active: true },
       { id: 4, store_id: 2, store_name: 'Trà Trái Cây Tô – Hàng Bài', name: 'Bàn 01', qr_code_token: 'TBL-2-01', is_active: true },
     ];
-    return Promise.resolve(mockTables as T);
+    let storeIdParam: string | null = null;
+    try {
+      const url = new URL(path, 'http://localhost');
+      storeIdParam = url.searchParams.get('store_id');
+    } catch {}
+    const filtered = storeIdParam
+      ? mockTables.filter((t) => String(t.store_id) === String(storeIdParam))
+      : mockTables;
+    if (path.startsWith('/api/preorders/tables')) {
+      return Promise.resolve({ tables: filtered } as T);
+    }
+    return Promise.resolve(filtered as T);
   }
   if (path.startsWith('/admin/menu/products') || path.startsWith('/admin/products')) {
     return Promise.resolve(getMockCatalogProducts() as T);
@@ -606,6 +641,29 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       if (typeof window !== 'undefined') window.localStorage.setItem('teaplus_mock_promotions', JSON.stringify(promoList));
       return Promise.resolve({ message: 'Đã cập nhật khuyến mãi' } as T);
     }
+    if (path.match(/\/api\/admin\/promotions\/(\d+)\/assign/) || path === '/api/admin/promotions/assign') {
+      const promoId = path.match(/\/api\/admin\/promotions\/(\d+)\/assign/)?.[1] || (options?.body ? JSON.parse(String(options.body)).promotion_id : null);
+      const body = options?.body ? JSON.parse(String(options.body)) : {};
+      const targetUserIds = Array.isArray(body?.user_ids) ? body.user_ids : (body?.user_id ? [body.user_id] : [1]);
+      const promo = promoList.find((p: any) => String(p.id) === String(promoId)) || { code: body?.code || 'CHAOBANMOI', title: 'Voucher ưu đãi' };
+      for (const uId of targetUserIds) {
+        const storageKey = `teaplus_mock_user_vouchers_${uId}`;
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+        const currentList = raw ? JSON.parse(raw) : [];
+        currentList.unshift({
+          id: Date.now() + Math.random(),
+          user_id: Number(uId),
+          promotion_id: Number(promoId),
+          code: body?.code || promo.code,
+          promotion_title: promo.title,
+          discount_value: promo.discount_value || 20,
+          discount_type: promo.discount_type || 'percent',
+          expires_at: body?.expires_at || promo.end_date || '2026-12-31',
+        });
+        if (typeof window !== 'undefined') window.localStorage.setItem(storageKey, JSON.stringify(currentList));
+      }
+      return Promise.resolve({ success: true, count: targetUserIds.length } as T);
+    }
     if (method === 'POST') {
       const body = options?.body ? JSON.parse(String(options.body)) : {};
       const newPromo = { id: Date.now(), ...body, is_active: true, deleted_at: null };
@@ -652,6 +710,77 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
       return Promise.resolve({ notifications: notifList, unread_count: unreadCount } as T);
     }
     return Promise.resolve(notifList as T);
+  }
+
+  // 14b. User Vouchers Mock
+  if (path.match(/\/api\/users\/[^/]+\/vouchers/)) {
+    const customerId = path.split('/')[3];
+    const storageKey = `teaplus_mock_user_vouchers_${customerId}`;
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+    const list = raw ? JSON.parse(raw) : [
+      {
+        id: 1,
+        user_id: Number(customerId) || 1,
+        promotion_id: 1,
+        code: 'CHAOBANMOI',
+        promotion_title: 'Giảm 20% Đơn Đầu Tiên',
+        discount_value: 20,
+        discount_type: 'percent',
+        max_discount: 30000,
+        min_order: 50000,
+        expires_at: '2026-12-31',
+      },
+      {
+        id: 2,
+        user_id: Number(customerId) || 1,
+        promotion_id: 2,
+        code: 'FREESHIP',
+        promotion_title: 'Freeship Giờ Vàng',
+        discount_value: 15000,
+        discount_type: 'fixed',
+        max_discount: 15000,
+        min_order: 99000,
+        expires_at: '2026-12-31',
+      },
+    ];
+    return Promise.resolve(list as T);
+  }
+
+  // 14c. Admin Reviews Mock
+  if (path.startsWith('/admin/reviews') || path.startsWith('/api/admin/reviews')) {
+    const storageKey = 'teaplus_mock_admin_reviews';
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
+    let reviewList = raw ? JSON.parse(raw) : [];
+
+    if (method === 'POST' && path.includes('/reply')) {
+      const parts = path.split('/');
+      const replyIdx = parts.indexOf('reply');
+      const reviewId = Number(parts[replyIdx - 1]);
+      const body = options?.body ? JSON.parse(String(options.body)) : {};
+      reviewList = reviewList.map((r: any) =>
+        r.id === reviewId
+          ? { ...r, reply: { id: Date.now(), body: body.body, createdAt: new Date().toISOString() } }
+          : r
+      );
+      if (typeof window !== 'undefined') window.localStorage.setItem(storageKey, JSON.stringify(reviewList));
+      return Promise.resolve({ success: true } as T);
+    }
+
+    if (method === 'PATCH' && path.includes('/visibility')) {
+      const parts = path.split('/');
+      const visIdx = parts.indexOf('visibility');
+      const reviewId = Number(parts[visIdx - 1]);
+      const body = options?.body ? JSON.parse(String(options.body)) : {};
+      reviewList = reviewList.map((r: any) =>
+        r.id === reviewId
+          ? { ...r, visibilityStatus: body.visibility, hiddenReason: body.hidden_reason }
+          : r
+      );
+      if (typeof window !== 'undefined') window.localStorage.setItem(storageKey, JSON.stringify(reviewList));
+      return Promise.resolve({ success: true } as T);
+    }
+
+    return Promise.resolve({ items: reviewList, cursor: null, hasMore: false } as T);
   }
 
   // 15. Public Catalog V2 Mock

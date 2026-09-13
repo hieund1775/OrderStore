@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSingleDateBoundary, parseDateRangeBoundaries } from '../services/date-range.js';
 import { createAdminReportsRepository } from '../repositories/postgres/admin-reports.js';
+import { createAdminStoresRepository } from '../repositories/postgres/admin-stores.js';
 
 describe('Admin Orders & Reports Vietnam Date Boundaries', () => {
   it('maps inclusive Vietnam calendar dates to half-open UTC filters', () => {
@@ -55,5 +56,25 @@ describe('Admin Orders & Reports Vietnam Date Boundaries', () => {
     assert.match(captured.sql, /LEFT JOIN orders o ON[\s\S]*o\.created_at >= \$1/);
     assert.match(captured.sql, /o\.created_at < \$2/);
     assert.deepEqual(captured.params, ['2026-08-19T17:00:00.000Z', '2026-08-25T17:00:00.000Z']);
+  });
+
+  it('calculates listBranches today revenue and orders using Vietnam timezone boundaries without CURRENT_DATE', async () => {
+    let captured = null;
+    const database = {
+      async query(sql, params) {
+        captured = { sql, params };
+        return [[{ id: 1, name: 'Store 1', table_count: 5, today_orders: 2, today_revenue: 150000, total_orders: 10, revenue: 1000000 }], 1];
+      },
+    };
+    const repository = createAdminStoresRepository(database, {
+      clock: () => new Date('2026-08-24T17:05:00.000Z'),
+    });
+
+    const rows = await repository.listBranches({ scopedStoreId: 1 });
+    assert.deepEqual(captured.params, ['2026-08-24T17:00:00.000Z', '2026-08-25T17:00:00.000Z', 1]);
+    assert.equal(captured.sql.includes('CURRENT_DATE'), false);
+    assert.match(captured.sql, /today_revenue/);
+    assert.match(captured.sql, /table_count/);
+    assert.equal(rows[0].today_revenue, 150000);
   });
 });

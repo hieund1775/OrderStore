@@ -5,6 +5,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateCustomerId } from '../../validation/customer-schemas.js';
 import { toCustomerDto } from '../../dto/customer-dto.js';
 import customerService from '../../services/customers/customer-service.js';
+import adminPromotionService from '../../services/promotions/admin-promotion-service.js';
 
 const router = Router();
 
@@ -33,6 +34,27 @@ router.get('/:id', requireRole('super', 'manager', 'cashier'), asyncHandler(asyn
     const customer = await customerService.getCustomerDetail(id, { scopedStoreId });
     if (!customer) return res.status(404).json({ error: 'Không tìm thấy khách hàng' });
     res.json(toCustomerDto(customer));
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.post('/:id/vouchers', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    const userId = validateCustomerId(req.params.id);
+    const { promotion_id, code, expires_at } = req.body || {};
+    const promotionId = Number(promotion_id);
+    if (!Number.isInteger(promotionId) || promotionId <= 0) {
+      return res.status(400).json({ error: 'ID khuyến mãi không hợp lệ' });
+    }
+    const assigned = await adminPromotionService.assignPromotionToUser({
+      promotionId,
+      userId,
+      code,
+      expiresAt: expires_at,
+    });
+    res.status(201).json(assigned);
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ error: err.message });

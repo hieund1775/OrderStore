@@ -561,15 +561,15 @@ function StoresAdminPage() {
                   <div className="bg-muted/50 mt-4 grid grid-cols-3 gap-2 rounded-xl p-3 text-center text-xs">
                     <div>
                       <p className="text-muted-foreground">Bàn</p>
-                      <p className="font-display mt-0.5 font-bold">{s.table_count}</p>
+                      <p className="font-display mt-0.5 font-bold">{s.table_count ?? 0}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Đơn hôm nay</p>
-                      <p className="font-display mt-0.5 font-bold">{s.today_orders}</p>
+                      <p className="font-display mt-0.5 font-bold">{s.today_orders ?? 0}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Doanh thu hôm nay</p>
-                      <p className="font-display text-primary mt-0.5 font-bold">{vnd(s.today_revenue)}</p>
+                      <p className="font-display text-primary mt-0.5 font-bold">{vnd(s.today_revenue ?? 0)}</p>
                     </div>
                   </div>
                   <BranchCapabilities storeId={s.id} editable={user?.role === "super"} />

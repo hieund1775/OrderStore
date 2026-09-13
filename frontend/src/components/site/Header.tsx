@@ -375,10 +375,33 @@ function ProfileButton() {
   const [googleBtnNode, setGoogleBtnNode] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const customerUser = getCustomerUser();
-    setLoggedIn(Boolean(getCustomerToken()));
-    setUserName(customerUser?.fullname || '');
-    setUserTier(customerUser?.tier || 'Đồng');
+    const syncAuth = () => {
+      const customerUser = getCustomerUser();
+      setLoggedIn(Boolean(getCustomerToken()));
+      setUserName(customerUser?.fullname || '');
+      setUserTier(customerUser?.tier || 'Đồng');
+    };
+    syncAuth();
+    window.addEventListener('teaplus:customer-auth-changed', syncAuth);
+    window.addEventListener('storage', syncAuth);
+    return () => {
+      window.removeEventListener('teaplus:customer-auth-changed', syncAuth);
+      window.removeEventListener('storage', syncAuth);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOpenAuth = () => {
+      if (!getCustomerToken()) {
+        setAuthMode('login');
+        setError('');
+        setOpen(true);
+      }
+    };
+    window.addEventListener('teaplus:open-customer-auth', handleOpenAuth);
+    return () => {
+      window.removeEventListener('teaplus:open-customer-auth', handleOpenAuth);
+    };
   }, []);
 
   // Load Google Identity Services script (chỉ 1 lần)

@@ -16,6 +16,13 @@ router.get('/stores/districts', asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+router.get('/tables', asyncHandler(async (req, res) => {
+  const { store_id: storeId } = req.query;
+  if (!storeId) return res.json([]);
+  const rows = await storeService.listTablesByStore(storeId);
+  res.json(rows.map(toTableDto));
+}));
+
 router.get('/table/resolve', asyncHandler(async (req, res) => {
   const { table_id: tableId, token } = req.query;
   if (!tableId && !token) return res.status(400).json({ error: 'Thiếu mã QR hoặc table_id' });

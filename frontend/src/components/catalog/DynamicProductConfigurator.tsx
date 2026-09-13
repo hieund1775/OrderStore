@@ -9,6 +9,8 @@ import { Check, Plus, Minus, ShoppingBag, AlertCircle, Lock } from 'lucide-react
 import {
   fetchPublicProductDetails,
   resolveProductConfiguration,
+  getCustomerToken,
+  openCustomerLoginModal,
   type PublicProductDetails,
   type ResolvedProductConfiguration,
   type AppliedModifier,
@@ -34,7 +36,7 @@ export interface DynamicProductConfiguratorProps {
     stockMode: 'tracked' | 'made_to_order';
     fulfillmentLane: 'kitchen' | 'packing';
     image?: string;
-  }) => void;
+  }) => boolean | void;
 }
 
 export function DynamicProductConfigurator({
@@ -157,6 +159,12 @@ export function DynamicProductConfigurator({
     const resolvedProduct = resolvedConfig.product;
     const resolvedVariant = resolvedConfig.variant;
 
+    if (!getCustomerToken()) {
+      toast.error('Vui lòng đăng nhập trước khi đặt món');
+      openCustomerLoginModal();
+      return;
+    }
+
     if (resolvedVariant.is_available === false) {
       toast.error('Biến thể món này hiện đang tạm hết tại chi nhánh');
       return;
@@ -171,7 +179,7 @@ export function DynamicProductConfigurator({
       return;
     }
 
-    onAddToCart({
+    const added = onAddToCart({
       productId: resolvedProduct.id,
       productName: resolvedProduct.name,
       productSlug: resolvedProduct.slug,
@@ -186,8 +194,10 @@ export function DynamicProductConfigurator({
       image: product?.image_url || undefined,
     });
 
-    toast.success(`Đã thêm ${quantity}x ${resolvedProduct.name} vào giỏ hàng`);
-    onOpenChange(false);
+    if (added !== false) {
+      toast.success(`Đã thêm ${quantity}x ${resolvedProduct.name} vào giỏ hàng`);
+      onOpenChange(false);
+    }
   };
 
   return (

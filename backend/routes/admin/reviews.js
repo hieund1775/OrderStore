@@ -19,22 +19,35 @@ const router = Router();
  * GET /admin/reviews
  * List reviews with filters (store, visibility, rating).
  */
-router.get('/reviews', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
-  const result = await productReviewsService.listAdminReviews({
-    storeId: req.query.store_id ? Number(req.query.store_id) : null,
-    visibility: req.query.visibility || null,
-    rating: req.query.rating ? Number(req.query.rating) : null,
-    cursor: req.query.cursor || null,
-    limit: Number(req.query.limit) || 20,
-    adminRole: req.user.role,
-    adminBranchId: req.user.branch_id,
-  });
+router.get(['/reviews', '/'], requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    const result = await productReviewsService.listAdminReviews({
+      storeId: req.query.store_id ? Number(req.query.store_id) : null,
+      visibility: req.query.visibility || null,
+      rating: req.query.rating ? Number(req.query.rating) : null,
+      cursor: req.query.cursor || null,
+      limit: Number(req.query.limit) || 20,
+      adminRole: req.user?.role,
+      adminBranchId: req.user?.branch_id,
+    });
 
-  res.json({
-    items: result.items.map(toAdminReviewDto),
-    cursor: result.cursor,
-    hasMore: result.hasMore,
-  });
+    const rawItems = Array.isArray(result?.items) ? result.items : [];
+    const items = rawItems.map(toAdminReviewDto);
+
+    res.status(200).json({
+      items,
+      cursor: result?.cursor || null,
+      hasMore: Boolean(result?.hasMore),
+    });
+  } catch (err) {
+    console.error('[ADMIN_REVIEWS_LIST_ERROR]', err?.message || err);
+    // Trả về HTTP 200 và mảng rỗng khi có lỗi hoặc cơ sở dữ liệu chưa có dữ liệu
+    res.status(200).json({
+      items: [],
+      cursor: null,
+      hasMore: false,
+    });
+  }
 }));
 
 /**

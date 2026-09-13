@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, useEffect, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { getCustomerToken } from './api';
+import { getCustomerToken, openCustomerLoginModal } from './api';
 
 export type AppliedModifier = {
   attribute_code: string;
@@ -174,7 +174,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addItem: (item) => {
         const token = getCustomerToken();
         if (!token) {
-          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
+          toast.error('Vui lòng đăng nhập trước khi đặt món');
+          openCustomerLoginModal();
           return false;
         }
         setItems((prev) => {

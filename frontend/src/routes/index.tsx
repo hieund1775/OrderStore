@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Leaf, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { mapApiProduct, products as fallbackProducts, promotions, stores as fallbackStores, type ApiCatalogProduct, type Product, type Store } from "@/lib/data";
-import { apiGet } from "@/lib/api";
+import { apiGet, getCustomerToken, openCustomerLoginModal } from "@/lib/api";
 import heroImg from "@/assets/hero-tea.jpg";
 import storyImg from "@/assets/story.jpg";
 
@@ -39,6 +40,7 @@ const commitments = [
 ];
 
 function Home() {
+  const navigate = useNavigate();
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(fallbackProducts);
   const [storeList, setStoreList] = useState<Store[]>(fallbackStores);
 
@@ -97,10 +99,19 @@ function Home() {
                 trong 25 phút.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Button asChild variant="hero" size="lg">
-                  <Link to="/menu">
-                    Đặt món ngay <ArrowRight className="size-4" />
-                  </Link>
+                <Button
+                  variant="hero"
+                  size="lg"
+                  onClick={() => {
+                    if (!getCustomerToken()) {
+                      toast.error('Vui lòng đăng nhập trước khi đặt món');
+                      openCustomerLoginModal();
+                      return;
+                    }
+                    void navigate({ to: '/menu' });
+                  }}
+                >
+                  Đặt món ngay <ArrowRight className="size-4" />
                 </Button>
                 <Button asChild variant="secondary" size="lg">
                   <Link to="/cua-hang">Ghé cửa hàng</Link>

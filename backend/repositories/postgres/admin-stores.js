@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
+import { getTodayBoundaries } from '../../services/business-time.js';
 
 export class AdminStoreError extends Error {
   constructor(message, status = 400) {
@@ -13,10 +14,11 @@ function extractTableNumber(name) {
   return match ? Number(match[1]) : 0;
 }
 
-export function createAdminStoresRepository(database = postgresDb) {
+export function createAdminStoresRepository(database = postgresDb, { clock = () => new Date() } = {}) {
   return {
     async listBranches({ scopedStoreId } = {}) {
-      const params = [];
+      const today = getTodayBoundaries(clock());
+      const params = [today.start, today.end];
       let where = 'WHERE TRUE';
       if (scopedStoreId) {
         params.push(scopedStoreId);
@@ -24,12 +26,63 @@ export function createAdminStoresRepository(database = postgresDb) {
       }
       const [rows] = await database.query(
         `SELECT s.*,
-                COUNT(o.id)::int AS total_orders,
-                COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0)::bigint AS revenue
+                COALESCE(tbl.table_count, 0)::int AS table_count,
+                COALESCE(td.today_orders, 0)::int AS today_orders,
+                COALESCE(td.today_revenue, 0)::bigint AS today_revenue,
+                COALESCE(all_ord.total_orders, 0)::int AS total_orders,
+                COALESCE(all_ord.revenue, 0)::bigint AS revenue
          FROM stores s
-         LEFT JOIN orders o ON o.store_id = s.id
+         LEFT JOIN (
+           SELECT store_id, COUNT(*)::int AS table_count
+           FROM tables
+           GROUP BY store_id
+         ) tbl ON tbl.store_id = s.id
+         LEFT JOIN (
+           SELECT o.store_id,
+                  COUNT(o.id)::int AS today_orders,
+                  COALESCE(SUM(
+                    CASE 
+                      WHEN latest.status IN ('Hoàn thành', 'COMPLETED')
+                           OR (o.payment_status = 'paid' AND COALESCE(latest.status, '') NOT IN ('Đã hủy', 'CANCELLED'))
+                      THEN o.total
+                      ELSE 0
+                    END
+                  ), 0)::bigint AS today_revenue
+           FROM orders o
+           LEFT JOIN LATERAL (
+             SELECT status 
+             FROM order_status_history osh 
+             WHERE osh.order_id = o.id 
+             ORDER BY osh.created_at DESC, osh.id DESC 
+             LIMIT 1
+           ) latest ON TRUE
+           WHERE o.created_at >= $1 AND o.created_at < $2
+             AND COALESCE(latest.status, '') NOT IN ('Đã hủy', 'CANCELLED')
+           GROUP BY o.store_id
+         ) td ON td.store_id = s.id
+         LEFT JOIN (
+           SELECT o.store_id,
+                  COUNT(o.id)::int AS total_orders,
+                  COALESCE(SUM(
+                    CASE 
+                      WHEN latest.status IN ('Hoàn thành', 'COMPLETED')
+                           OR (o.payment_status = 'paid' AND COALESCE(latest.status, '') NOT IN ('Đã hủy', 'CANCELLED'))
+                      THEN o.total
+                      ELSE 0
+                    END
+                  ), 0)::bigint AS revenue
+           FROM orders o
+           LEFT JOIN LATERAL (
+             SELECT status 
+             FROM order_status_history osh 
+             WHERE osh.order_id = o.id 
+             ORDER BY osh.created_at DESC, osh.id DESC 
+             LIMIT 1
+           ) latest ON TRUE
+           WHERE COALESCE(latest.status, '') NOT IN ('Đã hủy', 'CANCELLED')
+           GROUP BY o.store_id
+         ) all_ord ON all_ord.store_id = s.id
          ${where}
-         GROUP BY s.id
          ORDER BY s.id`,
         params,
       );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Star, Eye, EyeOff, MessageSquare, Reply, Search, Filter as FilterIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +41,9 @@ interface ReviewItem {
 
 export function ReviewModerationPanel() {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [storeFilter, setStoreFilter] = useState<string>('');
   const [visibilityFilter, setVisibilityFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,31 +58,47 @@ export function ReviewModerationPanel() {
 
   async function loadReviews(reset = false) {
     try {
-      setLoading(true);
+      setIsLoading(true);
+      setIsError(false);
+      setErrorMessage(null);
       const params = new URLSearchParams({ limit: '20' });
       if (storeFilter) params.set('store_id', storeFilter);
       if (visibilityFilter !== 'all') params.set('visibility', visibilityFilter);
       if (!reset && cursor) params.set('cursor', cursor);
 
       const data = await apiGet<{
-        items: ReviewItem[];
-        cursor: string | null;
-        hasMore: boolean;
-      }>(`/admin/reviews?${params}`);
+        items?: ReviewItem[];
+        cursor?: string | null;
+        hasMore?: boolean;
+      } | ReviewItem[]>(`/admin/reviews?${params}`);
+
+      const rawItems: ReviewItem[] = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.items) ? data.items : []);
 
       if (reset) {
-        setReviews(data.items);
+        setReviews(rawItems);
       } else {
-        setReviews((prev) => [...prev, ...data.items]);
+        setReviews((prev) => [...(Array.isArray(prev) ? prev : []), ...rawItems]);
       }
-      setCursor(data.cursor);
-      setHasMore(data.hasMore);
+      setCursor(!Array.isArray(data) && typeof data?.cursor === 'string' ? data.cursor : null);
+      setHasMore(!Array.isArray(data) && Boolean(data?.hasMore));
     } catch (err) {
+      console.error('[LOAD_REVIEWS_ERROR]', err);
+      setIsError(true);
+      setErrorMessage(err instanceof Error ? err.message : 'Không thể tải danh sách đánh giá');
       toast.error('Không thể tải danh sách đánh giá');
+      if (reset) {
+        setReviews([]);
+      }
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   }
+
+  useEffect(() => {
+    loadReviews(true);
+  }, [storeFilter, visibilityFilter]);
 
   async function handleReply(reviewId: number) {
     if (!replyText.trim()) {
@@ -160,9 +178,33 @@ export function ReviewModerationPanel() {
 
       {/* Review List */}
       <div className="space-y-3">
-        {reviews
-          .filter((r) => !searchQuery || r.productName?.toLowerCase().includes(searchQuery.toLowerCase()))
-          .map((review) => (
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-gray-400">Đang tải...</div>
+        ) : isError ? (
+          <div className="py-8 text-center space-y-2">
+            <p className="text-sm text-red-500">
+              {errorMessage || 'Đã xảy ra lỗi khi tải danh sách đánh giá.'}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => loadReviews(true)}>
+              Thử lại
+            </Button>
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="text-center text-gray-500 py-4">
+            Hiện chưa có đánh giá nào.
+          </div>
+        ) : (() => {
+          const filteredReviews = (Array.isArray(reviews) ? reviews : []).filter(
+            (r) => !searchQuery || r.productName?.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          if (filteredReviews.length === 0) {
+            return (
+              <div className="text-center text-gray-500 py-4">
+                Không tìm thấy đánh giá nào phù hợp với từ khóa "{searchQuery}".
+              </div>
+            );
+          }
+          return filteredReviews.map((review) => (
             <div
               key={review.id}
               className="rounded-lg border bg-white p-4 transition-colors hover:border-gray-300"
@@ -217,19 +259,12 @@ export function ReviewModerationPanel() {
                 </div>
               </div>
             </div>
-          ))}
-
-        {loading && (
-          <div className="py-8 text-center text-sm text-gray-400">Đang tải...</div>
-        )}
-
-        {!loading && reviews.length === 0 && (
-          <div className="py-8 text-center text-sm text-gray-400">Chưa có đánh giá nào</div>
-        )}
+          ));
+        })()}
       </div>
 
       {/* Load More */}
-      {hasMore && !loading && (
+      {hasMore && !isLoading && !isError && (
         <div className="text-center">
           <Button variant="outline" size="sm" onClick={() => loadReviews(false)}>
             Xem thêm

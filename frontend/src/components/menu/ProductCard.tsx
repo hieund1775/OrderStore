@@ -23,6 +23,7 @@ import {
   vnd,
   type Product,
 } from '@/lib/data';
+import { getCustomerToken, openCustomerLoginModal } from '@/lib/api';
 
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
@@ -101,6 +102,11 @@ export function ProductCard({ product }: { product: Product }) {
               aria-label="Thêm nhanh vào giỏ"
               className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
               onClick={() => {
+                if (!getCustomerToken()) {
+                  toast.error('Vui lòng đăng nhập trước khi đặt món');
+                  openCustomerLoginModal();
+                  return;
+                }
                 if (product.slug) {
                   setOpen(true);
                   return;
@@ -132,7 +138,14 @@ export function ProductCard({ product }: { product: Product }) {
               variant="hero"
               size="sm"
               className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
-              onClick={() => setOpen(true)}
+              onClick={() => {
+                if (!getCustomerToken()) {
+                  toast.error('Vui lòng đăng nhập trước khi đặt món');
+                  openCustomerLoginModal();
+                  return;
+                }
+                setOpen(true);
+              }}
             >
               <Settings2 className="size-3.5 sm:size-4 shrink-0" />
               <span className="truncate">Tùy chọn</span>
@@ -148,7 +161,7 @@ export function ProductCard({ product }: { product: Product }) {
           open={open}
           onOpenChange={setOpen}
           onAddToCart={(configured) => {
-            addItem({
+            return addItem({
               storeId: selectedStore?.id,
               storeName: selectedStore?.name,
               storeDistrict: selectedStore?.district,
@@ -341,6 +354,11 @@ function CustomizeDialog({
                 variant="hero"
                 className="flex-1"
                 onClick={() => {
+                  if (!getCustomerToken()) {
+                    toast.error('Vui lòng đăng nhập trước khi đặt món');
+                    openCustomerLoginModal();
+                    return;
+                  }
                   const added = addItem({
                     storeId: selectedStore?.id,
                     storeName: selectedStore?.name,

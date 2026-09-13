@@ -16,6 +16,14 @@ export function createStoreService(repository = defaultStoresRepository) {
       return [];
     },
 
+    async listTablesByStore(storeId) {
+      if (!storeId || !Number.isInteger(Number(storeId))) return [];
+      if (typeof repository.listTablesByStore === 'function') {
+        return repository.listTablesByStore(storeId);
+      }
+      return [];
+    },
+
     async resolveTable(tableId) {
       if (!tableId) return null;
       return repository.resolveTable(tableId);

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { createFileRoute, Link, useParams } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { Star, ArrowLeft, ShoppingBag, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProductReviews } from '@/components/reviews/ProductReviews';
-import { apiGet } from '@/lib/api';
+import { apiGet, getCustomerToken, openCustomerLoginModal } from '@/lib/api';
 import { vnd } from '@/lib/data';
 
 export const Route = createFileRoute('/san-pham/$slug')({
@@ -19,6 +20,7 @@ export const Route = createFileRoute('/san-pham/$slug')({
 });
 
 function ProductDetailPage() {
+  const navigate = useNavigate();
   const { slug } = Route.useParams();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -124,12 +126,19 @@ function ProductDetailPage() {
           </div>
 
           <div className="mt-4">
-            <Link to="/menu">
-              <Button>
-                <ShoppingBag className="mr-1 h-4 w-4" />
-                Đặt món ngay
-              </Button>
-            </Link>
+            <Button
+              onClick={() => {
+                if (!getCustomerToken()) {
+                  toast.error('Vui lòng đăng nhập trước khi đặt món');
+                  openCustomerLoginModal();
+                  return;
+                }
+                void navigate({ to: '/menu' });
+              }}
+            >
+              <ShoppingBag className="mr-1 h-4 w-4" />
+              Đặt món ngay
+            </Button>
           </div>
         </div>
       </div>

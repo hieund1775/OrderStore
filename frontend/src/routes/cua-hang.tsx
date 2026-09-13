@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/site/PageHeader";
-import { apiGet } from "@/lib/api";
+import { apiGet, getCustomerToken, openCustomerLoginModal } from "@/lib/api";
 import { useBranch } from "@/lib/branch";
 import { formatFullAddress } from "@/lib/data";
 import cuahangBannerImg from "@/assets/cuahang.jpg";
@@ -220,6 +220,11 @@ function StoresPage() {
   }
 
   function orderFrom(s: Store) {
+    if (!getCustomerToken()) {
+      toast.error('Vui lòng đăng nhập trước khi đặt món');
+      openCustomerLoginModal();
+      return;
+    }
     if (!s.is_active) {
       return toast.error(`${s.name} đang tạm đóng cửa — hãy chọn chi nhánh khác`);
     }
@@ -308,107 +313,119 @@ function StoresPage() {
                 <Loader2 className="size-5 animate-spin" />
               </div>
             ) : (
-              <div className="max-h-[340px] sm:max-h-[400px] md:max-h-[440px] lg:max-h-[580px] w-full min-w-0 space-y-3 overflow-y-auto pr-1">
-                {list.map((s) => (
-                  <article
-                    key={s.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-selected={selectedId === s.id}
-                    onClick={() => handleSelectStore(s)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handleSelectStore(s);
-                      }
-                    }}
-                    className={`bg-card w-full min-w-0 overflow-hidden cursor-pointer rounded-2xl border p-3.5 sm:p-4 transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ${
-                      selectedId === s.id
-                        ? "border-primary ring-2 ring-primary/20 shadow-md"
-                        : "border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <h2 className="font-display font-bold text-base sm:text-lg break-words">{s.name}</h2>
-                    <p className="text-muted-foreground mt-1 flex items-start gap-2 text-xs sm:text-sm">
-                      <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
-                      <span className="min-w-0 flex-1 leading-relaxed break-words">{formatFullAddress(s.address, s.district, s.city)}</span>
-                    </p>
-                    <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-xs sm:text-sm">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <Clock className="text-primary size-4 shrink-0" />
-                        <span className="truncate">{s.hours}</span>
-                      </div>
-                      {s.is_active ? (
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-200 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-medium shrink-0"
-                        >
-                          🟢 Đang mở cửa
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="destructive"
-                          className="rounded-full text-[11px] font-medium shrink-0"
-                        >
-                          🔴 Đã đóng cửa
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-muted-foreground mt-1.5 flex items-center gap-2 text-xs sm:text-sm">
-                      <Phone className="text-primary size-4 shrink-0" />
-                      <a href={`tel:${s.phone}`} className="hover:underline truncate" onClick={(e) => e.stopPropagation()}>
-                        {s.phone}
-                      </a>
-                    </p>
-                    {parseAmenities(s.amenities).length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1.5 overflow-hidden">
-                        {parseAmenities(s.amenities).map((a) => (
+              <div className="bg-card/80 dark:bg-card/50 rounded-2xl border-2 border-primary/30 p-3 sm:p-4 shadow-md backdrop-blur-xs">
+                <div className="flex items-center justify-between mb-3 px-1 text-xs font-semibold text-muted-foreground border-b border-border/60 pb-2.5">
+                  <span className="flex items-center gap-1.5 text-foreground font-display text-sm font-bold">
+                    <MapPin className="size-4 text-primary shrink-0" />
+                    Danh sách cửa hàng
+                  </span>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold text-primary">
+                    {list.length} chi nhánh
+                  </span>
+                </div>
+
+                <div className="custom-scrollbar max-h-[340px] sm:max-h-[400px] md:max-h-[440px] lg:max-h-[520px] w-full min-w-0 flex flex-col gap-3 sm:gap-4 overflow-y-auto pr-1.5 sm:pr-2 pt-0.5 pb-1">
+                  {list.map((s) => (
+                    <article
+                      key={s.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-selected={selectedId === s.id}
+                      onClick={() => handleSelectStore(s)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelectStore(s);
+                        }
+                      }}
+                      className={`bg-card w-full min-w-0 overflow-hidden cursor-pointer rounded-xl border p-3.5 sm:p-4 transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ${
+                        selectedId === s.id
+                          ? "border-primary ring-2 ring-primary/20 shadow-md scale-[1.01]"
+                          : "border-border shadow-xs hover:border-primary/50 hover:shadow-sm"
+                      }`}
+                    >
+                      <h2 className="font-display font-bold text-base sm:text-lg break-words">{s.name}</h2>
+                      <p className="text-muted-foreground mt-1 flex items-start gap-2 text-xs sm:text-sm">
+                        <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
+                        <span className="min-w-0 flex-1 leading-relaxed break-words">{formatFullAddress(s.address, s.district, s.city)}</span>
+                      </p>
+                      <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-xs sm:text-sm">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <Clock className="text-primary size-4 shrink-0" />
+                          <span className="truncate">{s.hours}</span>
+                        </div>
+                        {s.is_active ? (
                           <Badge
-                            key={a}
-                            variant="secondary"
-                            className="rounded-full text-[11px] font-normal"
+                            variant="outline"
+                            className="border-emerald-200 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-medium shrink-0"
                           >
-                            {a}
+                            🟢 Đang mở cửa
                           </Badge>
-                        ))}
+                        ) : (
+                          <Badge
+                            variant="destructive"
+                            className="rounded-full text-[11px] font-medium shrink-0"
+                          >
+                            🔴 Đã đóng cửa
+                          </Badge>
+                        )}
                       </div>
-                    )}
-                    <div className="mt-3.5 grid grid-cols-2 gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.open(
-                            `https://www.google.com/maps/dir/?api=1&destination=${mapQuery(s)}`,
-                            "_blank",
-                            "noopener",
-                          );
-                        }}
-                      >
-                        <Navigation className="size-3.5 shrink-0" /> <span className="truncate">Google Maps</span>
-                      </Button>
-                      <Button
-                        variant="hero"
-                        size="sm"
-                        className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
-                        disabled={!s.is_active}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          orderFrom(s);
-                        }}
-                      >
-                        <ShoppingCart className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-                {list.length === 0 && (
-                  <p className="text-muted-foreground py-10 text-center text-sm">
-                    Không có chi nhánh nào trong khu vực này
-                  </p>
-                )}
+                      <p className="text-muted-foreground mt-1.5 flex items-center gap-2 text-xs sm:text-sm">
+                        <Phone className="text-primary size-4 shrink-0" />
+                        <a href={`tel:${s.phone}`} className="hover:underline truncate" onClick={(e) => e.stopPropagation()}>
+                          {s.phone}
+                        </a>
+                      </p>
+                      {parseAmenities(s.amenities).length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5 overflow-hidden">
+                          {parseAmenities(s.amenities).map((a) => (
+                            <Badge
+                              key={a}
+                              variant="secondary"
+                              className="rounded-full text-[11px] font-normal"
+                            >
+                              {a}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-3.5 grid grid-cols-2 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(
+                              `https://www.google.com/maps/dir/?api=1&destination=${mapQuery(s)}`,
+                              "_blank",
+                              "noopener",
+                            );
+                          }}
+                        >
+                          <Navigation className="size-3.5 shrink-0" /> <span className="truncate">Google Maps</span>
+                        </Button>
+                        <Button
+                          variant="hero"
+                          size="sm"
+                          className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
+                          disabled={!s.is_active}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            orderFrom(s);
+                          }}
+                        >
+                          <ShoppingCart className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                  {list.length === 0 && (
+                    <p className="text-muted-foreground py-10 text-center text-sm">
+                      Không có chi nhánh nào trong khu vực này
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

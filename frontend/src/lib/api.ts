@@ -159,6 +159,12 @@ export function clearCustomerToken() {
   }
 }
 
+export function openCustomerLoginModal() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('teaplus:open-customer-auth'));
+  }
+}
+
 export function getCustomerUser() {
   if (typeof window === 'undefined') return null;
   const stored = window.localStorage.getItem(CUSTOMER_USER_KEY);

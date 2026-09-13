@@ -27,6 +27,20 @@ type StoreTable = { id: number; name: string };
 type CheckoutProduct = { id: number; slug?: string };
 type Option = { id: number; label?: string; name?: string };
 type CheckoutResponse = { preorder?: { preorder_code?: string }; checkout_url?: string; qr_code?: string; group_code?: string; order_code?: string };
+type UserVoucher = {
+  id: number;
+  user_id: number;
+  promotion_id?: number;
+  code: string;
+  promotion_title?: string;
+  rule?: string;
+  discount_value?: number;
+  discount_type?: 'percent' | 'fixed';
+  max_discount?: number;
+  min_order?: number;
+  expires_at?: string;
+  used_at?: string | null;
+};
 
 function vietnamToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -53,6 +67,9 @@ function PreorderCheckoutPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [voucherCode, setVoucherCode] = useState('');
+  const [userVouchers, setUserVouchers] = useState<UserVoucher[]>([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState<string>('none');
+  const [loadingVouchers, setLoadingVouchers] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [activeCatalogCategory, setActiveCatalogCategory] = useState('');
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -80,7 +97,28 @@ function PreorderCheckoutPage() {
 
   useEffect(() => {
     const user = getCustomerUser();
-    if (user) { setName(user.fullname || ''); setPhone(user.phone || ''); }
+    if (user) {
+      setName(user.fullname || '');
+      setPhone(user.phone || '');
+      if (user.id) {
+        let active = true;
+        setLoadingVouchers(true);
+        apiGet<UserVoucher[]>(`/api/users/${user.id}/vouchers`)
+          .then((data) => {
+            if (!active) return;
+            setUserVouchers(Array.isArray(data) ? data : []);
+          })
+          .catch(() => {
+            if (active) setUserVouchers([]);
+          })
+          .finally(() => {
+            if (active) setLoadingVouchers(false);
+          });
+        return () => {
+          active = false;
+        };
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -128,7 +166,7 @@ function PreorderCheckoutPage() {
   useEffect(() => {
     let active = true;
     if (!Number.isInteger(storeId) || storeId <= 0 || !date) return undefined;
-    setAvailability(null); setHour(''); setTables([]); setTableId('none');
+    setAvailability(null); setHour(''); setTableId('none');
     // Do not issue a request that is guaranteed to be rejected with 409 while
     // the public store configuration is still loading.
     if (preorderStores == null) return undefined;
@@ -147,15 +185,48 @@ function PreorderCheckoutPage() {
 
   useEffect(() => {
     let active = true;
-    const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour);
-    if (!hour || !Number.isInteger(storeId) || selectedSlot?.available !== true) {
+    if (!Number.isInteger(storeId) || storeId <= 0) {
       setTables([]);
       setTableId('none');
       return undefined;
     }
-    apiGet<{ tables: StoreTable[] }>(`/api/preorders/tables?store_id=${storeId}&date=${encodeURIComponent(date)}&hour=${hour}`)
-      .then((value) => { if (active) setTables(value.tables || []); })
-      .catch((error) => { if (active) toast.error(error instanceof Error ? error.message : 'Không thể tải bàn trống'); });
+
+    const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour);
+    if (hour && selectedSlot?.available === true && date) {
+      apiGet<{ tables: StoreTable[] } | StoreTable[]>(`/api/preorders/tables?store_id=${storeId}&date=${encodeURIComponent(date)}&hour=${hour}`)
+        .then((value) => {
+          if (!active) return;
+          const list = Array.isArray(value) ? value : (value?.tables || []);
+          setTables(list);
+          setTableId((prev) => (prev !== 'none' && !list.some((t) => String(t.id) === prev) ? 'none' : prev));
+        })
+        .catch(() => {
+          if (!active) return;
+          apiGet<StoreTable[] | { tables: StoreTable[] }>(`/api/tables?store_id=${storeId}`)
+            .then((val) => {
+              if (!active) return;
+              const list = Array.isArray(val) ? val : (val?.tables || []);
+              setTables(list);
+            })
+            .catch(() => { if (active) setTables([]); });
+        });
+      return () => { active = false; };
+    }
+
+    // Load tables immediately upon store selection
+    apiGet<StoreTable[] | { tables: StoreTable[] }>(`/api/tables?store_id=${storeId}`)
+      .then((value) => {
+        if (!active) return;
+        const list = Array.isArray(value) ? value : (value?.tables || []);
+        setTables(list);
+      })
+      .catch(() => {
+        if (!active) return;
+        apiGet<{ tables: StoreTable[] }>(`/api/preorders/tables?store_id=${storeId}`)
+          .then((res) => { if (active) setTables(res?.tables || []); })
+          .catch(() => { if (active) setTables([]); });
+      });
+
     return () => { active = false; };
   }, [availability, date, hour, storeId]);
 
@@ -221,10 +292,127 @@ function PreorderCheckoutPage() {
       <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} onChange={(event) => setDate(event.target.value)} /></div>
       {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
       <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label><Table2 className="mr-1 inline size-4" />Bàn (không bắt buộc)</Label><Select value={tableId} onValueChange={setTableId} disabled={!hour}><SelectTrigger><SelectValue placeholder="Chưa chọn bàn" /></SelectTrigger><SelectContent><SelectItem value="none">Để cửa hàng sắp xếp</SelectItem>{tables.map((table) => <SelectItem key={table.id} value={String(table.id)}>{table.name}</SelectItem>)}</SelectContent></Select></div>
+      <div>
+        <Label><Table2 className="mr-1 inline size-4" />Bàn (không bắt buộc)</Label>
+        <Select
+          value={tableId}
+          onValueChange={setTableId}
+          disabled={!storeId || selectedStorePreorderAvailable === false}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={!storeId ? 'Vui lòng chọn chi nhánh' : tables.length === 0 ? 'Chi nhánh hiện chưa có bàn' : 'Chưa chọn bàn'} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">
+              {tables.length === 0 ? 'Không có bàn (chỉ mang đi / để cửa hàng sắp xếp)' : 'Để cửa hàng sắp xếp'}
+            </SelectItem>
+            {tables.map((table) => (
+              <SelectItem key={table.id} value={String(table.id)}>
+                {table.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {storeId > 0 && tables.length === 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Chi nhánh này hiện chưa có bàn khả dụng. Bạn vẫn có thể tiếp tục đặt mang đi.
+          </p>
+        )}
+      </div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-      <div className="md:col-span-2"><Label>Mã voucher (chỉ voucher hỗ trợ đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value)} /></div>
+      <div className="md:col-span-2 space-y-2">
+        <Label>Mã voucher (chỉ voucher hỗ trợ đặt trước)</Label>
+        {userVouchers.length > 0 ? (
+          <div className="space-y-2">
+            <Select
+              value={selectedVoucherId}
+              onValueChange={(value) => {
+                setSelectedVoucherId(value);
+                if (value === 'none') {
+                  setVoucherCode('');
+                } else {
+                  const found = userVouchers.find((v) => String(v.id) === value);
+                  if (found) {
+                    setVoucherCode(found.code);
+                  }
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn voucher của bạn" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Không áp dụng voucher</SelectItem>
+                {userVouchers.map((voucher) => {
+                  const discountText = voucher.discount_value
+                    ? voucher.discount_type === 'percent'
+                      ? `giảm ${voucher.discount_value}%`
+                      : `giảm ${vnd(voucher.discount_value)}`
+                    : '';
+                  const labelParts = [voucher.code, voucher.promotion_title, discountText].filter(Boolean);
+                  return (
+                    <SelectItem key={voucher.id} value={String(voucher.id)}>
+                      {labelParts.join(' - ')}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              <span className="text-xs text-muted-foreground self-center mr-1">Voucher của bạn:</span>
+              {userVouchers.map((voucher) => {
+                const isSelected = voucherCode.trim().toUpperCase() === voucher.code.trim().toUpperCase();
+                return (
+                  <button
+                    key={voucher.id}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setVoucherCode('');
+                        setSelectedVoucherId('none');
+                      } else {
+                        setVoucherCode(voucher.code);
+                        setSelectedVoucherId(String(voucher.id));
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+                      isSelected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    <span>{voucher.code}</span>
+                    {voucher.discount_value ? (
+                      <span className="opacity-80">
+                        ({voucher.discount_type === 'percent' ? `-${voucher.discount_value}%` : `-${vnd(voucher.discount_value)}`})
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : getCustomerToken() ? (
+          <p className="text-xs text-muted-foreground">
+            {loadingVouchers ? 'Đang tải danh sách voucher…' : 'Bạn chưa có voucher nào được cấp riêng. Bạn vẫn có thể nhập mã voucher bằng tay bên dưới.'}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Đăng nhập để xem và chọn voucher được cấp riêng cho tài khoản của bạn.
+          </p>
+        )}
+        <Input
+          placeholder="Hoặc nhập mã voucher bằng tay…"
+          value={voucherCode}
+          onChange={(event) => {
+            const nextCode = event.target.value;
+            setVoucherCode(nextCode);
+            const matched = userVouchers.find((v) => v.code.toUpperCase() === nextCode.trim().toUpperCase());
+            setSelectedVoucherId(matched ? String(matched.id) : 'none');
+          }}
+        />
+      </div>
     </section>
     <section className="rounded-xl border bg-card p-5">
       <div className="mb-3 flex items-center gap-2 font-semibold"><ShoppingBag className="size-4" />Chọn món cho đơn đặt trước</div>

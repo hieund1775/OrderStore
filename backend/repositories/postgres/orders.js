@@ -188,6 +188,7 @@ export function createOrdersRepository(
           voucher = await promotions.validateForOrder({
             code: input.voucher_code, subtotal, phone: input.customer_phone, storeId: input.store_id, tx,
             checkoutChannel: input.checkout_channel || 'normal',
+            userId: userId ? Number(userId) : (input.user_id ? Number(input.user_id) : null),
           });
           discountAmount = Number(voucher?.discount_amount || 0);
         }

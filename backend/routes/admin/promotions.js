@@ -59,4 +59,56 @@ router.delete('/:id', requireRole('super'), asyncHandler(async (req, res) => {
   }
 }));
 
+router.post('/:id/assign', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    const promotionId = validatePromotionId(req.params.id);
+    const { user_id, user_ids, code, expires_at } = req.body || {};
+    const targetUserIds = Array.isArray(user_ids) ? user_ids : (user_id ? [user_id] : []);
+    if (targetUserIds.length === 0) {
+      return res.status(400).json({ error: 'Thiếu user_id để cấp voucher' });
+    }
+    const results = [];
+    for (const uId of targetUserIds) {
+      const assigned = await adminPromotionService.assignPromotionToUser({
+        promotionId,
+        userId: Number(uId),
+        code,
+        expiresAt: expires_at,
+      });
+      results.push(assigned);
+    }
+    await logAudit(req.user.sub, `Cấp voucher #${promotionId} cho user`, String(targetUserIds.join(', ')), req);
+    res.status(201).json({ success: true, count: results.length, data: results });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.post('/assign', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    const { promotion_id, user_id, user_ids, code, expires_at } = req.body || {};
+    const promotionId = validatePromotionId(promotion_id);
+    const targetUserIds = Array.isArray(user_ids) ? user_ids : (user_id ? [user_id] : []);
+    if (targetUserIds.length === 0) {
+      return res.status(400).json({ error: 'Thiếu user_id để cấp voucher' });
+    }
+    const results = [];
+    for (const uId of targetUserIds) {
+      const assigned = await adminPromotionService.assignPromotionToUser({
+        promotionId,
+        userId: Number(uId),
+        code,
+        expiresAt: expires_at,
+      });
+      results.push(assigned);
+    }
+    await logAudit(req.user.sub, `Cấp voucher #${promotionId} cho user`, String(targetUserIds.join(', ')), req);
+    res.status(201).json({ success: true, count: results.length, data: results });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
 export default router;

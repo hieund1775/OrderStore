@@ -25,6 +25,17 @@ export function createStoresRepository(database = postgresDb) {
       return rows;
     },
 
+    async listTablesByStore(storeId) {
+      const [rows] = await database.query(
+        `SELECT t.id, t.store_id, t.name, t.is_active
+         FROM tables t
+         WHERE t.store_id = $1 AND t.is_active = TRUE
+         ORDER BY t.name, t.id`,
+        [Number(storeId)],
+      );
+      return rows;
+    },
+
     async resolveTable(tableId) {
       const [rows] = await database.query(
         `SELECT t.id, t.name, t.store_id, s.name AS store_name, s.address AS store_address

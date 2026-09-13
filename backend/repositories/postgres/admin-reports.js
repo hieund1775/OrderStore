@@ -30,8 +30,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${todayStoreCond}`,
         todayParams,
       );
@@ -40,8 +40,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${yestStoreCond}`,
         yestParams,
       );
@@ -50,8 +50,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS total, COALESCE(AVG(total), 0)::int AS avg
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${todayStoreCond}`,
         todayParams,
       );
@@ -60,7 +60,7 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS v
          FROM orders o
          WHERE o.created_at >= $1 AND o.created_at < $2
-           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status = 'Đã hủy')
+           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Đã hủy', 'CANCELLED'))
            ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
         todayParams,
       );
@@ -70,8 +70,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
          FROM order_items oi
          JOIN orders o ON oi.order_id = o.id
          WHERE o.created_at >= $1 AND o.created_at < $2
-           AND o.payment_status = 'paid'
-           AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
         todayParams,
       );
@@ -131,8 +131,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
       const boundary = parseVietnamSingleDateBoundary(targetDate);
       const params = [boundary.start, boundary.end];
       let where = `WHERE o.created_at >= $1 AND o.created_at < $2
-                     AND o.payment_status = 'paid'
-                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
+                     AND (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))`;
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND o.store_id = $${params.length}`;
@@ -153,8 +153,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
 
     async getRevenueByCategory({ scopedStoreId, dateFrom, dateTo } = {}) {
       const params = [];
-      let where = `WHERE o.payment_status = 'paid'
-                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
+      let where = `WHERE (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))`;
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND o.store_id = $${params.length}`;
@@ -187,8 +187,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
     async getRevenueByBranch({ dateFrom, dateTo } = {}) {
       const params = [];
       let orderJoin = `o.store_id = s.id
-                         AND o.payment_status = 'paid'
-                         AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
+                         AND (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+                         AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))`;
       if (dateFrom) {
         params.push(dateFrom);
         orderJoin += ` AND o.created_at >= $${params.length}`;
@@ -213,8 +213,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
 
     async getTopProducts({ scopedStoreId, limit = 10 } = {}) {
       const params = [];
-      let where = `WHERE o.payment_status = 'paid'
-                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')`;
+      let where = `WHERE (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+                     AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))`;
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND o.store_id = $${params.length}`;
@@ -250,8 +250,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${storeCond}`,
         params,
       );
@@ -260,8 +260,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS total, COALESCE(AVG(total), 0)::int AS avg
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${storeCond}`,
         params,
       );
@@ -270,7 +270,7 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS v
          FROM orders o
          WHERE o.created_at >= $1 AND o.created_at < $2
-           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status = 'Đã hủy')
+           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Đã hủy', 'CANCELLED'))
            ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
         params,
       );
@@ -280,8 +280,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
          FROM order_items oi
          JOIN orders o ON oi.order_id = o.id
          WHERE o.created_at >= $1 AND o.created_at < $2
-           AND o.payment_status = 'paid'
-           AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (o.payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND o.id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
         params,
       );
@@ -315,8 +315,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COALESCE(SUM(total), 0)::bigint AS v
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${storeCond}`,
         params,
       );
@@ -325,8 +325,8 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS total, COALESCE(AVG(total), 0)::int AS avg
          FROM orders
          WHERE created_at >= $1 AND created_at < $2
-           AND payment_status = 'paid'
-           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status = 'Đã hủy')
+           AND (payment_status = 'paid' OR EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = orders.id AND osh.status IN ('Hoàn thành', 'COMPLETED')))
+           AND id NOT IN (SELECT order_id FROM order_status_history WHERE status IN ('Đã hủy', 'CANCELLED'))
            ${storeCond}`,
         params,
       );
@@ -335,7 +335,7 @@ export function createAdminReportsRepository(database = postgresDb, { clock = ()
         `SELECT COUNT(*)::int AS v
          FROM orders o
          WHERE o.created_at >= $1 AND o.created_at < $2
-           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status = 'Đã hủy')
+           AND EXISTS (SELECT 1 FROM order_status_history osh WHERE osh.order_id = o.id AND osh.status IN ('Đã hủy', 'CANCELLED'))
            ${scopedStoreId ? ' AND o.store_id = $3' : ''}`,
         params,
       );

@@ -17,6 +17,10 @@ export function createAdminPromotionService(repository = defaultAdminPromotionsR
     async deletePromotion(id) {
       return repository.deletePromotion(id);
     },
+
+    async assignPromotionToUser(data) {
+      return repository.assignPromotionToUser(data);
+    },
   };
 }
 

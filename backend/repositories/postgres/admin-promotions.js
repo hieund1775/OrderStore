@@ -47,7 +47,7 @@ export function createAdminPromotionsRepository(database = postgresDb) {
     async createPromotion({
       title, type, code, description, rule, emoji, discount_value,
       discount_type, max_discount, min_order, start_date, end_date,
-      status, audience, scope, voucher_type = 'shared', usage_limit, store_ids = [],
+      status, audience, scope, voucher_type = 'shared', usage_limit, store_ids = [], applies_to_preorder,
     }) {
       const normalizedVoucherType = voucher_type;
       const finalUsageLimit = normalizedVoucherType === 'single_use' ? null : (usage_limit != null ? Number(usage_limit) : null);
@@ -69,9 +69,9 @@ export function createAdminPromotionsRepository(database = postgresDb) {
           `INSERT INTO promotions (
              title, type, code, description, rule, emoji, discount_value,
              discount_type, max_discount, min_order, start_date, end_date,
-             status, audience, scope, voucher_type, usage_limit, is_active
+             status, audience, scope, voucher_type, usage_limit, is_active, applies_to_preorder
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, TRUE)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, TRUE, $18)
            RETURNING *`,
           [
             title.trim(),
@@ -91,6 +91,7 @@ export function createAdminPromotionsRepository(database = postgresDb) {
             scope || null,
             normalizedVoucherType,
             finalUsageLimit,
+            applies_to_preorder !== undefined ? Boolean(applies_to_preorder) : true,
           ],
         );
         const promotion = rows[0];
@@ -212,6 +213,34 @@ export function createAdminPromotionsRepository(database = postgresDb) {
         [id],
       );
       return rows.length > 0;
+    },
+
+    async assignPromotionToUser({ promotionId, userId, code, expiresAt }) {
+      const [promos] = await database.query(
+        'SELECT * FROM promotions WHERE id = $1 AND deleted_at IS NULL',
+        [promotionId],
+      );
+      const promo = promos[0];
+      if (!promo) throw new AdminPromotionError('Không tìm thấy khuyến mãi', 404);
+
+      const [users] = await database.query(
+        'SELECT id FROM users WHERE id = $1',
+        [userId],
+      );
+      if (!users[0]) throw new AdminPromotionError('Không tìm thấy người dùng', 404);
+
+      const voucherCode = code ? String(code).trim().toUpperCase() : promo.code;
+      if (!voucherCode) throw new AdminPromotionError('Khuyến mãi chưa có mã voucher');
+
+      const expiry = expiresAt || promo.end_date || null;
+
+      const [rows] = await database.query(
+        `INSERT INTO user_vouchers (user_id, promotion_id, code, expires_at)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [userId, promotionId, voucherCode, expiry],
+      );
+      return rows[0];
     },
   };
 }

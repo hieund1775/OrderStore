@@ -331,6 +331,7 @@ export function createCustomerOrderService({
               storeId: input.store_id,
               tx,
               checkoutChannel: input.checkout_channel || 'normal',
+              userId: userId ? Number(userId) : (input.user_id ? Number(input.user_id) : null),
             });
             totalDiscount = Number(voucher?.discount_amount || 0);
           }

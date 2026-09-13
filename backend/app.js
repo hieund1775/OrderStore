@@ -199,6 +199,7 @@ export function createApp() {
   app.use('/admin', authRoutes);
   app.use('/admin', adminRoutes);
   app.use('/admin', adminReviewRoutes);
+  app.use('/api/admin', adminReviewRoutes);
 
   // 404 fallback
   app.use((req, res) => {
