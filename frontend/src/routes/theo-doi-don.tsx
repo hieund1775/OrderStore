@@ -239,44 +239,95 @@ function Tracking() {
     }
   }
 
+  const inFlightLoadRef = useRef<Map<string, Promise<{ ok: boolean; status?: number }>>>(new Map());
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+  const orderRef = useRef<LookupOrder | null>(order);
+  orderRef.current = order;
+  const groupRef = useRef<LookupGroup | null>(group);
+  groupRef.current = group;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const load = useCallback(
     async (c: string, silent = false): Promise<{ ok: boolean; status?: number }> => {
-      if (!c.trim()) return { ok: false };
-      if (!silent) {
+      const codeKey = c.trim().toUpperCase();
+      if (!codeKey) return { ok: false };
+
+      // Single-flight deduplication: return existing active request if in progress for the same code
+      const existing = inFlightLoadRef.current.get(codeKey);
+      if (existing) {
+        return existing;
+      }
+
+      // Abort any prior in-flight request for a different code
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeAbortControllerRef.current = controller;
+
+      if (!silent && isMountedRef.current) {
         setLoading(true);
         setError("");
       }
-      try {
-        const res = await apiGet<{ order?: LookupOrder; group?: LookupGroup }>(
-          `/api/orders/lookup?code=${encodeURIComponent(c.trim())}`,
-          { headers: getOrderRequestHeaders(c.trim()) }
-        );
-        if (res.group) {
-          setGroup(res.group);
-          setOrder(null);
-          setError("");
-          return { ok: true };
+
+      const fetchPromise = (async () => {
+        try {
+          const res = await apiGet<{ order?: LookupOrder; group?: LookupGroup }>(
+            `/api/orders/lookup?code=${encodeURIComponent(codeKey)}`,
+            {
+              headers: getOrderRequestHeaders(codeKey),
+              signal: controller.signal,
+            }
+          );
+          if (!isMountedRef.current || controller.signal.aborted) return { ok: false };
+
+          if (res.group) {
+            setGroup(res.group);
+            setOrder(null);
+            setError("");
+            return { ok: true };
+          }
+          if (res.order) {
+            setOrder(res.order);
+            setGroup(null);
+            setError("");
+            return { ok: true };
+          }
+          throw new Error("Không tìm thấy đơn hàng");
+        } catch (err: unknown) {
+          if (!isMountedRef.current || controller.signal.aborted) return { ok: false };
+          const isAbort = err instanceof DOMException && err.name === "AbortError";
+          if (isAbort) return { ok: false };
+
+          setError(err instanceof Error ? err.message : "Không tìm thấy đơn hàng");
+          if (!silent) {
+            setOrder(null);
+            setGroup(null);
+          }
+          const status = typeof err === "object" && err !== null && "status" in err
+            ? Number((err as { status?: unknown }).status)
+            : undefined;
+          return { ok: false, status };
+        } finally {
+          inFlightLoadRef.current.delete(codeKey);
+          if (!silent && isMountedRef.current && !controller.signal.aborted) {
+            setLoading(false);
+          }
         }
-        if (res.order) {
-          setOrder(res.order);
-          setGroup(null);
-          setError("");
-          return { ok: true };
-        }
-        throw new Error("Không tìm thấy đơn hàng");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Không tìm thấy đơn hàng");
-        if (!silent) {
-          setOrder(null);
-          setGroup(null);
-        }
-        const status = typeof err === "object" && err !== null && "status" in err
-          ? Number((err as { status?: unknown }).status)
-          : undefined;
-        return { ok: false, status };
-      } finally {
-        if (!silent) setLoading(false);
-      }
+      })();
+
+      inFlightLoadRef.current.set(codeKey, fetchPromise);
+      return fetchPromise;
     },
     [],
   );
@@ -286,28 +337,35 @@ function Tracking() {
   }, [resolvedSearchCode, load]);
 
   // Smart Chained Timeout Polling real-time (mỗi 5 giây, dừng khi terminal state)
+  const currentTrackingCode = (group?.group_code || order?.order_code || resolvedSearchCode || "").trim().toUpperCase();
+
   useEffect(() => {
-    const currentCode = group?.group_code || order?.order_code;
-    if (!currentCode) return;
+    if (!currentTrackingCode) return;
 
-    // Terminal states: stop polling completely
-    const isOrderTerminal = order ? (order.current_status === "Hoàn thành" || order.current_status === "Đã hủy") : false;
-    const isGroupTerminal = group ? (group.payment_status === "paid" && group.child_orders.every(co => co.status === "Hoàn thành" || co.status === "Đã hủy")) : false;
-    if (isOrderTerminal || isGroupTerminal) return;
-
-    let isMounted = true;
+    let isEffectActive = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let currentDelay = 5000;
-    let isRequestInFlight = false;
+    let isPollInFlight = false;
     let shouldStop = false;
 
-    const poll = async () => {
-      if (!isMounted || (!order && !group) || isRequestInFlight) return;
-      if (document.visibilityState === "hidden") return;
+    const checkIsTerminal = () => {
+      const currentOrder = orderRef.current;
+      const currentGroup = groupRef.current;
+      const isOrderTerminal = currentOrder ? (currentOrder.current_status === "Hoàn thành" || currentOrder.current_status === "Đã hủy") : false;
+      const isGroupTerminal = currentGroup ? (currentGroup.payment_status === "paid" && currentGroup.child_orders.every(co => co.status === "Hoàn thành" || co.status === "Đã hủy")) : false;
+      return isOrderTerminal || isGroupTerminal;
+    };
 
-      isRequestInFlight = true;
+    if (checkIsTerminal()) return;
+
+    const poll = async () => {
+      if (!isEffectActive || isPollInFlight) return;
+      if (document.visibilityState === "hidden") return;
+      if (checkIsTerminal()) return;
+
+      isPollInFlight = true;
       try {
-        const result = await load(currentCode, true);
+        const result = await load(currentTrackingCode, true);
         if (!result.ok && (result.status === 403 || result.status === 404)) {
           shouldStop = true;
         } else if (!result.ok) {
@@ -317,8 +375,8 @@ function Tracking() {
           currentDelay = 5000;
         }
       } finally {
-        isRequestInFlight = false;
-        if (isMounted && !shouldStop && (order || group)) {
+        isPollInFlight = false;
+        if (isEffectActive && !shouldStop && !checkIsTerminal()) {
           timerId = setTimeout(poll, currentDelay);
         }
       }
@@ -327,7 +385,7 @@ function Tracking() {
     timerId = setTimeout(poll, 5000);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isMounted && !shouldStop && (order || group)) {
+      if (document.visibilityState === "visible" && isEffectActive && !shouldStop && !checkIsTerminal()) {
         if (timerId) clearTimeout(timerId);
         poll();
       }
@@ -336,11 +394,11 @@ function Tracking() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      isMounted = false;
+      isEffectActive = false;
       if (timerId) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [order?.order_code, order?.current_status, group?.group_code, group?.payment_status, load]);
+  }, [currentTrackingCode, load]);
 
   async function handleCancel() {
     if (!order) return;

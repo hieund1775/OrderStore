@@ -42,13 +42,29 @@ export function isSafeInternalLink(link: string | null | undefined): boolean {
     && !hasControlCharacters(str);
 }
 
+const inFlightCustomerNotifications = new Map<string, Promise<NotificationResponse>>();
+const inFlightAdminNotifications = new Map<number, Promise<NotificationResponse>>();
+
 export async function fetchCustomerNotifications(userId: number, limit = 50): Promise<NotificationResponse> {
-  const res = await apiGet<NotificationResponse | AppNotification[]>(`/api/users/${userId}/notifications?limit=${limit}`);
-  if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
-  return {
-    notifications: Array.isArray(res?.notifications) ? res.notifications : [],
-    unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
-  };
+  const cacheKey = `${userId}:${limit}`;
+  const existing = inFlightCustomerNotifications.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const res = await apiGet<NotificationResponse | AppNotification[]>(`/api/users/${userId}/notifications?limit=${limit}`);
+      if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
+      return {
+        notifications: Array.isArray(res?.notifications) ? res.notifications : [],
+        unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
+      };
+    } finally {
+      inFlightCustomerNotifications.delete(cacheKey);
+    }
+  })();
+
+  inFlightCustomerNotifications.set(cacheKey, promise);
+  return promise;
 }
 
 export const markCustomerNotificationRead = (userId: number, notificationId: number) =>
@@ -59,12 +75,24 @@ export const clearAllCustomerNotifications = (userId: number) =>
   apiDelete<{ ok: boolean; count: number }>(`/api/users/${userId}/notifications`);
 
 export async function fetchAdminNotifications(limit = 100): Promise<NotificationResponse> {
-  const res = await apiGet<NotificationResponse | AppNotification[]>(`/admin/notifications?limit=${limit}&envelope=true`);
-  if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
-  return {
-    notifications: Array.isArray(res?.notifications) ? res.notifications : [],
-    unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
-  };
+  const existing = inFlightAdminNotifications.get(limit);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const res = await apiGet<NotificationResponse | AppNotification[]>(`/admin/notifications?limit=${limit}&envelope=true`);
+      if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
+      return {
+        notifications: Array.isArray(res?.notifications) ? res.notifications : [],
+        unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
+      };
+    } finally {
+      inFlightAdminNotifications.delete(limit);
+    }
+  })();
+
+  inFlightAdminNotifications.set(limit, promise);
+  return promise;
 }
 
 export const markAdminNotificationRead = (notificationId: number) =>

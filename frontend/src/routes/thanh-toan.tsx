@@ -195,6 +195,26 @@ function Checkout() {
     if (checkoutStoreId != null) previousStoreIdRef.current = checkoutStoreId;
   }, [checkoutStoreId]);
 
+  const inFlightPaymentStatusRef = useRef<Promise<{ order?: { payment_status: string }; group?: { payment_status: string } }> | null>(null);
+
+  const fetchPaymentStatus = useCallback(async (paymentCode: string) => {
+    if (inFlightPaymentStatusRef.current) {
+      return inFlightPaymentStatusRef.current;
+    }
+    const promise = (async () => {
+      try {
+        return await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
+          `/api/payments/payos/status?code=${encodeURIComponent(paymentCode)}`,
+          { headers: getOrderRequestHeaders(paymentCode) }
+        );
+      } finally {
+        inFlightPaymentStatusRef.current = null;
+      }
+    })();
+    inFlightPaymentStatusRef.current = promise;
+    return promise;
+  }, []);
+
   // Smart Chained Timeout Polling when PayOS pending order is active
   useEffect(() => {
     if (!pendingOrder || countdownSec <= 0) return;
@@ -211,10 +231,7 @@ function Checkout() {
 
       isRequestInFlight = true;
       try {
-        const res = await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
-          `/api/payments/payos/status?code=${encodeURIComponent(pendingOrder.payment_code)}`,
-          { headers: getOrderRequestHeaders(pendingOrder.payment_code) }
-        );
+        const res = await fetchPaymentStatus(pendingOrder.payment_code);
 
         if (!isMounted) return;
 
@@ -262,7 +279,7 @@ function Checkout() {
       if (timerId) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [pendingOrder?.payment_code, countdownSec <= 0, navigate]);
+  }, [pendingOrder?.payment_code, countdownSec <= 0, navigate, fetchPaymentStatus]);
 
   // Countdown timer
   useEffect(() => {
@@ -287,13 +304,10 @@ function Checkout() {
   }, [pendingOrder]);
 
   async function checkPaymentNow() {
-    if (!pendingOrder) return;
+    if (!pendingOrder || checkingPayment) return;
     setCheckingPayment(true);
     try {
-      const res = await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
-        `/api/payments/payos/status?code=${encodeURIComponent(pendingOrder.payment_code)}`,
-        { headers: getOrderRequestHeaders(pendingOrder.payment_code) }
-      );
+      const res = await fetchPaymentStatus(pendingOrder.payment_code);
       const paymentStatus = res.order?.payment_status || res.group?.payment_status;
       if (paymentStatus === "paid") {
         sessionStorage.removeItem("teaplus_pending_payment");
@@ -497,10 +511,11 @@ function Checkout() {
     const storeAtRequest = checkoutStoreId;
     if (storeAtRequest == null) return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     try {
-      const res = await apiPost<{ valid: boolean; discount_amount: number; message: string }>(
+      const upperCode = voucherCode.trim().toUpperCase();
+      const res = await apiPost<{ valid: boolean; discount_amount: number; code?: string; message: string }>(
         "/api/vouchers/apply",
         {
-          code: voucherCode.trim(),
+          code: upperCode,
           subtotal: checkoutSubtotal,
           customer_phone: phone || "khach",
           store_id: storeAtRequest,
@@ -510,7 +525,7 @@ function Checkout() {
       if (checkoutStoreIdRef.current !== storeAtRequest) return;
       if (!res.valid) return toast.error(res.message);
       setVoucherDiscount(res.discount_amount);
-      setAppliedCode(voucherCode.trim());
+      setAppliedCode(res.code || upperCode);
       toast.success(res.message);
     } catch (err) {
       if (checkoutStoreIdRef.current !== storeAtRequest) return;
@@ -584,7 +599,7 @@ function Checkout() {
             table_token: tableToken,
             order_type: "Dine-in",
             payment_method: "VietQR",
-            voucher_code: appliedCode || null,
+            voucher_code: appliedCode ? appliedCode.trim().toUpperCase() : null,
             note: note.trim() || null,
             source: "table_qr",
             return_url: `${window.location.origin}/theo-doi-don`,
@@ -599,7 +614,7 @@ function Checkout() {
             customer_name: name.trim(),
             customer_phone: phone.trim(),
             delivery_addr: method === "delivery" && addr.trim() ? addr.trim() : null,
-            voucher_code: appliedCode || null,
+            voucher_code: appliedCode ? appliedCode.trim().toUpperCase() : null,
             note: note.trim() || null,
             source: "online",
             return_url: `${window.location.origin}/theo-doi-don`,
@@ -647,7 +662,15 @@ function Checkout() {
         toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại");
+      const errMsg = err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại";
+      if (
+        /mã giảm giá|voucher|hết hạn|tối thiểu|lượt sử dụng/i.test(errMsg) ||
+        (typeof err === "object" && err !== null && "code" in err && String((err as any).code).startsWith("PROMOTION_"))
+      ) {
+        setVoucherDiscount(0);
+        setAppliedCode("");
+      }
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
