@@ -19,6 +19,7 @@ type Preorder = {
   reschedule_count: number;
   checked_in_at?: string | null;
   late_minutes?: number | null;
+  orders?: { id: number; order_code: string; items: { id: number; product_name: string; qty: number; size_label?: string }[] }[];
 };
 
 type EligibleManager = { id: number; fullname: string };
@@ -48,7 +49,9 @@ function AdminPreordersPage() {
   const user = getUser();
   const isSuper = user?.role === 'super';
   const [rows, setRows] = useState<Preorder[]>([]);
-  const [view, setView] = useState<'pending' | 'today' | 'upcoming'>('pending');
+  const [view, setView] = useState<'pending' | 'confirmed' | 'checked-in' | 'today' | 'upcoming' | 'archive'>('pending');
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [storeFilter, setStoreFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [rescheduleId, setRescheduleId] = useState<number | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
@@ -60,7 +63,11 @@ function AdminPreordersPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [savingStoreId, setSavingStoreId] = useState<number | null>(null);
 
-  const query = useMemo(() => view === 'pending' ? '?view=pending' : '', [view]);
+  const query = useMemo(() => {
+    const params = new URLSearchParams({ view });
+    if (isSuper && storeFilter !== 'all') params.set('store_id', storeFilter);
+    return `?${params.toString()}`;
+  }, [isSuper, storeFilter, view]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +98,12 @@ function AdminPreordersPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
+  useEffect(() => {
+    if (!isSuper) return;
+    apiGet<{ id: number; name: string }[]>('/admin/branches')
+      .then((items) => setBranches(Array.isArray(items) ? items : []))
+      .catch(() => setBranches([]));
+  }, [isSuper]);
 
   async function confirm(id: number) {
     try {
@@ -172,14 +185,15 @@ function AdminPreordersPage() {
       </div>
 
       {isSuper && (
-        <section className="space-y-3 rounded-xl border bg-card p-4">
-          <div className="flex items-start gap-2">
+        <details className="group rounded-xl border bg-card p-4">
+          <summary className="flex cursor-pointer list-none items-start gap-2">
             <Settings2 className="mt-0.5 size-5 text-primary" />
             <div>
               <h2 className="font-semibold">Cấu hình nhận đặt trước theo chi nhánh</h2>
               <p className="text-sm text-muted-foreground">Chỉ chi nhánh được bật và có một Manager đang hoạt động đúng branch mới nhận preorder.</p>
             </div>
-          </div>
+          </summary>
+          <div className="mt-3 space-y-3">
           {settingsLoading ? <p className="text-sm text-muted-foreground">Đang tải cấu hình…</p> : null}
           {settingsError ? (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -222,15 +236,19 @@ function AdminPreordersPage() {
             );
           })}
           {!settingsLoading && !settingsError && settings.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có chi nhánh đang hoạt động để cấu hình.</p> : null}
-        </section>
+          </div>
+        </details>
       )}
 
-      <div className="flex gap-2">
-        {(['pending', 'today', 'upcoming'] as const).map((candidate) => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+        {(['pending', 'confirmed', 'checked-in', 'today', 'upcoming', 'archive'] as const).map((candidate) => (
           <Button key={candidate} variant={view === candidate ? 'default' : 'outline'} onClick={() => setView(candidate)}>
-            {candidate === 'pending' ? 'Chờ xác nhận' : candidate === 'today' ? 'Hôm nay' : 'Sắp tới'}
+            {candidate === 'pending' ? 'Chờ xác nhận' : candidate === 'confirmed' ? 'Chờ check-in' : candidate === 'checked-in' ? 'Đang xử lý' : candidate === 'today' ? 'Hôm nay' : candidate === 'upcoming' ? 'Sắp tới' : 'Lưu trữ'}
           </Button>
         ))}
+        </div>
+        {isSuper ? <Select value={storeFilter} onValueChange={setStoreFilter}><SelectTrigger className="w-52"><SelectValue placeholder="Lọc chi nhánh" /></SelectTrigger><SelectContent><SelectItem value="all">Tất cả chi nhánh</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={String(branch.id)}>{branch.name}</SelectItem>)}</SelectContent></Select> : null}
       </div>
 
       {loading ? <p className="text-muted-foreground">Đang tải…</p> : rows.length === 0 ? <p className="rounded-xl border p-8 text-center text-muted-foreground">Không có preorder phù hợp.</p> : (
@@ -249,6 +267,9 @@ function AdminPreordersPage() {
                   {['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status) && preorder.reschedule_count === 0 && <Button variant="outline" onClick={() => setRescheduleId(preorder.id)}><CalendarClock className="mr-1 size-4" />Đổi lịch</Button>}
                 </div>
               </div>
+              {preorder.status === 'CONFIRMED' ? <p className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-900">Bếp chỉ xem lịch preorder này. Đơn chưa vào màn hình pha chế và chưa thể hoàn thành cho đến khi khách check-in.</p> : null}
+              {preorder.status === 'CHECKED_IN' ? <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Khách đã check-in; các đơn liên kết đã được mở để Bếp xử lý trong KDS.</p> : null}
+              {preorder.orders?.length ? <details className="mt-3 rounded-lg border"><summary className="cursor-pointer p-3 text-sm font-medium">Xem món đã đặt ({preorder.orders.reduce((total, order) => total + order.items.length, 0)})</summary><div className="space-y-2 border-t p-3 text-sm">{preorder.orders.flatMap((order) => order.items.map((item) => <p key={item.id}>{item.qty}× {item.product_name}{item.size_label ? ` · ${item.size_label}` : ''}</p>))}</div></details> : null}
               {rescheduleId === preorder.id && (
                 <div className="mt-4 grid gap-2 rounded-lg bg-muted p-3 md:grid-cols-4">
                   <Input type="date" value={rescheduleDate} onChange={(event) => setRescheduleDate(event.target.value)} />

@@ -20,6 +20,8 @@ function appendScope(sql, params, scopedStoreId, column = 'o.store_id') {
   return sql;
 }
 
+const PREORDER_ACTIONABLE_TARGETS = new Set(['Đang chuẩn bị', 'Đang giao', 'Hoàn thành']);
+
 export function createAdminOrdersRepository(
   database = postgresDb,
   notifications = defaultNotificationsRepository,
@@ -43,6 +45,20 @@ export function createAdminOrdersRepository(
         const [orders] = await tx.query(`SELECT id, order_code, user_id, store_id, preorder_id, payment_status, order_type FROM orders ${filter} FOR UPDATE`, params);
         const order = orders[0];
         if (!order) throw new AdminOrderError('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
+        if (order.preorder_id != null && PREORDER_ACTIONABLE_TARGETS.has(targetStatus)) {
+          const [preorders] = await tx.query(
+            `SELECT status, checked_in_at FROM preorders WHERE id = $1 FOR UPDATE`,
+            [Number(order.preorder_id)],
+          );
+          const preorder = preorders[0];
+          if (!preorder || !preorder.checked_in_at || !['CHECKED_IN', 'COMPLETED'].includes(preorder.status)) {
+            throw new AdminOrderError(
+              'Đơn đặt trước chỉ được bắt đầu xử lý sau khi khách đã check-in',
+              409,
+              'PREORDER_CHECK_IN_REQUIRED',
+            );
+          }
+        }
         const [current] = await tx.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE', [order.id]);
         const transition = evaluateTransition({ currentStatus: current[0]?.status || 'Chờ xác nhận', targetStatus, role: actorRole, isPaid: order.payment_status === 'paid' });
         if (!transition.allowed) throw new AdminOrderError(transition.error, transition.status || 400);

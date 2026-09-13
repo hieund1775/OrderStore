@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bike, Clock, EyeOff, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
+import { Bike, CalendarClock, Clock, EyeOff, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,14 @@ export type KitchenOrder = {
   shipping_driver_name?: string | null;
   shipping_driver_phone?: string | null;
   shipping_tracking_url?: string | null;
+};
+
+type ConfirmedPreorderPreview = {
+  id: number;
+  preorder_code: string;
+  store_name?: string;
+  scheduled_start_at: string;
+  customer_name?: string;
 };
 
 function toBillOrder(o: KitchenOrder): BillOrder {
@@ -162,6 +170,7 @@ function KdsPage() {
   const user = getUser();
   const isSuperAdmin = user?.role === "super";
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
+  const [confirmedPreorders, setConfirmedPreorders] = useState<ConfirmedPreorderPreview[]>([]);
   const [doneOrders, setDoneOrders] = useState<KitchenOrder[]>([]);
   const [doneAt, setDoneAt] = useState<Record<number, number>>({});
   const [newIds, setNewIds] = useState<Record<number, boolean>>({});
@@ -213,12 +222,19 @@ function KdsPage() {
   const fetchOrders = useCallback(async (signal?: AbortSignal) => {
     try {
       const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
-      const rows = await apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, {
-        ...(signal ? { signal } : {}),
-        cache: "no-store",
-      });
+      const [rows, previews] = await Promise.all([
+        apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, {
+          ...(signal ? { signal } : {}),
+          cache: "no-store",
+        }),
+        apiGet<ConfirmedPreorderPreview[]>(`/admin/preorders/kitchen/confirmed${query}`, {
+          ...(signal ? { signal } : {}),
+          cache: "no-store",
+        }),
+      ]);
       setFetchError(null);
       setOrders(rows);
+      setConfirmedPreorders(previews);
       const ids = new Set(rows.map((o) => o.id));
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
       if (fresh.length > 0) {
@@ -763,6 +779,27 @@ function KdsPage() {
           </Button>
         </div>
       </div>
+
+      {confirmedPreorders.length > 0 && (
+        <section className="mb-5 rounded-xl border border-violet-200 bg-violet-50/70 p-4">
+          <div className="flex items-start gap-2">
+            <CalendarClock className="mt-0.5 size-5 text-violet-700" />
+            <div>
+              <h2 className="font-semibold text-violet-950">Preorder sắp tới</h2>
+              <p className="text-sm text-violet-900">Manager đã xác nhận. Bếp chỉ xem lịch và chưa được bắt đầu/hoàn thành trước khi khách check-in.</p>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {confirmedPreorders.map((preorder) => (
+              <article key={preorder.id} className="rounded-lg border border-violet-200 bg-background p-3 text-sm">
+                <p className="font-semibold">{preorder.preorder_code}</p>
+                <p className="mt-1 text-muted-foreground">{new Date(preorder.scheduled_start_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
+                <p className="mt-1 text-muted-foreground">{preorder.store_name || 'Chi nhánh'} · {preorder.customer_name || 'Khách hàng'}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* MOBILE & TABLET PORTRAIT LANE SELECTOR TABS (< 1024px) */}
       <div className="lg:hidden mb-4">
