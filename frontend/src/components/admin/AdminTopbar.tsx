@@ -10,7 +10,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getUser, logout } from '@/lib/api';
+import { getUser } from '@/lib/api';
+import { explicitAdminLogout } from '@/lib/auth-logout';
 import { isSafeInternalLink, useAdminNotifications } from '@/lib/notifications';
 import { toast } from 'sonner';
 import {
@@ -159,7 +160,7 @@ export function AdminTopbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }
             <p className="text-muted-foreground text-[11px] font-normal">{roleLabel}</p>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={logout} className="text-destructive focus:text-destructive cursor-pointer">
+          <DropdownMenuItem onSelect={() => explicitAdminLogout()} className="text-destructive focus:text-destructive cursor-pointer">
             <LogOut className="size-4 mr-2" /> Đăng xuất
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ShoppingCart, Trash2, X, Plus, Minus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, ShoppingCart, Trash2, X, Plus, Minus, AlertTriangle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiGet, apiPost, createIdempotencyKey, getUser } from "@/lib/api";
-import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, products as mockProducts, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
+import { apiGet, apiPost, clearToken, createIdempotencyKey, getUser } from "@/lib/api";
+import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
   head: () => ({
@@ -44,6 +44,16 @@ type Store = { id: number; name: string };
 type TableData = { id: number; name: string };
 type SizeOption = { id: number; label: string; base_price_multiplier: number };
 type ToppingOption = { id: number; name: string; price: number };
+
+export type BootstrapSource = "branches" | "products" | "sizes" | "toppings" | "tables";
+
+export type BootstrapErrors = {
+  branches?: string | null;
+  products?: string | null;
+  sizes?: string | null;
+  toppings?: string | null;
+  tables?: string | null;
+};
 
 type PosCartItem = {
   uid: string;
@@ -71,7 +81,20 @@ function PosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [toppings, setToppings] = useState<ToppingOption[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [bootstrapErrors, setBootstrapErrors] = useState<BootstrapErrors>({});
+  const [loadingSources, setLoadingSources] = useState<Record<BootstrapSource, boolean>>({
+    branches: true,
+    products: true,
+    sizes: true,
+    toppings: true,
+    tables: false,
+  });
+
+  const inFlightSourcesRef = useRef<Set<BootstrapSource>>(new Set());
+  const tableAbortControllerRef = useRef<AbortController | null>(null);
+  const selectedStoreIdRef = useRef<number | null>(null);
+  selectedStoreIdRef.current = selectedStoreId;
 
   const [cart, setCart] = useState<PosCartItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -86,41 +109,157 @@ function PosPage() {
   const [checkoutQr, setCheckoutQr] = useState<string | null>(null);
   const [qrOrderCode, setQrOrderCode] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
+  // 1. Independent source loaders
+  const loadBranches = useCallback(async () => {
+    if (inFlightSourcesRef.current.has("branches")) return;
+    inFlightSourcesRef.current.add("branches");
+    setLoadingSources((s) => ({ ...s, branches: true }));
+    try {
       // This endpoint returns all branches only to Super. Manager/Cashier
       // receive exactly their JWT-scoped branch from the server.
-      apiGet<Store[]>("/admin/branches"),
-      apiGet<SizeOption[]>("/api/options/sizes"),
-      apiGet<ToppingOption[]>("/api/options/toppings"),
-      apiGet<ApiCatalogProduct[]>("/api/products"),
-    ]).then(([st, sz, top, catalog]) => {
-      if (cancelled) return;
-      setStores(st);
-      if (st.length > 0) setSelectedStoreId(st[0].id);
-      setProducts(catalog.length > 0 ? catalog.map(mapApiProduct) : mockProducts);
-      setSizes(sz);
-      setToppings(top);
-      setLoading(false);
-    }).catch(err => {
-      toast.error(err instanceof Error ? err.message : "Lỗi tải dữ liệu POS");
-      if (!cancelled) setLoading(false);
-    });
-    return () => { cancelled = true; };
+      const st = await apiGet<Store[]>("/admin/branches");
+      const list = Array.isArray(st) ? st : [];
+      setStores(list);
+      setBootstrapErrors((prev) => ({ ...prev, branches: null }));
+      if (list.length > 0 && selectedStoreIdRef.current === null) {
+        setSelectedStoreId(list[0].id);
+      }
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 401) {
+        clearToken();
+        if (typeof window !== "undefined" && window.location.pathname !== "/admin/login") {
+          window.location.href = "/admin/login";
+        }
+        return;
+      }
+      if (status === 403) {
+        setBootstrapErrors((prev) => ({
+          ...prev,
+          branches: "Tài khoản không có quyền truy cập chi nhánh POS (403 Forbidden)",
+        }));
+        return;
+      }
+      setBootstrapErrors((prev) => ({
+        ...prev,
+        branches: err instanceof Error ? err.message : "Lỗi tải danh sách chi nhánh",
+      }));
+    } finally {
+      inFlightSourcesRef.current.delete("branches");
+      setLoadingSources((s) => ({ ...s, branches: false }));
+    }
   }, []);
 
-  useEffect(() => {
-    if (!selectedStoreId) return;
-    let cancelled = false;
-    apiGet<TableData[]>(`/admin/tables?store_id=${selectedStoreId}`).then(res => {
-      if (!cancelled) {
-        setTables(res);
-        setSelectedTableId(null);
+  const loadSizes = useCallback(async () => {
+    if (inFlightSourcesRef.current.has("sizes")) return;
+    inFlightSourcesRef.current.add("sizes");
+    setLoadingSources((s) => ({ ...s, sizes: true }));
+    try {
+      const sz = await apiGet<SizeOption[]>("/api/options/sizes");
+      setSizes(Array.isArray(sz) ? sz : []);
+      setBootstrapErrors((prev) => ({ ...prev, sizes: null }));
+    } catch (err: unknown) {
+      setBootstrapErrors((prev) => ({
+        ...prev,
+        sizes: err instanceof Error ? err.message : "Lỗi tải kích thước món (sizes)",
+      }));
+    } finally {
+      inFlightSourcesRef.current.delete("sizes");
+      setLoadingSources((s) => ({ ...s, sizes: false }));
+    }
+  }, []);
+
+  const loadToppings = useCallback(async () => {
+    if (inFlightSourcesRef.current.has("toppings")) return;
+    inFlightSourcesRef.current.add("toppings");
+    setLoadingSources((s) => ({ ...s, toppings: true }));
+    try {
+      const top = await apiGet<ToppingOption[]>("/api/options/toppings");
+      setToppings(Array.isArray(top) ? top : []);
+      setBootstrapErrors((prev) => ({ ...prev, toppings: null }));
+    } catch (err: unknown) {
+      setBootstrapErrors((prev) => ({
+        ...prev,
+        toppings: err instanceof Error ? err.message : "Lỗi tải danh sách topping",
+      }));
+    } finally {
+      inFlightSourcesRef.current.delete("toppings");
+      setLoadingSources((s) => ({ ...s, toppings: false }));
+    }
+  }, []);
+
+  const loadProducts = useCallback(async () => {
+    if (inFlightSourcesRef.current.has("products")) return;
+    inFlightSourcesRef.current.add("products");
+    setLoadingSources((s) => ({ ...s, products: true }));
+    try {
+      const catalog = await apiGet<ApiCatalogProduct[]>("/api/products");
+      // Never fall back to mock catalog in production runtime.
+      setProducts(Array.isArray(catalog) ? catalog.map(mapApiProduct) : []);
+      setBootstrapErrors((prev) => ({ ...prev, products: null }));
+    } catch (err: unknown) {
+      setBootstrapErrors((prev) => ({
+        ...prev,
+        products: err instanceof Error ? err.message : "Lỗi tải danh mục món (products)",
+      }));
+    } finally {
+      inFlightSourcesRef.current.delete("products");
+      setLoadingSources((s) => ({ ...s, products: false }));
+    }
+  }, []);
+
+  const loadTables = useCallback(async (selectedStoreId: number) => {
+    if (tableAbortControllerRef.current) {
+      tableAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    tableAbortControllerRef.current = controller;
+
+    setLoadingSources((s) => ({ ...s, tables: true }));
+    try {
+      const res = await apiGet<TableData[]>(`/admin/tables?store_id=${selectedStoreId}`, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setTables(Array.isArray(res) ? res : []);
+      setSelectedTableId(null);
+      setBootstrapErrors((prev) => ({ ...prev, tables: null }));
+    } catch (err: unknown) {
+      if ((err as Error)?.name === "AbortError" || controller.signal.aborted) return;
+      setTables([]);
+      setBootstrapErrors((prev) => ({
+        ...prev,
+        tables: err instanceof Error ? err.message : "Lỗi tải danh sách bàn",
+      }));
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoadingSources((s) => ({ ...s, tables: false }));
       }
-    }).catch(() => setTables([]));
-    return () => { cancelled = true; };
-  }, [selectedStoreId]);
+    }
+  }, []);
+
+  // Initial bootstrap: load branches, sizes, toppings, and products independently
+  useEffect(() => {
+    void loadBranches();
+    void loadSizes();
+    void loadToppings();
+    void loadProducts();
+  }, [loadBranches, loadSizes, loadToppings, loadProducts]);
+
+  // Load tables when selectedStoreId changes, cancelling stale requests
+  useEffect(() => {
+    if (selectedStoreId != null) {
+      void loadTables(selectedStoreId);
+    } else {
+      setTables([]);
+      setSelectedTableId(null);
+    }
+    return () => {
+      if (tableAbortControllerRef.current) {
+        tableAbortControllerRef.current.abort();
+      }
+    };
+  }, [selectedStoreId, loadTables]);
 
   const filteredProducts = useMemo(() => {
     if (activeTab === "Tất cả") return products;
@@ -258,8 +397,17 @@ function PosPage() {
     }
   }
 
-  if (loading) {
-    return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-muted-foreground" /></div>;
+  const isInitialLoading =
+    (loadingSources.branches && stores.length === 0 && !bootstrapErrors.branches) ||
+    (loadingSources.products && products.length === 0 && !bootstrapErrors.products);
+
+  if (isInitialLoading) {
+    return (
+      <div className="p-20 text-center flex flex-col items-center justify-center space-y-3">
+        <Loader2 className="animate-spin size-8 text-primary" />
+        <p className="text-sm text-muted-foreground font-medium">Đang khởi tạo hệ thống POS...</p>
+      </div>
+    );
   }
 
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
@@ -452,9 +600,74 @@ function PosPage() {
                 {t.name}
               </Badge>
             ))}
+            {bootstrapErrors.tables && (
+              <div className="inline-flex items-center gap-1 text-xs text-destructive">
+                <span>⚠️ {bootstrapErrors.tables}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-xs underline text-destructive hover:bg-destructive/10"
+                  disabled={loadingSources.tables || !selectedStoreId}
+                  onClick={() => selectedStoreId && void loadTables(selectedStoreId)}
+                >
+                  Thử lại
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Source Bootstrap Error Banners */}
+      {bootstrapErrors.branches && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-xs sm:text-sm p-3 mx-4 mt-3 rounded-xl flex items-center justify-between shadow-xs">
+          <span>⚠️ Lỗi chi nhánh: {bootstrapErrors.branches}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs border-destructive/30 hover:bg-destructive/20"
+            disabled={loadingSources.branches}
+            onClick={() => void loadBranches()}
+          >
+            {loadingSources.branches ? <Loader2 className="animate-spin size-3 mr-1" /> : null}
+            Thử lại
+          </Button>
+        </div>
+      )}
+
+      {(bootstrapErrors.sizes || bootstrapErrors.toppings) && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs sm:text-sm p-3 mx-4 mt-2 rounded-xl flex items-center justify-between shadow-xs">
+          <span>
+            ⚠️ Lỗi tùy chọn: {[bootstrapErrors.sizes, bootstrapErrors.toppings].filter(Boolean).join(" · ")}
+          </span>
+          <div className="flex gap-2">
+            {bootstrapErrors.sizes && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-amber-500/30 hover:bg-amber-500/20"
+                disabled={loadingSources.sizes}
+                onClick={() => void loadSizes()}
+              >
+                {loadingSources.sizes ? <Loader2 className="animate-spin size-3 mr-1" /> : null}
+                Thử lại Sizes
+              </Button>
+            )}
+            {bootstrapErrors.toppings && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-amber-500/30 hover:bg-amber-500/20"
+                disabled={loadingSources.toppings}
+                onClick={() => void loadToppings()}
+              >
+                {loadingSources.toppings ? <Loader2 className="animate-spin size-3 mr-1" /> : null}
+                Thử lại Toppings
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: MENU */}
@@ -479,30 +692,58 @@ function PosPage() {
           </div>
 
           <ScrollArea className="flex-1 p-3 sm:p-5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-              {filteredProducts.map((p) => (
-                <Card
-                  key={p.id}
-                  className="group cursor-pointer hover:border-leaf transition-all duration-300 hover:-translate-y-1 hover:shadow-glow overflow-hidden flex flex-col rounded-2xl bg-card border-transparent shadow-card-soft"
-                  onClick={() => handleProductClick(p)}
+            {bootstrapErrors.products ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-12 space-y-4">
+                <div className="p-3 rounded-full bg-destructive/10 text-destructive">
+                  <X className="size-8" />
+                </div>
+                <p className="font-bold text-base text-foreground">Không thể tải danh sách món</p>
+                <p className="text-xs text-muted-foreground max-w-sm">{bootstrapErrors.products}</p>
+                <Button
+                  variant="hero"
+                  size="sm"
+                  disabled={loadingSources.products}
+                  onClick={() => void loadProducts()}
+                  className="text-xs font-bold"
                 >
-                  <div className="aspect-[4/3] overflow-hidden bg-muted/10 relative">
-                    <img
-                      src={p.image || (p as any).image_url || "/images/products/tra-xoai.jpg"}
-                      alt={p.name}
-                      loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  </div>
-                  <div className="p-2.5 sm:p-3 flex flex-col flex-1 justify-between gap-1.5 sm:gap-2">
-                    <p className="font-semibold text-xs sm:text-sm leading-snug line-clamp-2" title={p.name}>
-                      {p.name}
-                    </p>
-                    <p className="text-leaf font-extrabold text-xs sm:text-base">{vnd(p.price)}</p>
-                  </div>
-                </Card>
-              ))}
-            </div>
+                  {loadingSources.products ? <Loader2 className="animate-spin size-3.5 mr-1" /> : null}
+                  Thử lại tải thực đơn
+                </Button>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-12 text-muted-foreground">
+                <ShoppingCart className="size-12 mb-3 text-muted-foreground/40" />
+                <p className="font-medium text-sm">Chưa có món nào trong thực đơn</p>
+                <p className="text-xs mt-1">
+                  {activeTab === "Tất cả" ? "Danh mục món hiện đang trống." : `Không tìm thấy món thuộc nhóm "${activeTab}".`}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+                {filteredProducts.map((p) => (
+                  <Card
+                    key={p.id}
+                    className="group cursor-pointer hover:border-leaf transition-all duration-300 hover:-translate-y-1 hover:shadow-glow overflow-hidden flex flex-col rounded-2xl bg-card border-transparent shadow-card-soft"
+                    onClick={() => handleProductClick(p)}
+                  >
+                    <div className="aspect-[4/3] overflow-hidden bg-muted/10 relative">
+                      <img
+                        src={p.image || (p as any).image_url || "/images/products/tra-xoai.jpg"}
+                        alt={p.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    </div>
+                    <div className="p-2.5 sm:p-3 flex flex-col flex-1 justify-between gap-1.5 sm:gap-2">
+                      <p className="font-semibold text-xs sm:text-sm leading-snug line-clamp-2" title={p.name}>
+                        {p.name}
+                      </p>
+                      <p className="text-leaf font-extrabold text-xs sm:text-base">{vnd(p.price)}</p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
             <div className="h-8"></div>
           </ScrollArea>
         </div>

@@ -49,19 +49,29 @@ export function generateInviteToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * Generate cryptographically secure recovery proof token (32 bytes = 64 hex chars)
+ */
+export function generateRecoveryToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 export function createAuthEmailChallengeRepository(database = postgresDb) {
+  const getDb = (tx) => tx || database;
+
   return {
     /**
      * Create a new challenge. Returns the challenge record.
      */
-    async createChallenge({ userId, email, purpose, secretHash, maxAttempts, ttlMinutes, metadata }) {
-      return database.transaction(async (tx) => {
+    async createChallenge({ userId, email, purpose, secretHash, maxAttempts, ttlMinutes, metadata }, tx) {
+      const runner = tx ? (fn) => fn(tx) : (fn) => database.transaction(fn);
+      return runner(async (trx) => {
         // Advisory lock to serialize resend/creation per user+purpose
         const lockKey = `auth-challenge:${userId || 0}:${purpose}`;
-        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+        await trx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
 
         const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
-        const [rows] = await tx.query(
+        const [rows] = await trx.query(
           `INSERT INTO auth_email_challenges
              (user_id, email, purpose, secret_hash, expires_at, max_attempts, metadata)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -77,8 +87,9 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
      * Revoke all active (un-consumed, un-revoked) challenges for a user+purpose.
      * Returns count of revoked rows.
      */
-    async revokeActiveChallenges({ userId, email, purpose }) {
-      const [_, count] = await database.query(
+    async revokeActiveChallenges({ userId, email, purpose }, tx) {
+      const db = getDb(tx);
+      const [_, count] = await db.query(
         `UPDATE auth_email_challenges
          SET revoked_at = CURRENT_TIMESTAMP
          WHERE purpose = $1
@@ -94,8 +105,9 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
     /**
      * Mark a challenge as sent (called after successful email delivery).
      */
-    async markSent(id) {
-      const [rows] = await database.query(
+    async markSent(id, tx) {
+      const db = getDb(tx);
+      const [rows] = await db.query(
         `UPDATE auth_email_challenges
          SET sent_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND sent_at IS NULL
@@ -110,7 +122,7 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
      * for a given user/email and purpose. Row-locked for verification.
      */
     async findLatestActive(userId, email, purpose, tx) {
-      const db = tx || database;
+      const db = getDb(tx);
       const [rows] = await db.query(
         `SELECT id, user_id, email, purpose, secret_hash, expires_at, attempts, max_attempts,
                 sent_at, consumed_at, revoked_at, created_at, metadata
@@ -132,8 +144,9 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
     /**
      * Increment attempt counter atomically. Returns updated count.
      */
-    async incrementAttempts(id) {
-      const [rows] = await database.query(
+    async incrementAttempts(id, tx) {
+      const db = getDb(tx);
+      const [rows] = await db.query(
         `UPDATE auth_email_challenges
          SET attempts = attempts + 1
          WHERE id = $1
@@ -146,8 +159,9 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
     /**
      * Mark challenge as consumed (one-time use).
      */
-    async consume(id) {
-      const [_, count] = await database.query(
+    async consume(id, tx) {
+      const db = getDb(tx);
+      const [_, count] = await db.query(
         `UPDATE auth_email_challenges
          SET consumed_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND consumed_at IS NULL`,
@@ -159,14 +173,75 @@ export function createAuthEmailChallengeRepository(database = postgresDb) {
     /**
      * Revoke a specific challenge by id.
      */
-    async revoke(id) {
-      const [_, count] = await database.query(
+    async revoke(id, tx) {
+      const db = getDb(tx);
+      const [_, count] = await db.query(
         `UPDATE auth_email_challenges
          SET revoked_at = CURRENT_TIMESTAMP
          WHERE id = $1 AND revoked_at IS NULL`,
         [id],
       );
       return count === 1;
+    },
+
+    /**
+     * Create a phone proof challenge for password reset.
+     * Revokes prior active phone proofs and reset OTPs for this user.
+     */
+    async createPhoneProofChallenge({ userId, email, secretHash, ttlMinutes = 5, maxAttempts = 5, metadata }, tx) {
+      const runner = tx ? (fn) => fn(tx) : (fn) => database.transaction(fn);
+      return runner(async (trx) => {
+        const lockKey = `auth-challenge:${userId || 0}:PASSWORD_RESET_PHONE_PROOF`;
+        await trx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+
+        // Revoke any existing active phone proofs and reset OTPs for this user
+        await trx.query(
+          `UPDATE auth_email_challenges
+           SET revoked_at = CURRENT_TIMESTAMP
+           WHERE user_id = $1
+             AND purpose IN ('PASSWORD_RESET_PHONE_PROOF', 'PASSWORD_RESET')
+             AND consumed_at IS NULL
+             AND revoked_at IS NULL`,
+          [userId],
+        );
+
+        const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+        const [rows] = await trx.query(
+          `INSERT INTO auth_email_challenges
+             (user_id, email, purpose, secret_hash, expires_at, max_attempts, metadata)
+           VALUES ($1, $2, 'PASSWORD_RESET_PHONE_PROOF', $3, $4, $5, $6)
+           RETURNING id, user_id, email, purpose, expires_at, attempts, max_attempts,
+                     sent_at, consumed_at, revoked_at, created_at, metadata`,
+          [
+            userId || null,
+            normalizeEmail(email),
+            secretHash,
+            expiresAt,
+            maxAttempts,
+            metadata ? JSON.stringify(metadata) : JSON.stringify({ kind: 'password_reset_phone_proof' }),
+          ],
+        );
+        return rows[0];
+      });
+    },
+
+    /**
+     * Find phone proof by secret hash (row-locked if inside tx)
+     */
+    async findPhoneProofByHash(secretHash, tx) {
+      const db = getDb(tx);
+      const [rows] = await db.query(
+        `SELECT id, user_id, email, purpose, secret_hash, expires_at, attempts, max_attempts,
+                sent_at, consumed_at, revoked_at, created_at, metadata
+         FROM auth_email_challenges
+         WHERE secret_hash = $1
+           AND purpose = 'PASSWORD_RESET_PHONE_PROOF'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [secretHash],
+      );
+      return rows[0] || null;
     },
   };
 }

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../../config/env.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
-import { orderErrorStatus } from '../../services/orders/order-errors.js';
+import { orderErrorStatus, isOrderBusinessError } from '../../services/orders/order-errors.js';
 import { validateCreateOrderInput, validateOrderId, validateOrderMutationInput, validateOrderReference } from '../../validation/order-schemas.js';
 import customerOrderService from '../../services/orders/customer-order-service.js';
 import { noCache } from '../../middleware/no-cache.js';
@@ -105,7 +105,10 @@ router.post('/', asyncHandler(async (req, res) => {
 
     res.status(order.replay ? 200 : 201).json(order);
   } catch (err) {
-    res.status(orderErrorStatus(err)).json({ error: err.message });
+    res.status(orderErrorStatus(err)).json({
+      error: err.message,
+      code: err.code || (isOrderBusinessError(err) ? 'ORDER_BUSINESS_RULE' : 'INTERNAL_SERVER_ERROR'),
+    });
   }
 }));
 
