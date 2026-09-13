@@ -48,3 +48,54 @@ describe('PayOS Return URL & KDS Filter Suite', () => {
     assert.equal(isVisibleOnKds({ payment_status: 'paid', payment_method: 'COD', order_type: 'Delivery', current_status: 'Đã hủy' }), false);
   });
 });
+
+describe('classifyPayOSPaymentStatus Suite', () => {
+  it('classifies PAID accurately regardless of case and whitespace', async () => {
+    const { classifyPayOSPaymentStatus } = await import('../services/payos.js');
+    assert.equal(classifyPayOSPaymentStatus('PAID'), 'paid');
+    assert.equal(classifyPayOSPaymentStatus('paid'), 'paid');
+    assert.equal(classifyPayOSPaymentStatus('  PAID  '), 'paid');
+    assert.equal(classifyPayOSPaymentStatus({ status: 'PAID' }), 'paid');
+    assert.equal(classifyPayOSPaymentStatus({ status: '  paid  ' }), 'paid');
+  });
+
+  it('classifies CANCELLED, CANCELED, and EXPIRED as terminal_unpaid', async () => {
+    const { classifyPayOSPaymentStatus } = await import('../services/payos.js');
+    assert.equal(classifyPayOSPaymentStatus('CANCELLED'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('cancelled'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('  CANCELLED  '), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus({ status: 'CANCELLED' }), 'terminal_unpaid');
+
+    assert.equal(classifyPayOSPaymentStatus('CANCELED'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('canceled'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('  CANCELED  '), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus({ status: 'CANCELED' }), 'terminal_unpaid');
+
+    assert.equal(classifyPayOSPaymentStatus('EXPIRED'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('expired'), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus('  EXPIRED  '), 'terminal_unpaid');
+    assert.equal(classifyPayOSPaymentStatus({ status: 'EXPIRED' }), 'terminal_unpaid');
+  });
+
+  it('classifies pending, processing, or unknown provider statuses as pending_or_unknown', async () => {
+    const { classifyPayOSPaymentStatus } = await import('../services/payos.js');
+    assert.equal(classifyPayOSPaymentStatus('PENDING'), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus('PROCESSING'), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus('UNDERPAID'), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus('FAILED'), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus('SOMETHING_ELSE'), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus({ status: 'PENDING' }), 'pending_or_unknown');
+  });
+
+  it('fails closed and returns pending_or_unknown on empty, missing, or malformed inputs', async () => {
+    const { classifyPayOSPaymentStatus } = await import('../services/payos.js');
+    assert.equal(classifyPayOSPaymentStatus(null), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus(undefined), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus(''), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus('   '), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus({}), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus({ status: null }), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus(123), 'pending_or_unknown');
+    assert.equal(classifyPayOSPaymentStatus(new Error('timeout')), 'pending_or_unknown');
+  });
+});

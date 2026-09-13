@@ -108,7 +108,23 @@ router.post('/:id/reschedule', requireRole('super', 'manager'), asyncHandler(asy
 }));
 
 router.post('/:id/check-in', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
-  try { res.json(await service.checkIn({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
+  try {
+    res.json(await service.checkIn({
+      preorderId: req.params.id,
+      actor: req.user,
+      lateConfirmationReason: req.body?.late_confirmation_reason || null,
+    }));
+  } catch (error) { errorResponse(res, error); }
+}));
+
+router.post('/:id/check-in/reject', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    res.json(await service.rejectCheckIn({
+      preorderId: req.params.id,
+      actor: req.user,
+      reason: req.body?.reason,
+    }));
+  } catch (error) { errorResponse(res, error); }
 }));
 
 router.get('/incidents/list', requireRole('super'), asyncHandler(async (req, res) => {

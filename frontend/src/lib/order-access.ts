@@ -29,10 +29,11 @@ export function getOrderRequestHeaders(orderCode?: string): Record<string, strin
 }
 
 export function isPayOSLinkActive(
-  order?: { payment_expires_at?: string | null } | null,
+  order?: { payment_expires_at?: string | null; payment_status?: string | null } | null,
   nowMs: number = Date.now(),
 ): boolean {
   if (!order || !order.payment_expires_at) return false;
+  if (order.payment_status === "expired" || order.payment_status === "paid") return false;
   try {
     const expiresMs = new Date(order.payment_expires_at).getTime();
     return Number.isFinite(expiresMs) && expiresMs > nowMs;

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { CalendarClock, CheckCircle2, RefreshCw, Settings2 } from 'lucide-react';
+import { CalendarClock, CheckCircle2, RefreshCw, Settings2, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiGet, apiPost, apiPut, getUser } from '@/lib/api';
 
@@ -19,6 +21,13 @@ type Preorder = {
   reschedule_count: number;
   checked_in_at?: string | null;
   late_minutes?: number | null;
+  checkin_request?: {
+    id: number;
+    status: string;
+    requested_at: string;
+    late_confirmation_reason?: string | null;
+    rejection_reason?: string | null;
+  } | null;
   orders?: { id: number; order_code: string; items: { id: number; product_name: string; qty: number; size_label?: string }[] }[];
 };
 
@@ -57,6 +66,12 @@ function AdminPreordersPage() {
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleHour, setRescheduleHour] = useState('');
   const [reason, setReason] = useState('');
+  const [checkingInId, setCheckingInId] = useState<number | null>(null);
+  const [rejectModalPreorderId, setRejectModalPreorderId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
+  const [lateReasonModalPreorderId, setLateReasonModalPreorderId] = useState<number | null>(null);
+  const [lateReason, setLateReason] = useState('');
   const [settings, setSettings] = useState<PreorderStoreSetting[]>([]);
   const [settingDrafts, setSettingDrafts] = useState<Record<number, SettingDraft>>({});
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -115,13 +130,50 @@ function AdminPreordersPage() {
     }
   }
 
-  async function checkIn(id: number) {
+  function handleCheckInClick(preorder: Preorder) {
+    if (checkingInId !== null) return;
+    const startTime = new Date(preorder.scheduled_start_at).getTime();
+    const isPastT30 = Date.now() > startTime + 30 * 60_000;
+    if (isPastT30) {
+      setLateReasonModalPreorderId(preorder.id);
+      setLateReason('');
+      return;
+    }
+    void doCheckIn(preorder.id, null);
+  }
+
+  async function doCheckIn(id: number, lateReasonText: string | null) {
+    setCheckingInId(id);
     try {
-      await apiPost(`/admin/preorders/${id}/check-in`, {});
-      toast.success('Đã check-in.');
+      await apiPost(`/admin/preorders/${id}/check-in`, {
+        late_confirmation_reason: lateReasonText || undefined,
+      });
+      toast.success('Đã check-in thành công.');
+      setLateReasonModalPreorderId(null);
+      setLateReason('');
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể check-in');
+    } finally {
+      setCheckingInId(null);
+    }
+  }
+
+  async function doRejectCheckIn() {
+    if (!rejectModalPreorderId || !rejectReason.trim() || rejecting) return;
+    setRejecting(true);
+    try {
+      await apiPost(`/admin/preorders/${rejectModalPreorderId}/check-in/reject`, {
+        reason: rejectReason.trim(),
+      });
+      toast.success('Đã từ chối yêu cầu check-in.');
+      setRejectModalPreorderId(null);
+      setRejectReason('');
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể từ chối check-in');
+    } finally {
+      setRejecting(false);
     }
   }
 
@@ -260,10 +312,58 @@ function AdminPreordersPage() {
                   <div className="font-semibold">{preorder.preorder_code} · {preorder.status}</div>
                   <div className="text-sm text-muted-foreground">{new Date(preorder.scheduled_start_at).toLocaleString('vi-VN')} · {preorder.store_name || 'Chi nhánh'} · {preorder.customer_name || 'Khách hàng'}</div>
                   {preorder.late_minutes ? <div className="text-sm text-amber-700">Muộn {preorder.late_minutes} phút</div> : null}
+                  {preorder.checkin_request?.status === 'PENDING' ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge className="bg-amber-100 text-amber-900 border-amber-300 flex items-center gap-1.5 py-1 px-2.5">
+                        <Loader2 className="size-3.5 animate-spin text-amber-700 shrink-0" />
+                        Khách đã yêu cầu check-in lúc {new Date(preorder.checkin_request.requested_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      </Badge>
+                    </div>
+                  ) : null}
+                  {preorder.checkin_request?.status === 'REJECTED' ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge variant="outline" className="border-rose-300 text-rose-800 bg-rose-50">
+                        Đã từ chối check-in: {preorder.checkin_request.rejection_reason || 'Không rõ lý do'}
+                      </Badge>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {preorder.status === 'PENDING_MANAGER_CONFIRMATION' && <Button onClick={() => void confirm(preorder.id)}><CheckCircle2 className="mr-1 size-4" />Xác nhận</Button>}
-                  {preorder.status === 'CONFIRMED' && <Button variant="secondary" onClick={() => void checkIn(preorder.id)}>Check-in</Button>}
+                  {preorder.status === 'CONFIRMED' && (
+                    preorder.checkin_request?.status === 'PENDING' ? (
+                      <>
+                        <Button
+                          variant="default"
+                          disabled={checkingInId === preorder.id}
+                          onClick={() => handleCheckInClick(preorder)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          {checkingInId === preorder.id ? (
+                            <Loader2 className="mr-1 size-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="mr-1 size-4" />
+                          )}
+                          Check-in
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            setRejectModalPreorderId(preorder.id);
+                            setRejectReason('');
+                          }}
+                        >
+                          <XCircle className="mr-1 size-4" />
+                          Từ chối
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="secondary" disabled title="Khách hàng chưa gửi yêu cầu check-in">
+                        Chờ khách check-in
+                      </Button>
+                    )
+                  )}
                   {['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status) && preorder.reschedule_count === 0 && <Button variant="outline" onClick={() => setRescheduleId(preorder.id)}><CalendarClock className="mr-1 size-4" />Đổi lịch</Button>}
                 </div>
               </div>
@@ -286,6 +386,73 @@ function AdminPreordersPage() {
         </div>
       )}
       {isSuper && <p className="text-xs text-muted-foreground">Super xử lý incident/strike trong quản trị; re-enable Manager dùng luồng Tài khoản canonical.</p>}
+
+      {lateReasonModalPreorderId && (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) setLateReasonModalPreorderId(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Xác nhận check-in sau thời hạn T+30</DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Khung giờ hẹn đã quá 30 phút. Vui lòng nhập lý do xác nhận muộn để lưu vào nhật ký kiểm toán.
+              </p>
+              <Input
+                placeholder="Ví dụ: Giờ cao điểm tại quầy, phục vụ dồn toa..."
+                value={lateReason}
+                onChange={(e) => setLateReason(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setLateReasonModalPreorderId(null)}>
+                Hủy
+              </Button>
+              <Button
+                disabled={!lateReason.trim() || checkingInId !== null}
+                onClick={() => void doCheckIn(lateReasonModalPreorderId, lateReason)}
+              >
+                {checkingInId !== null ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                Xác nhận check-in
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {rejectModalPreorderId && (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) setRejectModalPreorderId(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Từ chối yêu cầu check-in</DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Khách hàng sẽ nhận được thông báo từ chối kèm lý do này.
+              </p>
+              <Input
+                placeholder="Nhập lý do từ chối check-in..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejectModalPreorderId(null)}>
+                Hủy
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={!rejectReason.trim() || rejecting}
+                onClick={() => void doRejectCheckIn()}
+              >
+                {rejecting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                Từ chối check-in
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

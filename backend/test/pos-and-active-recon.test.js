@@ -111,4 +111,66 @@ describe('POS Validation & Active Reconciliation Suite', () => {
       /Số điện thoại không hợp lệ/,
     );
   });
+
+  it('reconciles CANCELLED PayOS status by closing attempt and triggering preorder expiration release', async () => {
+    let expireAttemptCall = null;
+    let preorderExpiredCall = null;
+
+    const result = await reconcilePayOSOrder({
+      order: { id: 25, payment_status: 'unpaid', payment_provider: 'payos' },
+      getPaymentInfo: async () => ({ status: 'CANCELLED' }),
+      attemptsRepository: {
+        findCurrentAttemptForTarget: async () => ({
+          id: 125,
+          provider: 'payos',
+          status: 'active',
+          amount: 60000,
+          provider_order_code: 880025,
+          order_id: 25,
+          checkout_group_id: null,
+          payment_profile_code: 'TEST_PROFILE',
+        }),
+        expireAttemptFromProviderTerminalState: async (payload) => {
+          expireAttemptCall = payload;
+          return { changed: true, attempt: { id: 125, status: 'expired' } };
+        },
+      },
+      preorderBridge: {
+        onPaymentExpired: async (payload) => {
+          preorderExpiredCall = payload;
+        },
+      },
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(result.result.kind, 'expired');
+    assert.deepEqual(expireAttemptCall, { attemptId: 125, providerStatus: 'CANCELLED' });
+    assert.deepEqual(preorderExpiredCall, { orderId: 25, checkoutGroupId: null });
+  });
+
+  it('fails closed and does not mutate attempts on unknown status or error', async () => {
+    let expireAttemptCalled = false;
+
+    const result = await reconcilePayOSOrder({
+      order: { id: 26, payment_status: 'unpaid', payment_provider: 'payos' },
+      getPaymentInfo: async () => ({ status: 'UNKNOWN_CODE' }),
+      attemptsRepository: {
+        findCurrentAttemptForTarget: async () => ({
+          id: 126,
+          provider: 'payos',
+          status: 'active',
+          amount: 60000,
+          provider_order_code: 880026,
+          payment_profile_code: 'TEST_PROFILE_2',
+        }),
+        expireAttemptFromProviderTerminalState: async () => {
+          expireAttemptCalled = true;
+          return { changed: false };
+        },
+      },
+    });
+
+    assert.equal(result.changed, false);
+    assert.equal(expireAttemptCalled, false);
+  });
 });

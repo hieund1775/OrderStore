@@ -223,4 +223,79 @@ describe('Direct PayOS payment-attempt runtime', () => {
       assert.equal(calls.reserve.length, 0);
     }
   });
+
+  it('regenerateForCustomer reuses still-active attempt if provider has not cancelled/expired it', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 705,
+    });
+    const activeAttempt = activeFrom(creating(705), {
+      provider_payment_link_id: 'link-active-705',
+      checkout_url: 'https://payos.test/active-705',
+      qr_code: 'qr-active-705',
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'active', attempt: activeAttempt },
+      ],
+    });
+
+    service.attemptsRepository.findDirectOrderForRegeneration = async () => existingOrder;
+    service.attemptsRepository.findAttemptById = async () => activeAttempt;
+
+    const result = await service.regenerateForCustomer({
+      orderCode: 'TP2609070041',
+      userId: 15,
+    });
+
+    assert.equal(result.payment_link_id, 'link-active-705');
+    assert.equal(calls.create.length, 0, 'must reuse active link without creating a replacement at provider');
+  });
+
+  it('regenerateForCustomer creates a new attempt when current attempt is expired', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      payment_status: 'expired',
+      current_payment_attempt_id: 706,
+    });
+    const expiredAttempt = { ...creating(706), status: 'expired' };
+    const newAttempt = creating(707);
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+      ],
+      activate: async () => activeFrom(newAttempt),
+    });
+
+    service.attemptsRepository.findDirectOrderForRegeneration = async () => existingOrder;
+    service.attemptsRepository.findAttemptById = async () => expiredAttempt;
+
+    const result = await service.regenerateForCustomer({
+      orderCode: 'TP2609070041',
+      userId: 15,
+    });
+
+    assert.equal(result.payos_order_code, 91234567890123);
+    assert.equal(calls.create.length, 1, 'must create replacement attempt when current attempt was expired');
+  });
+
+  it('regenerateForCustomer rejects unauthorized callers before looking up or reconciling', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      cancel_token_hash: null,
+    });
+
+    const { service, calls } = createHarness({ reserveResults: [] });
+    service.attemptsRepository.findDirectOrderForRegeneration = async () => existingOrder;
+
+    await assert.rejects(
+      () => service.regenerateForCustomer({ orderCode: 'TP2609070041', userId: 999 }),
+      (err) => err.status === 403,
+    );
+    assert.equal(calls.reserve.length, 0);
+  });
 });

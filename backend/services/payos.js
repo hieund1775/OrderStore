@@ -298,3 +298,32 @@ export async function lookupPaymentLinkForRecovery(orderCode, profileCode = null
     return { kind: 'unknown', reason: 'LOOKUP_UNCERTAIN' };
   }
 }
+
+/**
+ * Pure canonical classifier for successful PayOS payment-link payloads.
+ * Normalizes status case and whitespace only.
+ * Returns 'paid', 'terminal_unpaid', or 'pending_or_unknown'.
+ * Treats ONLY 'CANCELLED', 'CANCELED', and 'EXPIRED' as terminal unpaid.
+ * Never throws; null, undefined, or unexpected shapes return 'pending_or_unknown'.
+ */
+export function classifyPayOSPaymentStatus(payloadOrStatus) {
+  const rawStatus = typeof payloadOrStatus === 'object' && payloadOrStatus !== null
+    ? payloadOrStatus.status
+    : payloadOrStatus;
+
+  if (!rawStatus || typeof rawStatus !== 'string') {
+    return 'pending_or_unknown';
+  }
+
+  const normalized = rawStatus.trim().toUpperCase();
+
+  if (normalized === 'PAID') {
+    return 'paid';
+  }
+
+  if (normalized === 'CANCELLED' || normalized === 'CANCELED' || normalized === 'EXPIRED') {
+    return 'terminal_unpaid';
+  }
+
+  return 'pending_or_unknown';
+}

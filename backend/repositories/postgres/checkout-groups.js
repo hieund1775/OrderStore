@@ -255,6 +255,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'items', COALESCE((
                       SELECT JSONB_AGG(
                         JSONB_BUILD_OBJECT(
+                          'order_item_id', oi.id,
+                          'id', oi.id,
                           'product_id', oi.product_id,
                           'product_name', oi.product_name,
                           'quantity', oi.qty,

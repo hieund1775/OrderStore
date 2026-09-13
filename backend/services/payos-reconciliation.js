@@ -1,5 +1,5 @@
 import paymentAttemptsRepository from '../repositories/postgres/payment-attempts.js';
-import { getPaymentLinkInformation } from './payos.js';
+import { getPaymentLinkInformation, classifyPayOSPaymentStatus } from './payos.js';
 import { settleVerifiedPayOSAttempt } from './payment-attempt-settlement.js';
 import preorderService from './preorders/preorder-service.js';
 
@@ -38,8 +38,40 @@ export async function reconcilePayOSAttempt({
     attempt.provider_payment_link_id,
     attempt.payment_profile_code,
   );
+
+  const classifiedStatus = classifyPayOSPaymentStatus(payosInfo);
+
+  // 1) Handle Terminal Unpaid (CANCELLED, CANCELED, EXPIRED) for active attempts
+  if (classifiedStatus === 'terminal_unpaid') {
+    if (attempt.status === 'active') {
+      const closeResult = typeof attemptsRepository.expireAttemptFromProviderTerminalState === 'function'
+        ? await attemptsRepository.expireAttemptFromProviderTerminalState({
+            attemptId: attempt.id,
+            providerStatus: payosInfo?.status,
+          })
+        : typeof attemptsRepository.expireAttemptFromProvider === 'function'
+          ? await attemptsRepository.expireAttemptFromProvider({
+              attemptId: attempt.id,
+              providerStatus: payosInfo?.status,
+            })
+          : null;
+
+      if (closeResult?.changed) {
+        if (preorderBridge && typeof preorderBridge.onPaymentExpired === 'function') {
+          await preorderBridge.onPaymentExpired({
+            orderId: attempt.order_id,
+            checkoutGroupId: attempt.checkout_group_id,
+          });
+        }
+        return { changed: true, result: { kind: 'expired', attempt: closeResult.attempt } };
+      }
+    }
+    return { changed: false, skipped: false };
+  }
+
+  // 2) Handle PAID Settlement
   const amount = Number(payosInfo?.amountPaid ?? payosInfo?.amount);
-  if (payosInfo?.status !== 'PAID' || !Number.isFinite(amount)
+  if (classifiedStatus !== 'paid' || !Number.isFinite(amount)
     || Math.round(amount) !== Math.round(Number(attempt.amount))) {
     return { changed: false, skipped: false };
   }

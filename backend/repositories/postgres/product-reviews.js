@@ -1,6 +1,10 @@
 import postgresDb from '../../config/db-postgres.js';
 import { IdentityError, isUniqueViolation } from './errors.js';
 
+function normalizeQueryResult(result) {
+  return Array.isArray(result) ? { rows: result[0], rowCount: result[1] ?? 0 } : result;
+}
+
 /**
  * Product Reviews Repository — Postgres implementation.
  * All queries are parameterized. No raw string interpolation.
@@ -11,6 +15,7 @@ export class ProductReviewsRepository {
    */
   constructor(db) {
     const adapter = db || postgresDb;
+    this.adapter = adapter;
     // postgresDb exposes the shared [rows, affectedCount] adapter contract,
     // while this repository also supports native pg.Result clients in tests.
     // Normalize only query results at this boundary.
@@ -19,10 +24,48 @@ export class ProductReviewsRepository {
         if (property !== 'query') return Reflect.get(target, property, receiver);
         return async (...args) => {
           const result = await target.query(...args);
-          return Array.isArray(result) ? { rows: result[0], rowCount: result[1] } : result;
+          return normalizeQueryResult(result);
         };
       },
     });
+  }
+
+  /**
+   * Executes callback within a transaction.
+   * Delegates to adapter.transaction() if supported (e.g. postgresDb),
+   * or falls back to client.connect() for raw pg.Pool test clients.
+   */
+  async withTransaction(callback) {
+    if (typeof this.adapter.transaction === 'function') {
+      return this.adapter.transaction(async (tx) => {
+        const normalizedTx = {
+          async query(...args) {
+            const res = await tx.query(...args);
+            return normalizeQueryResult(res);
+          },
+        };
+        return callback(normalizedTx);
+      });
+    }
+
+    const client = await this.adapter.connect();
+    try {
+      await client.query('BEGIN');
+      const normalizedTx = {
+        async query(...args) {
+          const res = await client.query(...args);
+          return normalizeQueryResult(res);
+        },
+      };
+      const result = await callback(normalizedTx);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   // ────── Reviews ──────
@@ -108,10 +151,7 @@ export class ProductReviewsRepository {
    * Returns { review, revision }.
    */
   async createReview({ userId, productId, orderItemId, rating, comment, verifiedAt }) {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
+    return this.withTransaction(async (client) => {
       // Check for existing verified review on this order_item
       const { rows: existing } = await client.query(
         `SELECT id FROM reviews
@@ -120,7 +160,7 @@ export class ProductReviewsRepository {
         [orderItemId],
       );
       if (existing.length > 0) {
-        throw new IdentityError('DUPLICATE_REVIEW', 'Sản phẩm này đã được đánh giá');
+        throw new IdentityError('DUPLICATE_REVIEW', 'Sản phẩm này đã được đánh giá', 409);
       }
 
       // Check for any existing review (even unverified) by this user on this item
@@ -131,57 +171,55 @@ export class ProductReviewsRepository {
         [orderItemId, userId],
       );
       if (existingAny.length > 0) {
-        throw new IdentityError('DUPLICATE_REVIEW', 'Bạn đã đánh giá sản phẩm này');
+        throw new IdentityError('DUPLICATE_REVIEW', 'Bạn đã đánh giá sản phẩm này', 409);
       }
 
-      // Create review
-      const { rows: reviews } = await client.query(
-        `INSERT INTO reviews (user_id, product_id, order_item_id, rating, comment,
-          purchase_verified_at, visibility_status, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'visible', NOW())
-         RETURNING *`,
-        [userId, productId, orderItemId, rating, comment, verifiedAt],
-      );
-      const review = reviews[0];
+      try {
+        // Create review
+        const { rows: reviews } = await client.query(
+          `INSERT INTO reviews (user_id, product_id, order_item_id, rating, comment,
+            purchase_verified_at, visibility_status, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'visible', NOW())
+           RETURNING *`,
+          [userId, productId, orderItemId, rating, comment, verifiedAt],
+        );
+        const review = reviews[0];
 
-      // Create original revision
-      const { rows: revisions } = await client.query(
-        `INSERT INTO review_revisions (review_id, sequence, revision_type, rating, comment)
-         VALUES ($1, 1, 'original', $2, $3)
-         RETURNING *`,
-        [review.id, rating, comment],
-      );
-      const revision = revisions[0];
+        // Create original revision
+        const { rows: revisions } = await client.query(
+          `INSERT INTO review_revisions (review_id, sequence, revision_type, rating, comment)
+           VALUES ($1, 1, 'original', $2, $3)
+           RETURNING *`,
+          [review.id, rating, comment],
+        );
+        const revision = revisions[0];
 
-      // Point review to current revision
-      await client.query(
-        `UPDATE reviews SET current_revision_id = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [revision.id, review.id],
-      );
-      review.current_revision_id = revision.id;
+        // Point review to current revision
+        await client.query(
+          `UPDATE reviews SET current_revision_id = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [revision.id, review.id],
+        );
+        review.current_revision_id = revision.id;
 
-      // Recompute product aggregate
-      await this._recomputeProductRating(client, productId);
+        // Recompute product aggregate
+        await this._recomputeProductRating(client, productId);
 
-      await client.query('COMMIT');
-      return { review, revision };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+        return { review, revision };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new IdentityError('DUPLICATE_REVIEW', 'Sản phẩm này đã được đánh giá', 409);
+        }
+        throw err;
+      }
+    });
   }
 
   /**
    * Consume the one-time edit grant and append a customer_edit revision.
    */
   async editReview(reviewId, userId, { rating, comment }) {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
+    return this.withTransaction(async (client) => {
       // Lock and check review
       const { rows: reviews } = await client.query(
         `SELECT * FROM reviews WHERE id = $1 AND user_id = $2 FOR UPDATE`,
@@ -227,24 +265,15 @@ export class ProductReviewsRepository {
 
       await this._recomputeProductRating(client, review.product_id);
 
-      await client.query('COMMIT');
       return { review: { ...review, current_revision_id: revision.id }, revision };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
    * Toggle review visibility (hide/unhide).
    */
   async setVisibility(reviewId, adminUserId, visibility, reason) {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
+    return this.withTransaction(async (client) => {
       const { rows: reviews } = await client.query(
         `SELECT * FROM reviews WHERE id = $1 FOR UPDATE`,
         [reviewId],
@@ -289,24 +318,15 @@ export class ProductReviewsRepository {
 
       await this._recomputeProductRating(client, review.product_id);
 
-      await client.query('COMMIT');
       return { ...review, ...updates };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
    * Reply to a review (one reply max).
    */
   async replyToReview(reviewId, adminUserId, body) {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
+    return this.withTransaction(async (client) => {
       // Check review exists
       const { rows: reviews } = await client.query(
         `SELECT * FROM reviews WHERE id = $1 FOR UPDATE`,
@@ -345,14 +365,8 @@ export class ProductReviewsRepository {
         );
       }
 
-      await client.query('COMMIT');
       return reply;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   // ────── Public reads ──────
@@ -642,10 +656,7 @@ export class ProductReviewsRepository {
    * Attach media to a revision, marking intent as attached.
    */
   async attachMedia(revisionId, intentId, { storageKey, contentType, byteSize, mediaType }) {
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
+    return this.withTransaction(async (client) => {
       // Check media limit per revision
       const { rows: existingMedia } = await client.query(
         `SELECT media_type FROM review_media WHERE review_revision_id = $1`,
@@ -670,14 +681,8 @@ export class ProductReviewsRepository {
         [intentId],
       );
 
-      await client.query('COMMIT');
       return media[0];
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   // ────── Helpers ──────

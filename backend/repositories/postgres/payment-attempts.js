@@ -767,6 +767,105 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
       });
     },
 
+    /**
+     * Closes an active payment attempt when PayOS provider definitively reports
+     * CANCELLED, CANCELED, or EXPIRED.
+     * Enforces target-first lock, then attempt lock.
+     * Only transitions from 'active' -> 'expired'.
+     * Updates target payment_status to 'expired' only if this attempt is current.
+     */
+    async expireAttemptFromProviderTerminalState({
+      attemptId,
+      providerStatus = null,
+      expiredAt = null,
+    }, { tx: externalTx } = {}) {
+      const effectiveExpiredAt = expiredAt == null ? new Date() : new Date(expiredAt);
+      const normalizedStatus = typeof providerStatus === 'string' ? providerStatus.trim().toUpperCase() : '';
+      const reason = normalizedStatus === 'CANCELLED' || normalizedStatus === 'CANCELED'
+        ? 'PROVIDER_LINK_CANCELLED'
+        : 'PROVIDER_LINK_EXPIRED';
+
+      return inTransaction(database, externalTx, async (tx) => {
+        const existing = await this.findAttemptById(attemptId, { tx });
+        if (!existing) {
+          throw new PaymentAttemptError('Payment attempt was not found', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
+        }
+
+        const target = targetFromAttempt(existing);
+        const lockedTarget = await lockTarget(tx, target);
+        if (!lockedTarget) {
+          throw new PaymentAttemptError('Payment target was not found', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
+        }
+
+        const attempt = await findAttemptForUpdate(tx, attemptId);
+        if (!attempt) {
+          throw new PaymentAttemptError('Payment attempt was not found for update', 404, 'PAYMENT_ATTEMPT_NOT_FOUND');
+        }
+
+        // Idempotency: already expired
+        if (attempt.status === 'expired') {
+          return { changed: false, attempt, target: lockedTarget };
+        }
+
+        // Only active attempts can be closed to expired
+        if (attempt.status !== 'active') {
+          return { changed: false, attempt, target: lockedTarget };
+        }
+
+        // Concurrent valid payment owns terminal state
+        if (lockedTarget.payment_status === 'paid') {
+          return { changed: false, attempt, target: lockedTarget };
+        }
+
+        const [rows] = await tx.query(
+          `UPDATE payment_attempts
+           SET status = 'expired',
+               expired_at = COALESCE($2, expired_at, CURRENT_TIMESTAMP),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND status = 'active'
+           RETURNING *`,
+          [attempt.id, effectiveExpiredAt],
+        );
+
+        const updatedAttempt = rows[0];
+        if (!updatedAttempt) {
+          return { changed: false, attempt, target: lockedTarget };
+        }
+
+        // Mark target expired ONLY if this attempt is the current pointer
+        await markTargetExpiredIfCurrent(tx, target, updatedAttempt);
+
+        // Record audit event in payment_events idempotently
+        if (attempt.provider && attempt.provider_order_code) {
+          const eventKey = `${attempt.provider}:${attempt.payment_profile_code}:terminal_unpaid:${attempt.provider_order_code}`;
+          await tx.query(
+            `INSERT INTO payment_events (
+               provider, provider_event_key, event_type, payload, order_id,
+               payment_attempt_id, checkout_group_id, payment_profile_code,
+               provider_payment_identity, processing_status, processed_at
+             ) VALUES ($1, $2, 'payment.terminal_unpaid', $3::jsonb, $4, $5, $6, $7, $8, 'processed', CURRENT_TIMESTAMP)
+             ON CONFLICT (provider_event_key) DO NOTHING`,
+            [
+              attempt.provider,
+              eventKey,
+              JSON.stringify({ reason, providerStatus: normalizedStatus || null }),
+              attempt.order_id,
+              attempt.id,
+              attempt.checkout_group_id,
+              attempt.payment_profile_code,
+              String(attempt.provider_order_code),
+            ],
+          );
+        }
+
+        return { changed: true, attempt: updatedAttempt, target: lockedTarget };
+      });
+    },
+
+    async expireAttemptFromProvider(args, options) {
+      return this.expireAttemptFromProviderTerminalState(args, options);
+    },
+
     async expireDuePaymentAttempts({ limit = 100, now = null } = {}) {
       const batchSize = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 1000);
       const effectiveNow = now == null ? new Date() : new Date(now);

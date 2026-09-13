@@ -74,4 +74,114 @@ describe('payment-attempt repository lifecycle contract', () => {
     assert.equal(insert.params[7], 990011);
     assert.equal(pointer, undefined);
   });
+
+  it('expireAttemptFromProviderTerminalState locks target first then attempt, updates pointer when current, and writes audit event', async () => {
+    const queries = [];
+    const repo = createPaymentAttemptsRepository({
+      transaction: async (runner) => runner({
+        query: async (sql, params = []) => {
+          queries.push({ sql, params });
+          if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
+          }
+          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+            return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', current_payment_attempt_id: 101 }], 1];
+          }
+          if (sql.includes('FROM payment_attempts') && sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
+          }
+          if (sql.includes('UPDATE payment_attempts') && sql.includes("SET status = 'expired'")) {
+            return [[{ id: 101, order_id: 11, status: 'expired' }], 1];
+          }
+          if (sql.includes('UPDATE orders o SET payment_status = \'expired\'')) {
+            return [[{ id: 11, payment_status: 'expired' }], 1];
+          }
+          if (sql.includes('INSERT INTO payment_events')) {
+            return [[{ id: 801 }], 1];
+          }
+          return [[], 1];
+        },
+      }),
+    });
+
+    const result = await repo.expireAttemptFromProviderTerminalState({
+      attemptId: 101,
+      providerStatus: 'CANCELLED',
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(result.attempt.status, 'expired');
+
+    const targetLockIndex = queries.findIndex((q) => q.sql.includes('FROM orders WHERE id =') && q.sql.includes('FOR UPDATE'));
+    const attemptLockIndex = queries.findIndex((q) => q.sql.includes('FROM payment_attempts') && q.sql.includes('FOR UPDATE'));
+    assert.ok(targetLockIndex >= 0 && attemptLockIndex >= 0);
+    assert.ok(targetLockIndex < attemptLockIndex, 'target must be locked before attempt');
+
+    const targetExpire = queries.find((q) => q.sql.includes('UPDATE orders o SET payment_status = \'expired\''));
+    assert.ok(targetExpire, 'target must be marked expired when attempt is current pointer');
+
+    const auditEvent = queries.find((q) => q.sql.includes('INSERT INTO payment_events'));
+    assert.ok(auditEvent, 'payment_events audit entry must be inserted');
+    assert.match(auditEvent.params[2], /PROVIDER_LINK_CANCELLED/);
+  });
+
+  it('expireAttemptFromProviderTerminalState does not mark target expired if attempt is not the current pointer', async () => {
+    const queries = [];
+    const repo = createPaymentAttemptsRepository({
+      transaction: async (runner) => runner({
+        query: async (sql, params = []) => {
+          queries.push({ sql, params });
+          if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
+          }
+          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+            // Note: current pointer is 102, NOT 101
+            return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', current_payment_attempt_id: 102 }], 1];
+          }
+          if (sql.includes('FROM payment_attempts') && sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
+          }
+          if (sql.includes('UPDATE payment_attempts') && sql.includes("SET status = 'expired'")) {
+            return [[{ id: 101, order_id: 11, status: 'expired' }], 1];
+          }
+          if (sql.includes('INSERT INTO payment_events')) {
+            return [[{ id: 801 }], 1];
+          }
+          return [[], 1];
+        },
+      }),
+    });
+
+    const result = await repo.expireAttemptFromProviderTerminalState({
+      attemptId: 101,
+      providerStatus: 'EXPIRED',
+    });
+
+    assert.equal(result.changed, true);
+    const targetExpire = queries.find((q) => q.sql.includes('UPDATE orders o SET payment_status = \'expired\''));
+    assert.equal(targetExpire, undefined, 'must NOT mark target expired if attempt is not current pointer');
+  });
+
+  it('expireAttemptFromProviderTerminalState returns changed:false idempotently when attempt is already expired or non-active', async () => {
+    const repo = createPaymentAttemptsRepository({
+      transaction: async (runner) => runner({
+        query: async (sql) => {
+          if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'expired' }], 1];
+          }
+          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+            return [[{ id: 11, current_payment_attempt_id: 101 }], 1];
+          }
+          if (sql.includes('FROM payment_attempts') && sql.includes('FOR UPDATE')) {
+            return [[{ id: 101, status: 'expired' }], 1];
+          }
+          return [[], 1];
+        },
+      }),
+    });
+
+    const result = await repo.expireAttemptFromProviderTerminalState({ attemptId: 101, providerStatus: 'CANCELLED' });
+    assert.equal(result.changed, false);
+    assert.equal(result.attempt.status, 'expired');
+  });
 });

@@ -31,4 +31,14 @@ describe('preorder customer and operations contract', () => {
     expect(kitchen).toContain('Preorder sắp tới');
     expect(kitchen).toContain('chưa được bắt đầu/hoàn thành trước khi khách check-in');
   });
+
+  it('contracts customer check-in request and admin check-in confirmation/rejection flow', () => {
+    expect(preordersTab).toContain('/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in-request');
+    expect(preordersTab).toContain('Đã gửi yêu cầu check-in · Đang chờ Quản lý xác nhận');
+    expect(preordersTab).toContain('Check-in mở lúc');
+    expect(adminPreorders).toContain('/admin/preorders/${id}/check-in');
+    expect(adminPreorders).toContain('/check-in/reject');
+    expect(adminPreorders).toContain('Xác nhận check-in sau thời hạn T+30');
+    expect(adminPreorders).toContain('Từ chối yêu cầu check-in');
+  });
 });

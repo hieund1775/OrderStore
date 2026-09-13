@@ -61,4 +61,14 @@ describe("Order Access & Guest Token Headers", () => {
     expect(isSafePayOSCheckoutUrl("https://payos.vn.evil.example/steal")).toBe(false);
     expect(isSafePayOSCheckoutUrl("javascript:alert(1)")).toBe(false);
   });
+
+  it("returns isPayOSLinkActive false when payment_status is expired even if expires_at is in future", () => {
+    const now = 1750000000000;
+    expect(
+      isPayOSLinkActive({ payment_expires_at: new Date(now + 10000).toISOString(), payment_status: "expired" }, now),
+    ).toBe(false);
+    expect(
+      isPayOSLinkActive({ payment_expires_at: new Date(now + 10000).toISOString(), payment_status: "paid" }, now),
+    ).toBe(false);
+  });
 });

@@ -97,9 +97,20 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
   const canResumePayment = Boolean(
     isCustomerOwner
     && order.payment_provider === 'payos'
-    && order.payment_status === 'unpaid'
+    && (order.payment_status === 'unpaid' || order.payment_status === 'expired')
     && order.current_status !== 'Đã hủy'
     && order.current_status !== 'Hoàn thành'
+  );
+
+  const isAuthenticatedCustomerOwner = Boolean(
+    decodedToken?.role === 'customer' &&
+    Boolean(order.user_id) &&
+    Number(decodedToken.id || decodedToken.sub) === Number(order.user_id)
+  );
+
+  const canReview = Boolean(
+    isAuthenticatedCustomerOwner &&
+    (order.current_status === 'Hoàn thành' || order.status === 'Hoàn thành')
   );
 
   const rootCategoryId = order.root_category_id ? String(order.root_category_id) : null;
@@ -125,7 +136,7 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
         status: order.current_status || order.status || 'Đang chuẩn bị',
         payment_status: order.payment_status || 'unpaid',
         items: items.map((it) => ({
-          product_id: String(it.product_id || it.id || ''),
+          product_id: String(it.product_id != null ? it.product_id : ''),
           product_name: it.product_name || it.name || '',
           quantity: Number(it.quantity || it.qty || 1),
           unit_price: Number(it.unit_price || it.price || 0),
@@ -134,6 +145,13 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
       },
     ],
   };
+
+  const normalizedItems = items.map((it) => ({
+    ...it,
+    id: Number(it.id),
+    order_item_id: Number(it.order_item_id || it.id),
+    product_id: Number(it.product_id),
+  }));
 
   return {
     order_code: order.order_code,
@@ -154,6 +172,7 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     payment_checkout_url: canResumePayment
       ? (order.payment_checkout_url || null)
       : null,
+    can_review: canReview,
     created_at: order.created_at,
     current_status: order.current_status,
     shipping_driver_name: maskedDriverName,
@@ -162,7 +181,7 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
     root_category_id: rootCategoryId,
     root_category_name: rootCategoryName,
     payment_summary: paymentSummary,
-    items,
+    items: normalizedItems,
     status_history: history,
   };
 }

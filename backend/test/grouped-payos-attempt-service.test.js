@@ -196,4 +196,79 @@ describe('Grouped PayOS payment-attempt runtime', () => {
     assert.equal(calls.reserve.length, 0);
     assert.deepEqual(childOrders, [{ order_id: 801, allocated_total: 45000 }, { order_id: 802, allocated_total: 51000 }]);
   });
+
+  it('regenerateForCustomer reuses still-active group attempt if provider has not cancelled/expired it', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 805,
+    });
+    const activeAttempt = activeFrom(creating(805), {
+      provider_payment_link_id: 'group-link-active-805',
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'active', attempt: activeAttempt },
+      ],
+      loadedGroup: existingGroup,
+    });
+
+    service.attemptsRepository.findAttemptById = async () => activeAttempt;
+
+    const result = await service.regenerateForCustomer({
+      groupCode: 'GRP2609070071',
+      userId: 8,
+    });
+
+    assert.equal(result.payment_link_id, 'group-link-active-805');
+    assert.equal(calls.create.length, 0, 'must reuse active link without duplicating at PayOS');
+  });
+
+  it('regenerateForCustomer creates replacement attempt when current attempt is expired', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      payment_status: 'expired',
+      current_payment_attempt_id: 806,
+    });
+    const expiredAttempt = { ...creating(806), status: 'expired' };
+    const newAttempt = creating(807);
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+      ],
+      activate: async () => activeFrom(newAttempt),
+      loadedGroup: existingGroup,
+    });
+
+    service.attemptsRepository.findAttemptById = async () => expiredAttempt;
+
+    const result = await service.regenerateForCustomer({
+      groupCode: 'GRP2609070071',
+      userId: 8,
+    });
+
+    assert.equal(result.payos_order_code, 92345678901234);
+    assert.equal(calls.create.length, 1, 'must create replacement attempt when current attempt was expired');
+  });
+
+  it('regenerateForCustomer rejects unauthorized callers before reconciling', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      cancel_token_hashes: [],
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [],
+      loadedGroup: existingGroup,
+    });
+
+    await assert.rejects(
+      () => service.regenerateForCustomer({ groupCode: 'GRP2609070071', userId: 999 }),
+      (err) => err.status === 403,
+    );
+    assert.equal(calls.reserve.length, 0);
+  });
 });
