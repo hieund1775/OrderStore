@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import express from 'express';
 import { createPromotionsRepository, PromotionError } from '../repositories/postgres/promotions.js';
 import { createOrdersRepository } from '../repositories/postgres/orders.js';
 import { createCustomerOrderService } from '../services/orders/customer-order-service.js';
@@ -432,5 +434,242 @@ describe('Checkout Voucher Stability Suite', () => {
     assert.equal(ind1.total_amount, 48000);
     assert.equal(ind2.discount_amount, 8000);
     assert.equal(ind2.total_amount, 32000);
+  });
+
+  function makeHttpRequest(app, { method, path, headers = {}, body = null }) {
+    return new Promise((resolve, reject) => {
+      const server = http.createServer(app);
+      server.listen(0, '127.0.0.1', () => {
+        const { port } = server.address();
+        const payload = body ? JSON.stringify(body) : null;
+        const reqHeaders = { ...headers };
+        if (payload) {
+          reqHeaders['content-type'] = 'application/json';
+          reqHeaders['content-length'] = Buffer.byteLength(payload);
+        }
+        const req = http.request(
+          { hostname: '127.0.0.1', port, path, method, headers: reqHeaders },
+          (res) => {
+            let data = '';
+            res.on('data', (c) => (data += c));
+            res.on('end', () => {
+              server.close(() => {
+                let json = null;
+                try { json = JSON.parse(data); } catch {}
+                resolve({ status: res.statusCode, headers: res.headers, body: json, text: data });
+              });
+            });
+          }
+        );
+        req.on('error', (err) => server.close(() => reject(err)));
+        if (payload) req.write(payload);
+        req.end();
+      });
+    });
+  }
+
+  function createTestHttpApp(orderService) {
+    const app = express();
+    app.use(express.json());
+    app.post('/api/orders', async (req, res) => {
+      try {
+        const idempotencyKey = String(req.headers['idempotency-key'] || 'test-default-idemp');
+        const order = await orderService.create({
+          input: req.body,
+          userId: 1,
+          idempotencyKey,
+        });
+        res.status(order.replay ? 200 : 201).json(order);
+      } catch (err) {
+        res.status(orderErrorStatus(err)).json({
+          error: err.message,
+          code: err.code || 'ORDER_BUSINESS_RULE',
+        });
+      }
+    });
+    return app;
+  }
+
+  it('HTTP contract: expired voucher returns HTTP 400 with PROMOTION_NOT_FOUND without masking as 500', async () => {
+    const mockDb = createMockDatabase({
+      promotion: { ...basePromotionRow, end_date: '2020-01-01' },
+    });
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    const ordersRepo = createOrdersRepository(mockDb);
+    const service = createCustomerOrderService({
+      repository: ordersRepo,
+      promotionsRepo: promoRepo,
+      database: mockDb,
+      resolvePaymentProfile: async () => ({ isGrouped: false, profile: { id: 1, code: 'DEFAULT' } }),
+      checkPayOSConfigured: () => false,
+    });
+    const app = createTestHttpApp(service);
+
+    const res = await makeHttpRequest(app, {
+      method: 'POST',
+      path: '/api/orders',
+      headers: { 'idempotency-key': 'test-expired-key' },
+      body: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'COD',
+        customer_name: 'Test Customer',
+        customer_phone: '0901234567',
+        voucher_code: 'SALE20',
+        items: [{ product_id: 1, price: 60000, qty: 1 }],
+      },
+    });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'PROMOTION_NOT_FOUND');
+    assert.match(res.body.error, /hết hạn/i);
+    assert.notEqual(res.status, 500, 'Voucher error must never be masked as 500');
+  });
+
+  it('HTTP contract: single-use voucher already used returns HTTP 400 with PROMOTION_SINGLE_USE_EXHAUSTED', async () => {
+    const mockDb = createMockDatabase({
+      promotion: { ...basePromotionRow, voucher_type: 'single_use' },
+      usageHistory: ['1:0901234567'],
+    });
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    const ordersRepo = createOrdersRepository(mockDb);
+    const service = createCustomerOrderService({
+      repository: ordersRepo,
+      promotionsRepo: promoRepo,
+      database: mockDb,
+      resolvePaymentProfile: async () => ({ isGrouped: false, profile: { id: 1, code: 'DEFAULT' } }),
+      checkPayOSConfigured: () => false,
+    });
+    const app = createTestHttpApp(service);
+
+    const res = await makeHttpRequest(app, {
+      method: 'POST',
+      path: '/api/orders',
+      body: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'COD',
+        customer_name: 'Test Customer',
+        customer_phone: '0901234567',
+        voucher_code: 'SALE20',
+        items: [{ product_id: 1, price: 60000, qty: 1 }],
+      },
+    });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'PROMOTION_SINGLE_USE_EXHAUSTED');
+    assert.match(res.body.error, /đã được sử dụng cho số điện thoại/i);
+  });
+
+  it('HTTP contract: direct checkout with valid voucher returns 201 with applied discount', async () => {
+    const mockDb = createMockDatabase();
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    const ordersRepo = createOrdersRepository(mockDb);
+    const service = createCustomerOrderService({
+      repository: ordersRepo,
+      promotionsRepo: promoRepo,
+      database: mockDb,
+      resolvePaymentProfile: async () => ({ isGrouped: false, profile: { id: 1, code: 'DEFAULT' } }),
+      checkPayOSConfigured: () => false,
+    });
+    const app = createTestHttpApp(service);
+
+    const res = await makeHttpRequest(app, {
+      method: 'POST',
+      path: '/api/orders',
+      body: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'COD',
+        customer_name: 'Test Customer',
+        customer_phone: '0901234567',
+        voucher_code: 'SALE20',
+        items: [{ product_id: 1, price: 60000, qty: 1 }],
+      },
+    });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.discount_amount, 12000);
+    assert.equal(res.body.total, 48000);
+  });
+
+  it('HTTP contract: grouped checkout with voucher returns 201 with pro-rata discount allocation', async () => {
+    const mockDb = createMockDatabase();
+    const promoRepo = createPromotionsRepository(mockDb, { clock: () => new Date('2026-09-13T12:00:00Z') });
+    let createdChildOrderCount = 0;
+    const mockOrdersRepo = {
+      async createPublicOrder({ input }) {
+        createdChildOrderCount += 1;
+        const subtotal = input.items.reduce((s, it) => s + (it.price || 50000) * (it.qty || 1), 0);
+        const discount = Number(input.allocatedDiscount || 0);
+        return {
+          id: 100 + createdChildOrderCount,
+          order_code: `TP-CHILD-${createdChildOrderCount}`,
+          subtotal,
+          discount_amount: discount,
+          total: subtotal - discount,
+          status: 'Đang chuẩn bị',
+          payment_status: 'unpaid',
+        };
+      },
+    };
+    const mockCheckoutGroupsRepo = {
+      async createCheckoutGroup(data) {
+        return { id: 50, group_code: 'GRP-TEST-VOUCHER', ...data };
+      },
+    };
+
+    const service = createCustomerOrderService({
+      repository: mockOrdersRepo,
+      checkoutGroupsRepo: mockCheckoutGroupsRepo,
+      promotionsRepo: promoRepo,
+      database: mockDb,
+      resolvePaymentProfile: async () => ({
+        isGrouped: true,
+        profile: { id: 99, code: 'GROUP_CHECKOUT', status: 'active' },
+        rootGroups: [
+          {
+            rootCategoryId: 1,
+            rootCategoryName: 'Trà Trái Cây',
+            paymentProfile: { id: 1, code: 'PROFILE_A' },
+            items: [{ product_id: 1, price: 60000, qty: 1 }],
+          },
+          {
+            rootCategoryId: 2,
+            rootCategoryName: 'Cà Phê',
+            paymentProfile: { id: 2, code: 'PROFILE_B' },
+            items: [{ product_id: 2, price: 40000, qty: 1 }],
+          },
+        ],
+      }),
+      checkPayOSConfigured: () => false,
+    });
+    const app = createTestHttpApp(service);
+
+    const res = await makeHttpRequest(app, {
+      method: 'POST',
+      path: '/api/orders',
+      body: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'COD',
+        customer_name: 'Group Customer',
+        customer_phone: '0901234567',
+        voucher_code: 'SALE20',
+        items: [
+          { product_id: 1, price: 60000, qty: 1 },
+          { product_id: 2, price: 40000, qty: 1 },
+        ],
+      },
+    });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.is_grouped, true);
+    assert.equal(res.body.payment_summary.discount_amount, 20000);
+    assert.equal(res.body.payment_summary.total_amount, 80000);
   });
 });

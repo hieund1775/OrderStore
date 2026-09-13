@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { authenticate, signCustomerToken, signToken } from '../middleware/auth.js';
 import { requestOtpCode, verifyOtpCode } from '../services/otp-service.js';
-import { createStaffService } from '../services/staff/staff-service.js';
+import { createStaffService, AuthError } from '../services/staff/staff-service.js';
 import usersRepository from '../repositories/postgres/users.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
 import {
@@ -209,46 +209,84 @@ router.post('/google', async (req, res, next) => {
 });
 
 /**
+ * POST /api/auth/forgot-password/verify-phone
+ * Payload: { phone: string }
+ * Verifies registered phone and returns opaque recovery proof token (5m TTL)
+ */
+router.post('/forgot-password/verify-phone', async (req, res, next) => {
+  try {
+    const { phone } = req.body || {};
+    const clientIp = req.ip || req.headers['x-forwarded-for'];
+    const result = await staffService.forgotPasswordVerifyPhone(phone, { clientIp });
+    res.json({
+      verified: true,
+      recovery_token: result.recovery_token,
+      expires_in_seconds: result.expires_in_seconds,
+    });
+  } catch (err) {
+    if (err instanceof CustomerValidationError || err.code === 'PHONE_INVALID') {
+      return res.status(400).json({
+        error: err.message,
+        code: 'PHONE_INVALID',
+        message: err.message,
+      });
+    }
+    if (err instanceof AuthError) {
+      return res.status(err.status || 400).json({
+        error: err.message,
+        code: err.code || 'PHONE_RECOVERY_NOT_VERIFIED',
+        message: err.message,
+        ...(err.cooldown_seconds ? { cooldown_seconds: err.cooldown_seconds } : {}),
+      });
+    }
+    next(err);
+  }
+});
+
+/**
  * POST /api/auth/forgot-password/send-otp
- * Payload: { email: string }
- * Uses persistent HMAC OTP challenge
+ * Payload: { email: string, recovery_token: string }
+ * Verifies recovery token matches email and sends persistent HMAC OTP
  */
 router.post('/forgot-password/send-otp', async (req, res, next) => {
   try {
-    const { email } = req.body || {};
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return res.status(400).json({ error: 'Vui lòng cung cấp địa chỉ email hợp lệ' });
-    }
-
-    const result = await staffService.forgotPasswordSendOtp(email);
+    const { email, recovery_token } = req.body || {};
+    const result = await staffService.forgotPasswordSendOtp({ email, recovery_token });
     res.json(result);
   } catch (err) {
+    if (err instanceof AuthError) {
+      return res.status(err.status || 400).json({
+        error: err.message,
+        code: err.code || 'RECOVERY_IDENTITY_INVALID',
+        message: err.message,
+        ...(err.cooldown_seconds ? { cooldown_seconds: err.cooldown_seconds } : {}),
+      });
+    }
     next(err);
   }
 });
 
 /**
  * POST /api/auth/forgot-password/reset
- * Payload: { email: string, code: string, newPassword: string }
- * Uses persistent HMAC OTP challenge
+ * Payload: { email: string, code: string, newPassword: string, recovery_token: string }
+ * Validates recovery token, OTP, and resets password in single transaction
  */
 router.post('/forgot-password/reset', async (req, res, next) => {
   try {
-    const { email, code, newPassword } = req.body || {};
-    if (!email || !code || !newPassword) {
-      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin (email, mã OTP, mật khẩu mới)' });
-    }
-
-    const result = await staffService.forgotPasswordReset({ email, code, newPassword });
-    if (!result.valid) {
-      return res.status(400).json({ error: result.error || 'Mã OTP không chính xác' });
-    }
-
+    const { email, code, newPassword, recovery_token } = req.body || {};
+    const result = await staffService.forgotPasswordReset({ email, code, newPassword, recovery_token });
     res.json({
       success: true,
       message: result.message || 'Đặt lại mật khẩu thành công!',
     });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return res.status(err.status || 400).json({
+        error: err.message,
+        code: err.code || 'AUTH_RESET_INVALID',
+        message: err.message,
+      });
+    }
     next(err);
   }
 });

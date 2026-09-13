@@ -1,19 +1,37 @@
 import bcrypt from 'bcryptjs';
 import { createEmailService, createResendTransport } from '../email-service.js';
-import { authEmailChallengeRepository, generateSecureOtp, generateInviteToken, computeSecretHash, constantTimeEqual, normalizeEmail } from '../../repositories/postgres/auth-email-challenge.js';
+import {
+  authEmailChallengeRepository,
+  generateSecureOtp,
+  generateInviteToken,
+  generateRecoveryToken,
+  computeSecretHash,
+  constantTimeEqual,
+  normalizeEmail,
+} from '../../repositories/postgres/auth-email-challenge.js';
 import { usersRepository } from '../../repositories/postgres/users.js';
+import { authRateLimitRepository } from '../../repositories/postgres/auth-rate-limit.js';
 import { logAudit } from '../audit.js';
 import postgresDb from '../../config/db-postgres.js';
-import { normalizeAndValidateFullName } from '../../validation/customer-schemas.js';
+import { normalizeAndValidateFullName, normalizeAndValidatePhone } from '../../validation/customer-schemas.js';
 
 /**
  * Authorization errors
  */
 export class AuthError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = 400, code = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
+}
+
+/**
+ * Extract actor user ID from req.user
+ */
+export function extractActorId(user) {
+  if (!user) return null;
+  return Number(user.id || user.sub || 0);
 }
 
 const BCRYPT_COST = 12;
@@ -28,11 +46,11 @@ function normalizeStaffFullName(fullname) {
 }
 
 /**
- * Resolve email transport based on environment
+ * Determine if an email delivery transport is available
  */
 function resolveTransport() {
-  if (process.env.RESEND_API_KEY || (process.env.NODE_ENV === 'production' && process.env.EMAIL_PROVIDER === 'resend')) {
-    return createResendTransport();
+  if (process.env.RESEND_API_KEY) {
+    return createResendTransport(process.env.RESEND_API_KEY);
   }
   return null;
 }
@@ -43,10 +61,15 @@ function resolveTransport() {
 export function createStaffService({
   emailService = createEmailService({ transport: resolveTransport() }),
   challengeRepo = authEmailChallengeRepository,
+  rateLimitRepo,
   database = postgresDb,
   usersRepo = usersRepository,
   auditLogger = logAudit,
 } = {}) {
+  const actualRateLimitRepo = rateLimitRepo !== undefined
+    ? rateLimitRepo
+    : (database && database !== postgresDb ? null : authRateLimitRepository);
+
   /**
    * Build a reusable challenge service
    */
@@ -114,26 +137,26 @@ export function createStaffService({
 
         // Check expiry
         if (new Date(challenge.expires_at).getTime() <= Date.now()) {
-          await challengeRepo.revoke(challenge.id);
+          await challengeRepo.revoke(challenge.id, tx);
           return { valid: false, error: 'Mã xác thực đã hết hạn' };
         }
 
         // Check attempts
         if (challenge.attempts >= challenge.max_attempts) {
-          await challengeRepo.revoke(challenge.id);
+          await challengeRepo.revoke(challenge.id, tx);
           return { valid: false, error: 'Đã vượt quá số lần thử cho phép' };
         }
 
         // Verify HMAC
         const inputHash = computeSecretHash(inputCode);
         if (!constantTimeEqual(inputHash, challenge.secret_hash)) {
-          await challengeRepo.incrementAttempts(challenge.id);
+          await challengeRepo.incrementAttempts(challenge.id, tx);
           const remaining = challenge.max_attempts - challenge.attempts - 1;
           return { valid: false, error: `Mã xác thực không chính xác (còn ${remaining} lần thử)` };
         }
 
         // Consume
-        await challengeRepo.consume(challenge.id);
+        await challengeRepo.consume(challenge.id, tx);
         return { valid: true, challenge };
       });
     },
@@ -515,92 +538,253 @@ export function createStaffService({
     },
 
     /**
-     * Forgot password: send OTP
+     * Step 1: Verify registered phone and issue opaque recovery proof token
      */
-    async forgotPasswordSendOtp(email) {
-      const cleanEmail = normalizeEmail(email);
-      if (!cleanEmail || !cleanEmail.includes('@')) {
-        throw new AuthError('Email không hợp lệ', 400);
-      }
-
-      let user = await usersRepo.findActiveUserByEmail(cleanEmail);
-      if (!user) {
-        user = await usersRepo.findStaffByEmail(cleanEmail);
-      }
-
-      if (!user) {
-        return { success: true, message: 'Nếu email tồn tại, mã xác thực đã được gửi tới email của bạn.' };
-      }
-
+    async forgotPasswordVerifyPhone(phone, { clientIp } = {}) {
+      let cleanPhone;
       try {
-        const result = await challengeService.createAndSendOtp({
-          userId: user ? user.id : null,
-          email: cleanEmail,
-          purpose: 'PASSWORD_RESET',
-        });
-        return { ...result };
+        cleanPhone = normalizeAndValidatePhone(phone);
       } catch (err) {
-        console.error('Failed to send password reset OTP:', err?.name || 'EmailServiceError');
-        throw new AuthError('Không thể gửi mã xác thực, vui lòng thử lại sau', 503);
+        throw new AuthError(err.message || 'Số điện thoại không hợp lệ', 400, 'PHONE_INVALID');
       }
+
+      // Durable rate limiting per phone (max 5 requests per 15 mins, 60s cooldown between requests)
+      if (actualRateLimitRepo) {
+        await actualRateLimitRepo.checkAndIncrement({
+          key: `phone_verify:${cleanPhone}`,
+          maxAttempts: 5,
+          windowMs: 15 * 60 * 1000,
+          cooldownMs: 60 * 1000,
+        });
+
+        if (clientIp && typeof clientIp === 'string') {
+          await actualRateLimitRepo.checkAndIncrement({
+            key: `phone_verify_ip:${clientIp.trim()}`,
+            maxAttempts: 15,
+            windowMs: 15 * 60 * 1000,
+            cooldownMs: 2000,
+          });
+        }
+      }
+
+      const user = await usersRepo.findActiveUserByPhone(cleanPhone);
+      // Account must exist, be active, have a usable email, and have password set up (not a pending invitation)
+      if (!user || !user.is_active || !user.email || typeof user.email !== 'string' || !user.email.includes('@') || !user.password_hash) {
+        throw new AuthError('Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại số điện thoại.', 400, 'PHONE_RECOVERY_NOT_VERIFIED');
+      }
+
+      const recoveryToken = generateRecoveryToken();
+      const secretHash = computeSecretHash(recoveryToken);
+
+      await challengeRepo.createPhoneProofChallenge({
+        userId: user.id,
+        email: user.email,
+        secretHash,
+        ttlMinutes: 5,
+        maxAttempts: 5,
+      });
+
+      return {
+        verified: true,
+        recovery_token: recoveryToken,
+        expires_in_seconds: 300,
+      };
     },
 
     /**
-     * Forgot password: reset with OTP
+     * Step 2: Verify email against phone proof and send OTP
      */
-    async forgotPasswordReset({ email, code, newPassword }) {
+    async forgotPasswordSendOtp({ email, recovery_token } = {}) {
+      if (!recovery_token || typeof recovery_token !== 'string' || !recovery_token.trim()) {
+        throw new AuthError('Vui lòng xác minh số điện thoại trước.', 400, 'PHONE_VERIFICATION_REQUIRED');
+      }
+
+      const cleanRecoveryToken = recovery_token.trim();
+      let proofHash;
+      try {
+        proofHash = computeSecretHash(cleanRecoveryToken);
+      } catch {
+        throw new AuthError('Vui lòng xác minh số điện thoại trước.', 400, 'PHONE_VERIFICATION_REQUIRED');
+      }
+
+      const cleanEmailInput = normalizeEmail(email);
+
+      const { challenge, cleanEmail, code } = await database.transaction(async (tx) => {
+        const proof = await challengeRepo.findPhoneProofByHash(proofHash, tx);
+        if (!proof || proof.consumed_at || proof.revoked_at || new Date(proof.expires_at).getTime() <= Date.now()) {
+          throw new AuthError('Vui lòng xác minh số điện thoại trước.', 400, 'PHONE_VERIFICATION_REQUIRED');
+        }
+
+        if (proof.attempts >= proof.max_attempts) {
+          await challengeRepo.revoke(proof.id, tx);
+          throw new AuthError('Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại.', 400, 'RECOVERY_IDENTITY_INVALID');
+        }
+
+        if (!cleanEmailInput || !cleanEmailInput.includes('@') || cleanEmailInput !== normalizeEmail(proof.email)) {
+          const updatedAttempts = await challengeRepo.incrementAttempts(proof.id, tx);
+          if (updatedAttempts >= proof.max_attempts) {
+            await challengeRepo.revoke(proof.id, tx);
+          }
+          throw new AuthError('Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại.', 400, 'RECOVERY_IDENTITY_INVALID');
+        }
+
+        // Check 60-second cooldown on existing active PASSWORD_RESET challenge for this user
+        const latestOtp = await challengeRepo.findLatestActive(proof.user_id, cleanEmailInput, 'PASSWORD_RESET', tx);
+        if (latestOtp && latestOtp.sent_at) {
+          const elapsed = Date.now() - new Date(latestOtp.sent_at).getTime();
+          if (elapsed < 60_000) {
+            const waitSec = Math.ceil((60_000 - elapsed) / 1000);
+            const err = new AuthError(`Vui lòng chờ ${waitSec} giây trước khi yêu cầu mã mới`, 429, 'OTP_RESEND_COOLDOWN');
+            err.cooldown_seconds = waitSec;
+            throw err;
+          }
+        }
+
+        // Revoke prior active PASSWORD_RESET challenges before creating replacement
+        await challengeRepo.revokeActiveChallenges({ userId: proof.user_id, email: cleanEmailInput, purpose: 'PASSWORD_RESET' }, tx);
+
+        const code = generateSecureOtp();
+        const secretHash = computeSecretHash(code);
+
+        const challenge = await challengeRepo.createChallenge({
+          userId: proof.user_id,
+          email: cleanEmailInput,
+          purpose: 'PASSWORD_RESET',
+          secretHash,
+          maxAttempts: 5,
+          ttlMinutes: 10,
+        }, tx);
+
+        return { challenge, cleanEmail: cleanEmailInput, code };
+      });
+
+      // Send mail outside database transaction
+      try {
+        await emailService.sendPasswordResetOtp(cleanEmail, code);
+        await challengeRepo.markSent(challenge.id);
+      } catch (err) {
+        await challengeRepo.revoke(challenge.id);
+        throw new AuthError('Không thể gửi mã xác thực, vui lòng thử lại sau', 503, 'EMAIL_DELIVERY_UNAVAILABLE');
+      }
+
+      return {
+        success: true,
+        message: 'Mã xác thực đã được gửi tới email của bạn',
+        cooldown_seconds: 60,
+      };
+    },
+
+    /**
+     * Step 3: Reset password using OTP and recovery proof
+     */
+    async forgotPasswordReset({ email, code, newPassword, recovery_token } = {}) {
+      if (!recovery_token || typeof recovery_token !== 'string' || !recovery_token.trim()) {
+        throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+      }
+
       const cleanEmail = normalizeEmail(email);
-      if (!cleanEmail || !code || !newPassword) {
-        throw new AuthError('Vui lòng nhập đầy đủ thông tin', 400);
+      const inputCode = String(code || '').trim();
+      if (!cleanEmail || !cleanEmail.includes('@') || !inputCode || !newPassword) {
+        throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
       }
 
       if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
-        throw new AuthError('Mật khẩu mới phải có độ dài từ 8 đến 128 ký tự', 400);
+        throw new AuthError('Mật khẩu mới phải có độ dài từ 8 đến 128 ký tự', 400, 'PASSWORD_INVALID');
       }
 
-      let user = await usersRepo.findActiveUserByEmail(cleanEmail);
-      if (!user) {
-        user = await usersRepo.findStaffByEmail(cleanEmail);
+      let proofHash;
+      try {
+        proofHash = computeSecretHash(recovery_token.trim());
+      } catch {
+        throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
       }
 
-      // Verify OTP
-      const verifyResult = await challengeService.verifyOtp({
-        userId: user ? user.id : null,
-        email: cleanEmail,
-        purpose: 'PASSWORD_RESET',
-        code,
+      return database.transaction(async (tx) => {
+        // 1. Lock and validate phone proof
+        const proof = await challengeRepo.findPhoneProofByHash(proofHash, tx);
+        if (!proof || proof.consumed_at || proof.revoked_at || new Date(proof.expires_at).getTime() <= Date.now()) {
+          throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+        }
+
+        if (proof.attempts >= proof.max_attempts) {
+          await challengeRepo.revoke(proof.id, tx);
+          throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+        }
+
+        if (cleanEmail !== normalizeEmail(proof.email)) {
+          const updatedAttempts = await challengeRepo.incrementAttempts(proof.id, tx);
+          if (updatedAttempts >= proof.max_attempts) {
+            await challengeRepo.revoke(proof.id, tx);
+          }
+          throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+        }
+
+        // 2. Lock and validate OTP challenge
+        const otpChallenge = await challengeRepo.findLatestActive(proof.user_id, cleanEmail, 'PASSWORD_RESET', tx);
+        if (!otpChallenge || otpChallenge.attempts >= otpChallenge.max_attempts || new Date(otpChallenge.expires_at).getTime() <= Date.now()) {
+          throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+        }
+
+        const inputHash = computeSecretHash(inputCode);
+        if (!constantTimeEqual(inputHash, otpChallenge.secret_hash)) {
+          await challengeRepo.incrementAttempts(otpChallenge.id, tx);
+          throw new AuthError('Mã xác thực không hợp lệ hoặc đã hết hạn', 400, 'AUTH_RESET_INVALID');
+        }
+
+        // 3. Update user password, increment token_version, set email_verified_at
+        const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
+        const [updatedUserRows] = await tx.query(
+          `UPDATE users
+           SET password_hash = $2,
+               token_version = token_version + 1,
+               email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND is_active = TRUE
+           RETURNING id`,
+          [proof.user_id, passwordHash],
+        );
+
+        if (!updatedUserRows || updatedUserRows.length === 0) {
+          throw new AuthError('Tài khoản không hợp lệ hoặc đã bị khóa', 400, 'AUTH_RESET_INVALID');
+        }
+
+        // 4. Consume OTP challenge
+        await tx.query(
+          `UPDATE auth_email_challenges
+           SET consumed_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND consumed_at IS NULL`,
+          [otpChallenge.id],
+        );
+
+        // 5. Consume and revoke the phone proof
+        await tx.query(
+          `UPDATE auth_email_challenges
+           SET consumed_at = CURRENT_TIMESTAMP,
+               revoked_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND consumed_at IS NULL`,
+          [proof.id],
+        );
+
+        // 6. Revoke all remaining PASSWORD_RESET challenges for this user
+        await tx.query(
+          `UPDATE auth_email_challenges
+           SET revoked_at = CURRENT_TIMESTAMP
+           WHERE user_id = $1
+             AND purpose IN ('PASSWORD_RESET', 'PASSWORD_RESET_PHONE_PROOF')
+             AND consumed_at IS NULL
+             AND revoked_at IS NULL`,
+          [proof.user_id],
+        );
+
+        // 7. Audit log AUTH_PASSWORD_RESET_COMPLETED with empty metadata {}
+        await auditLogger(proof.user_id, 'AUTH_PASSWORD_RESET_COMPLETED', '{}');
+
+        return {
+          valid: true,
+          success: true,
+          message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.',
+        };
       });
-
-      if (!verifyResult.valid) {
-        return verifyResult;
-      }
-
-      // Update password and increment token version
-      const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
-      if (user) {
-        await database.transaction(async (tx) => {
-          await tx.query(
-            `UPDATE users
-             SET password_hash = $2, token_version = token_version + 1,
-                 email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1`,
-            [user.id, passwordHash],
-          );
-
-          // Revoke all other PASSWORD_RESET challenges for this user
-          await tx.query(
-            `UPDATE auth_email_challenges
-             SET revoked_at = CURRENT_TIMESTAMP
-             WHERE user_id = $1 AND purpose = 'PASSWORD_RESET' AND consumed_at IS NULL AND revoked_at IS NULL`,
-            [user.id],
-          );
-        });
-
-        // Audit
-        await auditLogger(user.id, 'AUTH_PASSWORD_RESET_COMPLETED', '{}');
-      }
-      return { valid: true, message: 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.' };
     },
 
     /**

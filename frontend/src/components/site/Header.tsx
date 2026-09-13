@@ -48,6 +48,7 @@ import { ForgotPasswordDialog } from '@/components/site/ForgotPasswordDialog';
 import { useBranch } from '@/lib/branch';
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
 import { toast } from 'sonner';
+import { explicitCustomerLogout } from '@/lib/auth-logout';
 import {
   apiPost,
   clearToken,
@@ -357,6 +358,7 @@ function NotificationButton() {
 
 function ProfileButton() {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Keep the first render identical between SSR and the browser. Reading
   // localStorage in a state initializer makes Render hydration disagree with
   // the server whenever a user already has a session.
@@ -506,7 +508,13 @@ function ProfileButton() {
   }
 
   function resetLogin() {
-    clearCustomerToken();
+    explicitCustomerLogout({
+      navigate: () => {
+        if (pathname?.startsWith('/ho-so')) {
+          void navigate({ to: '/' });
+        }
+      },
+    });
     setLoggedIn(false);
     setPhone('');
     setPassword('');

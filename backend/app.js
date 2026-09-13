@@ -29,7 +29,7 @@ export function createApp() {
   const trustProxySetting = normalizedTrustProxy === undefined || normalizedTrustProxy === ''
     ? 1
     : normalizedTrustProxy === 'true'
-      ? true
+      ? 1 // Render standard: bounded 1 proxy hop, never permissive boolean true
       : normalizedTrustProxy === 'false'
         ? false
         : (/^\d+$/.test(normalizedTrustProxy) ? Number(normalizedTrustProxy) : rawTrustProxy.trim());

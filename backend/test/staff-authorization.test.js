@@ -51,6 +51,37 @@ function createMockChallengeRepo() {
       if (c) c.sent_at = new Date();
       return c || null;
     },
+    async createPhoneProofChallenge({ userId, email, secretHash, ttlMinutes = 5, maxAttempts = 5, metadata }) {
+      const now = new Date();
+      for (const c of challenges) {
+        if (c.user_id === userId && ['PASSWORD_RESET_PHONE_PROOF', 'PASSWORD_RESET'].includes(c.purpose) && !c.consumed_at && !c.revoked_at) {
+          c.revoked_at = now;
+        }
+      }
+      const proof = {
+        id: nextId++,
+        user_id: userId || null,
+        email,
+        purpose: 'PASSWORD_RESET_PHONE_PROOF',
+        secret_hash: secretHash,
+        expires_at: new Date(now.getTime() + ttlMinutes * 60 * 1000),
+        attempts: 0,
+        max_attempts: maxAttempts,
+        sent_at: null,
+        consumed_at: null,
+        revoked_at: null,
+        created_at: now,
+        metadata: metadata || null,
+      };
+      challenges.push(proof);
+      return proof;
+    },
+    async findPhoneProofByHash(secretHash, tx) {
+      const proof = challenges
+        .filter(c => c.purpose === 'PASSWORD_RESET_PHONE_PROOF' && c.secret_hash === secretHash)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+      return proof || null;
+    },
     async findLatestActive(userId, email, purpose, tx) {
       // Find the latest non-consumed, non-revoked, non-expired, sent challenge
       const now = Date.now();
@@ -128,6 +159,9 @@ function createMockUsersRepo() {
     async findActiveUserByEmail(email) {
       const clean = (email || '').trim().toLowerCase();
       return users.find(u => u.email?.toLowerCase() === clean && u.is_active) || null;
+    },
+    async findActiveUserByPhone(phone) {
+      return users.find(u => u.phone === phone && u.is_active) || null;
     },
     async findActiveUserById(id) {
       return users.find(u => u.id === id && u.is_active) || null;
@@ -451,14 +485,20 @@ test('Staff Service Authorization Suite', async (t) => {
     assert.ok(fakeTransport.sentEmails.some((message) => message.to === 'manager@branch1.com'));
   });
 
-  await t.test('forgotPasswordSendOtp: returns generic success for non-existing email', async () => {
-    const result = await staffService.forgotPasswordSendOtp('nonexistent@test.com');
-    assert.ok(result.success);
-    assert.ok(result.message.includes('Nếu email'));
+  await t.test('forgotPasswordSendOtp: rejects when phone proof is missing', async () => {
+    await assert.rejects(
+      async () => staffService.forgotPasswordSendOtp({ email: 'super@teaplus.vn' }),
+      /Vui lòng xác minh số điện thoại trước/,
+    );
   });
 
-  await t.test('forgotPasswordSendOtp: returns success for existing email', async () => {
-    const result = await staffService.forgotPasswordSendOtp('super@teaplus.vn');
+  await t.test('forgotPasswordSendOtp: returns success when phone proof is verified for matching email', async () => {
+    const proofRes = await staffService.forgotPasswordVerifyPhone('0909000001');
+    const result = await staffService.forgotPasswordSendOtp({
+      email: 'super@teaplus.vn',
+      recovery_token: proofRes.recovery_token,
+    });
     assert.ok(result.success);
+    assert.equal(result.cooldown_seconds, 60);
   });
 });

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mail, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck, RefreshCw } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Phone, Mail, KeyRound, ArrowLeft, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,9 @@ export function ForgotPasswordDialog({
   onOpenChange,
   onBackToLogin,
 }: ForgotPasswordDialogProps) {
-  const [step, setStep] = useState<'email' | 'otp' | 'success'>('email');
+  const [step, setStep] = useState<'phone' | 'email' | 'otp' | 'success'>('phone');
+  const [phone, setPhone] = useState('');
+  const [recoveryToken, setRecoveryToken] = useState('');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -32,12 +34,36 @@ export function ForgotPasswordDialog({
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
-  const startCountdown = () => {
-    setCountdown(60);
-    const interval = setInterval(() => {
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearCountdown = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  // Clean up interval timer on unmount
+  useEffect(() => {
+    return () => {
+      clearCountdown();
+    };
+  }, []);
+
+  // Clean up timer when dialog is closed
+  useEffect(() => {
+    if (!open) {
+      clearCountdown();
+    }
+  }, [open]);
+
+  const startCountdown = (initialSeconds = 60) => {
+    clearCountdown();
+    setCountdown(initialSeconds);
+    intervalRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          clearCountdown();
           return 0;
         }
         return prev - 1;
@@ -45,55 +71,124 @@ export function ForgotPasswordDialog({
     }, 1000);
   };
 
+  const resetAllState = () => {
+    clearCountdown();
+    setStep('phone');
+    setPhone('');
+    setRecoveryToken('');
+    setEmail('');
+    setCode('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setCountdown(0);
+    setLoading(false);
+  };
+
+  const handleClose = () => {
+    clearCountdown();
+    onOpenChange(false);
+    setTimeout(() => {
+      resetAllState();
+    }, 200);
+  };
+
+  // Step 1: Verify registered phone
+  const handleVerifyPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = phone.trim();
+    if (!cleanPhone) {
+      toast.error('Vui lòng nhập số điện thoại');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await apiPost<{
+        verified: boolean;
+        recovery_token: string;
+        expires_in_seconds: number;
+      }>('/api/auth/forgot-password/verify-phone', { phone: cleanPhone });
+
+      if (res?.verified && res?.recovery_token) {
+        setRecoveryToken(res.recovery_token);
+        setStep('email');
+      } else {
+        toast.error('Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại số điện thoại.');
+      }
+    } catch (err: any) {
+      if (err?.cooldown_seconds) {
+        startCountdown(err.cooldown_seconds);
+      }
+      toast.error(err?.message || 'Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại số điện thoại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Verify email against phone proof and send OTP
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !email.includes('@')) {
+    if (!recoveryToken) {
+      toast.error('Vui lòng xác minh số điện thoại trước.');
+      setStep('phone');
+      return;
+    }
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       toast.error('Vui lòng nhập địa chỉ email hợp lệ');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await apiPost<{ success: boolean; message: string; demo_otp?: string }>(
+      const res = await apiPost<{ success: boolean; message: string; cooldown_seconds?: number }>(
         '/api/auth/forgot-password/send-otp',
-        { email: email.trim() },
+        { email: cleanEmail, recovery_token: recoveryToken },
       );
       toast.success(res.message);
-      if (res.demo_otp) {
-        toast.info(`[Demo / Staging] Mã OTP của bạn là: ${res.demo_otp}`);
-      }
       setStep('otp');
-      startCountdown();
+      startCountdown(res.cooldown_seconds || 60);
     } catch (err: any) {
-      toast.error(err?.message || 'Không tìm thấy tài khoản hoặc gửi mã thất bại');
+      if (err?.cooldown_seconds) {
+        startCountdown(err.cooldown_seconds);
+      }
+      toast.error(err?.message || 'Thông tin xác thực không hợp lệ. Vui lòng kiểm tra lại.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Resend OTP in Step 3
   const handleResendOtp = async () => {
-    if (countdown > 0) return;
+    if (countdown > 0 || !recoveryToken) return;
     setLoading(true);
     try {
-      const res = await apiPost<{ success: boolean; message: string; demo_otp?: string }>(
+      const res = await apiPost<{ success: boolean; message: string; cooldown_seconds?: number }>(
         '/api/auth/forgot-password/send-otp',
-        { email: email.trim() },
+        { email: email.trim(), recovery_token: recoveryToken },
       );
-      toast.success('Đã gửi lại mã OTP');
-      if (res.demo_otp) {
-        toast.info(`[Demo / Staging] Mã OTP của bạn là: ${res.demo_otp}`);
-      }
-      startCountdown();
+      toast.success(res.message || 'Đã gửi lại mã xác thực');
+      startCountdown(res.cooldown_seconds || 60);
     } catch (err: any) {
-      toast.error(err?.message || 'Không thể gửi lại mã OTP');
+      if (err?.cooldown_seconds) {
+        startCountdown(err.cooldown_seconds);
+      }
+      toast.error(err?.message || 'Không thể gửi lại mã xác thực');
     } finally {
       setLoading(false);
     }
   };
 
+  // Step 3: Reset password with OTP and recovery proof
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim()) {
+    if (!recoveryToken) {
+      toast.error('Vui lòng xác minh số điện thoại trước.');
+      setStep('phone');
+      return;
+    }
+    if (!code.trim() || code.trim().length !== 6) {
       toast.error('Vui lòng nhập mã OTP 6 số');
       return;
     }
@@ -114,27 +209,20 @@ export function ForgotPasswordDialog({
           email: email.trim(),
           code: code.trim(),
           newPassword,
+          recovery_token: recoveryToken,
         },
       );
       toast.success(res.message);
-      setStep('success');
-    } catch (err: any) {
-      toast.error(err?.message || 'Mã OTP không đúng hoặc đặt lại mật khẩu thất bại');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleClose = () => {
-    onOpenChange(false);
-    // Reset state after close
-    setTimeout(() => {
-      setStep('email');
-      setEmail('');
+      setRecoveryToken('');
       setCode('');
       setNewPassword('');
       setConfirmPassword('');
-    }, 200);
+      setStep('success');
+    } catch (err: any) {
+      toast.error(err?.message || 'Mã xác thực không hợp lệ hoặc đã hết hạn');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -142,24 +230,66 @@ export function ForgotPasswordDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display text-xl">
-            {step === 'email' && 'Quên Mật Khẩu'}
+            {step === 'phone' && 'Quên Mật Khẩu'}
+            {step === 'email' && 'Xác Minh Email'}
             {step === 'otp' && 'Xác Thực OTP & Đổi Mật Khẩu'}
             {step === 'success' && 'Thành Công'}
           </DialogTitle>
           <DialogDescription>
+            {step === 'phone' &&
+              'Nhập số điện thoại đăng ký tài khoản để bắt đầu quy trình khôi phục mật khẩu.'}
             {step === 'email' &&
-              'Nhập địa chỉ email liên kết với tài khoản của bạn để nhận mã xác thực OTP khôi phục mật khẩu.'}
+              'Nhập địa chỉ email liên kết với tài khoản của bạn để nhận mã xác thực OTP.'}
             {step === 'otp' &&
-              `Nhập mã OTP 6 số vừa được gửi tới email ${email} và thiết lập mật khẩu mới.`}
+              'Nhập mã OTP 6 số đã được gửi tới email của bạn và thiết lập mật khẩu mới.'}
             {step === 'success' &&
               'Mật khẩu của bạn đã được đặt lại thành công. Hãy đăng nhập với mật khẩu mới.'}
           </DialogDescription>
         </DialogHeader>
 
+        {step === 'phone' && (
+          <form onSubmit={handleVerifyPhone} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-phone">Số điện thoại đăng ký</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="forgot-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="0901234567"
+                  className="pl-9"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  handleClose();
+                  onBackToLogin();
+                }}
+              >
+                <ArrowLeft className="mr-2 size-4" /> Quay lại
+              </Button>
+              <Button type="submit" variant="hero" className="flex-1 font-bold" disabled={loading}>
+                {loading ? 'Đang kiểm tra…' : 'Tiếp tục'}
+              </Button>
+            </div>
+          </form>
+        )}
+
         {step === 'email' && (
           <form onSubmit={handleSendOtp} className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label htmlFor="forgot-email">Địa chỉ Email</Label>
+              <Label htmlFor="forgot-email">Địa chỉ Email tài khoản</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -181,11 +311,10 @@ export function ForgotPasswordDialog({
                 variant="outline"
                 className="flex-1"
                 onClick={() => {
-                  handleClose();
-                  onBackToLogin();
+                  resetAllState();
                 }}
               >
-                <ArrowLeft className="mr-2 size-4" /> Quay lại
+                <ArrowLeft className="mr-2 size-4" /> Đổi số điện thoại
               </Button>
               <Button type="submit" variant="hero" className="flex-1 font-bold" disabled={loading}>
                 {loading ? 'Đang gửi…' : 'Gửi mã xác thực'}
@@ -260,7 +389,12 @@ export function ForgotPasswordDialog({
                 type="button"
                 variant="outline"
                 className="flex-1"
-                onClick={() => setStep('email')}
+                onClick={() => {
+                  setCode('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setStep('email');
+                }}
               >
                 <ArrowLeft className="mr-2 size-4" /> Đổi Email
               </Button>
@@ -277,7 +411,7 @@ export function ForgotPasswordDialog({
               <CheckCircle2 className="size-8" />
             </div>
             <p className="text-sm text-muted-foreground">
-              Mật khẩu mới đã được cập nhật thành công cho tài khoản <b>{email}</b>.
+              Mật khẩu mới đã được cập nhật thành công.
             </p>
             <Button
               className="w-full font-bold"
