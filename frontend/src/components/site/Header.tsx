@@ -694,7 +694,7 @@ function ProfileButton() {
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/ho-so" search={{ tab: 'orders' }}>Đơn hàng của tôi</Link>
+          <Link to="/theo-doi-don">Đơn hàng của tôi</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/don-dat-truoc">Đơn đặt trước của tôi</Link>
@@ -847,8 +847,7 @@ export function Header() {
                 Hồ sơ cá nhân
               </Link>
               <Link
-                to="/ho-so"
-                search={{ tab: 'orders' }}
+                to="/theo-doi-don"
                 onClick={() => setMobileSheetOpen(false)}
                 className="hover:text-primary border-b py-3 text-sm font-medium"
               >

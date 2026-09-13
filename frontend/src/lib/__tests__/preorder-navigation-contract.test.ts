@@ -14,7 +14,8 @@ describe('preorder availability navigation contract', () => {
   });
 
   it('keeps normal order history and customer preorder tracking discoverable in both account menus', () => {
-    expect(header).toContain("search={{ tab: 'orders' }}");
+    expect(header.match(/to="\/theo-doi-don"/g)?.length).toBe(2);
+    expect(header).not.toContain("search={{ tab: 'orders' }}");
     expect(header).toContain('Đơn hàng của tôi');
     expect(header.match(/to="\/don-dat-truoc"/g)?.length).toBeGreaterThanOrEqual(2);
     expect(header).toContain('Đơn đặt trước của tôi');
