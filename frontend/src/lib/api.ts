@@ -93,10 +93,14 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 export class ApiError extends Error {
   status: number;
   data: unknown;
+  code?: string;
   constructor(status: number, message: string, data: unknown) {
     super(message);
     this.status = status;
     this.data = data;
+    this.code = typeof data === 'object' && data !== null && 'code' in data
+      ? String((data as { code?: unknown }).code || '') || undefined
+      : undefined;
   }
 }
 

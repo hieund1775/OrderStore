@@ -195,11 +195,13 @@ function Checkout() {
     if (checkoutStoreId != null) previousStoreIdRef.current = checkoutStoreId;
   }, [checkoutStoreId]);
 
-  const inFlightPaymentStatusRef = useRef<Promise<{ order?: { payment_status: string }; group?: { payment_status: string } }> | null>(null);
+  const inFlightPaymentStatusRef = useRef(new Map());
 
   const fetchPaymentStatus = useCallback(async (paymentCode: string) => {
-    if (inFlightPaymentStatusRef.current) {
-      return inFlightPaymentStatusRef.current;
+    const key = String(paymentCode || '').trim().toUpperCase();
+    const existing = inFlightPaymentStatusRef.current.get(key);
+    if (existing) {
+      return existing;
     }
     const promise = (async () => {
       try {
@@ -208,10 +210,10 @@ function Checkout() {
           { headers: getOrderRequestHeaders(paymentCode) }
         );
       } finally {
-        inFlightPaymentStatusRef.current = null;
+        inFlightPaymentStatusRef.current.delete(key);
       }
     })();
-    inFlightPaymentStatusRef.current = promise;
+    inFlightPaymentStatusRef.current.set(key, promise);
     return promise;
   }, []);
 

@@ -91,6 +91,11 @@ export function createEmailService({
      * Send a staff invitation email with accept link
      */
     async sendStaffInvitation(email, acceptToken, inviteeName) {
+      if (isProduction && !process.env.APP_PUBLIC_URL?.trim()) {
+        const error = new Error('APP_PUBLIC_URL is required for staff invitations');
+        error.status = 503;
+        throw error;
+      }
       const appUrl = process.env.APP_PUBLIC_URL || 'http://localhost:8080';
       const acceptUrl = `${appUrl}/chap-nhan-loi-moi?token=${acceptToken}`;
 
@@ -136,6 +141,9 @@ export function createResendTransport({ apiKey, fromEmail } = {}) {
     async sendMail({ to, subject, text, html }) {
       if (!key) {
         throw new Error('Resend API key is not configured. Set RESEND_API_KEY environment variable.');
+      }
+      if (!from) {
+        throw new Error('EMAIL_FROM is not configured. Set EMAIL_FROM environment variable.');
       }
 
       const response = await fetch('https://api.resend.com/emails', {

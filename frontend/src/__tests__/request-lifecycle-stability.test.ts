@@ -103,10 +103,10 @@ describe('Request lifecycle stability and single-flight containment', () => {
 
   describe('PayOS checkout polling deduplication in thanh-toan.tsx', () => {
     it('shares in-flight status requests between periodic polling and manual checkPaymentNow', () => {
-      expect(thanhToanSource).toContain('inFlightPaymentStatusRef = useRef<Promise<{ order?: { payment_status: string }; group?: { payment_status: string } }> | null>(null)');
-      expect(thanhToanSource).toContain('if (inFlightPaymentStatusRef.current)');
-      expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current = promise;');
-      expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current = null;');
+      expect(thanhToanSource).toContain('inFlightPaymentStatusRef = useRef(new Map());');
+      expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current.get(key)');
+      expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current.set(key, promise)');
+      expect(thanhToanSource).toContain('inFlightPaymentStatusRef.current.delete(key)');
     });
 
     it('clears applied voucher code and discount when checkout returns promotion rejection', () => {

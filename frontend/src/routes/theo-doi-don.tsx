@@ -176,6 +176,7 @@ function Tracking() {
   const [group, setGroup] = useState<LookupGroup | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [hasTrackedResource, setHasTrackedResource] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -294,12 +295,14 @@ function Tracking() {
           if (res.group) {
             setGroup(res.group);
             setOrder(null);
+            setHasTrackedResource(true);
             setError("");
             return { ok: true };
           }
           if (res.order) {
             setOrder(res.order);
             setGroup(null);
+            setHasTrackedResource(true);
             setError("");
             return { ok: true };
           }
@@ -313,6 +316,7 @@ function Tracking() {
           if (!silent) {
             setOrder(null);
             setGroup(null);
+            setHasTrackedResource(false);
           }
           const status = typeof err === "object" && err !== null && "status" in err
             ? Number((err as { status?: unknown }).status)
@@ -337,7 +341,7 @@ function Tracking() {
   }, [resolvedSearchCode, load]);
 
   // Smart Chained Timeout Polling real-time (mỗi 5 giây, dừng khi terminal state)
-  const currentTrackingCode = (group?.group_code || order?.order_code || resolvedSearchCode || "").trim().toUpperCase();
+  const currentTrackingCode = (group?.group_code || order?.order_code || (hasTrackedResource ? resolvedSearchCode : "")).trim().toUpperCase();
 
   useEffect(() => {
     if (!currentTrackingCode) return;

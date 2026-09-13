@@ -64,6 +64,32 @@ test('Email Authentication & Password Reset Service Suite', async (t) => {
     );
   });
 
+  await t.test('fails closed when production Resend sender is missing', async () => {
+    const { createResendTransport } = await import('../services/email-service.js');
+    const transport = createResendTransport({ apiKey: 'test-only-key', fromEmail: '' });
+    const service = createEmailService({ transport, isProduction: true });
+
+    await assert.rejects(
+      () => service.sendPasswordResetOtp('customer@example.com', '123456'),
+      /EMAIL_FROM|EMAIL_FROM environment variable/,
+    );
+  });
+
+  await t.test('fails closed when production invitation URL is missing', async () => {
+    const originalUrl = process.env.APP_PUBLIC_URL;
+    delete process.env.APP_PUBLIC_URL;
+    try {
+      const service = createEmailService({ transport: createFakeTransport(), isProduction: true });
+      await assert.rejects(
+        () => service.sendStaffInvitation('staff@example.com', 'invite-token-123', 'Staff'),
+        /APP_PUBLIC_URL is required/,
+      );
+    } finally {
+      if (originalUrl === undefined) delete process.env.APP_PUBLIC_URL;
+      else process.env.APP_PUBLIC_URL = originalUrl;
+    }
+  });
+
   await t.test('does not log secrets', async () => {
     const fakeTransport = createFakeTransport();
     const service = createEmailService({ transport: fakeTransport });

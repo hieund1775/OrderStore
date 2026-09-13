@@ -1,5 +1,12 @@
 import postgresDb from '../../config/db-postgres.js';
 import { AuthError } from '../../services/staff/staff-service.js';
+import crypto from 'node:crypto';
+
+function hashRateLimitKey(value) {
+  const pepper = process.env.EMAIL_TOKEN_PEPPER;
+  if (!pepper) throw new Error('EMAIL_TOKEN_PEPPER is required');
+  return crypto.createHmac('sha256', pepper).update(String(value)).digest('hex');
+}
 
 /**
  * Repository for persistent, durable rate limiting in PostgreSQL.
@@ -24,7 +31,7 @@ export function createAuthRateLimitRepository(database = postgresDb) {
     async checkAndIncrement({ key, maxAttempts = 5, windowMs = 15 * 60 * 1000, cooldownMs = 60 * 1000 }, tx) {
       const runner = tx ? (fn) => fn(tx) : (fn) => database.transaction(fn);
       return runner(async (trx) => {
-        const lockKey = `rate-limit:${key}`;
+        const lockKey = `rate-limit:${hashRateLimitKey(key)}`;
         await trx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
 
         const [rows] = await trx.query(
