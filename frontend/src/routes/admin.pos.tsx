@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiGet, apiPost, createIdempotencyKey } from "@/lib/api";
+import { apiGet, apiPost, createIdempotencyKey, getUser } from "@/lib/api";
 import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, products as mockProducts, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
@@ -61,6 +61,8 @@ type PosCartItem = {
 };
 
 function PosPage() {
+  const currentUser = getUser();
+  const canChooseStore = currentUser?.role === "super";
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [tables, setTables] = useState<TableData[]>([]);
@@ -87,7 +89,9 @@ function PosPage() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      apiGet<Store[]>("/api/stores"),
+      // This endpoint returns all branches only to Super. Manager/Cashier
+      // receive exactly their JWT-scoped branch from the server.
+      apiGet<Store[]>("/admin/branches"),
       apiGet<SizeOption[]>("/api/options/sizes"),
       apiGet<ToppingOption[]>("/api/options/toppings"),
       apiGet<ApiCatalogProduct[]>("/api/products"),
@@ -109,7 +113,7 @@ function PosPage() {
   useEffect(() => {
     if (!selectedStoreId) return;
     let cancelled = false;
-    apiGet<TableData[]>(`/api/tables?store_id=${selectedStoreId}`).then(res => {
+    apiGet<TableData[]>(`/admin/tables?store_id=${selectedStoreId}`).then(res => {
       if (!cancelled) {
         setTables(res);
         setSelectedTableId(null);
@@ -234,7 +238,7 @@ function PosPage() {
       orderRequestRef.current = { signature, key: idempotencyKey };
 
       const res = await apiPost<{ order_code: string; order_id: number; total: number; qr_code?: string; checkout_url?: string }>(
-        "/api/orders",
+        "/admin/pos/orders",
         payload,
         { headers: { "Idempotency-Key": idempotencyKey } },
       );
@@ -401,18 +405,24 @@ function PosPage() {
             POS Gọi Món
           </h1>
 
-          <Select value={String(selectedStoreId || "")} onValueChange={(v) => setSelectedStoreId(Number(v))}>
-            <SelectTrigger className="w-[180px] sm:w-[220px] h-9 sm:h-10 rounded-xl bg-muted/20 border-transparent hover:bg-muted/40 transition-colors font-medium text-xs sm:text-sm">
-              <SelectValue placeholder="Chọn chi nhánh" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              {stores.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {canChooseStore ? (
+            <Select value={String(selectedStoreId || "")} onValueChange={(v) => setSelectedStoreId(Number(v))}>
+              <SelectTrigger className="w-[180px] sm:w-[220px] h-9 sm:h-10 rounded-xl bg-muted/20 border-transparent hover:bg-muted/40 transition-colors font-medium text-xs sm:text-sm">
+                <SelectValue placeholder="Chọn chi nhánh" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {stores.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="secondary" className="h-9 sm:h-10 px-3 rounded-xl font-medium text-xs sm:text-sm">
+              {stores.find((store) => store.id === selectedStoreId)?.name || "Chi nhánh được phân công"}
+            </Badge>
+          )}
         </div>
 
         <div className="flex-1 overflow-x-auto whitespace-nowrap no-scrollbar pb-0.5 sm:pb-0">
