@@ -11,8 +11,8 @@ import {
 
 describe('Public DTO & Input Validation Policy (Production Module)', () => {
   it('validates allowed sources, order types, and payment methods strictly', () => {
-    assert.deepEqual(VALID_SOURCES, ['online', 'pos']);
-    assert.deepEqual(VALID_ORDER_TYPES, ['Delivery', 'Take-away', 'POS']);
+    assert.deepEqual(VALID_SOURCES, ['online', 'pos', 'table_qr']);
+    assert.deepEqual(VALID_ORDER_TYPES, ['Delivery', 'Take-away', 'POS', 'Dine-in']);
     assert.deepEqual(VALID_PAYMENT_METHODS, ['COD', 'VietQR', 'MoMo', 'ZaloPay']);
 
     // Rejections
