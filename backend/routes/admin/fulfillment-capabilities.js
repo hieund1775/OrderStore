@@ -17,7 +17,7 @@ export function createFulfillmentCapabilitiesRoutes({
       }
 
       // Every non-super operator is restricted to their assigned store.
-      if (req.user?.admin_role !== 'super' && Number(req.user?.admin_branch_id) !== storeId) {
+      if (req.user?.role !== 'super' && Number(req.user?.branch_id) !== storeId) {
         return res.status(403).json({ error: 'Bạn chỉ có quyền xem khả năng vận hành của chi nhánh mình' });
       }
 

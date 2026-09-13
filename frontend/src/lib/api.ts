@@ -36,6 +36,9 @@ export function setUser(u: { id: number; fullname: string; phone: string; role: 
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const inFlightMutations = new Map<string, Promise<unknown>>();
+// Only signal-less GETs are safe to share. Callers that own an AbortSignal
+// must retain independent cancellation semantics.
+const inFlightGets = new Map<string, Promise<unknown>>();
 
 function getMutationKey(path: string, method: string, body: BodyInit | null | undefined) {
   const normalizedPath = path.split('?')[0];
@@ -102,7 +105,19 @@ async function apiFetchCore<T>(path: string, options?: RequestInit): Promise<T> 
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const method = String(options?.method || 'GET').toUpperCase();
-  if (!MUTATION_METHODS.has(method)) return apiFetchCore<T>(path, options);
+  if (!MUTATION_METHODS.has(method)) {
+    if (method !== 'GET' || options?.signal) return apiFetchCore<T>(path, options);
+
+    const existing = inFlightGets.get(path);
+    if (existing) return existing as Promise<T>;
+
+    const request = apiFetchCore<T>(path, options);
+    inFlightGets.set(path, request);
+    request.finally(() => {
+      if (inFlightGets.get(path) === request) inFlightGets.delete(path);
+    }).catch(() => undefined);
+    return request;
+  }
 
   const key = getMutationKey(path, method, options?.body);
   const existing = inFlightMutations.get(key);

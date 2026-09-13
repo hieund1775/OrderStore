@@ -577,12 +577,14 @@ function PosPage() {
           <div className="flex gap-1.5 sm:gap-2 items-center">
             <Badge
               variant={selectedTableId === null ? "default" : "outline"}
-              className={`cursor-pointer px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
+              className={`${loadingSources.tables ? "cursor-wait opacity-60" : "cursor-pointer"} px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
                 selectedTableId === null
                   ? "bg-leaf hover:bg-leaf/90 shadow-glow text-primary-foreground border-transparent"
                   : "hover:bg-muted/50"
               }`}
-              onClick={() => setSelectedTableId(null)}
+              onClick={() => {
+                if (!loadingSources.tables) setSelectedTableId(null);
+              }}
             >
               Mang đi
             </Badge>
@@ -590,16 +592,19 @@ function PosPage() {
               <Badge
                 key={t.id}
                 variant={selectedTableId === t.id ? "default" : "outline"}
-                className={`cursor-pointer px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
+                className={`${loadingSources.tables ? "cursor-wait opacity-60" : "cursor-pointer"} px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
                   selectedTableId === t.id
                     ? "bg-primary hover:bg-primary/90 shadow-glow text-primary-foreground border-transparent"
                     : "hover:bg-muted/50"
                 }`}
-                onClick={() => setSelectedTableId(t.id)}
+                onClick={() => {
+                  if (!loadingSources.tables) setSelectedTableId(t.id);
+                }}
               >
                 {t.name}
               </Badge>
             ))}
+            {loadingSources.tables && <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Đang tải bàn" />}
             {bootstrapErrors.tables && (
               <div className="inline-flex items-center gap-1 text-xs text-destructive">
                 <span>⚠️ {bootstrapErrors.tables}</span>
