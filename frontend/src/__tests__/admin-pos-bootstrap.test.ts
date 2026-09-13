@@ -55,4 +55,13 @@ describe('Admin POS resilient bootstrap specification and contract', () => {
     expect(source).toContain('/admin/login');
     expect(source).toContain('403 Forbidden');
   });
+
+  it('declares every POS hook before the loading early return', () => {
+    const loadingReturn = source.indexOf('if (isInitialLoading)');
+    const mobileCartHook = source.indexOf('const [mobileCartOpen, setMobileCartOpen] = useState(false);');
+
+    expect(loadingReturn).toBeGreaterThan(-1);
+    expect(mobileCartHook).toBeGreaterThan(-1);
+    expect(mobileCartHook).toBeLessThan(loadingReturn);
+  });
 });

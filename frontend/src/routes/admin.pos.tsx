@@ -106,6 +106,7 @@ function PosPage() {
   // Dialog state
   const [editingItem, setEditingItem] = useState<PosCartItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [checkoutQr, setCheckoutQr] = useState<string | null>(null);
   const [qrOrderCode, setQrOrderCode] = useState<string | null>(null);
 
@@ -409,8 +410,6 @@ function PosPage() {
       </div>
     );
   }
-
-  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   const cartContent = (
     <div className="flex flex-1 flex-col h-full overflow-hidden">
