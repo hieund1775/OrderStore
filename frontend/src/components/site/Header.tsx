@@ -693,12 +693,6 @@ function ProfileButton() {
         <DropdownMenuItem asChild>
           <Link to="/ho-so">Hồ sơ cá nhân</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/theo-doi-don">Đơn hàng của tôi</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/don-dat-truoc">Đơn đặt trước của tôi</Link>
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={resetLogin}>Đăng xuất</DropdownMenuItem>
       </DropdownMenuContent>
@@ -845,20 +839,6 @@ export function Header() {
                 className="hover:text-primary border-b py-3 text-sm font-medium"
               >
                 Hồ sơ cá nhân
-              </Link>
-              <Link
-                to="/theo-doi-don"
-                onClick={() => setMobileSheetOpen(false)}
-                className="hover:text-primary border-b py-3 text-sm font-medium"
-              >
-                Đơn hàng của tôi
-              </Link>
-              <Link
-                to="/don-dat-truoc"
-                onClick={() => setMobileSheetOpen(false)}
-                className="hover:text-primary border-b py-3 text-sm font-medium"
-              >
-                Đơn đặt trước của tôi
               </Link>
             </nav>
             <div className="px-4 mt-auto pt-4">

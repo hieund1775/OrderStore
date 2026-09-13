@@ -13,12 +13,12 @@ describe('preorder availability navigation contract', () => {
     expect(header).toContain('onClick={() => setMobileSheetOpen(false)}');
   });
 
-  it('keeps normal order history and customer preorder tracking discoverable in both account menus', () => {
-    expect(header.match(/to="\/theo-doi-don"/g)?.length).toBe(2);
-    expect(header).not.toContain("search={{ tab: 'orders' }}");
-    expect(header).toContain('Đơn hàng của tôi');
-    expect(header.match(/to="\/don-dat-truoc"/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(header).toContain('Đơn đặt trước của tôi');
+  it('retains Profile only in account menus and removes separate order and preorder entries', () => {
+    expect(header).toContain('to="/ho-so"');
+    expect(header).toContain('Hồ sơ cá nhân');
+    expect(header).not.toContain('Đơn hàng của tôi');
+    expect(header).not.toContain('Đơn đặt trước của tôi');
+    expect(header).not.toContain('to="/don-dat-truoc"');
   });
 
   it('labels unavailable stores and prevents a 409 availability request while configuration loads', () => {

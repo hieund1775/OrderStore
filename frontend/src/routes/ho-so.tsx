@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3 } from "lucide-react";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
+import { CustomerPreordersTab } from "@/components/profile/CustomerPreordersTab";
 import { useCart } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
 import { apiGet, apiPost, setCustomerUser, getCustomerToken } from "@/lib/api";
@@ -32,7 +33,7 @@ import {
   type AppNotification,
 } from "@/lib/notifications";
 
-const PROFILE_TABS = new Set(["orders", "notifications", "wishlist", "info"]);
+const PROFILE_TABS = new Set(["orders", "preorders", "notifications", "wishlist", "info"]);
 
 const tiers = [
   { name: "Đồng", min: 0, color: "from-stone-400 to-stone-500" },
@@ -49,8 +50,9 @@ function getNextTier(points: number) {
 }
 
 export const Route = createFileRoute("/ho-so")({
-  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { tab?: string; code?: string } => ({
     tab: typeof search.tab === "string" && PROFILE_TABS.has(search.tab) ? search.tab : undefined,
+    code: typeof search.code === "string" && search.code.trim() ? search.code.trim() : undefined,
   }),
   head: () => ({
     meta: [
@@ -204,10 +206,25 @@ function Profile() {
   }, [isLoggedIn, user?.id]);
 
   useEffect(() => {
-    if (search?.tab) {
+    if (search?.tab && PROFILE_TABS.has(search.tab)) {
       setActiveTab(search.tab);
+    } else if (!search?.tab) {
+      setActiveTab('orders');
     }
   }, [search?.tab]);
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    void navigate({
+      to: "/ho-so",
+      search: (prev) => ({
+        ...prev,
+        tab: val === "orders" ? undefined : val,
+        code: val === "preorders" ? prev.code : undefined,
+      }),
+      replace: true,
+    });
+  };
 
   if (!isLoggedIn || !user) {
     return (
@@ -294,14 +311,19 @@ function Profile() {
           <div className="rounded-2xl border bg-card p-5 shadow-sm">
             <p className="font-semibold">Đơn đặt trước</p>
             <p className="mt-1 text-sm text-muted-foreground">Xem riêng lịch nhận món, trạng thái xác nhận và các món đã đặt.</p>
-            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
-              <Link to="/don-dat-truoc">Xem đơn đặt trước</Link>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 w-full"
+              onClick={() => handleTabChange('preorders')}
+            >
+              Xem đơn đặt trước
             </Button>
           </div>
         </aside>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-4 grid grid-cols-2 sm:grid-cols-4 h-auto p-1.5 gap-1.5 w-full bg-muted/80 rounded-2xl">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
+          <TabsList className="mb-4 grid grid-cols-2 sm:grid-cols-5 h-auto p-1.5 gap-1.5 w-full bg-muted/80 rounded-2xl [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
             <TabsTrigger
               value="orders"
               className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
@@ -310,6 +332,17 @@ function Profile() {
               <span className="truncate">
                 <span className="sm:hidden">Đơn hàng ({userOrders.length})</span>
                 <span className="hidden sm:inline">Lịch sử đơn ({userOrders.length})</span>
+              </span>
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="preorders"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs sm:text-sm font-medium rounded-xl data-[state=active]:bg-card data-[state=active]:shadow-sm transition-all"
+            >
+              <CalendarClock className="size-3.5 sm:size-4 shrink-0 text-primary" />
+              <span className="truncate">
+                <span className="sm:hidden">Đặt trước</span>
+                <span className="hidden sm:inline">Đơn đặt trước</span>
               </span>
             </TabsTrigger>
 
@@ -427,6 +460,13 @@ function Profile() {
                 </div>
               ))
             )}
+          </TabsContent>
+
+          <TabsContent value="preorders" className="space-y-4">
+            <CustomerPreordersTab
+              isActive={activeTab === 'preorders'}
+              highlightedCode={search?.code}
+            />
           </TabsContent>
 
           <TabsContent value="notifications" className="space-y-4">
