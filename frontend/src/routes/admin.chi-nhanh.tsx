@@ -168,7 +168,7 @@ function BranchCapabilities({ storeId, editable }: { storeId: number; editable: 
             <span className="flex-1 text-xs font-medium">{capability.display_name}</span>
             <Switch
               checked={capability.is_enabled}
-              disabled={!editable || updatingLane === capability.lane_code}
+              disabled={!editable || updatingLane !== null}
               onCheckedChange={() => toggleCapability(capability)}
               aria-label={`${capability.is_enabled ? "Tắt" : "Bật"} ${capability.display_name}`}
             />

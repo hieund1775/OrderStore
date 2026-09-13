@@ -147,6 +147,48 @@ describe('Request lifecycle stability and single-flight containment', () => {
     });
   });
 
+  describe('Generic GET single-flight guard', () => {
+    it('shares one identical in-flight GET request', async () => {
+      let networkCalls = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        networkCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }));
+
+      const [first, second] = await Promise.all([
+        apiModule.apiGet('/admin/branches/3/capabilities'),
+        apiModule.apiGet('/admin/branches/3/capabilities'),
+      ]);
+
+      expect(networkCalls).toBe(1);
+      expect(second).toEqual(first);
+      vi.unstubAllGlobals();
+    });
+
+    it('does not share caller-owned GET requests with an AbortSignal', async () => {
+      let networkCalls = 0;
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        networkCalls += 1;
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }));
+
+      await Promise.all([
+        apiModule.apiGet('/admin/tables?store_id=1', { signal: new AbortController().signal }),
+        apiModule.apiGet('/admin/tables?store_id=1', { signal: new AbortController().signal }),
+      ]);
+
+      expect(networkCalls).toBe(2);
+      vi.unstubAllGlobals();
+    });
+  });
+
   describe('Order tracking (theo-doi-don) single-flight & timer lifecycle', () => {
     it('contains in-flight deduplication map for lookup requests', () => {
       expect(theoDoiDonSource).toContain('inFlightLoadRef = useRef<Map<string, Promise<{ ok: boolean; status?: number }>>>(new Map())');
