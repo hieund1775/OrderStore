@@ -7,6 +7,25 @@ import preordersRepository from '../../repositories/postgres/preorders.js';
 import postgresDb from '../../config/db-postgres.js';
 import { getTodayBoundaries } from '../../services/business-time.js';
 
+const PAID_OPERATIONAL_STATUSES = Object.freeze([
+  'PENDING_MANAGER_CONFIRMATION',
+  'CONFIRMED',
+  'CHECKED_IN',
+  'COMPLETED',
+  'CUSTOMER_CANCELLED',
+  'NO_SHOW',
+  'PAYMENT_EXPIRED',
+  'LATE_PAID_REQUIRES_ACTION',
+]);
+
+const ARCHIVED_STATUSES = Object.freeze([
+  'COMPLETED',
+  'CUSTOMER_CANCELLED',
+  'NO_SHOW',
+  'PAYMENT_EXPIRED',
+  'LATE_PAID_REQUIRES_ACTION',
+]);
+
 function errorResponse(res, error) {
   return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
 }
@@ -22,10 +41,18 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
     const today = getTodayBoundaries();
-    const view = req.query.view;
+    const view = String(req.query.view || 'pending');
+    const statuses = view === 'pending'
+      ? ['PENDING_MANAGER_CONFIRMATION']
+      : view === 'confirmed'
+        ? ['CONFIRMED']
+        : view === 'checked-in'
+          ? ['CHECKED_IN']
+          : view === 'archive'
+            ? ARCHIVED_STATUSES
+            : PAID_OPERATIONAL_STATUSES;
     const rows = await repository.list({
-      storeId, status: req.query.status || null,
-      includePendingOnly: view === 'pending',
+      storeId, status: req.query.status || null, statuses,
       from: view === 'today' ? today.start : view === 'upcoming' ? today.end : null,
       to: view === 'today' ? today.end : null,
     });
@@ -33,8 +60,8 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
   } catch (error) { errorResponse(res, error); }
 }));
 
-// Kitchen receives only confirmed operational work; unpaid and merely paid
-// preorders remain invisible until a Manager/Super confirms them.
+// Kitchen may see a confirmed preorder in its dedicated upcoming queue, but
+// the normal KDS queue never receives its linked orders until check-in.
 router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);

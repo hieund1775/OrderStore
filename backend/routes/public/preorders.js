@@ -146,6 +146,16 @@ router.post('/checkout', authenticate, customerOnly, asyncHandler(async (req, re
   } catch (error) { sendCheckoutError(req, res, error); }
 }));
 
+// Keep customer preorder tracking distinct from normal order history. This
+// static route must be registered before `/:code` so `mine` is never treated
+// as a customer-controlled preorder code.
+router.get('/mine', authenticate, customerOnly, asyncHandler(async (req, res) => {
+  try {
+    const preorders = await preorderService.listForCustomer({ customerUserId: Number(req.user.sub || req.user.id) });
+    return res.json({ preorders });
+  } catch (error) { return sendError(res, error); }
+}));
+
 router.get('/:code', authenticate, customerOnly, asyncHandler(async (req, res) => {
   try {
     const preorder = await preorderService.getForCustomer({ preorderCode: req.params.code, customerUserId: Number(req.user.sub || req.user.id) });

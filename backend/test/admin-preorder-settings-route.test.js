@@ -97,3 +97,31 @@ test('Settings read model limits eligible Managers to active Managers of the sam
   assert.match(statement, /u\.is_active = TRUE/);
   assert.doesNotMatch(statement, /u\.email/);
 });
+
+test('operational preorder views never include awaiting-payment records', async () => {
+  let received = null;
+  const fixture = await start({ role: 'super', sub: 1 }, {
+    async list(input) { received = input; return []; },
+  });
+  try {
+    const response = await fetch(`${fixture.baseUrl}/admin/preorders?view=upcoming`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(received.statuses, [
+      'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED', 'CHECKED_IN', 'COMPLETED',
+      'CUSTOMER_CANCELLED', 'NO_SHOW', 'PAYMENT_EXPIRED', 'LATE_PAID_REQUIRES_ACTION',
+    ]);
+    assert.equal(received.statuses.includes('AWAITING_PAYMENT'), false);
+  } finally { await fixture.close(); }
+});
+
+test('kitchen preview is restricted to Manager-confirmed preorders', async () => {
+  let received = null;
+  const fixture = await start({ role: 'kitchen', sub: 9, branch_id: 2 }, {
+    async list(input) { received = input; return []; },
+  });
+  try {
+    const response = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed`);
+    assert.equal(response.status, 200);
+    assert.equal(received.status, 'CONFIRMED');
+  } finally { await fixture.close(); }
+});

@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const root = path.resolve(process.cwd(), 'src');
+const customerTracking = fs.readFileSync(path.join(root, 'routes/don-dat-truoc.tsx'), 'utf8');
+const checkout = fs.readFileSync(path.join(root, 'routes/dat-truoc.tsx'), 'utf8');
+const adminPreorders = fs.readFileSync(path.join(root, 'routes/admin.dat-truoc.tsx'), 'utf8');
+const kitchen = fs.readFileSync(path.join(root, 'routes/admin.bep.tsx'), 'utf8');
+
+describe('preorder customer and operations contract', () => {
+  it('keeps preorder tracking separate from normal order tracking and shows item snapshots', () => {
+    expect(checkout).toContain('return_url: `${window.location.origin}/don-dat-truoc`');
+    expect(customerTracking).toContain("createFileRoute('/don-dat-truoc')");
+    expect(customerTracking).toContain("apiGet<{ preorders: CustomerPreorder[] }>('/api/preorders/mine')");
+    expect(customerTracking).toContain('Món đã đặt');
+    expect(customerTracking).toContain('scheduled_start_at');
+  });
+
+  it('does not put unpaid preorders in the operational queue and makes configuration compact', () => {
+    expect(adminPreorders).toContain("'pending' | 'confirmed' | 'checked-in' | 'today' | 'upcoming' | 'archive'");
+    expect(adminPreorders).toContain('<details className="group rounded-xl border bg-card p-4">');
+    expect(adminPreorders).toContain('Tất cả chi nhánh');
+  });
+
+  it('shows confirmed preorders as a read-only kitchen preview instead of a KDS action card', () => {
+    expect(kitchen).toContain('/admin/preorders/kitchen/confirmed');
+    expect(kitchen).toContain('Preorder sắp tới');
+    expect(kitchen).toContain('chưa được bắt đầu/hoàn thành trước khi khách check-in');
+  });
+});

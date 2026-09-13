@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
 import { Route as DatTruocRouteImport } from './routes/dat-truoc'
+import { Route as DonDatTruocRouteImport } from './routes/don-dat-truoc'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
 import { Route as HoSoRouteImport } from './routes/ho-so'
 import { Route as MenuRouteImport } from './routes/menu'
@@ -57,6 +58,11 @@ const CuaHangRoute = CuaHangRouteImport.update({
 const DatTruocRoute = DatTruocRouteImport.update({
   id: '/dat-truoc',
   path: '/dat-truoc',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DonDatTruocRoute = DonDatTruocRouteImport.update({
+  id: '/don-dat-truoc',
+  path: '/don-dat-truoc',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GioiThieuRoute = GioiThieuRouteImport.update({
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cua-hang': typeof CuaHangRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
   '/menu': typeof MenuRoute
@@ -285,6 +294,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/cua-hang'
     | '/dat-truoc'
+    | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -315,6 +325,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cua-hang'
     | '/dat-truoc'
+    | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -346,6 +357,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/cua-hang'
     | '/dat-truoc'
+    | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
     | '/menu'
@@ -378,6 +390,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   CuaHangRoute: typeof CuaHangRoute
   DatTruocRoute: typeof DatTruocRoute
+  DonDatTruocRoute: typeof DonDatTruocRoute
   GioiThieuRoute: typeof GioiThieuRoute
   HoSoRoute: typeof HoSoRoute
   MenuRoute: typeof MenuRoute
@@ -416,6 +429,13 @@ declare module '@tanstack/react-router' {
       path: '/dat-truoc'
       fullPath: '/dat-truoc'
       preLoaderRoute: typeof DatTruocRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/don-dat-truoc': {
+      id: '/don-dat-truoc'
+      path: '/don-dat-truoc'
+      fullPath: '/don-dat-truoc'
+      preLoaderRoute: typeof DonDatTruocRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gioi-thieu': {
@@ -643,6 +663,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   CuaHangRoute: CuaHangRoute,
   DatTruocRoute: DatTruocRoute,
+  DonDatTruocRoute: DonDatTruocRoute,
   GioiThieuRoute: GioiThieuRoute,
   HoSoRoute: HoSoRoute,
   MenuRoute: MenuRoute,

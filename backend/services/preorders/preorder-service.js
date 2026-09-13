@@ -88,7 +88,7 @@ export function createPreorderService({
       type: 'order',
       title: 'Cáº­p nháº­t Ä‘Æ¡n Ä‘áº·t trÆ°á»›c',
       body: `Preorder ${preorder.preorder_code} cáº§n Ä‘Æ°á»£c theo dÃµi.`,
-      link: `/preorders/${preorder.preorder_code}`,
+      link: `/don-dat-truoc?code=${encodeURIComponent(preorder.preorder_code)}`,
     }, { tx });
     await repository.queueDelivery({ preorderId: preorder.id, eventType, recipientUserId: userId, channel: 'email' }, { tx });
   }
@@ -129,6 +129,10 @@ export function createPreorderService({
       const preorder = await repository.findForCustomer(preorderCode, customerUserId);
       if (!preorder) throw new PreorderError('KhÃ´ng tÃ¬m tháº¥y preorder', 404, 'PREORDER_NOT_FOUND');
       return preorder;
+    },
+
+    async listForCustomer({ customerUserId }) {
+      return repository.listForCustomer(customerUserId);
     },
 
     async availability({ storeId, date, now: currentNow = now() }) {
