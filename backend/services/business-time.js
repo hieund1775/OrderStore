@@ -253,14 +253,32 @@ export function buildVietnamPreorderSlot(dateStr, hour) {
   return { start, end, date: dateStr.trim(), hour: normalizedHour };
 }
 
-/** Validates the locked preorder lead/horizon rules against a real instant. */
-export function validateVietnamPreorderSlot({ date, hour, now = new Date() } = {}) {
+const DEFAULT_PREORDER_MIN_LEAD_HOURS = 3;
+
+/**
+ * Runtime-only operator setting. Invalid or omitted values deliberately keep
+ * the locked production default instead of silently opening preorder slots.
+ */
+export function getPreorderMinLeadHours(env = process.env) {
+  const raw = String(env?.PREORDER_MIN_LEAD_HOURS ?? '').trim();
+  if (!raw) return DEFAULT_PREORDER_MIN_LEAD_HOURS;
+  const hours = Number(raw);
+  return Number.isInteger(hours) && hours >= 0 && hours <= 168
+    ? hours
+    : DEFAULT_PREORDER_MIN_LEAD_HOURS;
+}
+
+/** Validates preorder lead/horizon rules against a real instant. */
+export function validateVietnamPreorderSlot({ date, hour, now = new Date(), minimumLeadHours = getPreorderMinLeadHours() } = {}) {
   const slot = buildVietnamPreorderSlot(date, hour);
   const nowDate = coerceDate(now);
   if (!nowDate) throw new TypeError('Invalid now instant for preorder validation');
   const leadMs = slot.start.getTime() - nowDate.getTime();
-  if (leadMs < 3 * 60 * 60 * 1000) {
-    const error = new Error('Thá»i gian Ä‘áº·t trÆ°á»›c cÃ²n dÆ°á»›i 3 giá», vui lÃ²ng sá»­ dá»¥ng Ä‘áº·t Ä‘Æ¡n thÃ´ng thÆ°á»ng');
+  const normalizedMinimumLeadHours = Number.isInteger(Number(minimumLeadHours)) && Number(minimumLeadHours) >= 0
+    ? Number(minimumLeadHours)
+    : DEFAULT_PREORDER_MIN_LEAD_HOURS;
+  if (leadMs < normalizedMinimumLeadHours * 60 * 60 * 1000) {
+    const error = new Error(`Thời gian đặt trước còn dưới ${normalizedMinimumLeadHours} giờ, vui lòng sử dụng đặt đơn thông thường`);
     error.status = 422;
     error.code = 'PREORDER_MIN_LEAD_TIME';
     throw error;

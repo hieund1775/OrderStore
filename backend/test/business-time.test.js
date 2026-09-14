@@ -8,6 +8,7 @@ import {
   parseVietnamSingleDateBoundary,
   parseVietnamDateRange,
   buildVietnamPreorderSlot,
+  getPreorderMinLeadHours,
   validateVietnamPreorderSlot,
 } from '../services/business-time.js';
 
@@ -137,5 +138,22 @@ describe('Vietnam Business Time Service', () => {
     assert.throws(() => validateVietnamPreorderSlot({ date: '2026-09-11', hour: 11, now }), (error) => error.code === 'PREORDER_MIN_LEAD_TIME');
     assert.equal(validateVietnamPreorderSlot({ date: '2026-09-18', hour: 9, now }).calendarDays, 7);
     assert.throws(() => validateVietnamPreorderSlot({ date: '2026-09-19', hour: 9, now }), (error) => error.code === 'PREORDER_MAX_HORIZON');
+  });
+
+  it('allows a temporary zero-hour preorder lead setting without weakening the default', () => {
+    const now = new Date('2026-09-11T02:00:00.000Z'); // 09:00 Vietnam
+
+    assert.equal(getPreorderMinLeadHours({}), 3);
+    assert.equal(getPreorderMinLeadHours({ PREORDER_MIN_LEAD_HOURS: '0' }), 0);
+    assert.equal(getPreorderMinLeadHours({ PREORDER_MIN_LEAD_HOURS: '-1' }), 3);
+    assert.equal(getPreorderMinLeadHours({ PREORDER_MIN_LEAD_HOURS: 'invalid' }), 3);
+    assert.equal(
+      validateVietnamPreorderSlot({ date: '2026-09-11', hour: 9, now, minimumLeadHours: 0 }).hour,
+      9,
+    );
+    assert.throws(
+      () => validateVietnamPreorderSlot({ date: '2026-09-11', hour: 9, now, minimumLeadHours: 3 }),
+      (error) => error.code === 'PREORDER_MIN_LEAD_TIME',
+    );
   });
 });
