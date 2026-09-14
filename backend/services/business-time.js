@@ -295,3 +295,78 @@ export function validateVietnamPreorderSlot({ date, hour, now = new Date(), mini
   }
   return { ...slot, calendarDays };
 }
+
+/**
+ * Evaluates whether customer self check-in is open for a preorder scheduled instant.
+ * Rule: same local calendar date in Asia/Ho_Chi_Minh, wall-clock time between 08:00 inclusive and 24:00 exclusive.
+ */
+export function evaluatePreorderCheckinWindow({ scheduledStartAt, now = new Date() } = {}) {
+  const scheduledDate = coerceDate(scheduledStartAt);
+  if (!scheduledDate) {
+    throw new TypeError('Invalid scheduledStartAt provided to evaluatePreorderCheckinWindow');
+  }
+  const nowDate = coerceDate(now);
+  if (!nowDate) {
+    throw new TypeError('Invalid now provided to evaluatePreorderCheckinWindow');
+  }
+
+  const scheduledDayStr = formatVietnamBusinessDate(scheduledDate);
+  const nowDayStr = formatVietnamBusinessDate(nowDate);
+
+  const nowBoundary = parseVietnamSingleDateBoundary(nowDayStr);
+  const scheduledBoundary = parseVietnamSingleDateBoundary(scheduledDayStr);
+
+  const scheduledMidnightMs = scheduledBoundary.startDate.getTime();
+  const nowMidnightMs = nowBoundary.startDate.getTime();
+
+  if (nowMidnightMs < scheduledMidnightMs) {
+    return {
+      isOpen: false,
+      reason: 'EARLY_DATE',
+      scheduledDate: scheduledDayStr,
+      currentDate: nowDayStr,
+    };
+  }
+
+  if (nowMidnightMs > scheduledMidnightMs) {
+    return {
+      isOpen: false,
+      reason: 'PAST_DATE',
+      scheduledDate: scheduledDayStr,
+      currentDate: nowDayStr,
+    };
+  }
+
+  const parts = getVietnamCalendarParts(nowDate);
+  if (parts.hour < 8) {
+    return {
+      isOpen: false,
+      reason: 'BEFORE_OPERATING_HOURS',
+      scheduledDate: scheduledDayStr,
+      currentDate: nowDayStr,
+      opensAtHour: 8,
+    };
+  }
+
+  return {
+    isOpen: true,
+    scheduledDate: scheduledDayStr,
+    currentDate: nowDayStr,
+  };
+}
+
+/**
+ * Checks whether customer self-cancellation is within the allowed window:
+ * through the end of the scheduled local calendar day (24:00) in Asia/Ho_Chi_Minh.
+ */
+export function isWithinPreorderCancellationWindow({ scheduledStartAt, now = new Date() } = {}) {
+  const scheduledDate = coerceDate(scheduledStartAt);
+  if (!scheduledDate) throw new TypeError('Invalid scheduledStartAt');
+  const nowDate = coerceDate(now);
+  if (!nowDate) throw new TypeError('Invalid now');
+
+  const scheduledDayStr = formatVietnamBusinessDate(scheduledDate);
+  const scheduledBoundary = parseVietnamSingleDateBoundary(scheduledDayStr);
+
+  return nowDate.getTime() < scheduledBoundary.endDate.getTime();
+}

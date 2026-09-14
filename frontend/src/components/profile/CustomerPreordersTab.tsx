@@ -69,17 +69,17 @@ export const statusPresentation: Record<string, { label: string; tone: string; d
   CONFIRMED: {
     label: 'Đã xác nhận · chờ check-in',
     tone: 'bg-violet-100 text-violet-800',
-    description: 'Hãy đến cửa hàng trong cửa sổ check-in của khung giờ đã đặt.',
+    description: 'Hãy tự check-in trên ứng dụng khi quý khách đến cửa hàng (08:00–24:00 trong ngày hẹn).',
   },
   CHECKED_IN: {
-    label: 'Đã check-in · quán đang xử lý',
+    label: 'Đã check-in · chờ nhận món',
     tone: 'bg-emerald-100 text-emerald-800',
-    description: 'Đơn đã được mở cho Bếp xử lý.',
+    description: 'Quý khách đã check-in tại quán. Cửa hàng sẽ bàn giao món.',
   },
   COMPLETED: {
-    label: 'Hoàn thành',
+    label: 'Đã nhận hàng thành công',
     tone: 'bg-emerald-100 text-emerald-800',
-    description: 'Cảm ơn bạn đã sử dụng dịch vụ.',
+    description: 'Cảm ơn bạn đã sử dụng dịch vụ đặt trước.',
   },
   CUSTOMER_CANCELLED: {
     label: 'Đã hủy',
@@ -87,9 +87,9 @@ export const statusPresentation: Record<string, { label: string; tone: string; d
     description: 'Lịch sử thanh toán vẫn được lưu; hệ thống không tự hoàn tiền.',
   },
   NO_SHOW: {
-    label: 'Không đến nhận',
+    label: 'Đã hủy do khách không đến',
     tone: 'bg-rose-100 text-rose-800',
-    description: 'Đã quá thời hạn check-in cho khung giờ này.',
+    description: 'Đơn đã tự động đóng lúc 24:00 do quý khách không đến check-in.',
   },
   PAYMENT_EXPIRED: {
     label: 'Thanh toán đã hết hạn',
@@ -114,6 +114,27 @@ export function getStatusPresentation(status?: string | null) {
     return defaultStatusPresentation;
   }
   return statusPresentation[status];
+}
+
+export function getPreorderOperationalBadge(preorder: CustomerPreorder): { label: string; tone: string } {
+  if (preorder.status === 'CONFIRMED') {
+    const allOrdersDone = preorder.orders.length > 0 && preorder.orders.every((o) => o.current_status === 'Hoàn thành');
+    if (allOrdersDone) {
+      return { label: 'Sẵn sàng giao', tone: 'bg-teal-100 text-teal-800' };
+    }
+    return { label: 'Đang chuẩn bị', tone: 'bg-amber-100 text-amber-800' };
+  }
+  if (preorder.status === 'CHECKED_IN') {
+    const allOrdersDone = preorder.orders.length > 0 && preorder.orders.every((o) => o.current_status === 'Hoàn thành');
+    if (allOrdersDone) {
+      return { label: 'Chờ cửa hàng xác nhận giao', tone: 'bg-blue-100 text-blue-800' };
+    }
+    return { label: 'Đang chuẩn bị', tone: 'bg-amber-100 text-amber-800' };
+  }
+  if (preorder.status === 'COMPLETED') {
+    return { label: 'Đã nhận hàng thành công', tone: 'bg-emerald-100 text-emerald-800' };
+  }
+  return getStatusPresentation(preorder.status);
 }
 
 export function formatSlot(startAt?: string | null, endAt?: string | null): string {
@@ -163,33 +184,70 @@ export function formatSlot(startAt?: string | null, endAt?: string | null): stri
 }
 
 export function canCancel(preorder: CustomerPreorder): boolean {
-  if (preorder.checkin_request) {
+  if (preorder.status === 'CHECKED_IN' || preorder.status === 'COMPLETED' || preorder.status === 'CUSTOMER_CANCELLED' || preorder.status === 'NO_SHOW') {
     return false;
   }
   if (!['AWAITING_PAYMENT', 'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status)) {
     return false;
   }
-  const startTime = new Date(preorder.scheduled_start_at).getTime();
-  if (isNaN(startTime)) return false;
-  return startTime > Date.now();
+  const start = new Date(preorder.scheduled_start_at);
+  if (isNaN(start.getTime())) return false;
+  const scheduledDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(start);
+  const nowDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  return nowDateStr <= scheduledDateStr;
 }
 
 export function getCheckinWindowStatus(preorder: CustomerPreorder, nowMs = Date.now()): {
   canRequest: boolean;
+  canCheckIn: boolean;
   isEarly: boolean;
   isExpired: boolean;
   windowStart: Date;
   windowEnd: Date;
+  reason?: string;
 } {
-  const startTime = new Date(preorder.scheduled_start_at).getTime();
-  const windowStart = new Date(startTime - 30 * 60_000);
-  const windowEnd = new Date(startTime + 30 * 60_000);
-  const isEarly = nowMs < windowStart.getTime();
-  const isExpired = nowMs > windowEnd.getTime();
-  const validStatus = ['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status);
-  const hasActiveRequest = preorder.checkin_request?.status === 'PENDING' || preorder.checkin_request?.status === 'CONFIRMED';
-  const canRequest = validStatus && !hasActiveRequest && !isEarly && !isExpired;
-  return { canRequest, isEarly, isExpired, windowStart, windowEnd };
+  const start = new Date(preorder.scheduled_start_at);
+  const startTime = isNaN(start.getTime()) ? nowMs : start.getTime();
+  const scheduledDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(startTime));
+  const nowDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(nowMs));
+  const nowParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour12: false,
+    hour: 'numeric',
+  }).formatToParts(new Date(nowMs));
+  const currentHour = Number(nowParts.find((p) => p.type === 'hour')?.value || 0);
+
+  const isEarlyDate = nowDateStr < scheduledDateStr;
+  const isPastDate = nowDateStr > scheduledDateStr;
+  const isSameDate = nowDateStr === scheduledDateStr;
+  const isBeforeOperatingHours = isSameDate && currentHour < 8;
+
+  const isEarly = isEarlyDate || isBeforeOperatingHours;
+  const isExpired = isPastDate;
+
+  const validStatus = preorder.status === 'CONFIRMED';
+  const canCheckIn = validStatus && isSameDate && currentHour >= 8;
+  const canRequest = canCheckIn;
+
+  const [y, m, d] = scheduledDateStr.split('-').map(Number);
+  const windowStart = new Date(Date.UTC(y, m - 1, d, 1, 0, 0)); // 08:00 VN = 01:00 UTC
+  const windowEnd = new Date(Date.UTC(y, m - 1, d, 17, 0, 0)); // 24:00 VN = 17:00 UTC
+
+  let reason = '';
+  if (!validStatus) {
+    if (preorder.status === 'CHECKED_IN') reason = 'Đã check-in thành công';
+    else if (preorder.status === 'COMPLETED') reason = 'Đơn đã hoàn thành';
+    else if (preorder.status === 'PENDING_MANAGER_CONFIRMATION') reason = 'Chờ cửa hàng xác nhận';
+    else reason = 'Chưa thể check-in';
+  } else if (isEarlyDate) {
+    reason = `Chưa đến ngày nhận (${scheduledDateStr.split('-').reverse().join('/')})`;
+  } else if (isPastDate) {
+    reason = 'Đã quá ngày nhận';
+  } else if (isBeforeOperatingHours) {
+    reason = 'Check-in mở từ 08:00 đến 24:00';
+  }
+
+  return { canRequest, canCheckIn, isEarly, isExpired, windowStart, windowEnd, reason };
 }
 
 export function normalizeCustomerPreorder(raw: any): CustomerPreorder | null {
@@ -345,19 +403,21 @@ export function CustomerPreordersTab({
 
   const activeHighlightedCode = useMemo(() => highlightedCode?.trim() || null, [highlightedCode]);
 
-  async function handleCheckinRequest(preorder: CustomerPreorder) {
+  async function handleCheckin(preorder: CustomerPreorder) {
     if (requestingCheckin !== null) return;
     setRequestingCheckin(preorder.id);
     try {
-      await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in-request`, {});
-      toast.success('Đã gửi yêu cầu check-in! Quán sẽ xác nhận trong giây lát.');
+      await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in`, {});
+      toast.success('Check-in thành công! Quý khách vui lòng chờ nhân viên bàn giao món.');
       await load();
     } catch (err: any) {
-      toast.error(err instanceof Error ? err.message : 'Không thể gửi yêu cầu check-in.');
+      toast.error(err instanceof Error ? err.message : 'Không thể thực hiện check-in.');
     } finally {
       setRequestingCheckin(null);
     }
   }
+
+  const handleCheckinRequest = handleCheckin;
 
   async function handleCancel(preorder: CustomerPreorder) {
     if (cancelling !== null) return;
@@ -445,6 +505,7 @@ export function CustomerPreordersTab({
 
       {rows.map((preorder) => {
         const presentation = getStatusPresentation(preorder.status);
+        const opBadge = getPreorderOperationalBadge(preorder);
         const isHighlighted = activeHighlightedCode === preorder.preorder_code;
         const totalItemsCount = preorder.orders.reduce(
           (sum, order) => sum + (Array.isArray(order.items) ? order.items.length : 0),
@@ -467,7 +528,7 @@ export function CustomerPreordersTab({
                   {preorder.store_name}
                 </p>
               </div>
-              <Badge className={presentation.tone}>{presentation.label}</Badge>
+              <Badge className={opBadge.tone}>{opBadge.label}</Badge>
             </div>
 
             <div className="mt-4 grid gap-3 rounded-xl bg-muted/45 p-3 sm:grid-cols-2">
@@ -481,10 +542,10 @@ export function CustomerPreordersTab({
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Bàn
+                  Hình thức phục vụ
                 </p>
                 <p className="mt-1 font-medium text-sm">
-                  {preorder.table_name || 'Cửa hàng sẽ sắp xếp bàn'}
+                  Nhận tại cửa hàng (Store Pickup)
                 </p>
               </div>
             </div>
@@ -566,50 +627,52 @@ export function CustomerPreordersTab({
             </details>
 
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-              {['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status) && preorder.status !== 'CHECKED_IN' && preorder.status !== 'COMPLETED' ? (
-                <>
-                  {preorder.checkin_request?.status === 'PENDING' ? (
-                    <Button variant="secondary" size="sm" disabled>
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Đã yêu cầu check-in
-                    </Button>
-                  ) : (
-                    (() => {
-                      const { canRequest, isEarly, windowStart } = getCheckinWindowStatus(preorder);
-                      if (canRequest) {
-                        return (
-                          <Button
-                            size="sm"
-                            disabled={requestingCheckin === preorder.id}
-                            onClick={() => void handleCheckinRequest(preorder)}
-                            className="bg-primary text-primary-foreground font-semibold"
-                          >
-                            {requestingCheckin === preorder.id ? (
-                              <Loader2 className="mr-2 size-4 animate-spin" />
-                            ) : (
-                              <CalendarClock className="mr-2 size-4" />
-                            )}
-                            {requestingCheckin === preorder.id ? 'Đang gửi…' : 'Check-in'}
-                          </Button>
-                        );
-                      }
-                      if (isEarly) {
-                        const timeStr = new Intl.DateTimeFormat('vi-VN', {
-                          timeZone: 'Asia/Ho_Chi_Minh',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false,
-                        }).format(windowStart);
-                        return (
-                          <span className="text-xs text-muted-foreground">
-                            Check-in mở lúc {timeStr}
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()
-                  )}
-                </>
+              {preorder.status === 'CONFIRMED' ? (
+                (() => {
+                  const { canCheckIn, isEarly, isExpired, reason } = getCheckinWindowStatus(preorder);
+                  if (canCheckIn) {
+                    return (
+                      <Button
+                        size="sm"
+                        disabled={requestingCheckin === preorder.id}
+                        onClick={() => void handleCheckin(preorder)}
+                        className="bg-primary text-primary-foreground font-semibold"
+                      >
+                        {requestingCheckin === preorder.id ? (
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <CalendarClock className="mr-2 size-4" />
+                        )}
+                        {requestingCheckin === preorder.id ? 'Đang check-in…' : 'Check-in tại quán'}
+                      </Button>
+                    );
+                  }
+                  return (
+                    <span className="text-xs text-muted-foreground italic">
+                      {reason || (isEarly ? 'Chưa đến giờ check-in (từ 08:00)' : isExpired ? 'Đã hết hạn check-in' : 'Chưa mở check-in')}
+                    </span>
+                  );
+                })()
+              ) : null}
+
+              {preorder.status === 'CHECKED_IN' ? (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
+                  <span className="inline-block size-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Đã check-in thành công · Chờ cửa hàng bàn giao món
+                </div>
+              ) : null}
+
+              {preorder.status === 'COMPLETED' ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  asChild
+                  className="border-primary text-primary hover:bg-primary/10"
+                >
+                  <Link to="/ho-so" search={{ tab: 'orders' }}>
+                    Đánh giá món
+                  </Link>
+                </Button>
               ) : null}
 
               {canCancel(preorder) ? (

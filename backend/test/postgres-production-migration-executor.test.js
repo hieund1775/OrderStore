@@ -576,6 +576,76 @@ describe('PostgreSQL production migration guard', () => {
     );
   });
 
+  it('plans only 0034 after all finalized prerequisites through 0033', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0034' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0034')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0034'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+    });
+    assert.deepEqual(result.pendingVersions, ['0034']);
+    assert.equal(result.preflight.filename, '0034_preorder_store_checkin_handover_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
+  });
+
+  it('keeps 0034 migration additive and preflight read-only', async () => {
+    const currentFile = fileURLToPath(import.meta.url);
+    const migration = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'migrations', '0034_preorder_store_checkin_handover.sql'), 'utf8');
+    const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0034_preorder_store_checkin_handover_preflight_readonly.sql'), 'utf8');
+    assert.match(migration, /handover_confirmed_at/);
+    assert.match(migration, /handover_confirmed_by/);
+    assert.match(migration, /handover_overdue_at/);
+    const migrationSql = migration.replace(/--.*$/gm, '');
+    assert.doesNotMatch(migrationSql, /^\s*(?:TRUNCATE|DELETE)\b/im);
+    assert.match(preflight, /^\s*--[\s\S]*WITH checks AS/m);
+    assert.equal(hasExecutableMutationStatement(preflight), false);
+  });
+
+  it('fails closed for 0034 before preflight when 0033 is absent or checksum-mismatched', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0034' });
+    const without0033 = migrations.throughTarget
+      .filter((migration) => !['0033', '0034'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const missing = createFakePool({ appliedRows: without0033 });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0034'], env: approvedEnvironment, pool: missing.pool, logger: captureLogger().logger }),
+      /target 0034 requires tracked migration 0033/,
+    );
+
+    const mismatchRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0034')
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0033' ? 'bad-checksum' : migration.checksum }));
+    const mismatch = createFakePool({ appliedRows: mismatchRows });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0034'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
+      /checksum mismatch for migration 0033/,
+    );
+  });
+
+  it('applies only 0034 under the advisory lock after 0034 preflight passes (isolated rehearsal)', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0034' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0034')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const captured = captureLogger();
+
+    const result = await runProductionMigrationExecutor({
+      args: ['--apply', '--to=0034'], env: approvedEnvironment, pool: fake.pool, logger: captured.logger,
+    });
+
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].version, '0034');
+    assert.equal(fake.calls.some((call) => call.sql.includes('pg_advisory_lock')), true);
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), true);
+    assert.equal(fake.calls.some((call) => call.sql.includes('handover_confirmed_at')), true);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), true);
+    assert.match(captured.logs.join('\n'), /0034 read-only preflight passed/);
+  });
+
   it('plans only 0027 after a tracked/checksummed 0026 and gates it with the enforcement preflight', async () => {
     const migrations = await readProductionMigrationFiles({ toVersion: '0027' });
     const appliedRows = migrations.throughTarget

@@ -5,11 +5,17 @@ import fulfillmentService from '../orders/fulfillment-service.js';
 import notificationsRepository from '../../repositories/postgres/notifications.js';
 import usersRepository from '../../repositories/postgres/users.js';
 import emailService from '../email-service.js';
-import { validateVietnamPreorderSlot } from '../business-time.js';
+import {
+  evaluatePreorderCheckinWindow,
+  formatVietnamBusinessDate,
+  isWithinPreorderCancellationWindow,
+  parseVietnamSingleDateBoundary,
+  validateVietnamPreorderSlot,
+} from '../business-time.js';
 
 const TRANSITIONS = Object.freeze({
   AWAITING_PAYMENT: new Set(['PENDING_MANAGER_CONFIRMATION', 'PAYMENT_EXPIRED', 'LATE_PAID_REQUIRES_ACTION', 'CUSTOMER_CANCELLED']),
-  PENDING_MANAGER_CONFIRMATION: new Set(['CONFIRMED', 'CUSTOMER_CANCELLED', 'LATE_PAID_REQUIRES_ACTION']),
+  PENDING_MANAGER_CONFIRMATION: new Set(['CONFIRMED', 'CUSTOMER_CANCELLED', 'LATE_PAID_REQUIRES_ACTION', 'NO_SHOW']),
   CONFIRMED: new Set(['CHECKED_IN', 'CUSTOMER_CANCELLED', 'NO_SHOW']),
   CHECKED_IN: new Set(['COMPLETED']),
 });
@@ -177,18 +183,23 @@ export function createPreorderService({
 
     async checkout({ input, customerUserId, idempotencyKey }) {
       if (!Number.isInteger(Number(customerUserId)) || Number(customerUserId) <= 0) {
-        throw new PreorderError('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ Ä‘áº·t trÆ°á»›c', 401, 'PREORDER_CUSTOMER_AUTH_REQUIRED');
+        throw new PreorderError('Vui lòng đăng nhập để đặt trước', 401, 'PREORDER_CUSTOMER_AUTH_REQUIRED');
       }
       if (!idempotencyKey || String(idempotencyKey).trim().length > 255) {
-        throw new PreorderError('Thiáº¿u Idempotency-Key há»£p lá»‡', 400, 'PREORDER_IDEMPOTENCY_REQUIRED');
+        throw new PreorderError('Thiếu Idempotency-Key hợp lệ', 400, 'PREORDER_IDEMPOTENCY_REQUIRED');
+      }
+      if (input && (input.table_id != null || Object.hasOwn(input, 'table_id'))) {
+        throw new PreorderError('Preorder không còn hỗ trợ đặt bàn', 400, 'PREORDER_TABLE_RESERVATION_DISALLOWED');
       }
       const storeId = Number(input?.store_id);
       const setting = await repository.getActiveStoreSetting(storeId);
-      if (!setting) throw new PreorderError('Chi nhÃ¡nh chÆ°a sáºµn sÃ ng nháº­n Ä‘áº·t trÆ°á»›c', 409, 'PREORDER_STORE_UNAVAILABLE');
+      if (!setting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
       if (!Array.isArray(input?.items) || input.items.some((item) => item?.store_id != null && Number(item.store_id) !== storeId)) {
         throw new PreorderError('Tất cả món preorder phải thuộc đúng một chi nhánh đã chọn', 400, 'PREORDER_SINGLE_STORE_REQUIRED');
       }
       const slot = validateVietnamPreorderSlot({ date: input?.scheduled_date, hour: input?.scheduled_hour, now: now() });
+
+      const { table_id: _ignoredTable, ...cleanInput } = input || {};
 
       const existing = await repository.findByCustomerIdempotency({ customerUserId, idempotencyKey });
       if (existing) {
@@ -198,7 +209,7 @@ export function createPreorderService({
         // substitute response.
         const checkout = await (await getOrderService()).create({
           input: {
-            ...input,
+            ...cleanInput,
             store_id: storeId,
             source: 'online',
             order_type: 'Take-away',
@@ -217,14 +228,13 @@ export function createPreorderService({
       let preorder;
       try {
         preorder = await database.transaction(async (tx) => {
-        const lockedSetting = await repository.getActiveStoreSetting(storeId, { tx, forUpdate: true });
-        if (!lockedSetting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
-        return repository.createAwaitingPayment({
-          preorderCode: preorderCode(), storeId, customerUserId, idempotencyKey,
-          scheduledStartAt: slot.start, scheduledEndAt: slot.end,
-          responsibleManagerId: lockedSetting.responsible_manager_id,
-          tableId: input.table_id ?? null,
-        }, { tx });
+          const lockedSetting = await repository.getActiveStoreSetting(storeId, { tx, forUpdate: true });
+          if (!lockedSetting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
+          return repository.createAwaitingPayment({
+            preorderCode: preorderCode(), storeId, customerUserId, idempotencyKey,
+            scheduledStartAt: slot.start, scheduledEndAt: slot.end,
+            responsibleManagerId: lockedSetting.responsible_manager_id,
+          }, { tx });
         });
       } catch (error) {
         // The unique customer/idempotency key is the race-safe boundary. A
@@ -237,7 +247,7 @@ export function createPreorderService({
         if (!preorder) throw new PreorderError('Cannot recover creating preorder', 409, 'PREORDER_IDEMPOTENCY_RECOVERY_FAILED');
         const checkout = await (await getOrderService()).create({
           input: {
-            ...input,
+            ...cleanInput,
             store_id: storeId,
             source: 'online',
             order_type: 'Take-away',
@@ -256,7 +266,7 @@ export function createPreorderService({
       try {
         const checkout = await (await getOrderService()).create({
           input: {
-            ...input,
+            ...cleanInput,
             store_id: storeId,
             source: 'online',
             order_type: 'Take-away',
@@ -351,71 +361,107 @@ export function createPreorderService({
       });
     },
 
-    async requestCheckIn({ preorderCode, customerUserId, now: requestNow = now() }) {
-      const effectiveNow = asDate(requestNow, 'now');
+    async customerCheckIn({ preorderCode, customerUserId, now: checkinNow = now() }) {
+      const effectiveNow = asDate(checkinNow, 'now');
       return database.transaction(async (tx) => {
         const preorderRows = listRows(await tx.query(
-          'SELECT * FROM preorders WHERE preorder_code = $1 AND customer_user_id = $2 FOR UPDATE',
-          [String(preorderCode), Number(customerUserId)],
+          'SELECT * FROM preorders WHERE preorder_code = $1 FOR UPDATE',
+          [String(preorderCode)],
         ));
         const preorder = preorderRows[0];
         if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
 
-        if (!['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status)) {
-          throw new PreorderError('Chỉ có thể yêu cầu check-in khi đơn đang chờ xác nhận hoặc đã được xác nhận', 409, 'PREORDER_CHECKIN_STATUS_INVALID');
+        if (Number(preorder.customer_user_id) !== Number(customerUserId)) {
+          throw new PreorderError('Chỉ chủ đơn mới có quyền thực hiện check-in', 403, 'PREORDER_CHECKIN_FORBIDDEN');
         }
 
-        const start = asDate(preorder.scheduled_start_at, 'scheduled_start_at');
-        const startTime = start.getTime();
-        const currentTime = effectiveNow.getTime();
-
-        if (currentTime < startTime - 30 * 60_000) {
-          throw new PreorderError('Chưa đến thời gian check-in. Check-in chỉ mở từ 30 phút trước giờ hẹn', 409, 'PREORDER_CHECKIN_WINDOW_EARLY');
-        }
-        if (currentTime > startTime + 30 * 60_000) {
-          throw new PreorderError('Đã quá thời gian check-in cho khung giờ này', 409, 'PREORDER_CHECKIN_WINDOW_EXPIRED');
+        // Idempotent duplicate check-in
+        if (preorder.status === 'CHECKED_IN' || preorder.status === 'COMPLETED') {
+          return { ...preorder, duplicate: true, idempotent: true };
         }
 
-        const request = await repository.createOrGetCheckinRequest({
-          preorderId: preorder.id,
-          storeId: preorder.store_id,
-          customerUserId: preorder.customer_user_id,
+        if (preorder.status === 'PENDING_MANAGER_CONFIRMATION') {
+          throw new PreorderError('Đơn đặt trước đang chờ quản lý xác nhận trước khi có thể check-in', 409, 'PREORDER_NOT_CONFIRMED');
+        }
+
+        if (preorder.status !== 'CONFIRMED') {
+          throw new PreorderError('Chỉ có thể check-in khi đơn đã được xác nhận', 409, 'PREORDER_CHECKIN_STATUS_INVALID');
+        }
+
+        const windowCheck = evaluatePreorderCheckinWindow({
           scheduledStartAt: preorder.scheduled_start_at,
-          scheduledEndAt: preorder.scheduled_end_at,
-          requestedAt: effectiveNow,
+          now: effectiveNow,
+        });
+
+        if (!windowCheck.isOpen) {
+          if (windowCheck.reason === 'EARLY_DATE') {
+            throw new PreorderError(`Chưa đến ngày nhận. Check-in chỉ mở vào ngày ${windowCheck.scheduledDate}`, 409, 'PREORDER_CHECKIN_WINDOW_EARLY');
+          }
+          if (windowCheck.reason === 'PAST_DATE') {
+            throw new PreorderError('Đã quá ngày nhận của đơn đặt trước', 409, 'PREORDER_CHECKIN_WINDOW_EXPIRED');
+          }
+          if (windowCheck.reason === 'BEFORE_OPERATING_HOURS') {
+            throw new PreorderError('Khung giờ check-in chỉ mở từ 08:00 đến 24:00 trong ngày nhận', 409, 'PREORDER_CHECKIN_WINDOW_EARLY');
+          }
+          throw new PreorderError('Thời điểm hiện tại không thuộc khung giờ check-in hợp lệ', 409, 'PREORDER_CHECKIN_WINDOW_INVALID');
+        }
+
+        assertTransition(preorder.status, 'CHECKED_IN');
+
+        const updated = await repository.transition(preorder.id, {
+          from: 'CONFIRMED',
+          to: 'CHECKED_IN',
+          fields: {
+            checked_in_at: effectiveNow,
+            checked_in_by: Number(customerUserId),
+          },
         }, { tx });
 
-        await queueRecipient(preorder, 'checkin_requested', preorder.responsible_manager_id, tx);
+        await tx.query(
+          "UPDATE preorder_table_reservations SET status = 'checked_in', updated_at = CURRENT_TIMESTAMP WHERE preorder_id = $1 AND status = 'held'",
+          [Number(preorder.id)],
+        );
 
-        return {
-          ...request,
-          server_time: effectiveNow,
-          window_start: new Date(startTime - 30 * 60_000).toISOString(),
-          window_end: new Date(startTime + 30 * 60_000).toISOString(),
-          can_cancel: false,
-          can_request: false,
-        };
+        await tx.query(
+          `INSERT INTO audit_logs (user_id, action, detail)
+           VALUES ($1, 'PREORDER_CUSTOMER_CHECKED_IN', $2)`,
+          [Number(customerUserId), JSON.stringify({ preorder_id: Number(preorder.id), preorder_code: preorder.preorder_code, checked_in_at: effectiveNow.toISOString() })],
+        );
+
+        await queueRecipient(updated, 'customer_checked_in', updated.responsible_manager_id, tx);
+        return updated;
       });
     },
 
-    async cancel({ preorderCode, customerUserId, reason = null }) {
+    async requestCheckIn({ preorderCode, customerUserId, now: requestNow = now() }) {
+      return this.customerCheckIn({ preorderCode, customerUserId, now: requestNow });
+    },
+
+    async cancel({ preorderCode, customerUserId, reason = null, now: cancelNow = now() }) {
+      const effectiveNow = asDate(cancelNow, 'now');
       return database.transaction(async (tx) => {
         const preorderRows = listRows(await tx.query('SELECT * FROM preorders WHERE preorder_code = $1 AND customer_user_id = $2 FOR UPDATE', [String(preorderCode), Number(customerUserId)]));
         const preorder = preorderRows[0];
         if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
-        const checkinReq = await repository.findCurrentCheckinRequest(preorder.id, preorder.scheduled_start_at, { tx, forUpdate: true });
-        if (checkinReq) {
-          throw new PreorderError('Không thể hủy preorder khi đã gửi yêu cầu check-in', 409, 'PREORDER_CANCEL_CHECKIN_REQUESTED');
+
+        if (preorder.checked_in_at != null || preorder.status === 'CHECKED_IN') {
+          throw new PreorderError('Không thể tự hủy đơn khi đã check-in. Vui lòng liên hệ cửa hàng để được hỗ trợ', 409, 'PREORDER_CANCEL_CHECKED_IN');
         }
-        if (preorder.checked_in_at != null || now().getTime() >= new Date(preorder.scheduled_start_at).getTime()) {
-          throw new PreorderError('Chỉ có thể hủy preorder trước giờ nhận và trước khi check-in', 409, 'PREORDER_CANCEL_WINDOW_CLOSED');
+
+        if (!isWithinPreorderCancellationWindow({ scheduledStartAt: preorder.scheduled_start_at, now: effectiveNow })) {
+          throw new PreorderError('Đã quá thời gian được phép hủy đơn (chỉ được hủy trước 24:00 của ngày nhận)', 409, 'PREORDER_CANCEL_WINDOW_CLOSED');
         }
+
         if (!['AWAITING_PAYMENT', 'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status)) {
           throw new PreorderError('Preorder không thể hủy ở trạng thái hiện tại', 409, 'PREORDER_CANCEL_STATE_INVALID');
         }
+
         const updated = await repository.transition(preorder.id, {
-          from: preorder.status, to: 'CUSTOMER_CANCELLED', fields: { cancelled_at: now(), cancel_reason: reason ? String(reason).slice(0, 500) : null },
+          from: preorder.status,
+          to: 'CUSTOMER_CANCELLED',
+          fields: { cancelled_at: effectiveNow, cancel_reason: reason ? String(reason).slice(0, 500) : null },
         }, { tx });
+
         await repository.releaseReservation(preorder.id, 'cancelled', { tx });
         return updated;
       });
@@ -437,7 +483,9 @@ export function createPreorderService({
           resolvedBy: Number(actor.sub),
           resolvedAt: now(),
         }, { tx });
-        await repository.moveReservation({ preorderId: preorder.id, tableId: tableId === undefined ? preorder.table_id : tableId, scheduledStartAt: slot.start }, { tx });
+        if (tableId !== undefined) {
+          await repository.moveReservation({ preorderId: preorder.id, tableId, scheduledStartAt: slot.start }, { tx });
+        }
         await repository.addRescheduleHistory({
           preorderId: preorder.id, oldStart: preorder.scheduled_start_at, oldEnd: preorder.scheduled_end_at,
           newStart: slot.start, newEnd: slot.end, managerId: Number(actor.sub), reason: String(reason).trim(), agreementAt: customerAgreementRecordedAt,
@@ -452,101 +500,74 @@ export function createPreorderService({
       });
     },
 
-    async checkIn({ preorderId, actor, lateConfirmationReason = null, now: checkinNow = now() }) {
-      return database.transaction(async (tx) => {
-        const preorder = await repository.findById(preorderId, { tx, forUpdate: true });
-        if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
-        assertManagerOrSuper(actor, preorder);
-        if (preorder.status === 'PENDING_MANAGER_CONFIRMATION') {
-          throw new PreorderError('Vui lòng xác nhận preorder trước khi check-in', 409, 'PREORDER_CONFIRMATION_REQUIRED');
-        }
-        assertTransition(preorder.status, 'CHECKED_IN');
-
-        const request = await repository.findCurrentCheckinRequest(preorder.id, preorder.scheduled_start_at, { tx, forUpdate: true });
-        if (!request || request.status !== 'PENDING') {
-          throw new PreorderError('Khách hàng chưa gửi yêu cầu check-in', 409, 'PREORDER_CHECKIN_REQUEST_REQUIRED');
-        }
-
-        const effectiveCheckin = asDate(checkinNow, 'now');
-        const start = asDate(preorder.scheduled_start_at, 'scheduled_start_at');
-        const startTime = start.getTime();
-        const checkinTime = effectiveCheckin.getTime();
-
-        if (checkinTime > startTime + 30 * 60_000) {
-          if (!lateConfirmationReason || !String(lateConfirmationReason).trim()) {
-            throw new PreorderError('Cần nhập lý do khi xác nhận check-in sau thời hạn T+30', 400, 'PREORDER_CHECKIN_LATE_REASON_REQUIRED');
-          }
-        }
-
-        const reqTime = asDate(request.requested_at, 'requested_at');
-        const lateMinutes = Math.max(0, Math.floor((reqTime.getTime() - startTime) / 60_000));
-
-        const updated = await repository.transition(preorder.id, {
-          from: 'CONFIRMED', to: 'CHECKED_IN', fields: { checked_in_at: effectiveCheckin, checked_in_by: Number(actor.sub), late_minutes: lateMinutes },
-        }, { tx });
-
-        await repository.confirmCheckinRequest({
-          requestId: request.id,
-          actorId: Number(actor.sub),
-          resolvedAt: effectiveCheckin,
-          lateConfirmationReason: lateConfirmationReason ? String(lateConfirmationReason).trim() : null,
-        }, { tx });
-
-        await tx.query("UPDATE preorder_table_reservations SET status = 'checked_in', updated_at = CURRENT_TIMESTAMP WHERE preorder_id = $1 AND status = 'held'", [Number(preorder.id)]);
-        await queueRecipient(updated, 'checkin_confirmed', updated.customer_user_id, tx);
-        return updated;
-      });
-    },
-
-    async rejectCheckIn({ preorderId, actor, reason, now: rejectNow = now() }) {
-      if (!reason || !String(reason).trim()) {
-        throw new PreorderError('Cần nhập lý do từ chối check-in', 400, 'PREORDER_CHECKIN_REJECT_REASON_REQUIRED');
-      }
+    async confirmHandover({ preorderId, actor, now: handoverNow = now() }) {
+      const effectiveNow = asDate(handoverNow, 'now');
       return database.transaction(async (tx) => {
         const preorder = await repository.findById(preorderId, { tx, forUpdate: true });
         if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
         assertManagerOrSuper(actor, preorder);
 
-        const request = await repository.findCurrentCheckinRequest(preorder.id, preorder.scheduled_start_at, { tx, forUpdate: true });
-        if (!request || request.status !== 'PENDING') {
-          throw new PreorderError('Không có yêu cầu check-in nào đang chờ', 409, 'PREORDER_CHECKIN_REQUEST_REQUIRED');
+        // Idempotency check
+        if (preorder.status === 'COMPLETED' && preorder.handover_confirmed_at != null) {
+          return { ...preorder, idempotent: true };
         }
 
-        const effectiveReject = asDate(rejectNow, 'now');
-        await repository.rejectCheckinRequest({
-          requestId: request.id,
+        if (preorder.status !== 'CHECKED_IN' || preorder.checked_in_at == null) {
+          throw new PreorderError('Khách hàng chưa check-in, chưa thể xác nhận bàn giao', 409, 'PREORDER_HANDOVER_NOT_CHECKED_IN');
+        }
+
+        const linkedOrders = await repository.listLinkedOrders(preorder.id, { tx });
+        if (!linkedOrders.length) {
+          throw new PreorderError('Không tìm thấy đơn hàng liên kết cho preorder này', 409, 'PREORDER_NO_LINKED_ORDERS');
+        }
+
+        const unfinished = linkedOrders.filter((order) => {
+          const status = order.latest_status || order.current_status || order.status;
+          return status !== 'Hoàn thành';
+        });
+        if (unfinished.length > 0) {
+          throw new PreorderError('Vẫn còn món hoặc đơn hàng liên kết chưa hoàn thành chế biến', 409, 'PREORDER_HANDOVER_INCOMPLETE_ORDERS');
+        }
+
+        assertTransition(preorder.status, 'COMPLETED');
+
+        const updated = await repository.confirmHandover({
+          preorderId: preorder.id,
           actorId: Number(actor.sub),
-          resolvedAt: effectiveReject,
-          reason: String(reason).trim(),
+          handoverAt: effectiveNow,
         }, { tx });
 
         await tx.query(
           `INSERT INTO audit_logs (user_id, action, detail)
-           VALUES ($1, 'PREORDER_CHECKIN_REJECTED', $2)`,
-          [Number(actor.sub), JSON.stringify({ preorder_id: Number(preorder.id), request_id: Number(request.id), reason: String(reason).trim() })],
+           VALUES ($1, 'PREORDER_HANDOVER_CONFIRMED', $2)`,
+          [Number(actor.sub), JSON.stringify({ preorder_id: Number(preorder.id), preorder_code: preorder.preorder_code, handover_confirmed_at: effectiveNow.toISOString() })],
         );
 
-        await queueRecipient(preorder, 'checkin_rejected', preorder.customer_user_id, tx);
-        return preorder;
+        await queueRecipient(updated, 'handover_confirmed', updated.customer_user_id, tx);
+        return updated;
       });
     },
 
+    async checkIn() {
+      throw new PreorderError('Check-in là thao tác tự phục vụ của khách hàng. Cửa hàng không cần duyệt check-in; chỉ cần xác nhận bàn giao sau khi khách có mặt và Bếp hoàn tất.', 400, 'PREORDER_CHECKIN_SELF_SERVICE_REQUIRED');
+    },
+
+    async rejectCheckIn() {
+      throw new PreorderError('Check-in là thao tác tự phục vụ của khách hàng, không áp dụng từ chối check-in.', 400, 'PREORDER_CHECKIN_SELF_SERVICE_REQUIRED');
+    },
+
     async refreshCompletion(preorderId, { tx = null } = {}) {
+      // Automatic COMPLETED transition removed per PREORDER_STORE_CHECKIN_HANDOVER_SPEC:
+      // Store handover is a separate confirmation and the sole action that moves preorder to COMPLETED.
       const runner = async (client) => {
-        const preorder = await repository.findById(preorderId, { tx: client, forUpdate: true });
-        if (!preorder || preorder.status !== 'CHECKED_IN') return preorder;
-        const linked = await repository.listLinkedOrders(preorder.id, { tx: client });
-        if (linked.length && linked.every((order) => order.latest_status === 'HoÃ n thÃ nh')) {
-          return repository.transition(preorder.id, { from: 'CHECKED_IN', to: 'COMPLETED', fields: { completed_at: now() } }, { tx: client });
-        }
-        return preorder;
+        return repository.findById(preorderId, { tx: client });
       };
       return tx ? runner(tx) : database.transaction(runner);
     },
 
     async refreshCompletionForOrder(orderId, { tx = null } = {}) {
       const runner = async (client) => {
-        const preorder = await repository.findByOrderId(orderId, { tx: client, forUpdate: true });
+        const preorder = await repository.findByOrderId(orderId, { tx: client });
         if (!preorder) return null;
         return this.refreshCompletion(preorder.id, { tx: client });
       };
@@ -555,7 +576,7 @@ export function createPreorderService({
 
     async processDue({ now: dueNow = now() } = {}) {
       const effectiveNow = asDate(dueNow, 'now');
-      const outcomes = { t60: 0, t30: 0, breached: 0, no_show: 0, payment_expired: 0 };
+      const outcomes = { t60: 0, t30: 0, breached: 0, no_show: 0, overdue: 0, payment_expired: 0 };
       await database.transaction(async (tx) => {
         const expiredRows = listRows(await tx.query(
           `SELECT p.id
@@ -609,8 +630,6 @@ export function createPreorderService({
                   [Number(preorder.responsible_manager_id), JSON.stringify({ preorder_id: Number(preorder.id), strike: Number(strike.confirmed_breach_count) })],
                 );
                 if (Number(strike.confirmed_breach_count) >= 2) {
-                  // Reuse the canonical Auth repository transition: status and
-                  // token_version move together; no preorder-only account flag exists.
                   await usersRepo.updateStaffStatus(Number(preorder.responsible_manager_id), false, { tx });
                   await tx.query(
                     'UPDATE manager_preorder_strikes SET disabled_by_preorder_at = CURRENT_TIMESTAMP WHERE manager_id = $1', [Number(preorder.responsible_manager_id)],
@@ -628,57 +647,42 @@ export function createPreorderService({
               outcomes.breached += 1;
             }
           }
-          if (preorder.status === 'CONFIRMED' && effectiveNow.getTime() > start.getTime() + 30 * 60_000) {
-            const checkinRequest = await repository.findCurrentCheckinRequest(preorder.id, preorder.scheduled_start_at, { tx, forUpdate: true });
-            if (checkinRequest && checkinRequest.status === 'PENDING') {
-              if (!checkinRequest.manager_breach_recorded_at) {
-                await repository.markCheckinManagerBreachOnce({ requestId: checkinRequest.id, breachedAt: effectiveNow }, { tx });
-                const slotStrike = await repository.recordSlotStrikeOnce({
-                  preorderId: preorder.id,
-                  scheduledStartAt: preorder.scheduled_start_at,
-                  managerId: preorder.responsible_manager_id,
-                  strikeSource: 'CHECKIN_BREACH',
-                }, { tx });
-                if (slotStrike) {
-                  await repository.lockStrike(preorder.responsible_manager_id, { tx });
-                  const strike = await repository.incrementStrike(preorder.responsible_manager_id, { tx });
-                  await tx.query(
-                    `INSERT INTO audit_logs (user_id, action, detail)
-                     VALUES ($1, 'PREORDER_CHECKIN_BREACH', $2)`,
-                    [Number(preorder.responsible_manager_id), JSON.stringify({ preorder_id: Number(preorder.id), strike: Number(strike.confirmed_breach_count) })],
-                  );
-                  if (Number(strike.confirmed_breach_count) >= 2) {
-                    await usersRepo.updateStaffStatus(Number(preorder.responsible_manager_id), false, { tx });
-                    await tx.query(
-                      'UPDATE manager_preorder_strikes SET disabled_by_preorder_at = CURRENT_TIMESTAMP WHERE manager_id = $1', [Number(preorder.responsible_manager_id)],
-                    );
-                    await tx.query('UPDATE preorder_store_settings SET is_enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE store_id = $1', [Number(preorder.store_id)]);
-                    await tx.query(
-                      `INSERT INTO audit_logs (user_id, action, detail)
-                       VALUES ($1, 'PREORDER_MANAGER_AUTO_DISABLED', $2)`,
-                      [Number(preorder.responsible_manager_id), JSON.stringify({ store_id: Number(preorder.store_id), strike: Number(strike.confirmed_breach_count) })],
-                    );
-                    const supers = listRows(await tx.query("SELECT id FROM users WHERE is_admin = TRUE AND admin_role = 'super' AND is_active = TRUE"));
-                    for (const superUser of supers) await queueRecipient(preorder, 'manager_auto_disabled', superUser.id, tx);
-                  }
-                }
-                await queueRecipient(preorder, 'checkin_breach', preorder.responsible_manager_id, tx);
-                outcomes.breached += 1;
-              }
-            } else {
-              const updated = await repository.transition(preorder.id, { from: 'CONFIRMED', to: 'NO_SHOW', fields: {} }, { tx });
+
+          // Closing time (24:00 of scheduled local date) evaluation
+          const scheduledDayStr = formatVietnamBusinessDate(start);
+          const scheduledBoundary = parseVietnamSingleDateBoundary(scheduledDayStr);
+          const isClosingPassed = effectiveNow.getTime() >= scheduledBoundary.endDate.getTime();
+
+          if (isClosingPassed) {
+            if (preorder.checked_in_at == null && ['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status)) {
+              const updated = await repository.transition(preorder.id, {
+                from: ['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'],
+                to: 'NO_SHOW',
+                fields: {},
+              }, { tx });
               if (updated) {
                 await repository.releaseReservation(preorder.id, 'released', { tx });
                 await queueRecipient(updated, 'no_show', updated.customer_user_id, tx);
+                await queueRecipient(updated, 'no_show_store', updated.responsible_manager_id, tx);
                 outcomes.no_show += 1;
+              }
+            } else if (preorder.checked_in_at != null && preorder.completed_at == null && preorder.status === 'CHECKED_IN') {
+              if (preorder.handover_overdue_at == null) {
+                const updated = await repository.markHandoverOverdue({
+                  preorderId: preorder.id,
+                  overdueAt: effectiveNow,
+                }, { tx });
+                if (updated) {
+                  await queueRecipient(preorder, 'handover_overdue', preorder.responsible_manager_id, tx);
+                  const supers = listRows(await tx.query("SELECT id FROM users WHERE is_admin = TRUE AND admin_role = 'super' AND is_active = TRUE"));
+                  for (const superUser of supers) await queueRecipient(preorder, 'handover_overdue_super', superUser.id, tx);
+                  outcomes.overdue = (outcomes.overdue || 0) + 1;
+                  outcomes.overdue_escalated = (outcomes.overdue_escalated || 0) + 1;
+                }
               }
             }
           }
         }
-        const checkedIn = listRows(await tx.query(
-          `SELECT id FROM preorders WHERE status = 'CHECKED_IN' FOR UPDATE`,
-        ));
-        for (const preorder of checkedIn) await this.refreshCompletion(preorder.id, { tx });
       });
       const delivery = await deliverPendingNotifications();
       return { ...outcomes, delivery };

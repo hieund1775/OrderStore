@@ -786,7 +786,7 @@ function KdsPage() {
             <CalendarClock className="mt-0.5 size-5 text-violet-700" />
             <div>
               <h2 className="font-semibold text-violet-950">Preorder sắp tới</h2>
-              <p className="text-sm text-violet-900">Manager đã xác nhận. Bếp chỉ xem lịch và chưa được bắt đầu/hoàn thành trước khi khách check-in.</p>
+              <p className="text-sm text-violet-900">Manager đã xác nhận. Bếp có thể chủ động chuẩn bị món theo lịch hẹn (không cần đợi khách check-in).</p>
             </div>
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">

@@ -51,11 +51,11 @@ export function createAdminOrdersRepository(
             [Number(order.preorder_id)],
           );
           const preorder = preorders[0];
-          if (!preorder || !preorder.checked_in_at || !['CHECKED_IN', 'COMPLETED'].includes(preorder.status)) {
+          if (!preorder || !['CONFIRMED', 'CHECKED_IN', 'COMPLETED'].includes(preorder.status)) {
             throw new AdminOrderError(
-              'Đơn đặt trước chỉ được bắt đầu xử lý sau khi khách đã check-in',
+              'Đơn đặt trước chỉ được bắt đầu xử lý sau khi đơn đã được xác nhận',
               409,
-              'PREORDER_CHECK_IN_REQUIRED',
+              'PREORDER_CONFIRMATION_REQUIRED',
             );
           }
         }

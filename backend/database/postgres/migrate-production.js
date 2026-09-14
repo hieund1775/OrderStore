@@ -52,6 +52,10 @@ export const PRODUCTION_MIGRATION_REGISTRY = Object.freeze({
     preflight: '0033_preorder_customer_checkin_preflight_readonly.sql',
     prerequisites: Object.freeze(['0026', '0027', '0028', '0029', '0030', '0031', '0032']),
   }),
+  '0034': Object.freeze({
+    preflight: '0034_preorder_store_checkin_handover_preflight_readonly.sql',
+    prerequisites: Object.freeze(['0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033']),
+  }),
 });
 export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(Object.keys(PRODUCTION_MIGRATION_REGISTRY));
 

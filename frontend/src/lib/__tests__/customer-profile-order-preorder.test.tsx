@@ -199,8 +199,8 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
     });
 
     it('evaluates canCancel safely with valid start time in future and correct status', () => {
-      const futureTime = new Date(Date.now() + 3600000).toISOString();
-      const pastTime = new Date(Date.now() - 3600000).toISOString();
+      const futureTime = new Date(Date.now() + 86400000).toISOString();
+      const pastDate = new Date(Date.now() - 86400000 * 2).toISOString();
 
       const preorderBase: any = {
         id: 1,
@@ -214,8 +214,8 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
       expect(canCancel({ ...preorderBase, status: 'PENDING_MANAGER_CONFIRMATION', scheduled_start_at: futureTime })).toBe(true);
       expect(canCancel({ ...preorderBase, status: 'AWAITING_PAYMENT', scheduled_start_at: futureTime })).toBe(true);
 
-      // In past -> cannot cancel
-      expect(canCancel({ ...preorderBase, status: 'CONFIRMED', scheduled_start_at: pastTime })).toBe(false);
+      // In past calendar date -> cannot cancel
+      expect(canCancel({ ...preorderBase, status: 'CONFIRMED', scheduled_start_at: pastDate })).toBe(false);
 
       // Other status -> cannot cancel
       expect(canCancel({ ...preorderBase, status: 'COMPLETED', scheduled_start_at: futureTime })).toBe(false);
@@ -256,17 +256,22 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
           {
             id: 1,
             preorder_code: 'PRE-ABC-1',
-            status: 'CONFIRMED',
             store_name: 'Chi nhánh Quận 1',
+            status: 'CONFIRMED',
             scheduled_start_at: '2026-10-15T10:00:00.000Z',
             scheduled_end_at: '2026-10-15T11:00:00.000Z',
             orders: [
               {
                 id: 10,
                 order_code: 'ORD-10',
-                current_status: 'Đã nhận',
+                current_status: 'Đang chuẩn bị',
                 items: [
-                  { id: 100, product_name: 'Trà Sữa Oolong', qty: 2, line_total: 60000 },
+                  {
+                    id: 101,
+                    product_name: 'Trà Sữa Oolong',
+                    quantity: 2,
+                    unit_price: 30000,
+                  },
                 ],
               },
             ],
@@ -286,7 +291,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
       expect(api.apiGet).toHaveBeenCalledWith('/api/preorders/mine');
       expect(container?.textContent).toContain('PRE-ABC-1');
       expect(container?.textContent).toContain('Chi nhánh Quận 1');
-      expect(container?.textContent).toContain('Đã xác nhận · chờ check-in');
+      expect(container?.textContent).toContain('Đang chuẩn bị');
       expect(container?.textContent).toContain('Món đã đặt (1)');
     });
 
@@ -313,7 +318,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
 
       expect(api.apiGet).toHaveBeenCalled();
       expect(container?.textContent).toContain('PRE-DEF-2');
-      expect(container?.textContent).toContain('Cửa hàng sẽ sắp xếp bàn');
+      expect(container?.textContent).toContain('Nhận tại cửa hàng (Store Pickup)');
       expect(container?.textContent).toContain('Món đã đặt (0)');
     });
 

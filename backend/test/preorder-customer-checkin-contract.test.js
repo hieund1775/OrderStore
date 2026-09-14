@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPreorderService, PreorderError } from '../services/preorders/preorder-service.js';
 
+// Base time: 2026-09-15 19:00:00 local time (12:00 UTC)
 const baseTime = new Date('2026-09-15T12:00:00.000Z');
 
 function createHarness(overrides = {}) {
@@ -30,6 +31,9 @@ function createHarness(overrides = {}) {
         scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
         status: 'CONFIRMED',
         reschedule_count: 0,
+        checked_in_at: null,
+        handover_confirmed_at: null,
+        handover_overdue_at: null,
         ...overrides.preorder,
       };
     },
@@ -110,6 +114,24 @@ function createHarness(overrides = {}) {
       return [];
     },
     async completeEmailDelivery() {},
+    async confirmHandover(data) {
+      calls.transitions.push({ type: 'confirmHandover', ...data });
+      return {
+        id: data.preorderId,
+        status: 'COMPLETED',
+        handover_confirmed_at: data.handoverAt,
+        handover_confirmed_by: data.actorId,
+      };
+    },
+    async markHandoverOverdue(input, overdueAt) {
+      const preorderId = typeof input === 'object' && input ? input.preorderId : input;
+      const at = typeof input === 'object' && input ? input.overdueAt : overdueAt;
+      calls.transitions.push({ type: 'markHandoverOverdue', preorderId, overdueAt: at });
+      return { id: preorderId, handover_overdue_at: at };
+    },
+    async listLinkedOrders(id) {
+      return overrides.linkedOrders || [{ id: 101, latest_status: 'Hoàn thành' }];
+    },
     ...overrides.repo,
   };
 
@@ -118,36 +140,37 @@ function createHarness(overrides = {}) {
       const tx = {
         async query(sql, params = []) {
           if (sql.includes('SELECT * FROM preorders WHERE preorder_code = $1')) {
-            return {
-              rows: [{
-                id: 10,
-                preorder_code: params[0],
-                customer_user_id: params[1],
-                store_id: 1,
-                responsible_manager_id: 9,
-                scheduled_start_at: baseTime.toISOString(),
-                scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
-                status: 'CONFIRMED',
-                reschedule_count: 0,
-                ...overrides.preorder,
-              }],
+            const po = {
+              id: 10,
+              preorder_code: params[0],
+              customer_user_id: 5,
+              store_id: 1,
+              responsible_manager_id: 9,
+              scheduled_start_at: baseTime.toISOString(),
+              scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
+              status: 'CONFIRMED',
+              reschedule_count: 0,
+              checked_in_at: null,
+              handover_confirmed_at: null,
+              handover_overdue_at: null,
+              ...overrides.preorder,
             };
+            return { rows: [po] };
           }
           if (sql.includes('UPDATE preorders') && sql.includes('RETURNING *')) {
-            return {
-              rows: [{
-                id: params[0],
-                preorder_code: 'PO123',
-                customer_user_id: 5,
-                store_id: 1,
-                responsible_manager_id: 9,
-                scheduled_start_at: params[1],
-                scheduled_end_at: params[2],
-                status: 'CONFIRMED',
-                reschedule_count: 1,
-                ...overrides.preorder,
-              }],
+            const po = {
+              id: params[0] || 10,
+              preorder_code: 'PO123',
+              customer_user_id: 5,
+              store_id: 1,
+              responsible_manager_id: 9,
+              scheduled_start_at: params[1] || baseTime.toISOString(),
+              scheduled_end_at: params[2] || new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
+              status: 'CONFIRMED',
+              reschedule_count: 1,
+              ...overrides.preorder,
             };
+            return { rows: [po] };
           }
           if (sql.includes('SELECT p.id\n           FROM preorders p\n           LEFT JOIN orders o')) {
             return { rows: [] };
@@ -187,41 +210,60 @@ function createHarness(overrides = {}) {
 }
 
 describe('Preorder Customer Check-in Contract', () => {
-  it('allows customer to request check-in within [T-30, T+30] arrival window', async () => {
-    // T - 15 minutes
-    const testNow = new Date(baseTime.getTime() - 15 * 60_000);
+  it('allows customer to self-service check in on scheduled date (08:00 - 24:00 local time)', async () => {
+    // 10:00 VN time on 2026-09-15 (03:00 UTC)
+    const testNow = new Date('2026-09-15T03:00:00.000Z');
     const { service, calls } = createHarness({ now: testNow });
 
-    const result = await service.requestCheckIn({
+    const result = await service.customerCheckIn({
       preorderCode: 'PO123',
       customerUserId: 5,
       now: testNow,
     });
 
-    assert.equal(result.status, 'PENDING');
-    assert.equal(calls.checkinRequests.length, 1);
-    assert.equal(calls.checkinRequests[0].preorderId, 10);
-    assert.equal(calls.queues.some((q) => q.eventType === 'checkin_requested'), true);
+    assert.equal(result.status, 'CHECKED_IN');
+    assert.ok(result.checked_in_at);
+    assert.equal(result.checked_in_by, 5);
+    assert.equal(calls.transitions.length, 1);
+    assert.equal(calls.transitions[0].to, 'CHECKED_IN');
   });
 
-  it('rejects check-in request before T-30 minutes', async () => {
-    // T - 31 minutes
-    const testNow = new Date(baseTime.getTime() - 31 * 60_000);
+  it('customer check-in is idempotent duplicate on second call', async () => {
+    const testNow = new Date('2026-09-15T03:00:00.000Z');
+    const { service, calls } = createHarness({
+      now: testNow,
+      preorder: { status: 'CHECKED_IN', checked_in_at: testNow.toISOString() },
+    });
+
+    const result = await service.customerCheckIn({
+      preorderCode: 'PO123',
+      customerUserId: 5,
+      now: testNow,
+    });
+
+    assert.equal(result.status, 'CHECKED_IN');
+    assert.equal(result.duplicate, true);
+    assert.equal(calls.transitions.length, 0);
+  });
+
+  it('rejects customer check-in before 08:00 local time', async () => {
+    // 07:30 VN time on 2026-09-15 (00:30 UTC)
+    const testNow = new Date('2026-09-15T00:30:00.000Z');
     const { service } = createHarness({ now: testNow });
 
     await assert.rejects(
-      () => service.requestCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
+      () => service.customerCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
       (err) => err.code === 'PREORDER_CHECKIN_WINDOW_EARLY' && err.status === 409,
     );
   });
 
-  it('rejects check-in request after T+30 minutes', async () => {
-    // T + 31 minutes
-    const testNow = new Date(baseTime.getTime() + 31 * 60_000);
+  it('rejects customer check-in on a different date', async () => {
+    // 10:00 VN time on 2026-09-16 (next day)
+    const testNow = new Date('2026-09-16T03:00:00.000Z');
     const { service } = createHarness({ now: testNow });
 
     await assert.rejects(
-      () => service.requestCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
+      () => service.customerCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
       (err) => err.code === 'PREORDER_CHECKIN_WINDOW_EXPIRED' && err.status === 409,
     );
   });
@@ -234,120 +276,128 @@ describe('Preorder Customer Check-in Contract', () => {
     });
 
     await assert.rejects(
-      () => service.requestCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
+      () => service.customerCheckIn({ preorderCode: 'PO123', customerUserId: 5, now: testNow }),
       (err) => err.code === 'PREORDER_CHECKIN_STATUS_INVALID' && err.status === 409,
     );
   });
 
-  it('forbids customer cancellation once a check-in request exists', async () => {
+  it('rejects check-in if actor is not the customer owner', async () => {
+    const testNow = baseTime;
+    const { service } = createHarness({ now: testNow });
+
+    await assert.rejects(
+      () => service.customerCheckIn({ preorderCode: 'PO123', customerUserId: 999, now: testNow }),
+      (err) => err.code === 'PREORDER_CHECKIN_FORBIDDEN' && err.status === 403,
+    );
+  });
+
+  it('forbids customer cancellation once checked in', async () => {
     const { service } = createHarness({
-      currentCheckinRequest: { id: 101, status: 'PENDING' },
+      preorder: { status: 'CHECKED_IN', checked_in_at: baseTime.toISOString() },
     });
 
     await assert.rejects(
       () => service.cancel({ preorderCode: 'PO123', customerUserId: 5 }),
-      (err) => err.code === 'PREORDER_CANCEL_CHECKIN_REQUESTED' && err.status === 409,
+      (err) => err.code === 'PREORDER_CANCEL_CHECKED_IN' && err.status === 409,
     );
   });
 
-  it('manager check-in requires a pending check-in request from customer', async () => {
-    const { service } = createHarness({
-      currentCheckinRequest: null, // No request
-    });
-
-    await assert.rejects(
-      () => service.checkIn({
-        preorderId: 10,
-        actor: { role: 'manager', branch_id: 1, sub: 9 },
-      }),
-      (err) => err.code === 'PREORDER_CHECKIN_REQUEST_REQUIRED' && err.status === 409,
-    );
-  });
-
-  it('manager check-in after T+30 requires late_confirmation_reason and calculates late_minutes from customer arrival', async () => {
-    // Customer requested at T + 10m
-    const customerArrivalTime = new Date(baseTime.getTime() + 10 * 60_000);
-    // Manager confirms at T + 35m
-    const managerConfirmTime = new Date(baseTime.getTime() + 35 * 60_000);
-
+  it('allows customer cancellation before 24:00 on scheduled date if not checked in', async () => {
+    const cancelNow = new Date('2026-09-15T05:00:00.000Z'); // 12:00 VN time
     const { service, calls } = createHarness({
-      now: managerConfirmTime,
-      currentCheckinRequest: {
-        id: 101,
-        status: 'PENDING',
-        requested_at: customerArrivalTime,
-      },
+      now: cancelNow,
+      preorder: { status: 'CONFIRMED', checked_in_at: null },
     });
 
-    // Without reason: rejects
+    const result = await service.cancel({
+      preorderCode: 'PO123',
+      customerUserId: 5,
+      reason: 'Khách đổi kế hoạch',
+      now: cancelNow,
+    });
+
+    assert.equal(result.status, 'CUSTOMER_CANCELLED');
+    assert.equal(calls.transitions.some((t) => t.to === 'CUSTOMER_CANCELLED'), true);
+  });
+
+  it('legacy manager check-in endpoints return PREORDER_CHECKIN_SELF_SERVICE_REQUIRED (400)', async () => {
+    const { service } = createHarness();
+
     await assert.rejects(
-      () => service.checkIn({
-        preorderId: 10,
-        actor: { role: 'manager', branch_id: 1, sub: 9 },
-        lateConfirmationReason: '',
-        now: managerConfirmTime,
-      }),
-      (err) => err.code === 'PREORDER_CHECKIN_LATE_REASON_REQUIRED' && err.status === 400,
+      () => service.checkIn({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } }),
+      (err) => err.code === 'PREORDER_CHECKIN_SELF_SERVICE_REQUIRED' && err.status === 400,
     );
 
-    // With reason: succeeds and customer late_minutes is 10 (not 35!)
-    await service.checkIn({
+    await assert.rejects(
+      () => service.rejectCheckIn({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 }, reason: 'Test' }),
+      (err) => err.code === 'PREORDER_CHECKIN_SELF_SERVICE_REQUIRED' && err.status === 400,
+    );
+  });
+
+  it('manager handover confirmation requires customer check-in first', async () => {
+    const { service } = createHarness({
+      preorder: { status: 'CONFIRMED', checked_in_at: null },
+    });
+
+    await assert.rejects(
+      () => service.confirmHandover({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } }),
+      (err) => err.code === 'PREORDER_HANDOVER_NOT_CHECKED_IN' && err.status === 409,
+    );
+  });
+
+  it('manager handover confirmation requires 100% linked orders completed', async () => {
+    const { service } = createHarness({
+      preorder: { status: 'CHECKED_IN', checked_in_at: baseTime.toISOString() },
+      linkedOrders: [{ id: 101, latest_status: 'Đang chuẩn bị' }],
+    });
+
+    await assert.rejects(
+      () => service.confirmHandover({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } }),
+      (err) => err.code === 'PREORDER_HANDOVER_INCOMPLETE_ORDERS' && err.status === 409,
+    );
+  });
+
+  it('manager handover confirmation succeeds when checked in and orders complete', async () => {
+    const { service, calls } = createHarness({
+      preorder: { status: 'CHECKED_IN', checked_in_at: baseTime.toISOString() },
+      linkedOrders: [{ id: 101, latest_status: 'Hoàn thành' }],
+    });
+
+    const result = await service.confirmHandover({
       preorderId: 10,
       actor: { role: 'manager', branch_id: 1, sub: 9 },
-      lateConfirmationReason: 'Busy rush hour at counter',
-      now: managerConfirmTime,
+      now: baseTime,
     });
 
-    assert.equal(calls.transitions.length, 1);
-    assert.equal(calls.transitions[0].to, 'CHECKED_IN');
-    assert.equal(calls.transitions[0].fields.late_minutes, 10);
-    assert.equal(calls.checkinRequests.some((r) => r.type === 'confirm' && r.lateConfirmationReason === 'Busy rush hour at counter'), true);
+    assert.equal(result.status, 'COMPLETED');
+    assert.equal(calls.transitions.some((t) => t.type === 'confirmHandover'), true);
   });
 
-  it('due processor never marks NO_SHOW when customer has pending check-in request, records manager breach instead', async () => {
-    // Time is T + 35 minutes
-    const dueTime = new Date(baseTime.getTime() + 35 * 60_000);
-    const duePreorder = {
-      id: 10,
-      incident_id: 91,
-      status: 'CONFIRMED',
-      store_id: 1,
-      customer_user_id: 5,
-      responsible_manager_id: 9,
-      preorder_code: 'PO123',
-      scheduled_start_at: baseTime.toISOString(),
-      scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
-    };
-
+  it('manager handover confirmation is idempotent duplicate', async () => {
     const { service, calls } = createHarness({
-      now: dueTime,
-      dueList: [duePreorder],
-      currentCheckinRequest: {
-        id: 101,
-        status: 'PENDING',
-        requested_at: new Date(baseTime.getTime() + 5 * 60_000),
-        manager_breach_recorded_at: null,
+      preorder: {
+        status: 'COMPLETED',
+        checked_in_at: baseTime.toISOString(),
+        handover_confirmed_at: baseTime.toISOString(),
       },
-      strikeCount: 1,
+      linkedOrders: [{ id: 101, latest_status: 'Hoàn thành' }],
     });
 
-    const result = await service.processDue({ now: dueTime });
+    const result = await service.confirmHandover({
+      preorderId: 10,
+      actor: { role: 'manager', branch_id: 1, sub: 9 },
+      now: baseTime,
+    });
 
-    // Must NOT be no-show!
-    assert.equal(result.no_show, 0);
-    assert.equal(calls.transitions.some((t) => t.to === 'NO_SHOW'), false);
-    // Manager breach recorded
-    assert.equal(result.breached, 1);
-    assert.equal(calls.strikes.length, 1);
-    assert.equal(calls.slotStrikes.length, 1);
-    assert.equal(calls.slotStrikes[0].strikeSource, 'CHECKIN_BREACH');
+    assert.equal(result.status, 'COMPLETED');
+    assert.equal(result.idempotent, true);
   });
 
-  it('due processor marks NO_SHOW when no check-in request exists past T+30', async () => {
-    const dueTime = new Date(baseTime.getTime() + 35 * 60_000);
+  it('due processor at day close marks unchecked-in as NO_SHOW', async () => {
+    // 00:05 VN time on 2026-09-16 (17:05 UTC on 2026-09-15)
+    const dueTime = new Date('2026-09-15T17:05:00.000Z');
     const duePreorder = {
       id: 10,
-      incident_id: 91,
       status: 'CONFIRMED',
       store_id: 1,
       customer_user_id: 5,
@@ -355,76 +405,65 @@ describe('Preorder Customer Check-in Contract', () => {
       preorder_code: 'PO123',
       scheduled_start_at: baseTime.toISOString(),
       scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
+      checked_in_at: null,
     };
 
     const { service, calls } = createHarness({
       now: dueTime,
       dueList: [duePreorder],
-      currentCheckinRequest: null,
     });
 
     const result = await service.processDue({ now: dueTime });
 
     assert.equal(result.no_show, 1);
     assert.equal(calls.transitions.some((t) => t.to === 'NO_SHOW'), true);
-    assert.equal(calls.releases.some((r) => r.reason === 'released'), true);
   });
 
-  it('guarantees at most 1 strike per slot across confirmation and check-in breach', async () => {
-    const dueTime = new Date(baseTime.getTime() + 35 * 60_000);
+  it('due processor at day close never cancels checked-in preorder, escalates handover_overdue_at', async () => {
+    // 00:05 VN time on 2026-09-16 (17:05 UTC on 2026-09-15)
+    const dueTime = new Date('2026-09-15T17:05:00.000Z');
     const duePreorder = {
       id: 10,
-      incident_id: 91,
-      status: 'CONFIRMED',
+      status: 'CHECKED_IN',
       store_id: 1,
       customer_user_id: 5,
       responsible_manager_id: 9,
       preorder_code: 'PO123',
       scheduled_start_at: baseTime.toISOString(),
       scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
+      checked_in_at: baseTime.toISOString(),
+      handover_confirmed_at: null,
+      handover_overdue_at: null,
     };
 
-    const { service, calls, slotStrikes } = createHarness({
+    const { service, calls } = createHarness({
       now: dueTime,
       dueList: [duePreorder],
-      currentCheckinRequest: {
-        id: 101,
-        status: 'PENDING',
-        requested_at: baseTime,
-        manager_breach_recorded_at: null,
-      },
     });
-
-    // Simulate that confirmation breach already took the strike for this slot
-    slotStrikes.set(`10:${baseTime.toISOString()}`, { strikeSource: 'CONFIRMATION_BREACH' });
 
     const result = await service.processDue({ now: dueTime });
 
-    // Strike is NOT incremented because slot strike event already exists
-    assert.equal(calls.strikes.length, 0);
+    assert.equal(result.no_show, 0);
+    assert.equal(result.overdue_escalated, 1);
+    assert.equal(calls.transitions.some((t) => t.type === 'markHandoverOverdue'), true);
   });
 
-  it('reschedule atomically passes actor.sub and timestamp to markCheckinRequestRescheduled', async () => {
+  it('reschedule atomically records history without table reservation', async () => {
     const { service, calls } = createHarness();
 
-    const targetDate = new Date(baseTime.getTime() + 24 * 60 * 60_000);
-    const targetDateStr = targetDate.toISOString().slice(0, 10);
+    const targetDate = '2026-09-16';
 
     await service.reschedule({
       preorderId: 10,
       actor: { role: 'manager', branch_id: 1, sub: 9 },
-      date: targetDateStr,
+      date: targetDate,
       hour: 14,
       reason: 'Khách yêu cầu chuyển giờ sang chiều mai',
     });
 
-    const rescheduleCall = calls.checkinRequests.find((c) => c.type === 'rescheduled');
-    assert.ok(rescheduleCall, 'markCheckinRequestRescheduled must be called');
-    assert.equal(rescheduleCall.preorderId, 10);
-    assert.equal(rescheduleCall.resolvedBy, 9);
-    assert.ok(rescheduleCall.resolvedAt instanceof Date || typeof rescheduleCall.resolvedAt === 'string');
-
-    const transitionTypes = calls.transitions.map((t) => t.type);
-    assert.deepEqual(transitionTypes, ['markCheckinRequestRescheduled', 'moveReservation', 'addRescheduleHistory']);
+    const historyCall = calls.transitions.find((c) => c.type === 'addRescheduleHistory');
+    assert.ok(historyCall, 'addRescheduleHistory must be called');
+    const reservationCalls = calls.transitions.filter((c) => c.type === 'moveReservation');
+    assert.equal(reservationCalls.length, 0, 'Must not move reservation');
   });
 });

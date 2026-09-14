@@ -24,8 +24,13 @@ export class ProductReviewsService {
   }
 
   _assertPreorderReviewEligibility(ownership) {
-    if (ownership?.preorder_id != null && ownership.preorder_checked_in_at == null) {
-      throw new IdentityError('PREORDER_NOT_CHECKED_IN', 'Preorder must be checked in before review');
+    if (ownership?.preorder_id != null) {
+      if (ownership.preorder_handover_confirmed_at == null || ownership.preorder_status !== 'COMPLETED') {
+        throw new IdentityError(
+          'PREORDER_NOT_HANDED_OVER',
+          'Đơn đặt trước cần được xác nhận giao hàng trước khi đánh giá',
+        );
+      }
     }
   }
 
@@ -44,8 +49,13 @@ export class ProductReviewsService {
       return { eligible: false, reason: 'Đơn hàng chưa hoàn thành, chưa thể đánh giá' };
     }
 
-    if (ownership.preorder_id != null && ownership.preorder_checked_in_at == null) {
-      return { eligible: false, reason: 'Preorder must be checked in before review' };
+    if (ownership.preorder_id != null) {
+      if (ownership.preorder_handover_confirmed_at == null || ownership.preorder_status !== 'COMPLETED') {
+        return {
+          eligible: false,
+          reason: 'Đơn đặt trước cần được xác nhận giao hàng trước khi đánh giá',
+        };
+      }
     }
 
     // Check existing review

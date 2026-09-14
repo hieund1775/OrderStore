@@ -123,7 +123,9 @@ export class ProductReviewsRepository {
   async verifyOrderItemOwnership(orderItemId, userId) {
     const { rows } = await this.db.query(
       `SELECT oi.id, oi.order_id, oi.product_id, o.user_id, o.order_code,
-              o.preorder_id, p.checked_in_at AS preorder_checked_in_at
+              o.preorder_id, p.checked_in_at AS preorder_checked_in_at,
+              p.handover_confirmed_at AS preorder_handover_confirmed_at,
+              p.status AS preorder_status
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        LEFT JOIN preorders p ON p.id = o.preorder_id

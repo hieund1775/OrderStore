@@ -97,6 +97,57 @@ export function createPreordersRepository(database = postgresDb) {
     }));
   }
 
+  async function attachReviewsToPreorders(preorders) {
+    if (!preorders.length) return preorders;
+    const itemIds = [];
+    for (const p of preorders) {
+      for (const o of p.orders || []) {
+        for (const it of o.items || []) {
+          if (it.id) itemIds.push(Number(it.id));
+        }
+      }
+    }
+    if (!itemIds.length) return preorders;
+    const reviews = rowsOf(await database.query(
+      `SELECT r.id, r.order_item_id, r.user_id, r.reply_comment, r.reply_at,
+              rev.rating, rev.comment, rev.created_at
+       FROM reviews r
+       LEFT JOIN review_revisions rev ON rev.id = r.current_revision_id
+       WHERE r.order_item_id = ANY($1::bigint[])`,
+      [itemIds],
+    ));
+    const reviewsByItemId = new Map();
+    for (const r of reviews) {
+      reviewsByItemId.set(String(r.order_item_id), {
+        id: Number(r.id),
+        rating: Number(r.rating || 0),
+        comment: r.comment || '',
+        created_at: r.created_at,
+        reply_comment: r.reply_comment || null,
+        reply_at: r.reply_at || null,
+      });
+    }
+    for (const p of preorders) {
+      const pReviews = [];
+      for (const o of p.orders || []) {
+        for (const it of o.items || []) {
+          const rev = reviewsByItemId.get(String(it.id));
+          if (rev) {
+            it.review = rev;
+            pReviews.push({
+              order_item_id: it.id,
+              product_id: it.product_id,
+              product_name: it.product_name,
+              ...rev,
+            });
+          }
+        }
+      }
+      p.reviews = pReviews;
+    }
+    return preorders;
+  }
+
   async function loadCustomerPreorders(customerUserId, preorderCode = null) {
     const values = [Number(customerUserId)];
     const codeFilter = preorderCode == null
@@ -234,7 +285,7 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId, tableId = null }, { tx = null } = {}) {
+    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId }, { tx = null } = {}) {
       return inTransaction(database, tx, async (runner) => {
         const rows = rowsOf(await runner.query(
           `INSERT INTO preorders
@@ -245,15 +296,7 @@ export function createPreordersRepository(database = postgresDb) {
           [preorderCode, Number(storeId), Number(customerUserId), String(idempotencyKey), scheduledStartAt, scheduledEndAt, Number(responsibleManagerId)],
         ));
         const preorder = rows[0];
-        if (!preorder) throw new PreorderRepositoryError('KhÃ´ng thá»ƒ táº¡o Ä‘Æ¡n Ä‘áº·t trÆ°á»›c', 500, 'PREORDER_CREATE_FAILED');
-        if (tableId != null) {
-          await runner.query(
-            `INSERT INTO preorder_table_reservations
-             (preorder_id, table_id, reserved_from, reserved_until, status)
-             VALUES ($1,$2,$3::timestamptz - INTERVAL '30 minutes',$3::timestamptz + INTERVAL '60 minutes','pending_payment')`,
-            [preorder.id, Number(tableId), scheduledStartAt],
-          );
-        }
+        if (!preorder) throw new PreorderRepositoryError('Không thể tạo đơn đặt trước', 500, 'PREORDER_CREATE_FAILED');
         return preorder;
       });
     },
@@ -309,7 +352,7 @@ export function createPreordersRepository(database = postgresDb) {
       return loadCustomerPreorders(customerUserId);
     },
 
-    async list({ storeId = null, status = null, statuses = null, from = null, to = null, includePendingOnly = false } = {}) {
+    async list({ storeId = null, status = null, statuses = null, from = null, to = null, includePendingOnly = false, includeReviews = false } = {}) {
       const values = [];
       const where = [];
       const add = (value) => { values.push(value); return `$${values.length}`; };
@@ -342,7 +385,11 @@ export function createPreordersRepository(database = postgresDb) {
           rejection_reason: p.checkin_rejection_reason,
         } : null,
       }));
-      return attachLinkedOrders(mapped);
+      const attached = await attachLinkedOrders(mapped);
+      if (includeReviews) {
+        return attachReviewsToPreorders(attached);
+      }
+      return attached;
     },
 
     async findByPaymentTarget({ orderId = null, checkoutGroupId = null }, { tx = null, forUpdate = false } = {}) {
@@ -525,10 +572,11 @@ export function createPreordersRepository(database = postgresDb) {
       return rowsOf(await executor.query(
         `SELECT p.*, i.id AS incident_id, i.reminder_t60_sent_at, i.urgent_t30_sent_at, i.breached_at
          FROM preorders p
-         JOIN preorder_confirmation_incidents i ON i.preorder_id = p.id
-         WHERE p.status IN ('PENDING_MANAGER_CONFIRMATION','CONFIRMED')
-           AND p.scheduled_start_at <= $1 + INTERVAL '1 hour'
-         ORDER BY p.scheduled_start_at ASC FOR UPDATE OF p, i`, [now],
+         LEFT JOIN preorder_confirmation_incidents i ON i.preorder_id = p.id
+         WHERE (p.status IN ('PENDING_MANAGER_CONFIRMATION','CONFIRMED')
+                OR (p.status = 'CHECKED_IN' AND p.completed_at IS NULL))
+           AND p.scheduled_start_at <= $1 + INTERVAL '1 day'
+         ORDER BY p.scheduled_start_at ASC FOR UPDATE OF p`, [now],
       ));
     },
 
@@ -675,6 +723,37 @@ export function createPreordersRepository(database = postgresDb) {
          WHERE id = $1 AND manager_breach_recorded_at IS NULL
          RETURNING *`,
         [Number(requestId), time],
+      ));
+      return rows[0] || null;
+    },
+
+    async confirmHandover({ preorderId, actorId, handoverAt = new Date() }, { tx = null } = {}) {
+      const executor = tx || database;
+      const time = handoverAt ? new Date(handoverAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorders
+         SET status = 'COMPLETED',
+             handover_confirmed_at = $2,
+             handover_confirmed_by = $3,
+             completed_at = COALESCE(completed_at, $2),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [Number(preorderId), time, Number(actorId)],
+      ));
+      return rows[0] || null;
+    },
+
+    async markHandoverOverdue({ preorderId, overdueAt = new Date() }, { tx = null } = {}) {
+      const executor = tx || database;
+      const time = overdueAt ? new Date(overdueAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorders
+         SET handover_overdue_at = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND handover_overdue_at IS NULL
+         RETURNING *`,
+        [Number(preorderId), time],
       ));
       return rows[0] || null;
     },

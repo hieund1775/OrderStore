@@ -254,6 +254,8 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'preorder_id', o.preorder_id,
                     'preorder_code', COALESCE(p.preorder_code, p_direct.preorder_code, CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END),
                     'preorder_checked_in_at', p.checked_in_at,
+                    'preorder_handover_confirmed_at', COALESCE(p.handover_confirmed_at, p_direct.handover_confirmed_at),
+                    'preorder_status', COALESCE(p.status, p_direct.status),
                     'status', (
                       SELECT status FROM order_status_history osh
                       WHERE osh.order_id = o.id
@@ -494,7 +496,9 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       const industries = (group.child_orders || []).map((co) => {
         const isChildOwner = Boolean(isAuthenticatedCustomer && co.user_id && Number(co.user_id) === Number(userId));
         const isCompleted = (co.status === 'Hoàn thành');
-        const isPreorderEligible = co.preorder_id ? Boolean(co.preorder_checked_in_at) : true;
+        const isPreorderEligible = co.preorder_id
+          ? Boolean(co.preorder_handover_confirmed_at && co.preorder_status === 'COMPLETED')
+          : true;
         const canReview = Boolean(isChildOwner && isCompleted && isPreorderEligible);
 
         return {

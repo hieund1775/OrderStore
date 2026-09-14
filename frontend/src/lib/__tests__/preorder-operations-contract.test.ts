@@ -21,7 +21,7 @@ describe('preorder customer and operations contract', () => {
   });
 
   it('does not put unpaid preorders in the operational queue and makes configuration compact', () => {
-    expect(adminPreorders).toContain("'pending' | 'confirmed' | 'checked-in' | 'today' | 'upcoming' | 'archive'");
+    expect(adminPreorders).toContain("'pending' | 'check-in' | 'today' | 'upcoming' | 'archive'");
     expect(adminPreorders).toContain('<details className="group rounded-xl border bg-card p-4">');
     expect(adminPreorders).toContain('Tất cả chi nhánh');
   });
@@ -29,16 +29,14 @@ describe('preorder customer and operations contract', () => {
   it('shows confirmed preorders as a read-only kitchen preview instead of a KDS action card', () => {
     expect(kitchen).toContain('/admin/preorders/kitchen/confirmed');
     expect(kitchen).toContain('Preorder sắp tới');
-    expect(kitchen).toContain('chưa được bắt đầu/hoàn thành trước khi khách check-in');
+    expect(kitchen).toContain('Bếp có thể chủ động chuẩn bị món theo lịch hẹn (không cần đợi khách check-in)');
   });
 
-  it('contracts customer check-in request and admin check-in confirmation/rejection flow', () => {
-    expect(preordersTab).toContain('/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in-request');
-    expect(preordersTab).toContain('Đã gửi yêu cầu check-in · Đang chờ Quản lý xác nhận');
-    expect(preordersTab).toContain('Check-in mở lúc');
-    expect(adminPreorders).toContain('/admin/preorders/${id}/check-in');
-    expect(adminPreorders).toContain('/check-in/reject');
-    expect(adminPreorders).toContain('Xác nhận check-in sau thời hạn T+30');
-    expect(adminPreorders).toContain('Từ chối yêu cầu check-in');
+  it('contracts customer self check-in and admin handover confirmation flow', () => {
+    expect(preordersTab).toContain('/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in');
+    expect(preordersTab).toContain('Check-in thành công');
+    expect(preordersTab).toContain('Check-in mở từ 08:00 đến 24:00');
+    expect(adminPreorders).toContain('/admin/preorders/${id}/handover');
+    expect(adminPreorders).toContain('Xác nhận giao hàng');
   });
 });

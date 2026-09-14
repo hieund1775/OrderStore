@@ -508,38 +508,42 @@ describe('ProductReviewsService — unit tests', () => {
     );
   });
 
-  // ────── preorder check-in eligibility ──────
+  // ────── preorder handover eligibility ──────
 
-  it('rejects review eligibility if preorder has not been checked in yet', async () => {
+  it('rejects review eligibility if preorder handover has not been confirmed yet (even if checked in)', async () => {
     const repo = mockRepo();
     repo.verifyOrderItemOwnership.mock.mockImplementation(() => ({
       order_id: 10,
       product_id: 1,
       order_code: 'TP001',
       preorder_id: 7,
-      preorder_checked_in_at: null,
+      preorder_checked_in_at: '2026-09-15T10:00:00.000Z',
+      preorder_handover_confirmed_at: null,
+      preorder_status: 'CHECKED_IN',
     }));
     repo.getLatestOrderStatus.mock.mockImplementation(() => 'Hoàn thành');
     const service = new ProductReviewsService(repo);
 
     const result = await service.checkEligibility('TP001', 1, 5);
     assert.equal(result.eligible, false);
-    assert.match(result.reason, /Preorder must be checked in/i);
+    assert.match(result.reason, /giao hàng/i);
 
     await assert.rejects(
       () => service.createReview({ userId: 5, productId: 1, orderItemId: 1, rating: 5, comment: 'Great' }),
-      { code: 'PREORDER_NOT_CHECKED_IN' },
+      { code: 'PREORDER_NOT_HANDED_OVER' },
     );
   });
 
-  it('allows review eligibility once preorder has been checked in and completed', async () => {
+  it('allows review eligibility once preorder handover has been confirmed and status is COMPLETED', async () => {
     const repo = mockRepo();
     repo.verifyOrderItemOwnership.mock.mockImplementation(() => ({
       order_id: 10,
       product_id: 1,
       order_code: 'TP001',
       preorder_id: 7,
-      preorder_checked_in_at: '2026-09-15T12:00:00.000Z',
+      preorder_checked_in_at: '2026-09-15T10:00:00.000Z',
+      preorder_handover_confirmed_at: '2026-09-15T12:00:00.000Z',
+      preorder_status: 'COMPLETED',
     }));
     repo.getLatestOrderStatus.mock.mockImplementation(() => 'Hoàn thành');
     repo.findByOrderItemAndUser.mock.mockImplementation(() => null);

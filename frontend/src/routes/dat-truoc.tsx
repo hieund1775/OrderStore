@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { CalendarClock, CreditCard, Minus, Plus, ShoppingBag, Store, Table2, Trash2 } from 'lucide-react';
+import { CalendarClock, CreditCard, Minus, Plus, ShoppingBag, Store, Ticket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,6 @@ export const Route = createFileRoute('/dat-truoc')({ component: PreorderCheckout
 
 type PreorderSlot = { hour: number; available: boolean; reason?: string; scheduled_start_at?: string };
 type Availability = { slots: PreorderSlot[] };
-type StoreTable = { id: number; name: string };
 type CheckoutProduct = { id: number; slug?: string };
 type Option = { id: number; label?: string; name?: string };
 type CheckoutResponse = { preorder?: { preorder_code?: string }; checkout_url?: string; qr_code?: string; group_code?: string; order_code?: string };
@@ -49,8 +48,6 @@ function PreorderCheckoutPage() {
   const [hour, setHour] = useState<string>('');
   const [availability, setAvailability] = useState<Availability | null>(null);
   const [preorderStores, setPreorderStores] = useState<PreorderStoreAvailability[] | null>(null);
-  const [tables, setTables] = useState<StoreTable[]>([]);
-  const [tableId, setTableId] = useState<string>('none');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [voucherCode, setVoucherCode] = useState('');
@@ -129,9 +126,7 @@ function PreorderCheckoutPage() {
   useEffect(() => {
     let active = true;
     if (!Number.isInteger(storeId) || storeId <= 0 || !date) return undefined;
-    setAvailability(null); setHour(''); setTables([]); setTableId('none');
-    // Do not issue a request that is guaranteed to be rejected with 409 while
-    // the public store configuration is still loading.
+    setAvailability(null); setHour('');
     if (preorderStores == null) return undefined;
     if (selectedStorePreorderAvailable === false) return undefined;
     apiGet<Availability>(`/api/preorders/availability?store_id=${storeId}&date=${encodeURIComponent(date)}`)
@@ -145,20 +140,6 @@ function PreorderCheckoutPage() {
       });
     return () => { active = false; };
   }, [date, preorderStores, selectedStorePreorderAvailable, storeId]);
-
-  useEffect(() => {
-    let active = true;
-    const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour);
-    if (!hour || !Number.isInteger(storeId) || selectedSlot?.available !== true) {
-      setTables([]);
-      setTableId('none');
-      return undefined;
-    }
-    apiGet<{ tables: StoreTable[] }>(`/api/preorders/tables?store_id=${storeId}&date=${encodeURIComponent(date)}&hour=${hour}`)
-      .then((value) => { if (active) setTables(value.tables || []); })
-      .catch((error) => { if (active) toast.error(error instanceof Error ? error.message : 'Không thể tải bàn trống'); });
-    return () => { active = false; };
-  }, [availability, date, hour, storeId]);
 
   async function submit() {
     if (!getCustomerSession()) {
@@ -187,7 +168,6 @@ function PreorderCheckoutPage() {
         store_id: storeId,
         scheduled_date: date,
         scheduled_hour: Number(hour),
-        table_id: tableId === 'none' ? null : Number(tableId),
         customer_name: name.trim(), customer_phone: phone.trim(),
         voucher_code: voucherCode.trim() || null,
         source: 'online',
@@ -226,10 +206,13 @@ function PreorderCheckoutPage() {
       <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} onChange={(event) => setDate(event.target.value)} /></div>
       {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
       <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label><Table2 className="mr-1 inline size-4" />Bàn (không bắt buộc)</Label><Select value={tableId} onValueChange={setTableId} disabled={!hour}><SelectTrigger><SelectValue placeholder="Chưa chọn bàn" /></SelectTrigger><SelectContent><SelectItem value="none">Để cửa hàng sắp xếp</SelectItem>{tables.map((table) => <SelectItem key={table.id} value={String(table.id)}>{table.name}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label><Ticket className="mr-1 inline size-4" />Mã voucher (áp dụng đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value.toUpperCase())} placeholder="Ví dụ: PREORDER10" /></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-      <div className="md:col-span-2"><Label>Mã voucher (chỉ voucher hỗ trợ đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value)} /></div>
+      <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 md:col-span-2">
+        <p className="font-semibold">Lưu ý thời gian check-in tự phục vụ:</p>
+        <p className="mt-0.5 text-blue-800">Khung giờ khách tự check-in tại cửa hàng mở từ <strong>08:00 đến 24:00</strong> trong ngày đã chọn. Giờ đặt trước là thời gian dự kiến để cửa hàng chuẩn bị món chu đáo nhất.</p>
+      </div>
     </section>
     <section className="rounded-xl border bg-card p-5">
       <div className="mb-3 flex items-center gap-2 font-semibold"><ShoppingBag className="size-4" />Chọn món cho đơn đặt trước</div>

@@ -113,12 +113,37 @@ describe('Preorder service lifecycle and authorization', () => {
     assert.notEqual(calls.transitions[0].to, 'PENDING_MANAGER_CONFIRMATION');
   });
 
-  it('rejects cashier check-in and accepts only the branch Manager or Super', async () => {
+  it('rejects cashier handover confirmation and accepts only the branch Manager or Super', async () => {
+    const preorder = {
+      id: 10,
+      status: 'CHECKED_IN',
+      store_id: 1,
+      scheduled_start_at: now.toISOString(),
+      checked_in_at: now.toISOString(),
+    };
+    const { service, calls } = harness({
+      async findById() { return preorder; },
+      async listLinkedOrders() { return [{ id: 101, current_status: 'Hoàn thành' }]; },
+      async confirmHandover() {
+        calls.transitions.push({ id: 10, to: 'COMPLETED' });
+        return { ...preorder, status: 'COMPLETED', handover_confirmed_at: now.toISOString() };
+      },
+    });
+    await assert.rejects(
+      () => service.confirmHandover({ preorderId: 10, actor: { role: 'cashier', branch_id: 1, sub: 7 } }),
+      { code: 'PREORDER_BRANCH_FORBIDDEN' },
+    );
+    await service.confirmHandover({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } });
+    assert.equal(calls.transitions[0].to, 'COMPLETED');
+  });
+
+  it('rejects legacy manager check-in endpoints explaining self-service check-in is required', async () => {
     const preorder = { id: 10, status: 'CONFIRMED', store_id: 1, scheduled_start_at: now.toISOString() };
-    const { service, calls } = harness({ async findById() { return preorder; } });
-    await assert.rejects(() => service.checkIn({ preorderId: 10, actor: { role: 'cashier', branch_id: 1, sub: 7 } }), { code: 'PREORDER_BRANCH_FORBIDDEN' });
-    await service.checkIn({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } });
-    assert.equal(calls.transitions[0].to, 'CHECKED_IN');
+    const { service } = harness({ async findById() { return preorder; } });
+    await assert.rejects(
+      () => service.checkIn({ preorderId: 10, actor: { role: 'manager', branch_id: 1, sub: 9 } }),
+      { code: 'PREORDER_CHECKIN_SELF_SERVICE_REQUIRED' },
+    );
   });
 
   it('preserves lifecycle status on the single allowed reschedule', async () => {

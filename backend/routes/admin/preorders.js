@@ -7,27 +7,14 @@ import preordersRepository from '../../repositories/postgres/preorders.js';
 import postgresDb from '../../config/db-postgres.js';
 import { getTodayBoundaries } from '../../services/business-time.js';
 
-const PAID_OPERATIONAL_STATUSES = Object.freeze([
-  'PENDING_MANAGER_CONFIRMATION',
-  'CONFIRMED',
-  'CHECKED_IN',
+const ARCHIVE_VALID_STATUSES = Object.freeze(new Set([
   'COMPLETED',
   'CUSTOMER_CANCELLED',
   'NO_SHOW',
-  'PAYMENT_EXPIRED',
-  'LATE_PAID_REQUIRES_ACTION',
-]);
-
-const ARCHIVED_STATUSES = Object.freeze([
-  'COMPLETED',
-  'CUSTOMER_CANCELLED',
-  'NO_SHOW',
-  'PAYMENT_EXPIRED',
-  'LATE_PAID_REQUIRES_ACTION',
-]);
+]));
 
 function errorResponse(res, error) {
-  return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
+  return res.status(error?.status || 500).json({ error: error?.message || 'Không thể xử lý preorder' });
 }
 
 export function createAdminPreordersRouter({
@@ -42,19 +29,43 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
     const storeId = resolveStoreScope(req.user, req.query.store_id);
     const today = getTodayBoundaries();
     const view = String(req.query.view || 'pending');
-    const statuses = view === 'pending'
-      ? ['PENDING_MANAGER_CONFIRMATION']
-      : view === 'confirmed'
-        ? ['CONFIRMED']
-        : view === 'checked-in'
-          ? ['CHECKED_IN']
-          : view === 'archive'
-            ? ARCHIVED_STATUSES
-            : PAID_OPERATIONAL_STATUSES;
+
+    let statuses;
+    let from = null;
+    let to = null;
+    let includeReviews = false;
+
+    if (view === 'pending') {
+      statuses = ['PENDING_MANAGER_CONFIRMATION'];
+    } else if (view === 'check-in' || view === 'checked-in') {
+      statuses = ['CHECKED_IN'];
+    } else if (view === 'today') {
+      statuses = ['CONFIRMED', 'CHECKED_IN'];
+      from = today.start;
+      to = today.end;
+    } else if (view === 'upcoming') {
+      statuses = ['CONFIRMED', 'PENDING_MANAGER_CONFIRMATION'];
+      from = today.end;
+    } else if (view === 'archive') {
+      includeReviews = true;
+      const requestedStatus = req.query.status ? String(req.query.status).trim() : '';
+      if (requestedStatus === 'all' || requestedStatus === 'ALL') {
+        statuses = ['COMPLETED', 'CUSTOMER_CANCELLED', 'NO_SHOW'];
+      } else if (ARCHIVE_VALID_STATUSES.has(requestedStatus)) {
+        statuses = [requestedStatus];
+      } else {
+        statuses = ['COMPLETED'];
+      }
+    } else {
+      statuses = ['PENDING_MANAGER_CONFIRMATION'];
+    }
+
     const rows = await repository.list({
-      storeId, status: req.query.status || null, statuses,
-      from: view === 'today' ? today.start : view === 'upcoming' ? today.end : null,
-      to: view === 'today' ? today.end : null,
+      storeId,
+      statuses,
+      from,
+      to,
+      includeReviews,
     });
     res.json(rows);
   } catch (error) { errorResponse(res, error); }
@@ -95,6 +106,12 @@ router.put('/settings/:storeId', requireRole('super'), asyncHandler(async (req, 
 
 router.post('/:id/confirm', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   try { res.json(await service.confirm({ preorderId: req.params.id, actor: req.user })); } catch (error) { errorResponse(res, error); }
+}));
+
+router.post('/:id/handover', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  try {
+    res.json(await service.confirmHandover({ preorderId: req.params.id, actor: req.user }));
+  } catch (error) { errorResponse(res, error); }
 }));
 
 router.post('/:id/reschedule', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
