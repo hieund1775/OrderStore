@@ -47,29 +47,29 @@ partial_installation_checks AS (
         ELSE 0
       END::bigint AS issue_count
 ),
-expected_checkin_columns(table_name, column_name, expected_type, is_nullable) AS (
+expected_checkin_columns(table_name, column_name, expected_type, is_nullable, char_max_length) AS (
     VALUES
-      ('preorder_checkin_requests', 'id', 'bigint', 'NO'),
-      ('preorder_checkin_requests', 'preorder_id', 'bigint', 'NO'),
-      ('preorder_checkin_requests', 'store_id', 'bigint', 'NO'),
-      ('preorder_checkin_requests', 'customer_user_id', 'bigint', 'NO'),
-      ('preorder_checkin_requests', 'scheduled_start_at', 'timestamp with time zone', 'NO'),
-      ('preorder_checkin_requests', 'scheduled_end_at', 'timestamp with time zone', 'NO'),
-      ('preorder_checkin_requests', 'requested_at', 'timestamp with time zone', 'NO'),
-      ('preorder_checkin_requests', 'status', 'character varying', 'NO'),
-      ('preorder_checkin_requests', 'resolved_by', 'bigint', 'YES'),
-      ('preorder_checkin_requests', 'resolved_at', 'timestamp with time zone', 'YES'),
-      ('preorder_checkin_requests', 'rejection_reason', 'character varying', 'YES'),
-      ('preorder_checkin_requests', 'late_confirmation_reason', 'character varying', 'YES'),
-      ('preorder_checkin_requests', 'manager_breach_recorded_at', 'timestamp with time zone', 'YES'),
-      ('preorder_checkin_requests', 'created_at', 'timestamp with time zone', 'NO'),
-      ('preorder_checkin_requests', 'updated_at', 'timestamp with time zone', 'NO'),
-      ('preorder_slot_strike_events', 'id', 'bigint', 'NO'),
-      ('preorder_slot_strike_events', 'preorder_id', 'bigint', 'NO'),
-      ('preorder_slot_strike_events', 'scheduled_start_at', 'timestamp with time zone', 'NO'),
-      ('preorder_slot_strike_events', 'manager_id', 'bigint', 'NO'),
-      ('preorder_slot_strike_events', 'strike_source', 'character varying', 'NO'),
-      ('preorder_slot_strike_events', 'created_at', 'timestamp with time zone', 'NO')
+      ('preorder_checkin_requests', 'id', 'bigint', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'preorder_id', 'bigint', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'store_id', 'bigint', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'customer_user_id', 'bigint', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'scheduled_start_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'scheduled_end_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'requested_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'status', 'character varying', 'NO', 40),
+      ('preorder_checkin_requests', 'resolved_by', 'bigint', 'YES', NULL::integer),
+      ('preorder_checkin_requests', 'resolved_at', 'timestamp with time zone', 'YES', NULL::integer),
+      ('preorder_checkin_requests', 'rejection_reason', 'character varying', 'YES', 500),
+      ('preorder_checkin_requests', 'late_confirmation_reason', 'character varying', 'YES', 500),
+      ('preorder_checkin_requests', 'manager_breach_recorded_at', 'timestamp with time zone', 'YES', NULL::integer),
+      ('preorder_checkin_requests', 'created_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_checkin_requests', 'updated_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_slot_strike_events', 'id', 'bigint', 'NO', NULL::integer),
+      ('preorder_slot_strike_events', 'preorder_id', 'bigint', 'NO', NULL::integer),
+      ('preorder_slot_strike_events', 'scheduled_start_at', 'timestamp with time zone', 'NO', NULL::integer),
+      ('preorder_slot_strike_events', 'manager_id', 'bigint', 'NO', NULL::integer),
+      ('preorder_slot_strike_events', 'strike_source', 'character varying', 'NO', 40),
+      ('preorder_slot_strike_events', 'created_at', 'timestamp with time zone', 'NO', NULL::integer)
 ),
 existing_column_shape_checks AS (
     SELECT
@@ -78,7 +78,8 @@ existing_column_shape_checks AS (
         WHERE t.table_name IS NOT NULL
           AND (c.column_name IS NULL
                OR c.data_type <> exp.expected_type
-               OR c.is_nullable <> exp.is_nullable)
+               OR c.is_nullable <> exp.is_nullable
+               OR (exp.char_max_length IS NOT NULL AND c.character_maximum_length <> exp.char_max_length))
       )::bigint AS issue_count
     FROM expected_checkin_columns exp
     LEFT JOIN information_schema.tables t
@@ -119,61 +120,109 @@ preexisting_object_checks AS (
                 SELECT 1 FROM pg_constraint
                 WHERE conname = 'chk_preorder_checkin_status_resolution'
                   AND conrelid = 'preorder_checkin_requests'::regclass
+                  AND pg_get_constraintdef(oid) ILIKE '%PENDING%'
+                  AND pg_get_constraintdef(oid) ILIKE '%CONFIRMED%'
+                  AND pg_get_constraintdef(oid) ILIKE '%REJECTED%'
                   AND pg_get_constraintdef(oid) ILIKE '%RESCHEDULED%'
                   AND pg_get_constraintdef(oid) ILIKE '%resolved_by IS NOT NULL%'
-              )
-              -- Foreign keys with confdeltype = 'r' (RESTRICT)
-              UNION ALL
-              SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conrelid = 'preorder_checkin_requests'::regclass
-                  AND contype = 'f'
-                  AND confrelid = 'preorders'::regclass
-                  AND confdeltype = 'r'
-              )
-              UNION ALL
-              SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conrelid = 'preorder_checkin_requests'::regclass
-                  AND contype = 'f'
-                  AND confrelid = 'stores'::regclass
-                  AND confdeltype = 'r'
-              )
-              UNION ALL
-              SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conrelid = 'preorder_checkin_requests'::regclass
-                  AND contype = 'f'
-                  AND confrelid = 'users'::regclass
-                  AND confdeltype = 'r'
+                  AND pg_get_constraintdef(oid) ILIKE '%resolved_at IS NOT NULL%'
               )
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
                 SELECT 1 FROM pg_constraint
                 WHERE conrelid = 'preorder_slot_strike_events'::regclass
-                  AND contype = 'f'
-                  AND confrelid = 'preorders'::regclass
-                  AND confdeltype = 'r'
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid) ILIKE '%CONFIRMATION_BREACH%'
+                  AND pg_get_constraintdef(oid) ILIKE '%CHECKIN_BREACH%'
+              )
+              -- Foreign keys with exact source/target column and confdeltype = 'r' (RESTRICT)
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_checkin_requests'::regclass
+                  AND c.confrelid = 'preorders'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'preorder_id'
+                  AND ta.attname = 'id'
               )
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conrelid = 'preorder_slot_strike_events'::regclass
-                  AND contype = 'f'
-                  AND confrelid = 'users'::regclass
-                  AND confdeltype = 'r'
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_checkin_requests'::regclass
+                  AND c.confrelid = 'stores'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'store_id'
+                  AND ta.attname = 'id'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_checkin_requests'::regclass
+                  AND c.confrelid = 'users'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'customer_user_id'
+                  AND ta.attname = 'id'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_checkin_requests'::regclass
+                  AND c.confrelid = 'users'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'resolved_by'
+                  AND ta.attname = 'id'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_slot_strike_events'::regclass
+                  AND c.confrelid = 'preorders'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'preorder_id'
+                  AND ta.attname = 'id'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_attribute sa ON sa.attrelid = c.conrelid AND sa.attnum = ANY(c.conkey)
+                JOIN pg_attribute ta ON ta.attrelid = c.confrelid AND ta.attnum = ANY(c.confkey)
+                WHERE c.conrelid = 'preorder_slot_strike_events'::regclass
+                  AND c.confrelid = 'users'::regclass
+                  AND c.contype = 'f'
+                  AND c.confdeltype = 'r'
+                  AND sa.attname = 'manager_id'
+                  AND ta.attname = 'id'
               )
               -- Trigger and function
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_trigger
-                WHERE tgname = 'trg_preorder_checkin_parent_snapshot'
-                  AND tgrelid = 'preorder_checkin_requests'::regclass
+                SELECT 1 FROM pg_trigger t
+                JOIN pg_proc p ON p.oid = t.tgfoid
+                WHERE t.tgname = 'trg_preorder_checkin_parent_snapshot'
+                  AND t.tgrelid = 'preorder_checkin_requests'::regclass
+                  AND p.proname = 'trg_verify_preorder_checkin_parent_snapshot'
+                  AND t.tgenabled = 'O'
               )
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
                 SELECT 1 FROM pg_proc
                 WHERE proname = 'trg_verify_preorder_checkin_parent_snapshot'
+                  AND prorettype = 'trigger'::regtype
               )
               -- Required indexes
               UNION ALL

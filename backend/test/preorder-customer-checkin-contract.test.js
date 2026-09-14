@@ -59,6 +59,7 @@ function createHarness(overrides = {}) {
       return { id: data.requestId, status: 'REJECTED', ...data };
     },
     async markCheckinRequestRescheduled(data) {
+      calls.transitions.push({ type: 'markCheckinRequestRescheduled', ...data });
       calls.checkinRequests.push({ type: 'rescheduled', ...data });
       return [];
     },
@@ -97,10 +98,12 @@ function createHarness(overrides = {}) {
     async updateIncident() {
       return null;
     },
-    async moveReservation() {
+    async moveReservation(data) {
+      calls.transitions.push({ type: 'moveReservation', ...data });
       return null;
     },
-    async addRescheduleHistory() {
+    async addRescheduleHistory(data) {
+      calls.transitions.push({ type: 'addRescheduleHistory', ...data });
       return null;
     },
     async claimPendingEmailDeliveries() {
@@ -126,6 +129,22 @@ function createHarness(overrides = {}) {
                 scheduled_end_at: new Date(baseTime.getTime() + 60 * 60_000).toISOString(),
                 status: 'CONFIRMED',
                 reschedule_count: 0,
+                ...overrides.preorder,
+              }],
+            };
+          }
+          if (sql.includes('UPDATE preorders') && sql.includes('RETURNING *')) {
+            return {
+              rows: [{
+                id: params[0],
+                preorder_code: 'PO123',
+                customer_user_id: 5,
+                store_id: 1,
+                responsible_manager_id: 9,
+                scheduled_start_at: params[1],
+                scheduled_end_at: params[2],
+                status: 'CONFIRMED',
+                reschedule_count: 1,
                 ...overrides.preorder,
               }],
             };
@@ -404,5 +423,8 @@ describe('Preorder Customer Check-in Contract', () => {
     assert.equal(rescheduleCall.preorderId, 10);
     assert.equal(rescheduleCall.resolvedBy, 9);
     assert.ok(rescheduleCall.resolvedAt instanceof Date || typeof rescheduleCall.resolvedAt === 'string');
+
+    const transitionTypes = calls.transitions.map((t) => t.type);
+    assert.deepEqual(transitionTypes, ['markCheckinRequestRescheduled', 'moveReservation', 'addRescheduleHistory']);
   });
 });

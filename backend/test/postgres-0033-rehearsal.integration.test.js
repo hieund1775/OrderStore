@@ -81,9 +81,23 @@ async function createPost0032Baseline(client, schema) {
     );
   `);
 
+  const migrationsDir = path.join(root, 'database', 'postgres', 'migrations');
   for (let v = 26; v <= 32; v += 1) {
     const ver = String(v).padStart(4, '0');
-    await client.query(`INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`, [ver, `migration_${ver}.sql`, `baseline-checksum-${ver}`]);
+    // Find matching migration file
+    const migrationFiles = {
+      '0026': '0026_payment_attempts_additive.sql',
+      '0027': '0027_payment_attempts_enforcement.sql',
+      '0028': '0028_product_reviews.sql',
+      '0029': '0029_auth_email_staff_accounts.sql',
+      '0030': '0030_preorder_v1.sql',
+      '0031': '0031_table_qr_guest_dinein.sql',
+      '0032': '0032_auth_phone_first_password_reset.sql',
+    };
+    const filename = migrationFiles[ver];
+    const fileSql = await readFile(path.join(migrationsDir, filename), 'utf8');
+    const checksum = calculateChecksum(fileSql);
+    await client.query(`INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`, [ver, filename, checksum]);
   }
 
   await client.query(`

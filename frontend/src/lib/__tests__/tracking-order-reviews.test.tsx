@@ -152,5 +152,35 @@ describe('Tracking Order Reviews Component and Contracts', () => {
       root?.render(<OrderReviewPanel orderCode={rawChildOrder.order_code} items={reviewItems} canReview={true} />);
     });
     expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP20260914001/items/501/review');
+
+    // Click "Đánh giá" button to open ReviewDialog and submit
+    const reviewButton = container?.querySelector('button');
+    expect(reviewButton?.textContent).toContain('Đánh giá');
+
+    vi.mocked(api.apiPost).mockResolvedValue({ success: true });
+
+    await act(async () => {
+      reviewButton?.click();
+    });
+
+    // Find submit button inside Dialog portal (rendered in document.body)
+    const submitBtn = Array.from(document.body.querySelectorAll('button')).find(
+      (btn) => btn.textContent?.includes('Gửi đánh giá'),
+    );
+    expect(submitBtn).toBeDefined();
+
+    await act(async () => {
+      submitBtn?.click();
+    });
+
+    // Assert review submission explicitly used child orderCode and orderItemId, NOT group id
+    expect(api.apiPost).toHaveBeenCalledWith(
+      '/api/orders/TP20260914001/items/501/review',
+      expect.objectContaining({
+        rating: 5,
+        comment: '',
+        intent_ids: [],
+      }),
+    );
   });
 });

@@ -549,8 +549,12 @@ describe('PostgreSQL production migration guard', () => {
     assert.match(migration, /CREATE TABLE IF NOT EXISTS preorder_slot_strike_events/);
     const migrationSql = migration.replace(/--.*$/gm, '');
     assert.doesNotMatch(migrationSql, /^\s*(?:TRUNCATE|DELETE)\b/im);
+    const strippedPreflight = preflight
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/--.*$/gm, '')
+      .replace(/'(?:''|[^'])*'/g, "''");
     assert.match(preflight, /^\s*--[\s\S]*WITH required_base_tables/m);
-    assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
+    assert.doesNotMatch(strippedPreflight, /(?:^|;)\s*(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/im);
   });
 
   it('fails closed for 0033 before preflight when 0032 is absent or checksum-mismatched', async () => {

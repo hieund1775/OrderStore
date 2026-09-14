@@ -329,20 +329,27 @@ async function markGroupedChildOrdersPaid(tx, target, paidAt, reference = null) 
   );
 }
 
-async function markTargetExpiredIfCurrent(tx, target, attempt) {
-  if (Number(target.current_payment_attempt_id) !== Number(attempt.id)) return;
-  if (target.type === 'order') {
+async function markTargetExpiredIfCurrent(tx, target, lockedTargetOrAttempt, attempt) {
+  const lockedTarget = attempt !== undefined ? lockedTargetOrAttempt : null;
+  const finalAttempt = attempt !== undefined ? attempt : lockedTargetOrAttempt;
+  const currentPointer = lockedTarget?.current_payment_attempt_id ?? target?.current_payment_attempt_id;
+  if (Number(currentPointer) !== Number(finalAttempt?.id)) return;
+
+  const targetType = target?.type || lockedTarget?.target_type;
+  const targetId = target?.id || lockedTarget?.id;
+
+  if (targetType === 'order') {
     await tx.query(
       `UPDATE orders o SET payment_status = 'expired', updated_at = CURRENT_TIMESTAMP
        WHERE o.id = $1 AND o.payment_status <> 'paid' AND ${orderIsNotCancelledSql('o')}`,
-      [target.id],
+      [targetId],
     );
     return;
   }
   await tx.query(
     `UPDATE checkout_groups SET payment_status = 'expired', updated_at = CURRENT_TIMESTAMP
      WHERE id = $1 AND payment_status <> 'paid' AND payment_status <> 'cancelled'`,
-    [target.id],
+    [targetId],
   );
 }
 
@@ -762,7 +769,7 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
            WHERE id = $1 RETURNING *`,
           [attempt.id, effectiveExpiredAt],
         );
-        await markTargetExpiredIfCurrent(tx, target, rows[0]);
+        await markTargetExpiredIfCurrent(tx, target, lockedTarget, rows[0]);
         return rows[0];
       });
     },
@@ -833,7 +840,7 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         }
 
         // Mark target expired ONLY if this attempt is the current pointer
-        await markTargetExpiredIfCurrent(tx, target, updatedAttempt);
+        await markTargetExpiredIfCurrent(tx, target, lockedTarget, updatedAttempt);
 
         // Record audit event in payment_events idempotently
         if (attempt.provider && attempt.provider_order_code) {

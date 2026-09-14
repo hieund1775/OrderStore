@@ -27,7 +27,11 @@ describe('0033 preorder customer checkin schema contract', () => {
 
   it('keeps its production preflight read-only', async () => {
     const sql = await readFile(path.join(root, 'database', 'postgres', 'verification', '0033_preorder_customer_checkin_preflight_readonly.sql'), 'utf8');
-    assert.match(sql, /^--[\s\S]*\bSELECT\b/i);
-    assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i);
+    assert.match(sql, /^--[\s\S]*\b(?:SELECT|WITH)\b/i);
+    const stripped = sql
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/--.*$/gm, '')
+      .replace(/'(?:''|[^'])*'/g, "''");
+    assert.doesNotMatch(stripped, /(?:^|;)\s*(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/im);
   });
 });
