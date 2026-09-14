@@ -17,6 +17,7 @@ const preflightPath = path.join(root, 'database', 'postgres', 'verification', '0
 const migrationPath = path.join(root, 'database', 'postgres', 'migrations', '0033_preorder_customer_checkin.sql');
 const teaPlusTestProjectRef = 'sumodxrhsbnirvrvnwpy';
 const productionProjectRef = 'duahwveccxdtueweyfov';
+const silentMigrationLogger = { log() {}, error() {} };
 
 function schemaName(prefix = 'preorder_checkin_0033') {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
@@ -122,11 +123,16 @@ function migrationGuardOptions() {
   };
 }
 
-async function applyCanonicalPost0032Chain(pool) {
+function migrationLockName(schema) {
+  return `teaplus_postgres_migrations:${assertSafeSchemaName(schema)}`;
+}
+
+async function applyCanonicalPost0032Chain(pool, schema) {
   const guardOptions = migrationGuardOptions();
-  await runMigrations({ pool, toVersion: '0024', guardOptions });
+  const advisoryLockName = migrationLockName(schema);
+  await runMigrations({ pool, toVersion: '0024', guardOptions, advisoryLockName, logger: silentMigrationLogger });
   await seedAuditedPre0025State(pool);
-  await runMigrations({ pool, toVersion: '0032', beforeMigration: provideMigrationInput, guardOptions });
+  await runMigrations({ pool, toVersion: '0032', beforeMigration: provideMigrationInput, guardOptions, advisoryLockName, logger: silentMigrationLogger });
 }
 
 async function seedCheckinFixture(client) {
@@ -213,7 +219,7 @@ describe('0033 Preorder Customer Check-in canonical isolated rehearsal', () => {
     let client;
     try {
       await createIsolatedSchema(schema);
-      await applyCanonicalPost0032Chain(pool);
+      await applyCanonicalPost0032Chain(pool, schema);
 
       client = await pool.connect();
       await assertSessionSchema(client, schema);
@@ -230,6 +236,8 @@ describe('0033 Preorder Customer Check-in canonical isolated rehearsal', () => {
         toVersion: '0033',
         beforeMigration: provideMigrationInput,
         guardOptions: migrationGuardOptions(),
+        advisoryLockName: migrationLockName(schema),
+        logger: silentMigrationLogger,
       });
       assert.equal(firstRun.at(-1)?.version, '0033');
       assert.equal(firstRun.at(-1)?.status, 'applied');
@@ -247,13 +255,22 @@ describe('0033 Preorder Customer Check-in canonical isolated rehearsal', () => {
       const preorder = preorderRows[0];
       assert.ok(preorder?.id);
 
-      await assert.rejects(
-        () => client.query(`
-          INSERT INTO preorder_checkin_requests (preorder_id, store_id, customer_user_id, scheduled_start_at, scheduled_end_at, status)
-          VALUES ($1, 1, 1, $2, $3, 'PENDING')
-        `, [preorder.id, preorder.scheduled_end_at, preorder.scheduled_start_at]),
-        /chk_preorder_checkin_schedule/,
-      );
+      // The parent-snapshot trigger runs before row constraints. Disable only
+      // that trigger momentarily in this generated schema to exercise the
+      // schedule CHECK itself; always restore it before continuing runtime
+      // and compatibility checks.
+      await client.query('ALTER TABLE preorder_checkin_requests DISABLE TRIGGER trg_preorder_checkin_parent_snapshot');
+      try {
+        await assert.rejects(
+          () => client.query(`
+            INSERT INTO preorder_checkin_requests (preorder_id, store_id, customer_user_id, scheduled_start_at, scheduled_end_at, status)
+            VALUES ($1, 1, 1, $2, $3, 'PENDING')
+          `, [preorder.id, preorder.scheduled_end_at, preorder.scheduled_start_at]),
+          /chk_preorder_checkin_schedule/,
+        );
+      } finally {
+        await client.query('ALTER TABLE preorder_checkin_requests ENABLE TRIGGER trg_preorder_checkin_parent_snapshot');
+      }
       await assert.rejects(
         () => client.query(`
           INSERT INTO preorder_checkin_requests (preorder_id, store_id, customer_user_id, scheduled_start_at, scheduled_end_at, status)
@@ -333,6 +350,8 @@ describe('0033 Preorder Customer Check-in canonical isolated rehearsal', () => {
         toVersion: '0033',
         beforeMigration: provideMigrationInput,
         guardOptions: migrationGuardOptions(),
+        advisoryLockName: migrationLockName(schema),
+        logger: silentMigrationLogger,
       });
       assert.equal(secondRun.find((entry) => entry.version === '0033')?.status, 'already_applied');
     } finally {

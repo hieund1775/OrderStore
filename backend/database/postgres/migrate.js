@@ -26,6 +26,8 @@ export async function runMigrations({
   toVersion = null,
   beforeMigration = null,
   guardOptions = undefined,
+  advisoryLockName = 'teaplus_postgres_migrations',
+  logger = console,
 } = {}) {
   const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
   // This guard is intentionally before Pool construction/connect and before
@@ -33,7 +35,7 @@ export async function runMigrations({
   const guardedTarget = validatePostgresTestGuard(targetUrl, guardOptions);
   const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
 
-  console.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
+  logger.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
 
   const client = await activePool.connect();
   let lockHeld = false;
@@ -41,7 +43,7 @@ export async function runMigrations({
   try {
     // One migrator per database: prevents two deploys from applying/checking the
     // same version concurrently. This is released in finally even on failure.
-    await client.query("SELECT pg_advisory_lock(hashtext('teaplus_postgres_migrations'))");
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [advisoryLockName]);
     lockHeld = true;
 
     // 1. Ensure schema_migrations tracker exists
@@ -86,7 +88,7 @@ export async function runMigrations({
       }
 
       // Execute migration inside atomic transaction
-      console.log(`⏳ Applying migration [${version}] ${file}...`);
+      logger.log(`⏳ Applying migration [${version}] ${file}...`);
       await client.query('BEGIN');
       try {
         // The production path does not supply hooks. Isolated migration
@@ -103,20 +105,20 @@ export async function runMigrations({
           [version, file, checksum]
         );
         await client.query('COMMIT');
-        console.log(`✅ Applied [${version}] ${file}`);
+        logger.log(`✅ Applied [${version}] ${file}`);
         results.push({ version, file, status: 'applied' });
       } catch (migrationErr) {
         await client.query('ROLLBACK');
-        console.error(`❌ Failed applying migration [${version}] ${file}:`, migrationErr.message);
+        logger.error(`❌ Failed applying migration [${version}] ${file}:`, migrationErr.message);
         throw migrationErr;
       }
     }
 
-    console.log(`🎉 All ${results.length} PostgreSQL migrations verified/applied successfully.`);
+    logger.log(`🎉 All ${results.length} PostgreSQL migrations verified/applied successfully.`);
     return results;
   } finally {
     if (lockHeld) {
-      await client.query("SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))");
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [advisoryLockName]);
     }
     client.release();
     if (!pool) {

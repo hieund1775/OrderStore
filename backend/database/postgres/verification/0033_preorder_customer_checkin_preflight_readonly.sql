@@ -123,7 +123,10 @@ check_constraint_checks AS (
         WHERE c.conrelid = s.checkin_rel AND c.conname = 'chk_preorder_checkin_status_resolution' AND c.contype = 'c'
           AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''pending''andresolved_byisnullandresolved_atisnullandrejection_reasonisnullandlate_confirmation_reasonisnull%'
           AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''confirmed''andresolved_byisnotnullandresolved_atisnotnull%'
-          AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''rejected''andresolved_byisnotnullandresolved_atisnotnullandrejection_reasonisnotnullandtrimrejection_reason<>''''%'
+          AND (
+            regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''rejected''andresolved_byisnotnullandresolved_atisnotnullandrejection_reasonisnotnullandtrimrejection_reason<>''''%'
+            OR regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''rejected''andresolved_byisnotnullandresolved_atisnotnullandrejection_reasonisnotnullandtrimbothfromrejection_reason<>''''%'
+          )
           AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') LIKE '%status=''rescheduled''andresolved_byisnotnullandresolved_atisnotnull%'
           AND (SELECT array_agg(DISTINCT labels.value[1] ORDER BY labels.value[1]) FROM regexp_matches(pg_get_constraintdef(c.oid), '''([A-Z_]+)''', 'g') AS labels(value)) = ARRAY['CONFIRMED', 'PENDING', 'REJECTED', 'RESCHEDULED']::text[]
       ) THEN 0 ELSE 1 END)
@@ -166,22 +169,30 @@ index_checks AS (
         SELECT 1 FROM pg_index i JOIN pg_class ix ON ix.oid = i.indexrelid
         WHERE i.indrelid = s.checkin_rel AND ix.relname = 'idx_preorder_checkin_requests_due'
           AND i.indisvalid AND i.indisready AND NOT i.indisunique
-          AND i.indkey::smallint[] = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'status'), (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'scheduled_start_at')]::smallint[]
+          AND i.indnkeyatts = 2
+          AND i.indkey[0] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'status')
+          AND i.indkey[1] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'scheduled_start_at')
           AND regexp_replace(regexp_replace(lower(pg_get_expr(i.indpred, i.indrelid)), '::[a-z_ ]+', '', 'g'), '[[:space:]()]', '', 'g') = 'status=''pending'''
       ) THEN 0 ELSE 1 END)
       + (CASE WHEN EXISTS (
         SELECT 1 FROM pg_index i JOIN pg_class ix ON ix.oid = i.indexrelid
         WHERE i.indrelid = s.checkin_rel AND ix.relname = 'idx_preorder_checkin_requests_preorder'
           AND i.indisvalid AND i.indisready AND NOT i.indisunique
-          AND i.indkey::smallint[] = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'preorder_id'), (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'created_at')]::smallint[]
-          AND i.indoption::smallint[] = ARRAY[0::smallint, 1::smallint] AND i.indpred IS NULL
+          AND i.indnkeyatts = 2
+          AND i.indkey[0] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'preorder_id')
+          AND i.indkey[1] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.checkin_rel AND attname = 'created_at')
+          -- PostgreSQL stores DESC with its default NULLS FIRST as option 3.
+          AND i.indoption[0] = 0 AND i.indoption[1] = 3 AND i.indpred IS NULL
       ) THEN 0 ELSE 1 END)
       + (CASE WHEN EXISTS (
         SELECT 1 FROM pg_index i JOIN pg_class ix ON ix.oid = i.indexrelid
         WHERE i.indrelid = s.strike_rel AND ix.relname = 'idx_preorder_slot_strike_manager'
           AND i.indisvalid AND i.indisready AND NOT i.indisunique
-          AND i.indkey::smallint[] = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = s.strike_rel AND attname = 'manager_id'), (SELECT attnum FROM pg_attribute WHERE attrelid = s.strike_rel AND attname = 'created_at')]::smallint[]
-          AND i.indoption::smallint[] = ARRAY[0::smallint, 1::smallint] AND i.indpred IS NULL
+          AND i.indnkeyatts = 2
+          AND i.indkey[0] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.strike_rel AND attname = 'manager_id')
+          AND i.indkey[1] = (SELECT attnum FROM pg_attribute WHERE attrelid = s.strike_rel AND attname = 'created_at')
+          -- PostgreSQL stores DESC with its default NULLS FIRST as option 3.
+          AND i.indoption[0] = 0 AND i.indoption[1] = 3 AND i.indpred IS NULL
       ) THEN 0 ELSE 1 END)
     END::bigint AS issue_count
   FROM object_state s CROSS JOIN object_mode m
