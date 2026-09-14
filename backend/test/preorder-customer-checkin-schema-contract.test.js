@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { calculateChecksum } from '../database/postgres/migrate.js';
+import { hasExecutableMutationStatement } from './helpers/sql-readonly.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -28,10 +29,6 @@ describe('0033 preorder customer checkin schema contract', () => {
   it('keeps its production preflight read-only', async () => {
     const sql = await readFile(path.join(root, 'database', 'postgres', 'verification', '0033_preorder_customer_checkin_preflight_readonly.sql'), 'utf8');
     assert.match(sql, /^--[\s\S]*\b(?:SELECT|WITH)\b/i);
-    const stripped = sql
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/--.*$/gm, '')
-      .replace(/'(?:''|[^'])*'/g, "''");
-    assert.doesNotMatch(stripped, /(?:^|;)\s*(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/im);
+    assert.equal(hasExecutableMutationStatement(sql), false);
   });
 });

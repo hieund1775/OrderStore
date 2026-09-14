@@ -20,11 +20,17 @@ export function calculateChecksum(content) {
 /**
  * Runs all pending PostgreSQL migrations in order
  */
-export async function runMigrations({ customUrl = null, pool = null } = {}) {
+export async function runMigrations({
+  customUrl = null,
+  pool = null,
+  toVersion = null,
+  beforeMigration = null,
+  guardOptions = undefined,
+} = {}) {
   const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
   // This guard is intentionally before Pool construction/connect and before
   // every SQL statement, including the advisory lock.
-  const guardedTarget = validatePostgresTestGuard(targetUrl);
+  const guardedTarget = validatePostgresTestGuard(targetUrl, guardOptions);
   const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
 
   console.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
@@ -63,6 +69,7 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
 
     for (const file of sqlFiles) {
       const version = file.split('_')[0];
+      if (toVersion && version > toVersion) break;
       const filePath = path.join(MIGRATIONS_DIR, file);
       const sqlContent = await fs.readFile(filePath, 'utf8');
       const checksum = calculateChecksum(sqlContent);
@@ -82,6 +89,14 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
       console.log(`⏳ Applying migration [${version}] ${file}...`);
       await client.query('BEGIN');
       try {
+        // The production path does not supply hooks. Isolated migration
+        // rehearsals may use this transaction-scoped seam for migrations
+        // whose approved executor contract requires session-local input
+        // (for example the audited 0026 quarantine manifest). Keeping the
+        // hook inside the runner transaction proves the same atomic boundary.
+        if (typeof beforeMigration === 'function') {
+          await beforeMigration({ client, version, file, sqlContent });
+        }
         await client.query(sqlContent);
         await client.query(
           'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
