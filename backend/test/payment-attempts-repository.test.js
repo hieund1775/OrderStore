@@ -96,7 +96,7 @@ describe('payment-attempt repository lifecycle contract', () => {
           if (sql.includes('UPDATE payment_attempts') && sql.includes("SET status = 'expired'")) {
             return [[{ id: 101, order_id: 11, status: 'expired' }], 1];
           }
-          if (sql.includes('UPDATE orders o SET payment_status = \'expired\'')) {
+          if (/UPDATE\s+orders(?: o)?\s+SET[\s\S]*payment_status\s*=\s*'expired'/i.test(sql)) {
             return [[{ id: 11, payment_status: 'expired' }], 1];
           }
           if (sql.includes('INSERT INTO payment_events')) {
@@ -120,8 +120,9 @@ describe('payment-attempt repository lifecycle contract', () => {
     assert.ok(targetLockIndex >= 0 && attemptLockIndex >= 0);
     assert.ok(targetLockIndex < attemptLockIndex, 'target must be locked before attempt');
 
-    const targetExpire = queries.find((q) => q.sql.includes('UPDATE orders o SET payment_status = \'expired\''));
+    const targetExpire = queries.find((q) => /UPDATE\s+orders(?: o)?\s+SET[\s\S]*payment_status\s*=\s*'expired'/i.test(q.sql));
     assert.ok(targetExpire, 'target must be marked expired when attempt is current pointer');
+    assert.equal(targetExpire.params[0], 11);
 
     const auditEvent = queries.find((q) => q.sql.includes('INSERT INTO payment_events'));
     assert.ok(auditEvent, 'payment_events audit entry must be inserted');

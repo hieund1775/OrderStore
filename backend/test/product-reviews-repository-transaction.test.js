@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ProductReviewsRepository } from '../repositories/postgres/product-reviews.js';
 
 describe('ProductReviewsRepository Transaction Contract', () => {
-  it('fails with connect is not a function when adapter only provides query and transaction (production shape)', async () => {
+  it('supports database adapters exposing query and transaction without requiring standalone connect', async () => {
     // Adapter matching production postgresDb shape: exposes query() and transaction(), but NOT connect()
     const prodShapeAdapter = {
       query: async () => [[], 0],

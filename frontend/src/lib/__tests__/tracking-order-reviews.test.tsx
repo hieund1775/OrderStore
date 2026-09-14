@@ -37,11 +37,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
     ];
 
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: 'TP2609070041',
-        items,
-        canReview: false,
-      }));
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={false} />);
     });
 
     expect(container?.innerHTML).toBe('');
@@ -49,11 +45,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
 
   it('renders nothing when items array is empty even if canReview is true', async () => {
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: 'TP2609070041',
-        items: [],
-        canReview: true,
-      }));
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={[]} canReview={true} />);
     });
 
     expect(container?.innerHTML).toBe('');
@@ -71,11 +63,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
     ];
 
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: 'TP2609070041',
-        items,
-        canReview: true,
-      }));
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={true} />);
     });
 
     expect(container?.textContent).toContain('Đánh giá món đã đặt');
@@ -98,11 +86,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
     ];
 
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: 'TP2609070041',
-        items,
-        canReview: true,
-      }));
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={true} />);
     });
 
     expect(container?.textContent).toContain('Đã đánh giá');
@@ -132,11 +116,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
     expect(reviewableItems[1].orderItemId).not.toBe(reviewableItems[1].productId);
 
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: 'TP2609070041',
-        items: reviewableItems,
-        canReview: true,
-      }));
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={reviewableItems} canReview={true} />);
     });
     expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP2609070041/items/101/review');
     expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP2609070041/items/102/review');
@@ -169,11 +149,7 @@ describe('Tracking Order Reviews Component and Contracts', () => {
     expect(reviewItems[0].name).toBe('2× Trà Chanh Giã Tay');
 
     await act(async () => {
-      root?.render(React.createElement(OrderReviewPanel, {
-        orderCode: rawChildOrder.order_code,
-        items: reviewItems,
-        canReview: true,
-      }));
+      root?.render(<OrderReviewPanel orderCode={rawChildOrder.order_code} items={reviewItems} canReview={true} />);
     });
     expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP20260914001/items/501/review');
   });

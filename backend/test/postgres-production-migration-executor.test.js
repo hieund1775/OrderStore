@@ -36,11 +36,11 @@ function createFakePool({ appliedRows, tryLock = true, trackerExists = true, pre
     async query(sql, params = []) {
       calls.push({ sql, params });
       if (sql.includes('pg_try_advisory_lock')) return { rows: [{ acquired: tryLock }] };
-      if (sql.includes("to_regclass('schema_migrations')")) {
+      if (/^\s*SELECT\s+to_regclass\('schema_migrations'\)\s+AS\s+relation_name/i.test(sql.trim())) {
         return { rows: [{ relation_name: trackerExists ? 'schema_migrations' : null }] };
       }
       if (sql.includes('SELECT version, checksum FROM schema_migrations')) return { rows: appliedRows || [] };
-      if (sql.includes('checks AS (') || sql.includes('checks AS\n') || sql.includes('checks AS\r\n')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
+      if (sql.includes('checks AS') || sql.includes('WITH ')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
       return { rows: [], rowCount: 0 };
     },
     release() {},

@@ -57,6 +57,32 @@ export async function reconcilePayOSAttempt({
     return { outcome: 'provider_uncertain', changed: false, skipped: false };
   }
 
+  // Canonical identity assessment: must prove the response belongs to the current attempt
+  // before ANY state transition (terminal_unpaid, paid, provider_pending).
+  const hasOrderCode = payosInfo.orderCode != null;
+  if (hasOrderCode && Number(payosInfo.orderCode) !== Number(attempt.provider_order_code)) {
+    return { outcome: 'provider_uncertain', changed: false, skipped: false };
+  }
+
+  const responseLinkId = payosInfo.paymentLinkId || payosInfo.id;
+  const hasResponseLinkId = responseLinkId != null && String(responseLinkId).trim() !== '';
+  const hasSnapshotLinkId = attempt.provider_payment_link_id != null && String(attempt.provider_payment_link_id).trim() !== '';
+
+  if (hasSnapshotLinkId && hasResponseLinkId) {
+    if (String(responseLinkId).trim() !== String(attempt.provider_payment_link_id).trim()) {
+      return { outcome: 'provider_uncertain', changed: false, skipped: false };
+    }
+  }
+
+  const orderCodeMatches = hasOrderCode && Number(payosInfo.orderCode) === Number(attempt.provider_order_code);
+  const linkIdMatches = hasSnapshotLinkId && hasResponseLinkId
+    && String(responseLinkId).trim() === String(attempt.provider_payment_link_id).trim();
+
+  // If neither orderCode nor snapshot link ID proves this attempt, fail closed
+  if (!orderCodeMatches && !linkIdMatches) {
+    return { outcome: 'provider_uncertain', changed: false, skipped: false };
+  }
+
   const classifiedStatus = classifyPayOSPaymentStatus(payosInfo);
 
   // 1) Handle Terminal Unpaid (CANCELLED, CANCELED, EXPIRED)
@@ -128,36 +154,14 @@ export async function reconcilePayOSAttempt({
     };
   }
 
-  // 3) Handle Provider Pending with strict pending allowlist and exact identity verification
+  // 3) Handle Provider Pending with strict pending allowlist
   const rawStatus = typeof payosInfo?.status === 'string' ? payosInfo.status.trim().toUpperCase() : '';
   const isKnownPending = rawStatus === 'PENDING' || rawStatus === 'PROCESSING';
-
-  // Identity verification against current attempt snapshot
-  const orderCodeMatches = payosInfo.orderCode != null
-    && Number(payosInfo.orderCode) === Number(attempt.provider_order_code);
-  const paymentLinkIdMatches = Boolean(
-    attempt.provider_payment_link_id
-    && (payosInfo.id || payosInfo.paymentLinkId)
-    && (String(payosInfo.id || payosInfo.paymentLinkId).trim() === String(attempt.provider_payment_link_id).trim())
-  );
-  const paymentLinkIdMismatches = Boolean(
-    attempt.provider_payment_link_id
-    && (payosInfo.id || payosInfo.paymentLinkId)
-    && (String(payosInfo.id || payosInfo.paymentLinkId).trim() !== String(attempt.provider_payment_link_id).trim())
-  );
-  const orderCodeMismatches = payosInfo.orderCode != null
-    && Number(payosInfo.orderCode) !== Number(attempt.provider_order_code);
-
-  if (paymentLinkIdMismatches || orderCodeMismatches) {
-    return { outcome: 'provider_uncertain', changed: false, skipped: false };
-  }
-
-  const identityMatches = orderCodeMatches || paymentLinkIdMatches;
   const hasUsableArtifacts = Boolean(
     (payosInfo.checkoutUrl || payosInfo.qrCode || attempt.checkout_url || attempt.qr_code)
   );
 
-  if (isKnownPending && identityMatches && hasUsableArtifacts) {
+  if (isKnownPending && hasUsableArtifacts) {
     return {
       outcome: 'provider_pending',
       changed: false,

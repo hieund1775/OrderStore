@@ -388,13 +388,13 @@ describe('Preorder Customer Check-in Contract', () => {
   it('reschedule atomically passes actor.sub and timestamp to markCheckinRequestRescheduled', async () => {
     const { service, calls } = createHarness();
 
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60_000);
-    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+    const targetDate = new Date(baseTime.getTime() + 24 * 60 * 60_000);
+    const targetDateStr = targetDate.toISOString().slice(0, 10);
 
     await service.reschedule({
       preorderId: 10,
       actor: { role: 'manager', branch_id: 1, sub: 9 },
-      date: tomorrowStr,
+      date: targetDateStr,
       hour: 14,
       reason: 'Khách yêu cầu chuyển giờ sang chiều mai',
     });

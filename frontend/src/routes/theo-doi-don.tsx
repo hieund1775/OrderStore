@@ -32,8 +32,26 @@ import { apiGet, apiPost } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
-import { OrderReviewPanel } from "@/components/reviews/OrderReviewPanel";
+import { OrderReviewPanel, type ReviewableItem } from "@/components/reviews/OrderReviewPanel";
 import type { PaymentSummary } from "@/types/payment-summary";
+
+export function mapDirectOrderItemsToReviewable(items?: Array<{ id?: number; order_item_id?: number; product_id: number; qty?: number; product_name: string; size_label?: string }>): ReviewableItem[] {
+  return (items || []).map((it) => ({
+    orderItemId: Number(it.order_item_id || it.id),
+    productId: Number(it.product_id),
+    name: `${it.qty ?? 1}× ${it.product_name}${it.size_label ? ` (${it.size_label})` : ""}`,
+  }));
+}
+
+export function mapChildOrderItemsToReviewable(items?: Array<{ order_item_id?: number; product_id: number; quantity?: number; product_name: string }>): ReviewableItem[] {
+  return (items || [])
+    .filter((it) => Boolean(it.order_item_id))
+    .map((it) => ({
+      orderItemId: Number(it.order_item_id),
+      productId: Number(it.product_id),
+      name: `${it.quantity ?? 1}× ${it.product_name}`,
+    }));
+}
 
 export const Route = createFileRoute("/theo-doi-don")({
   validateSearch: (search: Record<string, unknown>): { code?: string; order_code?: string } => ({
@@ -598,13 +616,7 @@ function Tracking() {
                   {Boolean(co.can_review) && Array.isArray(co.items) && co.items.some((it) => it.order_item_id) && (
                     <OrderReviewPanel
                       orderCode={co.order_code}
-                      items={co.items
-                        .filter((it) => Boolean(it.order_item_id))
-                        .map((it) => ({
-                          orderItemId: Number(it.order_item_id),
-                          productId: Number(it.product_id),
-                          name: `${it.quantity}× ${it.product_name}`,
-                        }))}
+                      items={mapChildOrderItemsToReviewable(co.items)}
                       canReview={Boolean(co.can_review)}
                       className="mt-3"
                     />
@@ -852,11 +864,7 @@ function Tracking() {
           {completed && Boolean(order.can_review) && (
             <OrderReviewPanel
               orderCode={order.order_code}
-              items={(order.items || []).map((it) => ({
-                orderItemId: Number(it.order_item_id || it.id),
-                productId: Number(it.product_id),
-                name: `${it.qty}× ${it.product_name}${it.size_label ? ` (${it.size_label})` : ""}`,
-              }))}
+              items={mapDirectOrderItemsToReviewable(order.items)}
               canReview={true}
               className="mt-6"
             />

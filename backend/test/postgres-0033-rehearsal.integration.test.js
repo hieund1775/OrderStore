@@ -28,6 +28,7 @@ async function createPost0032Baseline(client, schema) {
   await client.query(`
     CREATE TABLE schema_migrations (
       version VARCHAR(40) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
       checksum VARCHAR(64) NOT NULL,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -82,7 +83,7 @@ async function createPost0032Baseline(client, schema) {
 
   for (let v = 26; v <= 32; v += 1) {
     const ver = String(v).padStart(4, '0');
-    await client.query(`INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)`, [ver, `baseline-checksum-${ver}`]);
+    await client.query(`INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`, [ver, `migration_${ver}.sql`, `baseline-checksum-${ver}`]);
   }
 
   await client.query(`

@@ -94,28 +94,105 @@ preexisting_object_checks AS (
       CASE
         -- If neither table exists, it is clean for creation -> PASS
         WHEN to_regclass('preorder_checkin_requests') IS NULL AND to_regclass('preorder_slot_strike_events') IS NULL THEN 0
-        -- If both exist, verify uniqueness and check constraints exist
+        -- If both exist, verify constraints, foreign keys (with ON DELETE RESTRICT), indexes and triggers
         WHEN to_regclass('preorder_checkin_requests') IS NOT NULL AND to_regclass('preorder_slot_strike_events') IS NOT NULL THEN
           (
             SELECT COUNT(*)::bigint FROM (
+              -- Unique constraints
               SELECT 1 WHERE NOT EXISTS (
                 SELECT 1 FROM pg_constraint WHERE conname = 'uq_preorder_checkin_slot' AND conrelid = 'preorder_checkin_requests'::regclass
               )
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'chk_preorder_checkin_schedule' AND conrelid = 'preorder_checkin_requests'::regclass
-              )
-              UNION ALL
-              SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'chk_preorder_checkin_status_resolution' AND conrelid = 'preorder_checkin_requests'::regclass
-              )
-              UNION ALL
-              SELECT 1 WHERE NOT EXISTS (
                 SELECT 1 FROM pg_constraint WHERE conname = 'uq_preorder_slot_strike' AND conrelid = 'preorder_slot_strike_events'::regclass
               )
+              -- Check constraints
               UNION ALL
               SELECT 1 WHERE NOT EXISTS (
-                SELECT 1 FROM pg_trigger WHERE tgname = 'trg_preorder_checkin_parent_snapshot' AND tgrelid = 'preorder_checkin_requests'::regclass
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'chk_preorder_checkin_schedule'
+                  AND conrelid = 'preorder_checkin_requests'::regclass
+                  AND pg_get_constraintdef(oid) ILIKE '%scheduled_end_at%scheduled_start_at%'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'chk_preorder_checkin_status_resolution'
+                  AND conrelid = 'preorder_checkin_requests'::regclass
+                  AND pg_get_constraintdef(oid) ILIKE '%RESCHEDULED%'
+                  AND pg_get_constraintdef(oid) ILIKE '%resolved_by IS NOT NULL%'
+              )
+              -- Foreign keys with confdeltype = 'r' (RESTRICT)
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'preorder_checkin_requests'::regclass
+                  AND contype = 'f'
+                  AND confrelid = 'preorders'::regclass
+                  AND confdeltype = 'r'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'preorder_checkin_requests'::regclass
+                  AND contype = 'f'
+                  AND confrelid = 'stores'::regclass
+                  AND confdeltype = 'r'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'preorder_checkin_requests'::regclass
+                  AND contype = 'f'
+                  AND confrelid = 'users'::regclass
+                  AND confdeltype = 'r'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'preorder_slot_strike_events'::regclass
+                  AND contype = 'f'
+                  AND confrelid = 'preorders'::regclass
+                  AND confdeltype = 'r'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'preorder_slot_strike_events'::regclass
+                  AND contype = 'f'
+                  AND confrelid = 'users'::regclass
+                  AND confdeltype = 'r'
+              )
+              -- Trigger and function
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_preorder_checkin_parent_snapshot'
+                  AND tgrelid = 'preorder_checkin_requests'::regclass
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_proc
+                WHERE proname = 'trg_verify_preorder_checkin_parent_snapshot'
+              )
+              -- Required indexes
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'preorder_checkin_requests'
+                  AND indexname = 'idx_preorder_checkin_requests_due'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'preorder_checkin_requests'
+                  AND indexname = 'idx_preorder_checkin_requests_preorder'
+              )
+              UNION ALL
+              SELECT 1 WHERE NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'preorder_slot_strike_events'
+                  AND indexname = 'idx_preorder_slot_strike_manager'
               )
             ) sub
           )
@@ -124,7 +201,7 @@ preexisting_object_checks AS (
 ),
 tracker_checks AS (
     SELECT
-      'migration_tracker_0033_checksum_conflict'::text AS check_name,
+      'unexpected_0033_tracker_row'::text AS check_name,
       CASE
         WHEN to_regclass('schema_migrations') IS NOT NULL AND EXISTS (
           SELECT 1 FROM schema_migrations WHERE version = '0033'

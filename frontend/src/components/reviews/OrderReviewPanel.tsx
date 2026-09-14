@@ -3,8 +3,7 @@ import { Star, CheckCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ReviewDialog } from '@/components/reviews/ReviewDialog';
-import { apiGet, apiPost } from '@/lib/api';
-import { getCustomerToken } from '@/lib/order-access';
+import { apiGet, apiPost, getCustomerToken } from '@/lib/api';
 import { toast } from 'sonner';
 
 export interface ReviewableItem {
