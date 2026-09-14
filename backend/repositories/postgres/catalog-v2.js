@@ -53,21 +53,33 @@ export function createCatalogV2Repository(database = postgresDb) {
         depth = parent.depth + 1;
       }
 
-      const [rows] = await database.query(
-        `INSERT INTO categories (name, slug, parent_id, depth, product_type_id, sort_order, is_visible)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING *`,
-        [
-          data.name,
-          data.slug,
-          data.parent_id || null,
-          depth,
-          data.product_type_id || null,
-          data.sort_order || 0,
-          data.is_visible ?? true,
-        ],
-      );
-      return rows[0];
+      try {
+        const [rows] = await database.query(
+          `INSERT INTO categories (name, slug, parent_id, depth, product_type_id, sort_order, is_visible)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [
+            data.name,
+            data.slug,
+            data.parent_id || null,
+            depth,
+            data.product_type_id || null,
+            data.sort_order || 0,
+            data.is_visible ?? true,
+          ],
+        );
+        return rows[0];
+      } catch (err) {
+        if (err?.code === '23505') {
+          throw new CatalogV2Error(
+            depth === 0
+              ? 'Tên hoặc slug ngành hàng gốc đã tồn tại'
+              : 'Tên hoặc slug danh mục đã tồn tại',
+            409,
+          );
+        }
+        throw err;
+      }
     },
 
     async updateCategory(id, data) {
@@ -124,46 +136,58 @@ export function createCatalogV2Repository(database = postgresDb) {
         }
       }
 
-      return await database.transaction(async (tx) => {
-        const [rows] = await tx.query(
-          `UPDATE categories
-           SET name = COALESCE($1, name),
-               slug = COALESCE($2, slug),
-               parent_id = $3,
-               depth = $4,
-               product_type_id = $5,
-               sort_order = COALESCE($6, sort_order),
-               is_visible = COALESCE($7, is_visible)
-           WHERE id = $8
-           RETURNING *`,
-          [
-            data.name,
-            data.slug,
-            data.parent_id !== undefined ? data.parent_id : current.parent_id,
-            depth,
-            data.product_type_id !== undefined ? data.product_type_id : current.product_type_id,
-            data.sort_order,
-            data.is_visible,
-            id,
-          ],
-        );
+      try {
+        return await database.transaction(async (tx) => {
+          const [rows] = await tx.query(
+            `UPDATE categories
+             SET name = COALESCE($1, name),
+                 slug = COALESCE($2, slug),
+                 parent_id = $3,
+                 depth = $4,
+                 product_type_id = $5,
+                 sort_order = COALESCE($6, sort_order),
+                 is_visible = COALESCE($7, is_visible)
+             WHERE id = $8
+             RETURNING *`,
+            [
+              data.name,
+              data.slug,
+              data.parent_id !== undefined ? data.parent_id : current.parent_id,
+              depth,
+              data.product_type_id !== undefined ? data.product_type_id : current.product_type_id,
+              data.sort_order,
+              data.is_visible,
+              id,
+            ],
+          );
 
-        if (depth !== current.depth) {
-          const depthDelta = depth - current.depth;
-          await tx.query(
-            `WITH RECURSIVE descendants AS (
-               SELECT id FROM categories WHERE parent_id = $1
-               UNION ALL
-               SELECT c.id FROM categories c JOIN descendants d ON c.parent_id = d.id
-             )
-             UPDATE categories
-             SET depth = depth + $2
-             WHERE id IN (SELECT id FROM descendants)`,
-            [id, depthDelta],
+          if (depth !== current.depth) {
+            const depthDelta = depth - current.depth;
+            await tx.query(
+              `WITH RECURSIVE descendants AS (
+                 SELECT id FROM categories WHERE parent_id = $1
+                 UNION ALL
+                 SELECT c.id FROM categories c JOIN descendants d ON c.parent_id = d.id
+               )
+               UPDATE categories
+               SET depth = depth + $2
+               WHERE id IN (SELECT id FROM descendants)`,
+              [id, depthDelta],
+            );
+          }
+          return rows[0];
+        });
+      } catch (err) {
+        if (err?.code === '23505') {
+          throw new CatalogV2Error(
+            depth === 0
+              ? 'Tên hoặc slug ngành hàng gốc đã tồn tại'
+              : 'Tên hoặc slug danh mục đã tồn tại',
+            409,
           );
         }
-        return rows[0];
-      });
+        throw err;
+      }
     },
 
     async archiveCategory(id) {

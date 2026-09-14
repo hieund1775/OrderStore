@@ -128,7 +128,8 @@ export function CategoryTreeEditor({
       setModalOpen(false);
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi lưu danh mục');
+      const errorMsg = err.response?.data?.error || err.data?.error || err.message || 'Lỗi lưu danh mục';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }

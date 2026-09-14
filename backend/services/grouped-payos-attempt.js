@@ -70,18 +70,30 @@ export function createGroupedPayOSAttemptService({
     });
   }
 
-  async function promote({ group, attempt, returnUrl, cancelUrl }) {
+  async function promote({ group, attempt, returnUrl, cancelUrl, preorderCode = null }) {
     const lookup = await lookupPaymentLink(attempt.provider_order_code, attempt.payment_profile_code);
     let artifact;
     if (lookup.kind === 'found') {
       artifact = normalizeRecoveredPayOSLink(lookup.payment, attempt);
     } else if (lookup.kind === 'not_found') {
+      const effectivePreorderCode = preorderCode
+        || group?.preorder_code
+        || group?.preorderCode
+        || (Array.isArray(group?.child_orders) ? group.child_orders.find((co) => co.preorder_code || co.order_code?.startsWith('PO'))?.preorder_code : null)
+        || (Array.isArray(group?.child_orders) ? group.child_orders.find((co) => co.order_code?.startsWith('PO'))?.order_code : null)
+        || null;
+
+      const description = (effectivePreorderCode && String(effectivePreorderCode).startsWith('PO'))
+        ? String(effectivePreorderCode)
+        : `Don ${group.group_code}`;
+
       const link = await createPaymentLink({
         orderId: group.id,
         orderCode: group.group_code,
         total: Number(group.total_amount),
         payosOrderCode: attempt.provider_order_code,
         attemptExpiresAt: attempt.expires_at,
+        description,
         returnUrl: returnUrl || config.payos.returnUrl,
         cancelUrl: cancelUrl || config.payos.cancelUrl,
         paymentProfileCode: attempt.payment_profile_code,
@@ -111,7 +123,7 @@ export function createGroupedPayOSAttemptService({
     return artifactFromAttempt(group, activated);
   }
 
-  async function createOrRegenerate({ group, forceRegenerate = false, returnUrl = null, cancelUrl = null }) {
+  async function createOrRegenerate({ group, forceRegenerate = false, returnUrl = null, cancelUrl = null, preorderCode = null }) {
     if (!group?.id || !group?.group_code) {
       throw new PaymentAttemptError('Thiếu thông tin đơn gộp PayOS', 400, 'PAYMENT_ATTEMPT_GROUP_REQUIRED');
     }
@@ -132,7 +144,7 @@ export function createGroupedPayOSAttemptService({
     const locked = await withCreationLock(lockKey, async () => {
       const current = await reserve({ group, forceRegenerate: initial.recovered ? false : forceRegenerate });
       if (current.kind === 'active') return artifactFromAttempt(group, current.attempt);
-      return promote({ group, attempt: current.attempt, returnUrl, cancelUrl });
+      return promote({ group, attempt: current.attempt, returnUrl, cancelUrl, preorderCode });
     });
 
     if (locked?.acquired === false) {
@@ -146,8 +158,8 @@ export function createGroupedPayOSAttemptService({
   }
 
   return {
-    async createForGroup({ group, returnUrl = null, cancelUrl = null }) {
-      return createOrRegenerate({ group, returnUrl, cancelUrl });
+    async createForGroup({ group, returnUrl = null, cancelUrl = null, preorderCode = null }) {
+      return createOrRegenerate({ group, returnUrl, cancelUrl, preorderCode });
     },
 
     async regenerateForCustomer({ groupCode, userId = null, cancelToken = null, returnUrl = null, cancelUrl = null }) {
@@ -210,6 +222,7 @@ export function createGroupedPayOSAttemptService({
         forceRegenerate,
         returnUrl,
         cancelUrl,
+        preorderCode: freshGroup.preorder_code || null,
       });
     },
   };
