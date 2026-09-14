@@ -40,7 +40,7 @@ function createFakePool({ appliedRows, tryLock = true, trackerExists = true, pre
         return { rows: [{ relation_name: trackerExists ? 'schema_migrations' : null }] };
       }
       if (sql.includes('SELECT version, checksum FROM schema_migrations')) return { rows: appliedRows || [] };
-      if (sql.includes('checks AS (')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
+      if (sql.includes('checks AS (') || sql.includes('checks AS\n') || sql.includes('checks AS\r\n')) return { rows: preflightRows || [{ check_name: 'fixture_preflight', issue_count: '0', status: 'PASS' }] };
       return { rows: [], rowCount: 0 };
     },
     release() {},

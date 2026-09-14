@@ -103,6 +103,10 @@ function createHarness(overrides = {}) {
     async addRescheduleHistory() {
       return null;
     },
+    async claimPendingEmailDeliveries() {
+      return [];
+    },
+    async completeEmailDelivery() {},
     ...overrides.repo,
   };
 
@@ -379,5 +383,26 @@ describe('Preorder Customer Check-in Contract', () => {
 
     // Strike is NOT incremented because slot strike event already exists
     assert.equal(calls.strikes.length, 0);
+  });
+
+  it('reschedule atomically passes actor.sub and timestamp to markCheckinRequestRescheduled', async () => {
+    const { service, calls } = createHarness();
+
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60_000);
+    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+    await service.reschedule({
+      preorderId: 10,
+      actor: { role: 'manager', branch_id: 1, sub: 9 },
+      date: tomorrowStr,
+      hour: 14,
+      reason: 'Khách yêu cầu chuyển giờ sang chiều mai',
+    });
+
+    const rescheduleCall = calls.checkinRequests.find((c) => c.type === 'rescheduled');
+    assert.ok(rescheduleCall, 'markCheckinRequestRescheduled must be called');
+    assert.equal(rescheduleCall.preorderId, 10);
+    assert.equal(rescheduleCall.resolvedBy, 9);
+    assert.ok(rescheduleCall.resolvedAt instanceof Date || typeof rescheduleCall.resolvedAt === 'string');
   });
 });

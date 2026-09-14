@@ -118,6 +118,7 @@ describe('Direct PayOS payment-attempt runtime', () => {
         { kind: 'creating', attempt: replacement, recovered: false },
         { kind: 'creating', attempt: replacement, recovered: true },
       ],
+      reconcileOrder: async () => ({ outcome: 'terminal_unpaid', changed: false }),
     });
 
     const result = await service.regenerateForCustomer({ orderCode: 'TP2609070041', userId: 9 });

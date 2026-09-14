@@ -128,13 +128,36 @@ export async function reconcilePayOSAttempt({
     };
   }
 
-  // 3) Handle Provider Pending with usable current-link identity
-  const hasUsableIdentity = Boolean(
-    (payosInfo.id || payosInfo.paymentLinkId || payosInfo.orderCode === attempt.provider_order_code)
-    && (payosInfo.checkoutUrl || payosInfo.qrCode || attempt.checkout_url || attempt.qr_code)
+  // 3) Handle Provider Pending with strict pending allowlist and exact identity verification
+  const rawStatus = typeof payosInfo?.status === 'string' ? payosInfo.status.trim().toUpperCase() : '';
+  const isKnownPending = rawStatus === 'PENDING' || rawStatus === 'PROCESSING';
+
+  // Identity verification against current attempt snapshot
+  const orderCodeMatches = payosInfo.orderCode != null
+    && Number(payosInfo.orderCode) === Number(attempt.provider_order_code);
+  const paymentLinkIdMatches = Boolean(
+    attempt.provider_payment_link_id
+    && (payosInfo.id || payosInfo.paymentLinkId)
+    && (String(payosInfo.id || payosInfo.paymentLinkId).trim() === String(attempt.provider_payment_link_id).trim())
+  );
+  const paymentLinkIdMismatches = Boolean(
+    attempt.provider_payment_link_id
+    && (payosInfo.id || payosInfo.paymentLinkId)
+    && (String(payosInfo.id || payosInfo.paymentLinkId).trim() !== String(attempt.provider_payment_link_id).trim())
+  );
+  const orderCodeMismatches = payosInfo.orderCode != null
+    && Number(payosInfo.orderCode) !== Number(attempt.provider_order_code);
+
+  if (paymentLinkIdMismatches || orderCodeMismatches) {
+    return { outcome: 'provider_uncertain', changed: false, skipped: false };
+  }
+
+  const identityMatches = orderCodeMatches || paymentLinkIdMatches;
+  const hasUsableArtifacts = Boolean(
+    (payosInfo.checkoutUrl || payosInfo.qrCode || attempt.checkout_url || attempt.qr_code)
   );
 
-  if (hasUsableIdentity) {
+  if (isKnownPending && identityMatches && hasUsableArtifacts) {
     return {
       outcome: 'provider_pending',
       changed: false,
@@ -144,7 +167,7 @@ export async function reconcilePayOSAttempt({
     };
   }
 
-  // Any non-terminal status without usable identity or unexpected shape is uncertain
+  // Any non-terminal status without verified identity or unexpected/unknown status is uncertain
   return { outcome: 'provider_uncertain', changed: false, skipped: false };
 }
 
@@ -155,31 +178,53 @@ export async function reconcilePayOSAttempt({
  */
 export async function reconcilePayOSOrder({
   order,
-  attemptsRepository = paymentAttemptsRepository,
+  attemptsRepository,
+  paymentRepository,
   getPaymentInfo = getPaymentLinkInformation,
-  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
+  preorderBridge,
   bypassThrottle = false,
 } = {}) {
+  const effectiveAttemptsRepo = attemptsRepository || paymentRepository || paymentAttemptsRepository;
+  const effectivePreorderBridge = preorderBridge !== undefined
+    ? preorderBridge
+    : (effectiveAttemptsRepo === paymentAttemptsRepository ? preorderService : null);
   if (!order || !order.id || order.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(order.payment_status)) {
     return { outcome: 'skipped', changed: false, skipped: true };
   }
-  const attempt = await attemptsRepository.findCurrentAttemptForTarget({ orderId: order.id });
-  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo, preorderBridge, bypassThrottle });
+  const attempt = await effectiveAttemptsRepo.findCurrentAttemptForTarget({ orderId: order.id });
+  return reconcilePayOSAttempt({
+    attempt,
+    attemptsRepository: effectiveAttemptsRepo,
+    getPaymentInfo,
+    preorderBridge: effectivePreorderBridge,
+    bypassThrottle,
+  });
 }
 
 export async function reconcilePayOSCheckoutGroup({
   checkoutGroup,
-  attemptsRepository = paymentAttemptsRepository,
+  attemptsRepository,
+  paymentRepository,
   getPaymentInfo = getPaymentLinkInformation,
-  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
+  preorderBridge,
   bypassThrottle = false,
 } = {}) {
+  const effectiveAttemptsRepo = attemptsRepository || paymentRepository || paymentAttemptsRepository;
+  const effectivePreorderBridge = preorderBridge !== undefined
+    ? preorderBridge
+    : (effectiveAttemptsRepo === paymentAttemptsRepository ? preorderService : null);
   if (!checkoutGroup || !checkoutGroup.id || checkoutGroup.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(checkoutGroup.payment_status)) {
     return { outcome: 'skipped', changed: false, skipped: true };
   }
-  const attempt = await attemptsRepository.findCurrentAttemptForTarget({ checkoutGroupId: checkoutGroup.id });
-  return reconcilePayOSAttempt({ attempt, attemptsRepository, getPaymentInfo, preorderBridge, bypassThrottle });
+  const attempt = await effectiveAttemptsRepo.findCurrentAttemptForTarget({ checkoutGroupId: checkoutGroup.id });
+  return reconcilePayOSAttempt({
+    attempt,
+    attemptsRepository: effectiveAttemptsRepo,
+    getPaymentInfo,
+    preorderBridge: effectivePreorderBridge,
+    bypassThrottle,
+  });
 }
 

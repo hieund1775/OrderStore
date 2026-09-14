@@ -660,7 +660,7 @@ export function createCustomerOrderService({
 
       const shouldReconcile = order.payment_provider === 'payos' && ['unpaid', 'expired'].includes(order.payment_status);
       if (shouldReconcile) {
-        await reconcilePayOSOrder({ order, paymentRepository: paymentsRepository });
+        await reconcilePayOSOrder({ order, attemptsRepository: paymentsRepository });
       }
       const refreshedOrder = shouldReconcile
         ? await repository.findPublicOrder(code)

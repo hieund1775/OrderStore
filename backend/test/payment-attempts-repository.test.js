@@ -47,7 +47,10 @@ describe('payment-attempt repository lifecycle contract', () => {
       transaction: async (runner) => runner({
         query: async (sql, params = []) => {
           queries.push({ sql, params });
-          if (sql.includes('FROM orders WHERE id =')) {
+          if (/FROM orders(?: o)?/i.test(sql) && /id =/i.test(sql) && !sql.includes('FOR UPDATE')) {
+            return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', checkout_group_id: null, current_status: 'Chờ xác nhận', current_payment_attempt_id: null }], 1];
+          }
+          if (/FROM orders(?: o)?/i.test(sql) && /id =/i.test(sql) && sql.includes('FOR UPDATE')) {
             return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', checkout_group_id: null, current_status: 'Chờ xác nhận', current_payment_attempt_id: null }], 1];
           }
           if (sql.includes('SELECT id FROM payment_attempts')) return [[], 0];
@@ -64,7 +67,7 @@ describe('payment-attempt repository lifecycle contract', () => {
       amount: 50000, providerOrderCode: 990011, expiresAt: '2026-09-06T12:00:00.000Z',
     });
     assert.equal(created.id, 91);
-    const targetLock = queries.find((query) => query.sql.includes('FROM orders WHERE id ='));
+    const targetLock = queries.find((query) => /FROM orders(?: o)?/i.test(query.sql) && /id =/i.test(query.sql));
     const creatingLock = queries.find((query) => query.sql.includes("status = 'creating'"));
     const insert = queries.find((query) => query.sql.includes('INSERT INTO payment_attempts'));
     const pointer = queries.find((query) => query.sql.includes('current_payment_attempt_id = $2'));
@@ -84,7 +87,7 @@ describe('payment-attempt repository lifecycle contract', () => {
           if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
             return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
           }
-          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+          if (/FROM orders(?: o)?/i.test(sql) && /id =/i.test(sql) && sql.includes('FOR UPDATE')) {
             return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', current_payment_attempt_id: 101 }], 1];
           }
           if (sql.includes('FROM payment_attempts') && sql.includes('FOR UPDATE')) {
@@ -112,7 +115,7 @@ describe('payment-attempt repository lifecycle contract', () => {
     assert.equal(result.changed, true);
     assert.equal(result.attempt.status, 'expired');
 
-    const targetLockIndex = queries.findIndex((q) => q.sql.includes('FROM orders WHERE id =') && q.sql.includes('FOR UPDATE'));
+    const targetLockIndex = queries.findIndex((q) => /FROM orders(?: o)?/i.test(q.sql) && /id =/i.test(q.sql) && q.sql.includes('FOR UPDATE'));
     const attemptLockIndex = queries.findIndex((q) => q.sql.includes('FROM payment_attempts') && q.sql.includes('FOR UPDATE'));
     assert.ok(targetLockIndex >= 0 && attemptLockIndex >= 0);
     assert.ok(targetLockIndex < attemptLockIndex, 'target must be locked before attempt');
@@ -134,7 +137,7 @@ describe('payment-attempt repository lifecycle contract', () => {
           if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
             return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'active', payment_profile_code: 'DIRECT', provider: 'payos', provider_order_code: 990011 }], 1];
           }
-          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+          if (/FROM orders(?: o)?/i.test(sql) && /id =/i.test(sql) && sql.includes('FOR UPDATE')) {
             // Note: current pointer is 102, NOT 101
             return [[{ id: 11, total: 50000, payment_provider: 'payos', payment_status: 'unpaid', current_payment_attempt_id: 102 }], 1];
           }
@@ -169,7 +172,7 @@ describe('payment-attempt repository lifecycle contract', () => {
           if (sql.includes('SELECT * FROM payment_attempts WHERE id = $1') && !sql.includes('FOR UPDATE')) {
             return [[{ id: 101, order_id: 11, checkout_group_id: null, status: 'expired' }], 1];
           }
-          if (sql.includes('FROM orders WHERE id =') && sql.includes('FOR UPDATE')) {
+          if (/FROM orders(?: o)?/i.test(sql) && /id =/i.test(sql) && sql.includes('FOR UPDATE')) {
             return [[{ id: 11, current_payment_attempt_id: 101 }], 1];
           }
           if (sql.includes('FROM payment_attempts') && sql.includes('FOR UPDATE')) {

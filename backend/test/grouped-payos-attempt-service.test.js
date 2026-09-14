@@ -116,6 +116,7 @@ describe('Grouped PayOS payment-attempt runtime', () => {
     const replacement = creating(802, { provider_order_code: 92345678901235 });
     const { service, calls } = createHarness({
       reserveResults: [{ kind: 'creating', attempt: replacement, recovered: false }, { kind: 'creating', attempt: replacement, recovered: true }],
+      reconcileGroup: async () => ({ outcome: 'terminal_unpaid', changed: false }),
     });
 
     const result = await service.regenerateForCustomer({ groupCode: 'GRP2609070071', userId: 8 });

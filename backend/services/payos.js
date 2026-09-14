@@ -248,7 +248,7 @@ export async function getPaymentLinkInformation(orderCode, paymentLinkId = null,
     }
     return null;
   } catch (err) {
-    console.warn(`[PayOS Active Recon] Không thể lấy thông tin link ${orderCode}:`, err.message);
+    console.warn('[PayOS Active Recon] Không thể lấy thông tin link thanh toán:', err?.name || 'Error');
     return null;
   }
 }

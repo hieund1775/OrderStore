@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS preorder_checkin_requests (
     (status = 'PENDING' AND resolved_by IS NULL AND resolved_at IS NULL AND rejection_reason IS NULL AND late_confirmation_reason IS NULL) OR
     (status = 'CONFIRMED' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL) OR
     (status = 'REJECTED' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL AND rejection_reason IS NOT NULL AND trim(rejection_reason) <> '') OR
-    (status = 'RESCHEDULED' AND resolved_at IS NOT NULL)
+    (status = 'RESCHEDULED' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL)
   )
 );
 

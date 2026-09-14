@@ -122,14 +122,25 @@ describe('0033 Preorder Customer Check-in isolated rehearsal', () => {
         assert.equal(Number(row.issue_count), 0);
       }
 
-      // 2. Apply Migration 0033
+      // 2. Apply Migration 0033 through canonical execution pattern
       const migrationSql = await readFile(migrationPath, 'utf8');
-      await client.query(migrationSql);
-      // Re-apply must be idempotent
-      await client.query(migrationSql);
-
       const checksum = calculateChecksum(migrationSql);
-      await client.query(`INSERT INTO schema_migrations (version, checksum) VALUES ('0033', $1)`, [checksum]);
+
+      await client.query('BEGIN');
+      try {
+        await client.query(migrationSql);
+        await client.query(
+          `INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`,
+          ['0033', '0033_preorder_customer_checkin.sql', checksum],
+        );
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
+
+      // Re-apply of idempotent SQL without duplicate tracker must succeed
+      await client.query(migrationSql);
 
       // 3. Schema & Tables Verification
       const tables = await client.query(

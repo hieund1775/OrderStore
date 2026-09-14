@@ -428,7 +428,12 @@ export function createPreorderService({
         if (!['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status) || Number(preorder.reschedule_count) >= 1) {
           throw new PreorderError('Preorder chỉ được đổi lịch một lần khi đang chờ/đã xác nhận', 409, 'PREORDER_RESCHEDULE_NOT_ALLOWED');
         }
-        await repository.markCheckinRequestRescheduled({ preorderId: preorder.id, oldScheduledStartAt: preorder.scheduled_start_at }, { tx });
+        await repository.markCheckinRequestRescheduled({
+          preorderId: preorder.id,
+          oldScheduledStartAt: preorder.scheduled_start_at,
+          resolvedBy: Number(actor.sub),
+          resolvedAt: now(),
+        }, { tx });
         await repository.moveReservation({ preorderId: preorder.id, tableId: tableId === undefined ? preorder.table_id : tableId, scheduledStartAt: slot.start }, { tx });
         await repository.addRescheduleHistory({
           preorderId: preorder.id, oldStart: preorder.scheduled_start_at, oldEnd: preorder.scheduled_end_at,

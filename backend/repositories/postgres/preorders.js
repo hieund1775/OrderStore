@@ -625,15 +625,18 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async markCheckinRequestRescheduled({ preorderId, oldScheduledStartAt }, { tx = null } = {}) {
+    async markCheckinRequestRescheduled({ preorderId, oldScheduledStartAt, resolvedBy = null, resolvedAt = null }, { tx = null } = {}) {
       const executor = tx || database;
+      const resTime = resolvedAt ? new Date(resolvedAt) : new Date();
       const rows = rowsOf(await executor.query(
         `UPDATE preorder_checkin_requests
          SET status = 'RESCHEDULED',
+             resolved_by = $3,
+             resolved_at = $4,
              updated_at = CURRENT_TIMESTAMP
          WHERE preorder_id = $1 AND scheduled_start_at = $2 AND status = 'PENDING'
          RETURNING *`,
-        [Number(preorderId), oldScheduledStartAt],
+        [Number(preorderId), oldScheduledStartAt, resolvedBy ? Number(resolvedBy) : null, resTime],
       ));
       return rows;
     },

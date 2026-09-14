@@ -1,7 +1,96 @@
-import { describe, it, expect } from 'vitest';
-import type { ReviewableItem } from '@/components/reviews/OrderReviewPanel';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { OrderReviewPanel, type ReviewableItem } from '@/components/reviews/OrderReviewPanel';
+import * as api from '@/lib/api';
 
-describe('Tracking Order Reviews Contracts', () => {
+vi.mock('@/lib/api', () => ({
+  apiGet: vi.fn(),
+  apiPost: vi.fn(),
+  getCustomerToken: vi.fn(),
+}));
+
+describe('Tracking Order Reviews Component and Contracts', () => {
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    if (root && container) {
+      act(() => {
+        root?.unmount();
+      });
+      container.remove();
+    }
+  });
+
+  it('renders nothing when canReview is false', async () => {
+    const items: ReviewableItem[] = [
+      { orderItemId: 101, productId: 12, name: '2× Trà Oolong Đào' },
+    ];
+
+    await act(async () => {
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={false} />);
+    });
+
+    expect(container?.innerHTML).toBe('');
+  });
+
+  it('renders nothing when items array is empty even if canReview is true', async () => {
+    await act(async () => {
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={[]} canReview={true} />);
+    });
+
+    expect(container?.innerHTML).toBe('');
+  });
+
+  it('renders review panel with actual items when canReview is true and user is authenticated', async () => {
+    vi.mocked(api.getCustomerToken).mockReturnValue('valid-customer-token');
+    vi.mocked(api.apiGet).mockResolvedValue({
+      eligible: true,
+    });
+
+    const items: ReviewableItem[] = [
+      { orderItemId: 101, productId: 12, name: '2× Trà Oolong Đào (L)' },
+      { orderItemId: 102, productId: 15, name: '1× Trà Sữa Trân Châu (M)' },
+    ];
+
+    await act(async () => {
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={true} />);
+    });
+
+    expect(container?.textContent).toContain('Đánh giá món đã đặt');
+    expect(container?.textContent).toContain('2× Trà Oolong Đào (L)');
+    expect(container?.textContent).toContain('1× Trà Sữa Trân Châu (M)');
+    expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP2609070041/items/101/review');
+    expect(api.apiGet).toHaveBeenCalledWith('/api/orders/TP2609070041/items/102/review');
+  });
+
+  it('shows already reviewed state when item review is already recorded', async () => {
+    vi.mocked(api.getCustomerToken).mockReturnValue('valid-customer-token');
+    vi.mocked(api.apiGet).mockResolvedValue({
+      eligible: false,
+      reason: 'Bạn đã đánh giá món này',
+      review: { rating: 5 },
+    });
+
+    const items: ReviewableItem[] = [
+      { orderItemId: 101, productId: 12, name: '2× Trà Oolong Đào (L)' },
+    ];
+
+    await act(async () => {
+      root?.render(<OrderReviewPanel orderCode="TP2609070041" items={items} canReview={true} />);
+    });
+
+    expect(container?.textContent).toContain('Đã đánh giá');
+  });
+
   it('preserves distinct orderItemId and productId without overloading or swapping', () => {
     const rawItems = [
       { id: 101, order_item_id: 101, product_id: 12, product_name: 'Trà Oolong Đào', qty: 2, size_label: 'L' },
@@ -22,57 +111,8 @@ describe('Tracking Order Reviews Contracts', () => {
     expect(reviewableItems[1].productId).toBe(15);
     expect(reviewableItems[1].name).toBe('1× Trà Sữa Trân Châu (M)');
 
-    // Ensure orderItemId and productId are strictly different values
     expect(reviewableItems[0].orderItemId).not.toBe(reviewableItems[0].productId);
     expect(reviewableItems[1].orderItemId).not.toBe(reviewableItems[1].productId);
-  });
-
-  it('determines canReview strictly for completed account-owned orders', () => {
-    function computeCanReview({
-      status,
-      isCustomerOwner,
-    }: {
-      status: string;
-      isCustomerOwner: boolean;
-    }): boolean {
-      return Boolean(isCustomerOwner && status === 'Hoàn thành');
-    }
-
-    // Completed account-owned order -> true
-    expect(computeCanReview({ status: 'Hoàn thành', isCustomerOwner: true })).toBe(true);
-
-    // Not completed -> false
-    expect(computeCanReview({ status: 'Đang chuẩn bị', isCustomerOwner: true })).toBe(false);
-    expect(computeCanReview({ status: 'Đang giao', isCustomerOwner: true })).toBe(false);
-    expect(computeCanReview({ status: 'Đã hủy', isCustomerOwner: true })).toBe(false);
-
-    // Guest QR order (not account-owned) -> false even if completed
-    expect(computeCanReview({ status: 'Hoàn thành', isCustomerOwner: false })).toBe(false);
-  });
-
-  it('isolates state per item without cross-item contamination', () => {
-    type ItemState = {
-      loading: boolean;
-      eligible: boolean;
-      hasReviewed: boolean;
-      rating?: number;
-      error?: string;
-    };
-
-    const states: Record<number, ItemState> = {
-      101: { loading: false, eligible: true, hasReviewed: false },
-      102: { loading: false, eligible: false, hasReviewed: true, rating: 5 },
-      103: { loading: false, eligible: false, hasReviewed: false, error: 'Network error' },
-    };
-
-    expect(states[101].eligible).toBe(true);
-    expect(states[101].hasReviewed).toBe(false);
-
-    expect(states[102].eligible).toBe(false);
-    expect(states[102].hasReviewed).toBe(true);
-    expect(states[102].rating).toBe(5);
-
-    expect(states[103].error).toBe('Network error');
   });
 
   it('correctly maps grouped tracking child orders with real order_item_id', () => {

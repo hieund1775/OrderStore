@@ -171,6 +171,7 @@ describe('POS Validation & Active Reconciliation Suite', () => {
     });
 
     assert.equal(result.changed, false);
+    assert.equal(result.outcome, 'provider_uncertain');
     assert.equal(expireAttemptCalled, false);
   });
 });
