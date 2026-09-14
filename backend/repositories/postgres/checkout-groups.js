@@ -247,6 +247,9 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'allocated_shipping_fee', cga.allocated_shipping_fee,
                     'allocated_total', cga.allocated_total,
                     'payment_status', o.payment_status,
+                    'user_id', o.user_id,
+                    'preorder_id', o.preorder_id,
+                    'preorder_checked_in_at', p.checked_in_at,
                     'status', (
                       SELECT status FROM order_status_history osh
                       WHERE osh.order_id = o.id
@@ -270,6 +273,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
          FROM checkout_groups cg
          LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
          LEFT JOIN orders o ON o.id = cga.order_id
+         LEFT JOIN preorders p ON p.id = o.preorder_id
          WHERE cg.group_code = $1
          GROUP BY cg.id`,
         [groupCode],
@@ -450,25 +454,38 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       // Strict ownership verification
       verifyGroupOwnership(group, { userId, cancelToken });
 
-      const industries = (group.child_orders || []).map((co) => ({
-        root_category_id: co.root_category_id ? String(co.root_category_id) : null,
-        root_category_name: co.root_category_name || 'Chưa phân loại',
-        order_id: String(co.order_id || ''),
-        order_code: co.order_code || '',
-        subtotal: Number(co.allocated_subtotal || 0),
-        discount_amount: Number(co.allocated_discount || 0),
-        shipping_fee: Number(co.allocated_shipping_fee || 0),
-        total_amount: Number(co.allocated_total || 0),
-        status: co.status || 'Đang chuẩn bị',
-        payment_status: co.payment_status || group.payment_status || 'unpaid',
-        items: Array.isArray(co.items) ? co.items.map((it) => ({
-          product_id: String(it.product_id || ''),
-          product_name: it.product_name || '',
-          quantity: Number(it.quantity || it.qty || 1),
-          unit_price: Number(it.unit_price || 0),
-          line_total: Number(it.line_total || 0),
-        })) : [],
-      }));
+      const isAuthenticatedCustomer = Boolean(userId != null && Number(userId) > 0);
+
+      const industries = (group.child_orders || []).map((co) => {
+        const isChildOwner = Boolean(isAuthenticatedCustomer && co.user_id && Number(co.user_id) === Number(userId));
+        const isCompleted = (co.status === 'Hoàn thành');
+        const isPreorderEligible = co.preorder_id ? Boolean(co.preorder_checked_in_at) : true;
+        const canReview = Boolean(isChildOwner && isCompleted && isPreorderEligible);
+
+        return {
+          root_category_id: co.root_category_id ? String(co.root_category_id) : null,
+          root_category_name: co.root_category_name || 'Chưa phân loại',
+          order_id: String(co.order_id || ''),
+          order_code: co.order_code || '',
+          subtotal: Number(co.allocated_subtotal || 0),
+          discount_amount: Number(co.allocated_discount || 0),
+          shipping_fee: Number(co.allocated_shipping_fee || 0),
+          total_amount: Number(co.allocated_total || 0),
+          status: co.status || 'Đang chuẩn bị',
+          payment_status: co.payment_status || group.payment_status || 'unpaid',
+          can_review: canReview,
+          items: Array.isArray(co.items) ? co.items.map((it) => ({
+            order_item_id: String(it.order_item_id || it.id || ''),
+            id: Number(it.order_item_id || it.id || 0),
+            product_id: String(it.product_id || ''),
+            product_name: it.product_name || '',
+            quantity: Number(it.quantity || it.qty || 1),
+            unit_price: Number(it.unit_price || 0),
+            line_total: Number(it.line_total || 0),
+            can_review: canReview,
+          })) : [],
+        };
+      });
 
       return {
         group_code: group.group_code,
@@ -493,6 +510,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
           allocated_total: ind.total_amount,
           status: ind.status,
           payment_status: ind.payment_status,
+          can_review: ind.can_review,
           items: ind.items,
         })),
         payment_summary: {

@@ -70,6 +70,7 @@ export function createDirectPayOSAttemptService({
   withCreationLock = withDedicatedAdvisoryLock,
   now = () => new Date(),
   makeProviderOrderCode = makeReservedPayOSOrderCode,
+  reconcileOrder = reconcilePayOSOrder,
 } = {}) {
   async function reserve({ order, paymentProfileCode, paymentProfileVersion = null, forceRegenerate }) {
     const expiresAt = new Date(now().getTime() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
@@ -210,28 +211,51 @@ export function createDirectPayOSAttemptService({
       }
 
       // Preflight active reconciliation on current attempt
-      await reconcilePayOSOrder({ order, attemptsRepository });
+      const reconResult = await reconcileOrder({
+        order,
+        attemptsRepository,
+        bypassThrottle: true,
+      });
+
+      if (reconResult?.outcome === 'provider_uncertain') {
+        throw uncertainProviderError();
+      }
 
       // Refresh order after reconciliation
       const freshOrder = await attemptsRepository.findDirectOrderForRegeneration(orderCode);
       if (!freshOrder) throw new PaymentAttemptError('Không tìm thấy đơn hàng', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
 
-      if (freshOrder.payment_status === 'paid') {
+      if (freshOrder.payment_status === 'paid' || reconResult?.outcome === 'paid') {
         throw new PaymentAttemptError('Đơn hàng đã được thanh toán thành công', 409, 'PAYMENT_ATTEMPT_TARGET_PAID');
       }
       if (isCancelled(freshOrder)) {
         throw new PaymentAttemptError('Đơn hàng đã bị hủy, không thể tạo lại mã thanh toán', 409, 'PAYMENT_ATTEMPT_TARGET_CANCELLED');
       }
 
-      // If current attempt is still active (provider link pending, not cancelled/expired), reuse it!
       const currentAttempt = freshOrder.current_payment_attempt_id
         ? await attemptsRepository.findAttemptById(freshOrder.current_payment_attempt_id)
         : null;
-      const isStillActive = currentAttempt?.status === 'active' && currentAttempt?.provider_payment_link_id;
+
+      let forceRegenerate = false;
+      if (reconResult?.outcome === 'terminal_unpaid') {
+        forceRegenerate = true;
+      } else if (reconResult?.outcome === 'provider_pending') {
+        if (currentAttempt?.status === 'active' && currentAttempt?.provider_payment_link_id) {
+          forceRegenerate = false;
+        } else {
+          forceRegenerate = true;
+        }
+      } else if (!currentAttempt) {
+        forceRegenerate = false;
+      } else if (currentAttempt.status === 'expired') {
+        forceRegenerate = true;
+      } else {
+        throw uncertainProviderError();
+      }
 
       return createOrRegenerate({
         order: freshOrder,
-        forceRegenerate: !isStillActive,
+        forceRegenerate,
         returnUrl,
         cancelUrl,
       });

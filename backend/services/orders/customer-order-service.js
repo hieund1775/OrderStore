@@ -13,7 +13,7 @@ import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
 import defaultCheckoutGroupsRepository from '../../repositories/postgres/checkout-groups.js';
 import defaultPromotionsRepository from '../../repositories/postgres/promotions.js';
 import defaultPostgresDb from '../../config/db-postgres.js';
-import { reconcilePayOSOrder } from '../payos-reconciliation.js';
+import { reconcilePayOSOrder, reconcilePayOSCheckoutGroup } from '../payos-reconciliation.js';
 import {
   resolvePaymentProfileForCart as defaultResolvePaymentProfile,
   allocateVoucherDiscount,
@@ -635,12 +635,20 @@ export function createCustomerOrderService({
       // Support looking up Group by Group Code with STRICT ownership verification
       if (code.startsWith('GRP')) {
         const userId = tokenUser ? Number(tokenUser.id || tokenUser.sub) : null;
-        const group = await checkoutGroupsRepo.findGroupForCustomerLookup(code, {
+        let group = await checkoutGroupsRepo.findGroupForCustomerLookup(code, {
           userId,
           cancelToken: (cancelToken || '').trim() || null,
         });
         if (!group) {
           throw new OrderDomainError('Không tìm thấy đơn hàng gộp', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
+        }
+        if (group.payment_provider === 'payos' && ['unpaid', 'expired'].includes(group.payment_status)) {
+          const rawGroup = await checkoutGroupsRepo.findGroupByCode(code);
+          await reconcilePayOSCheckoutGroup({ checkoutGroup: rawGroup });
+          group = await checkoutGroupsRepo.findGroupForCustomerLookup(code, {
+            userId,
+            cancelToken: (cancelToken || '').trim() || null,
+          });
         }
         return { group };
       }
@@ -650,12 +658,15 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Không tìm thấy đơn hàng', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
       }
 
-      await reconcilePayOSOrder({ order, paymentRepository: paymentsRepository });
-      const refreshedOrder = order.payment_provider === 'payos' && order.payment_status === 'unpaid'
+      const shouldReconcile = order.payment_provider === 'payos' && ['unpaid', 'expired'].includes(order.payment_status);
+      if (shouldReconcile) {
+        await reconcilePayOSOrder({ order, paymentRepository: paymentsRepository });
+      }
+      const refreshedOrder = shouldReconcile
         ? await repository.findPublicOrder(code)
         : order;
       const mappedItems = await repository.loadPublicDetails(refreshedOrder.id);
-      const history = await repository.loadStatusHistory(order.id);
+      const history = await repository.loadStatusHistory(refreshedOrder.id);
       const safeOrder = buildPublicLookupDto(refreshedOrder, tokenUser, mappedItems, history, cancelToken);
       return { order: safeOrder };
     },

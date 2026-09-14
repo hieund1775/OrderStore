@@ -55,6 +55,7 @@ export function createGroupedPayOSAttemptService({
   withCreationLock = withDedicatedAdvisoryLock,
   now = () => new Date(),
   makeProviderOrderCode = makeReservedPayOSOrderCode,
+  reconcileGroup = reconcilePayOSCheckoutGroup,
 } = {}) {
   async function reserve({ group, forceRegenerate }) {
     const expiresAt = new Date(now().getTime() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
@@ -162,13 +163,21 @@ export function createGroupedPayOSAttemptService({
       }
 
       // Preflight active reconciliation on current attempt
-      await reconcilePayOSCheckoutGroup({ checkoutGroup: group, attemptsRepository });
+      const reconResult = await reconcileGroup({
+        checkoutGroup: group,
+        attemptsRepository,
+        bypassThrottle: true,
+      });
+
+      if (reconResult?.outcome === 'provider_uncertain') {
+        throw uncertainProviderError();
+      }
 
       // Refresh group state
       const freshGroup = await groupsRepository.findGroupByCode(groupCode);
       if (!freshGroup) throw new PaymentAttemptError('Không tìm thấy đơn gộp', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
 
-      if (freshGroup.payment_status === 'paid') {
+      if (freshGroup.payment_status === 'paid' || reconResult?.outcome === 'paid') {
         throw new PaymentAttemptError('Đơn gộp đã được thanh toán thành công', 409, 'PAYMENT_ATTEMPT_TARGET_PAID');
       }
       if (groupIsCancelled(freshGroup)) {
@@ -178,11 +187,27 @@ export function createGroupedPayOSAttemptService({
       const currentAttempt = freshGroup.current_payment_attempt_id
         ? await attemptsRepository.findAttemptById(freshGroup.current_payment_attempt_id)
         : null;
-      const isStillActive = currentAttempt?.status === 'active' && currentAttempt?.provider_payment_link_id;
+
+      let forceRegenerate = false;
+      if (reconResult?.outcome === 'terminal_unpaid') {
+        forceRegenerate = true;
+      } else if (reconResult?.outcome === 'provider_pending') {
+        if (currentAttempt?.status === 'active' && currentAttempt?.provider_payment_link_id) {
+          forceRegenerate = false;
+        } else {
+          forceRegenerate = true;
+        }
+      } else if (!currentAttempt) {
+        forceRegenerate = false;
+      } else if (currentAttempt.status === 'expired') {
+        forceRegenerate = true;
+      } else {
+        throw uncertainProviderError();
+      }
 
       return createOrRegenerate({
         group: freshGroup,
-        forceRegenerate: !isStillActive,
+        forceRegenerate,
         returnUrl,
         cancelUrl,
       });

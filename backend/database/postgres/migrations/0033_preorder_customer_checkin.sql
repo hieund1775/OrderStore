@@ -23,8 +23,56 @@ CREATE TABLE IF NOT EXISTS preorder_checkin_requests (
   manager_breach_recorded_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT uq_preorder_checkin_slot UNIQUE (preorder_id, scheduled_start_at)
+  CONSTRAINT uq_preorder_checkin_slot UNIQUE (preorder_id, scheduled_start_at),
+  CONSTRAINT chk_preorder_checkin_schedule CHECK (scheduled_end_at > scheduled_start_at),
+  CONSTRAINT chk_preorder_checkin_status_resolution CHECK (
+    (status = 'PENDING' AND resolved_by IS NULL AND resolved_at IS NULL AND rejection_reason IS NULL AND late_confirmation_reason IS NULL) OR
+    (status = 'CONFIRMED' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL) OR
+    (status = 'REJECTED' AND resolved_by IS NOT NULL AND resolved_at IS NOT NULL AND rejection_reason IS NOT NULL AND trim(rejection_reason) <> '') OR
+    (status = 'RESCHEDULED' AND resolved_at IS NOT NULL)
+  )
 );
+
+CREATE OR REPLACE FUNCTION trg_verify_preorder_checkin_parent_snapshot()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_parent RECORD;
+BEGIN
+  SELECT store_id, customer_user_id, scheduled_start_at, scheduled_end_at
+  INTO v_parent
+  FROM preorders
+  WHERE id = NEW.preorder_id
+  FOR SHARE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Parent preorder % does not exist', NEW.preorder_id;
+  END IF;
+
+  IF NEW.store_id <> v_parent.store_id THEN
+    RAISE EXCEPTION 'preorder_checkin_requests.store_id (%) does not match parent preorder (%)', NEW.store_id, v_parent.store_id;
+  END IF;
+
+  IF NEW.customer_user_id <> v_parent.customer_user_id THEN
+    RAISE EXCEPTION 'preorder_checkin_requests.customer_user_id (%) does not match parent preorder (%)', NEW.customer_user_id, v_parent.customer_user_id;
+  END IF;
+
+  IF NEW.scheduled_start_at <> v_parent.scheduled_start_at THEN
+    RAISE EXCEPTION 'preorder_checkin_requests.scheduled_start_at (%) does not match parent preorder (%)', NEW.scheduled_start_at, v_parent.scheduled_start_at;
+  END IF;
+
+  IF NEW.scheduled_end_at <> v_parent.scheduled_end_at THEN
+    RAISE EXCEPTION 'preorder_checkin_requests.scheduled_end_at (%) does not match parent preorder (%)', NEW.scheduled_end_at, v_parent.scheduled_end_at;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_preorder_checkin_parent_snapshot ON preorder_checkin_requests;
+CREATE TRIGGER trg_preorder_checkin_parent_snapshot
+BEFORE INSERT OR UPDATE ON preorder_checkin_requests
+FOR EACH ROW
+EXECUTE FUNCTION trg_verify_preorder_checkin_parent_snapshot();
 
 CREATE INDEX IF NOT EXISTS idx_preorder_checkin_requests_due
   ON preorder_checkin_requests(status, scheduled_start_at)

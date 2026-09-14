@@ -164,25 +164,55 @@ describe('ProductReviewsRepository Transaction Contract', () => {
     assert.equal(result.revision.rating, 4);
   });
 
-  it('rolls back completely if an error occurs during review creation', async () => {
+  it('rolls back completely if an error occurs during review creation after initial write', async () => {
     let rolledBack = false;
+    let reviewInsertAttempted = false;
+    const committedState = {
+      reviews: [],
+      revisions: [],
+      productAggregates: [],
+    };
+    let uncommittedState = {
+      reviews: [],
+      revisions: [],
+      productAggregates: [],
+    };
+
     const mockAdapter = {
       async query() {
         return [[], 0];
       },
       async transaction(cb) {
+        uncommittedState = {
+          reviews: [...committedState.reviews],
+          revisions: [...committedState.revisions],
+          productAggregates: [...committedState.productAggregates],
+        };
         const tx = {
-          async query(sqlText) {
-            if (sqlText.includes('INSERT INTO review_revisions')) {
-              throw new Error('Disk failure');
+          async query(sqlText, params = []) {
+            if (sqlText.includes('SELECT id FROM reviews') && sqlText.includes('FOR UPDATE')) {
+              return [[], 0]; // No existing review
             }
-            return [[{ id: 10 }], 1];
+            if (sqlText.includes('INSERT INTO reviews')) {
+              reviewInsertAttempted = true;
+              uncommittedState.reviews.push({ id: 10, user_id: params[0], order_item_id: params[2] });
+              return [[{ id: 10 }], 1];
+            }
+            if (sqlText.includes('INSERT INTO review_revisions')) {
+              throw new Error('SENTINEL_INJECTED_FAILURE_AFTER_WRITE');
+            }
+            return [[], 0];
           },
         };
         try {
-          return await cb(tx);
+          const res = await cb(tx);
+          committedState.reviews = uncommittedState.reviews;
+          committedState.revisions = uncommittedState.revisions;
+          committedState.productAggregates = uncommittedState.productAggregates;
+          return res;
         } catch (err) {
           rolledBack = true;
+          uncommittedState = null;
           throw err;
         }
       },
@@ -195,11 +225,15 @@ describe('ProductReviewsRepository Transaction Contract', () => {
         productId: 5,
         orderItemId: 100,
         rating: 5,
-        comment: 'Crash test',
+        comment: 'Rollback test',
         verifiedAt: new Date(),
       }),
-      /Disk failure/,
+      /SENTINEL_INJECTED_FAILURE_AFTER_WRITE/,
     );
-    assert.equal(rolledBack, true);
+    assert.equal(reviewInsertAttempted, true, 'First write (reviews insert) must have been attempted');
+    assert.equal(rolledBack, true, 'Transaction must have rolled back');
+    assert.equal(committedState.reviews.length, 0, 'No review rows must survive');
+    assert.equal(committedState.revisions.length, 0, 'No revision rows must survive');
+    assert.equal(committedState.productAggregates.length, 0, 'No product aggregate updates must survive');
   });
 });

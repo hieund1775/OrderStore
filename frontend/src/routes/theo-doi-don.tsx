@@ -595,7 +595,7 @@ function Tracking() {
                   </div>
 
                   {/* Review Panel for completed child order */}
-                  {co.status === "Hoàn thành" && Array.isArray(co.items) && co.items.some((it) => it.order_item_id) && (
+                  {Boolean(co.can_review) && Array.isArray(co.items) && co.items.some((it) => it.order_item_id) && (
                     <OrderReviewPanel
                       orderCode={co.order_code}
                       items={co.items
@@ -605,7 +605,7 @@ function Tracking() {
                           productId: Number(it.product_id),
                           name: `${it.quantity}× ${it.product_name}`,
                         }))}
-                      canReview={true}
+                      canReview={Boolean(co.can_review)}
                       className="mt-3"
                     />
                   )}

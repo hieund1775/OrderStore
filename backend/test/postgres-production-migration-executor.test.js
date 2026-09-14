@@ -150,6 +150,12 @@ describe('PostgreSQL production migration guard', () => {
     assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0031']), {
       apply: false, dryRun: true, toVersion: '0031', legacyManifest: null,
     });
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0032']), {
+      apply: false, dryRun: true, toVersion: '0032', legacyManifest: null,
+    });
+    assert.deepEqual(parseProductionMigrationArgs(['--dry-run', '--to=0033']), {
+      apply: false, dryRun: true, toVersion: '0033', legacyManifest: null,
+    });
   });
 
   it('fails before Pool.connect when production guard denies the target', async () => {
@@ -517,6 +523,55 @@ describe('PostgreSQL production migration guard', () => {
     await assert.rejects(
       runProductionMigrationExecutor({ args: ['--dry-run', '--to=0032'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
       /checksum mismatch for migration 0031/,
+    );
+  });
+
+  it('plans only 0033 after all finalized prerequisites through 0032', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0033' });
+    const appliedRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0033')
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const fake = createFakePool({ appliedRows });
+    const result = await runProductionMigrationExecutor({
+      args: ['--dry-run', '--to=0033'], env: approvedEnvironment, pool: fake.pool, logger: captureLogger().logger,
+    });
+    assert.deepEqual(result.pendingVersions, ['0033']);
+    assert.equal(result.preflight.filename, '0033_preorder_customer_checkin_preflight_readonly.sql');
+    assert.equal(fake.calls.some((call) => call.sql === 'BEGIN'), false);
+    assert.equal(fake.calls.some((call) => call.sql.includes('INSERT INTO schema_migrations')), false);
+  });
+
+  it('keeps 0033 migration additive and preflight read-only', async () => {
+    const currentFile = fileURLToPath(import.meta.url);
+    const migration = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'migrations', '0033_preorder_customer_checkin.sql'), 'utf8');
+    const preflight = await readFile(path.join(path.dirname(currentFile), '..', 'database', 'postgres', 'verification', '0033_preorder_customer_checkin_preflight_readonly.sql'), 'utf8');
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS preorder_checkin_requests/);
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS preorder_slot_strike_events/);
+    const migrationSql = migration.replace(/--.*$/gm, '');
+    assert.doesNotMatch(migrationSql, /^\s*(?:TRUNCATE|DELETE)\b/im);
+    assert.match(preflight, /^\s*--[\s\S]*WITH required_base_tables/m);
+    assert.doesNotMatch(preflight, /\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|BEGIN|COMMIT|ROLLBACK)\b/i);
+  });
+
+  it('fails closed for 0033 before preflight when 0032 is absent or checksum-mismatched', async () => {
+    const migrations = await readProductionMigrationFiles({ toVersion: '0033' });
+    const without0032 = migrations.throughTarget
+      .filter((migration) => !['0032', '0033'].includes(migration.version))
+      .map((migration) => ({ version: migration.version, checksum: migration.checksum }));
+    const missing = createFakePool({ appliedRows: without0032 });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0033'], env: approvedEnvironment, pool: missing.pool, logger: captureLogger().logger }),
+      /target 0033 requires tracked migration 0032/,
+    );
+    assert.equal(missing.calls.some((call) => call.sql.includes('checks AS (')), false);
+
+    const mismatchRows = migrations.throughTarget
+      .filter((migration) => migration.version !== '0033')
+      .map((migration) => ({ version: migration.version, checksum: migration.version === '0032' ? 'bad-checksum' : migration.checksum }));
+    const mismatch = createFakePool({ appliedRows: mismatchRows });
+    await assert.rejects(
+      runProductionMigrationExecutor({ args: ['--dry-run', '--to=0033'], env: approvedEnvironment, pool: mismatch.pool, logger: captureLogger().logger }),
+      /checksum mismatch for migration 0032/,
     );
   });
 
