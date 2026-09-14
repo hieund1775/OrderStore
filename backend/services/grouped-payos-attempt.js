@@ -4,6 +4,7 @@ import { withDedicatedAdvisoryLock } from '../config/db-postgres.js';
 import paymentAttemptsRepository, { PaymentAttemptError } from '../repositories/postgres/payment-attempts.js';
 import checkoutGroupsRepository, { verifyGroupOwnership } from '../repositories/postgres/checkout-groups.js';
 import { createPaymentLinkForOrder, lookupPaymentLinkForRecovery } from './payos.js';
+import { reconcilePayOSCheckoutGroup } from './payos-reconciliation.js';
 
 function makeReservedPayOSOrderCode() {
   return Number(`${String(Date.now()).slice(-8)}${String(crypto.randomInt(100000, 1_000_000))}`);
@@ -54,6 +55,7 @@ export function createGroupedPayOSAttemptService({
   withCreationLock = withDedicatedAdvisoryLock,
   now = () => new Date(),
   makeProviderOrderCode = makeReservedPayOSOrderCode,
+  reconcileGroup = reconcilePayOSCheckoutGroup,
 } = {}) {
   async function reserve({ group, forceRegenerate }) {
     const expiresAt = new Date(now().getTime() + Number(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || 15) * 60_000);
@@ -150,8 +152,65 @@ export function createGroupedPayOSAttemptService({
 
     async regenerateForCustomer({ groupCode, userId = null, cancelToken = null, returnUrl = null, cancelUrl = null }) {
       const group = await groupsRepository.findGroupByCode(groupCode);
+      if (!group) throw new PaymentAttemptError('Không tìm thấy đơn gộp', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
       verifyGroupOwnership(group, { userId, cancelToken });
-      return createOrRegenerate({ group, forceRegenerate: true, returnUrl, cancelUrl });
+
+      if (group.payment_status === 'paid') {
+        throw new PaymentAttemptError('Đơn gộp đã được thanh toán thành công', 409, 'PAYMENT_ATTEMPT_TARGET_PAID');
+      }
+      if (groupIsCancelled(group)) {
+        throw new PaymentAttemptError('Đơn gộp đã bị hủy, không thể tạo lại mã thanh toán', 409, 'PAYMENT_ATTEMPT_TARGET_CANCELLED');
+      }
+
+      // Preflight active reconciliation on current attempt
+      const reconResult = await reconcileGroup({
+        checkoutGroup: group,
+        attemptsRepository,
+        bypassThrottle: true,
+      });
+
+      if (reconResult?.outcome === 'provider_uncertain') {
+        throw uncertainProviderError();
+      }
+
+      // Refresh group state
+      const freshGroup = await groupsRepository.findGroupByCode(groupCode);
+      if (!freshGroup) throw new PaymentAttemptError('Không tìm thấy đơn gộp', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
+
+      if (freshGroup.payment_status === 'paid' || reconResult?.outcome === 'paid') {
+        throw new PaymentAttemptError('Đơn gộp đã được thanh toán thành công', 409, 'PAYMENT_ATTEMPT_TARGET_PAID');
+      }
+      if (groupIsCancelled(freshGroup)) {
+        throw new PaymentAttemptError('Đơn gộp đã bị hủy, không thể tạo lại mã thanh toán', 409, 'PAYMENT_ATTEMPT_TARGET_CANCELLED');
+      }
+
+      const currentAttempt = freshGroup.current_payment_attempt_id
+        ? await attemptsRepository.findAttemptById(freshGroup.current_payment_attempt_id)
+        : null;
+
+      let forceRegenerate = false;
+      if (reconResult?.outcome === 'terminal_unpaid') {
+        forceRegenerate = true;
+      } else if (reconResult?.outcome === 'provider_pending') {
+        if (currentAttempt?.status === 'active' && currentAttempt?.provider_payment_link_id) {
+          forceRegenerate = false;
+        } else {
+          forceRegenerate = true;
+        }
+      } else if (!currentAttempt) {
+        forceRegenerate = false;
+      } else if (currentAttempt.status === 'expired') {
+        forceRegenerate = true;
+      } else {
+        throw uncertainProviderError();
+      }
+
+      return createOrRegenerate({
+        group: freshGroup,
+        forceRegenerate,
+        returnUrl,
+        cancelUrl,
+      });
     },
   };
 }

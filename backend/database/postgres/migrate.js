@@ -20,14 +20,22 @@ export function calculateChecksum(content) {
 /**
  * Runs all pending PostgreSQL migrations in order
  */
-export async function runMigrations({ customUrl = null, pool = null } = {}) {
+export async function runMigrations({
+  customUrl = null,
+  pool = null,
+  toVersion = null,
+  beforeMigration = null,
+  guardOptions = undefined,
+  advisoryLockName = 'teaplus_postgres_migrations',
+  logger = console,
+} = {}) {
   const targetUrl = customUrl || process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
   // This guard is intentionally before Pool construction/connect and before
   // every SQL statement, including the advisory lock.
-  const guardedTarget = validatePostgresTestGuard(targetUrl);
+  const guardedTarget = validatePostgresTestGuard(targetUrl, guardOptions);
   const activePool = pool || new Pool(getPostgresPoolConfig(customUrl));
 
-  console.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
+  logger.log(`🚀 [PostgreSQL Migrator] Target DB: ${describePostgresTarget(guardedTarget)}`);
 
   const client = await activePool.connect();
   let lockHeld = false;
@@ -35,7 +43,7 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
   try {
     // One migrator per database: prevents two deploys from applying/checking the
     // same version concurrently. This is released in finally even on failure.
-    await client.query("SELECT pg_advisory_lock(hashtext('teaplus_postgres_migrations'))");
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [advisoryLockName]);
     lockHeld = true;
 
     // 1. Ensure schema_migrations tracker exists
@@ -63,6 +71,7 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
 
     for (const file of sqlFiles) {
       const version = file.split('_')[0];
+      if (toVersion && version > toVersion) break;
       const filePath = path.join(MIGRATIONS_DIR, file);
       const sqlContent = await fs.readFile(filePath, 'utf8');
       const checksum = calculateChecksum(sqlContent);
@@ -79,29 +88,37 @@ export async function runMigrations({ customUrl = null, pool = null } = {}) {
       }
 
       // Execute migration inside atomic transaction
-      console.log(`⏳ Applying migration [${version}] ${file}...`);
+      logger.log(`⏳ Applying migration [${version}] ${file}...`);
       await client.query('BEGIN');
       try {
+        // The production path does not supply hooks. Isolated migration
+        // rehearsals may use this transaction-scoped seam for migrations
+        // whose approved executor contract requires session-local input
+        // (for example the audited 0026 quarantine manifest). Keeping the
+        // hook inside the runner transaction proves the same atomic boundary.
+        if (typeof beforeMigration === 'function') {
+          await beforeMigration({ client, version, file, sqlContent });
+        }
         await client.query(sqlContent);
         await client.query(
           'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)',
           [version, file, checksum]
         );
         await client.query('COMMIT');
-        console.log(`✅ Applied [${version}] ${file}`);
+        logger.log(`✅ Applied [${version}] ${file}`);
         results.push({ version, file, status: 'applied' });
       } catch (migrationErr) {
         await client.query('ROLLBACK');
-        console.error(`❌ Failed applying migration [${version}] ${file}:`, migrationErr.message);
+        logger.error(`❌ Failed applying migration [${version}] ${file}:`, migrationErr.message);
         throw migrationErr;
       }
     }
 
-    console.log(`🎉 All ${results.length} PostgreSQL migrations verified/applied successfully.`);
+    logger.log(`🎉 All ${results.length} PostgreSQL migrations verified/applied successfully.`);
     return results;
   } finally {
     if (lockHeld) {
-      await client.query("SELECT pg_advisory_unlock(hashtext('teaplus_postgres_migrations'))");
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [advisoryLockName]);
     }
     client.release();
     if (!pool) {

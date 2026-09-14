@@ -51,5 +51,55 @@ describe('Preorder reservation repository', () => {
     assert.deepEqual(rows[0].orders.map((order) => order.order_code), ['ORDER-1']);
     assert.deepEqual(rows[0].orders[0].items.map((item) => item.product_name), ['Trà đào']);
     assert.equal(calls.some((sql) => sql.includes('WHERE p.customer_user_id = $1')), true);
+    assert.equal(calls.some((sql) => sql.includes("AND p.status NOT IN ('AWAITING_PAYMENT', 'PAYMENT_EXPIRED')")), true);
+  });
+
+  it('inserts customer check-in request with slot conflict handling', async () => {
+    let capturedSql = '';
+    let capturedParams = [];
+    const repository = createPreordersRepository({
+      async query(sql, params) {
+        capturedSql = sql;
+        capturedParams = params;
+        return { rows: [{ id: 88, status: 'PENDING' }] };
+      },
+    });
+
+    const result = await repository.createOrGetCheckinRequest({
+      preorderId: 10,
+      storeId: 1,
+      customerUserId: 5,
+      scheduledStartAt: '2026-09-15T12:00:00.000Z',
+      scheduledEndAt: '2026-09-15T13:00:00.000Z',
+      requestedAt: '2026-09-15T11:45:00.000Z',
+    });
+
+    assert.equal(result.id, 88);
+    assert.match(capturedSql, /INSERT INTO preorder_checkin_requests/i);
+    assert.match(capturedSql, /ON CONFLICT \(preorder_id, scheduled_start_at\) DO UPDATE/i);
+    assert.equal(capturedParams[0], 10);
+    assert.equal(capturedParams[1], 1);
+    assert.equal(capturedParams[2], 5);
+  });
+
+  it('records slot strike event idempotently with ON CONFLICT DO NOTHING', async () => {
+    let capturedSql = '';
+    const repository = createPreordersRepository({
+      async query(sql) {
+        capturedSql = sql;
+        return { rows: [{ id: 99 }] };
+      },
+    });
+
+    const result = await repository.recordSlotStrikeOnce({
+      preorderId: 10,
+      scheduledStartAt: '2026-09-15T12:00:00.000Z',
+      managerId: 9,
+      strikeSource: 'CHECKIN_BREACH',
+    });
+
+    assert.equal(result.id, 99);
+    assert.match(capturedSql, /INSERT INTO preorder_slot_strike_events/i);
+    assert.match(capturedSql, /ON CONFLICT \(preorder_id, scheduled_start_at\) DO NOTHING/i);
   });
 });

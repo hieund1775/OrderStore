@@ -711,7 +711,10 @@ describe('Payment Profiles & Grouped Checkout Comprehensive Acceptance Suite (Ro
           return {
             group_code: 'GRP2609010001',
             payment_status: 'unpaid',
-            payment_provider: 'payos',
+            // This DTO-contract test has no PayOS attempt/reconciliation
+            // fixture. Keep it out of the live PayOS polling branch; payment
+            // reconciliation has dedicated P1 tests.
+            payment_provider: 'cash',
             subtotal: 100000,
             discount_amount: 15000,
             shipping_fee: 0,

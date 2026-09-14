@@ -45,6 +45,13 @@ export type CustomerPreorder = {
   reservation_status?: string | null;
   late_minutes?: number | null;
   cancel_reason?: string | null;
+  checkin_request?: {
+    id: number;
+    status: string;
+    requested_at: string;
+    late_confirmation_reason?: string | null;
+    rejection_reason?: string | null;
+  } | null;
   orders: LinkedOrder[];
 };
 
@@ -156,12 +163,33 @@ export function formatSlot(startAt?: string | null, endAt?: string | null): stri
 }
 
 export function canCancel(preorder: CustomerPreorder): boolean {
+  if (preorder.checkin_request) {
+    return false;
+  }
   if (!['AWAITING_PAYMENT', 'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status)) {
     return false;
   }
   const startTime = new Date(preorder.scheduled_start_at).getTime();
   if (isNaN(startTime)) return false;
   return startTime > Date.now();
+}
+
+export function getCheckinWindowStatus(preorder: CustomerPreorder, nowMs = Date.now()): {
+  canRequest: boolean;
+  isEarly: boolean;
+  isExpired: boolean;
+  windowStart: Date;
+  windowEnd: Date;
+} {
+  const startTime = new Date(preorder.scheduled_start_at).getTime();
+  const windowStart = new Date(startTime - 30 * 60_000);
+  const windowEnd = new Date(startTime + 30 * 60_000);
+  const isEarly = nowMs < windowStart.getTime();
+  const isExpired = nowMs > windowEnd.getTime();
+  const validStatus = ['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status);
+  const hasActiveRequest = preorder.checkin_request?.status === 'PENDING' || preorder.checkin_request?.status === 'CONFIRMED';
+  const canRequest = validStatus && !hasActiveRequest && !isEarly && !isExpired;
+  return { canRequest, isEarly, isExpired, windowStart, windowEnd };
 }
 
 export function normalizeCustomerPreorder(raw: any): CustomerPreorder | null {
@@ -199,6 +227,17 @@ export function normalizeCustomerPreorder(raw: any): CustomerPreorder | null {
     };
   });
 
+  let checkin_request: CustomerPreorder['checkin_request'] = null;
+  if (raw.checkin_request && typeof raw.checkin_request === 'object') {
+    checkin_request = {
+      id: Number(raw.checkin_request.id) || 0,
+      status: String(raw.checkin_request.status || '').trim(),
+      requested_at: String(raw.checkin_request.requested_at || '').trim(),
+      late_confirmation_reason: raw.checkin_request.late_confirmation_reason ? String(raw.checkin_request.late_confirmation_reason).trim() : null,
+      rejection_reason: raw.checkin_request.rejection_reason ? String(raw.checkin_request.rejection_reason).trim() : null,
+    };
+  }
+
   return {
     id,
     preorder_code: preorder_code || `PRE-${id}`,
@@ -210,6 +249,7 @@ export function normalizeCustomerPreorder(raw: any): CustomerPreorder | null {
     reservation_status: raw.reservation_status ? String(raw.reservation_status).trim() : null,
     late_minutes: typeof raw.late_minutes === 'number' ? raw.late_minutes : null,
     cancel_reason: raw.cancel_reason ? String(raw.cancel_reason).trim() : null,
+    checkin_request,
     orders,
   };
 }
@@ -218,7 +258,7 @@ export function normalizeCustomerPreorders(rawList: any): CustomerPreorder[] {
   if (!Array.isArray(rawList)) return [];
   return rawList
     .map(normalizeCustomerPreorder)
-    .filter((item): item is CustomerPreorder => item !== null);
+    .filter((item): item is CustomerPreorder => item !== null && !['AWAITING_PAYMENT', 'PAYMENT_EXPIRED'].includes(item.status));
 }
 
 export function CustomerPreordersTab({
@@ -234,6 +274,7 @@ export function CustomerPreordersTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
+  const [requestingCheckin, setRequestingCheckin] = useState<number | null>(null);
   const hasLoadedRef = useRef(false);
   const inFlightRef = useRef(false);
   const inFlightSessionKeyRef = useRef<string | null>(null);
@@ -246,6 +287,7 @@ export function CustomerPreordersTab({
     setRows([]);
     setError(null);
     setCancelling(null);
+    setRequestingCheckin(null);
     hasLoadedRef.current = false;
     inFlightRef.current = false;
     inFlightSessionKeyRef.current = null;
@@ -302,6 +344,20 @@ export function CustomerPreordersTab({
   }, [isActive, load, session]);
 
   const activeHighlightedCode = useMemo(() => highlightedCode?.trim() || null, [highlightedCode]);
+
+  async function handleCheckinRequest(preorder: CustomerPreorder) {
+    if (requestingCheckin !== null) return;
+    setRequestingCheckin(preorder.id);
+    try {
+      await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in-request`, {});
+      toast.success('Đã gửi yêu cầu check-in! Quán sẽ xác nhận trong giây lát.');
+      await load();
+    } catch (err: any) {
+      toast.error(err instanceof Error ? err.message : 'Không thể gửi yêu cầu check-in.');
+    } finally {
+      setRequestingCheckin(null);
+    }
+  }
 
   async function handleCancel(preorder: CustomerPreorder) {
     if (cancelling !== null) return;
@@ -435,6 +491,20 @@ export function CustomerPreordersTab({
 
             <p className="mt-3 text-sm text-muted-foreground">{presentation.description}</p>
 
+            {preorder.checkin_request?.status === 'PENDING' ? (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">
+                <Loader2 className="size-4 animate-spin text-sky-600 shrink-0" />
+                <span>Đã gửi yêu cầu check-in · Đang chờ Quản lý xác nhận</span>
+              </div>
+            ) : null}
+
+            {preorder.checkin_request?.status === 'REJECTED' ? (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800">
+                <p className="font-semibold">Yêu cầu check-in bị từ chối: {preorder.checkin_request.rejection_reason || 'Vui lòng liên hệ nhân viên'}</p>
+                <p className="mt-0.5 text-rose-600">Bạn có thể liên hệ trực tiếp nhân viên quầy để được hỗ trợ.</p>
+              </div>
+            ) : null}
+
             {preorder.late_minutes != null && preorder.late_minutes > 0 ? (
               <p className="mt-2 text-sm text-amber-700">
                 Bạn đã check-in muộn {preorder.late_minutes} phút.
@@ -495,8 +565,54 @@ export function CustomerPreordersTab({
               </div>
             </details>
 
-            {canCancel(preorder) ? (
-              <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              {['PENDING_MANAGER_CONFIRMATION', 'CONFIRMED'].includes(preorder.status) && preorder.status !== 'CHECKED_IN' && preorder.status !== 'COMPLETED' ? (
+                <>
+                  {preorder.checkin_request?.status === 'PENDING' ? (
+                    <Button variant="secondary" size="sm" disabled>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Đã yêu cầu check-in
+                    </Button>
+                  ) : (
+                    (() => {
+                      const { canRequest, isEarly, windowStart } = getCheckinWindowStatus(preorder);
+                      if (canRequest) {
+                        return (
+                          <Button
+                            size="sm"
+                            disabled={requestingCheckin === preorder.id}
+                            onClick={() => void handleCheckinRequest(preorder)}
+                            className="bg-primary text-primary-foreground font-semibold"
+                          >
+                            {requestingCheckin === preorder.id ? (
+                              <Loader2 className="mr-2 size-4 animate-spin" />
+                            ) : (
+                              <CalendarClock className="mr-2 size-4" />
+                            )}
+                            {requestingCheckin === preorder.id ? 'Đang gửi…' : 'Check-in'}
+                          </Button>
+                        );
+                      }
+                      if (isEarly) {
+                        const timeStr = new Intl.DateTimeFormat('vi-VN', {
+                          timeZone: 'Asia/Ho_Chi_Minh',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        }).format(windowStart);
+                        return (
+                          <span className="text-xs text-muted-foreground">
+                            Check-in mở lúc {timeStr}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()
+                  )}
+                </>
+              ) : null}
+
+              {canCancel(preorder) ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -511,8 +627,8 @@ export function CustomerPreordersTab({
                   )}
                   {cancelling === preorder.id ? 'Đang hủy…' : 'Hủy preorder'}
                 </Button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </article>
         );
       })}

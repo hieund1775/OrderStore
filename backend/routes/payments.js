@@ -121,7 +121,19 @@ router.get('/payos/status', noCache, async (req, res) => {
       }
     }
 
-    res.json({ order });
+    const canRegenerate = Boolean(
+      order.payment_provider === 'payos'
+      && ['unpaid', 'expired'].includes(order.payment_status)
+      && order.status !== 'Đã hủy'
+      && order.status !== 'Hoàn thành'
+    );
+
+    res.json({
+      order: {
+        ...order,
+        can_regenerate_qr: canRegenerate,
+      },
+    });
   } catch (err) {
     console.error('PayOS status lookup failed:', err.message);
     const status = err.status || (err.message.includes('quyền') ? 403 : 500);

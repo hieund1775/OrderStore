@@ -25,8 +25,7 @@ import { useCart } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
 import { apiGet, apiPost, setCustomerUser, getCustomerToken } from "@/lib/api";
 import { vnd } from "@/lib/data";
-import { CustomerDateTime } from "@/components/time/CustomerDateTime";
-import { ReviewDialog } from "@/components/reviews/ReviewDialog";
+import { OrderReviewPanel } from "@/components/reviews/OrderReviewPanel";
 import {
   isSafeInternalLink,
   useCustomerNotifications,
@@ -108,7 +107,6 @@ function Profile() {
     items: { id: number; product_id: number; product_name: string; qty: number; size_label: string }[];
   }[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [reviewDialog, setReviewDialog] = useState<{ open: boolean; orderCode: string; orderItemId: number; productId: number } | null>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const notificationsList = notificationData?.notifications ?? [];
 
@@ -433,25 +431,22 @@ function Profile() {
                         <p className="text-sm">
                           {item.qty}x {item.product_name} ({item.size_label})
                         </p>
-                        {o.current_status === "Hoàn thành" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-amber-600 hover:text-amber-700"
-                            onClick={() => setReviewDialog({
-                              open: true,
-                              orderCode: o.order_code,
-                              orderItemId: item.id,
-                              productId: item.product_id,
-                            })}
-                          >
-                            <Star className="mr-0.5 h-3 w-3" />
-                            Đánh giá
-                          </Button>
-                        )}
                       </div>
                     ))}
                   </div>
+
+                  {o.current_status === "Hoàn thành" && (
+                    <OrderReviewPanel
+                      orderCode={o.order_code}
+                      items={(o.items || []).map((item) => ({
+                        orderItemId: Number(item.id),
+                        productId: Number(item.product_id),
+                        name: `${item.qty}x ${item.product_name}${item.size_label ? ` (${item.size_label})` : ''}`,
+                      }))}
+                      canReview={true}
+                      className="mt-3"
+                    />
+                  )}
 
                   <div className="flex justify-between items-center pt-2 border-t text-sm font-semibold">
                     <span>Tổng thanh toán:</span>
@@ -807,25 +802,6 @@ function Profile() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Review Dialog */}
-      <ReviewDialog
-        open={!!reviewDialog}
-        onOpenChange={(open) => setReviewDialog(open ? reviewDialog : null)}
-        mode="create"
-        orderCode={reviewDialog?.orderCode}
-        orderItemId={reviewDialog?.orderItemId}
-        onSubmit={async ({ rating, comment, intentIds }) => {
-          if (!reviewDialog) return;
-          const token = getCustomerToken();
-          if (!token) throw new Error('Vui lòng đăng nhập để đánh giá');
-
-          await apiPost(`/api/orders/${reviewDialog.orderCode}/items/${reviewDialog.orderItemId}/review`, {
-            rating,
-            comment,
-            intent_ids: intentIds,
-          });
-        }}
-      />
     </>
   );
 }

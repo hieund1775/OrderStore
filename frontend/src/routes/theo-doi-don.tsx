@@ -32,7 +32,26 @@ import { apiGet, apiPost } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
+import { OrderReviewPanel, type ReviewableItem } from "@/components/reviews/OrderReviewPanel";
 import type { PaymentSummary } from "@/types/payment-summary";
+
+export function mapDirectOrderItemsToReviewable(items?: Array<{ id?: number; order_item_id?: number; product_id: number; qty?: number; product_name: string; size_label?: string }>): ReviewableItem[] {
+  return (items || []).map((it) => ({
+    orderItemId: Number(it.order_item_id || it.id),
+    productId: Number(it.product_id),
+    name: `${it.qty ?? 1}× ${it.product_name}${it.size_label ? ` (${it.size_label})` : ""}`,
+  }));
+}
+
+export function mapChildOrderItemsToReviewable(items?: Array<{ order_item_id?: number; product_id: number; quantity?: number; product_name: string }>): ReviewableItem[] {
+  return (items || [])
+    .filter((it) => Boolean(it.order_item_id))
+    .map((it) => ({
+      orderItemId: Number(it.order_item_id),
+      productId: Number(it.product_id),
+      name: `${it.quantity ?? 1}× ${it.product_name}`,
+    }));
+}
 
 export const Route = createFileRoute("/theo-doi-don")({
   validateSearch: (search: Record<string, unknown>): { code?: string; order_code?: string } => ({
@@ -75,7 +94,9 @@ function getStepIndex(status: string): number {
 }
 
 type LookupItem = {
-  product_id?: string;
+  id?: number;
+  order_item_id?: number;
+  product_id?: string | number;
   product_name: string;
   qty: number;
   size_label: string;
@@ -101,6 +122,7 @@ type LookupOrder = {
   payment_expires_at?: string | null;
   payment_checkout_url?: string | null;
   can_resume_payment?: boolean;
+  can_review?: boolean;
   customer_name: string;
   delivery_addr: string | null;
   voucher_code: string | null;
@@ -132,7 +154,9 @@ type LookupGroupChildOrder = {
   status: OrderStatus;
   payment_status: string;
   items: Array<{
-    product_id: string;
+    id?: number;
+    order_item_id?: number;
+    product_id: string | number;
     product_name: string;
     quantity: number;
     unit_price: number;
@@ -498,6 +522,10 @@ function Tracking() {
               </div>
               {isGroupPaid ? (
                 <Badge className="bg-leaf/15 text-leaf font-semibold">Đã thanh toán gộp</Badge>
+              ) : group.payment_status === "expired" ? (
+                <Badge className="bg-slate-500/15 text-slate-700 dark:text-slate-300 font-semibold">
+                  Thanh toán gộp đã hết hạn
+                </Badge>
               ) : (
                 <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-semibold animate-pulse">
                   Chờ thanh toán gộp
@@ -505,18 +533,20 @@ function Tracking() {
               )}
             </div>
 
-            {/* Payment Banner if Unpaid */}
+            {/* Payment Banner if Unpaid or Expired */}
             {!isGroupPaid && (
-              <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-xl border p-4">
+              <div className={`${group.payment_status === "expired" ? "bg-slate-500/10 border-slate-500/30 text-slate-800 dark:text-slate-300" : "bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300"} rounded-xl border p-4`}>
                 <div className="flex items-center gap-2 font-bold text-sm">
-                  <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(group.total_amount)})
+                  <Timer className="size-5 text-amber-600 animate-spin" /> {group.payment_status === "expired" ? `Phiên thanh toán đã hết hạn (${vnd(group.total_amount)})` : `⏳ Đang chờ xác nhận thanh toán (${vnd(group.total_amount)})`}
                 </div>
                 <p className="mt-1 text-xs opacity-90">
-                  Thanh toán 1 lần duy nhất qua PayOS để kích hoạt toàn bộ các đơn con thuộc các ngành hàng.
+                  {group.payment_status === "expired"
+                    ? "Mã thanh toán cũ đã hết hạn hoặc bị hủy tại cổng PayOS. Bạn có thể tạo phiên thanh toán mới."
+                    : "Thanh toán 1 lần duy nhất qua PayOS để kích hoạt toàn bộ các đơn con thuộc các ngành hàng."}
                 </p>
                 <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayGroupPayOS}>
                   {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
-                  {group.payment_checkout_url ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới"}
+                  {group.payment_status === "expired" ? "Tạo mã thanh toán mới" : (group.payment_checkout_url ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới")}
                 </Button>
               </div>
             )}
@@ -581,6 +611,16 @@ function Tracking() {
                       <span className="text-primary font-bold">{vnd(co.allocated_total)}</span>
                     </div>
                   </div>
+
+                  {/* Review Panel for completed child order */}
+                  {Boolean(co.can_review) && Array.isArray(co.items) && co.items.some((it) => it.order_item_id) && (
+                    <OrderReviewPanel
+                      orderCode={co.order_code}
+                      items={mapChildOrderItemsToReviewable(co.items)}
+                      canReview={Boolean(co.can_review)}
+                      className="mt-3"
+                    />
+                  )}
 
                   {/* Link to single tracking */}
                   <div className="pt-1 flex justify-end">
@@ -658,13 +698,14 @@ function Tracking() {
   const completed = order.current_status === "Hoàn thành";
   const canResumePayOS = Boolean(
     order.can_resume_payment
-    && order.payment_status === "unpaid"
+    && (order.payment_status === "unpaid" || order.payment_status === "expired")
     && order.payment_provider === "payos"
     && !cancelled
     && !completed
   );
   const hasActivePayOSLink = Boolean(
     canResumePayOS
+    && order.payment_status !== "expired"
     && order.payment_checkout_url
     && isPayOSLinkActive(order)
     && isSafePayOSCheckoutUrl(order.payment_checkout_url)
@@ -692,6 +733,8 @@ function Tracking() {
             </div>
             {cancelled ? (
               <Badge className="bg-berry/15 text-berry">Đã hủy</Badge>
+            ) : order.payment_status === "expired" && order.payment_provider === "payos" ? (
+              <Badge className="bg-slate-500/15 text-slate-700 dark:text-slate-300 font-semibold">Thanh toán đã hết hạn</Badge>
             ) : order.payment_status === "unpaid" && order.payment_provider === "payos" ? (
               <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-semibold">Chờ chuyển khoản</Badge>
             ) : completed ? (
@@ -701,18 +744,20 @@ function Tracking() {
             )}
           </div>
 
-          {/* Payment Status Banner - Chỉ hiện khi đơn chưa thanh toán */}
+          {/* Payment Status Banner - Chỉ hiện khi đơn chưa thanh toán hoặc hết hạn */}
           {canResumePayOS && (
-            <div className="bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300 mt-4 rounded-xl border p-4">
+            <div className={`${order.payment_status === "expired" ? "bg-slate-500/10 border-slate-500/30 text-slate-800 dark:text-slate-300" : "bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300"} mt-4 rounded-xl border p-4`}>
               <div className="flex items-center gap-2 font-bold text-sm">
-                <Timer className="size-5 text-amber-600 animate-spin" /> ⏳ Đang chờ xác nhận thanh toán ({vnd(order.total)})
+                <Timer className="size-5 text-amber-600 animate-spin" /> {order.payment_status === "expired" ? `Phiên thanh toán đã hết hạn (${vnd(order.total)})` : `⏳ Đang chờ xác nhận thanh toán (${vnd(order.total)})`}
               </div>
               <p className="mt-1 text-xs opacity-90">
-                Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công.
+                {order.payment_status === "expired"
+                  ? "Mã thanh toán cũ đã hết hạn hoặc bị hủy tại cổng PayOS. Bạn có thể bấm để tạo lại mã thanh toán mới."
+                  : "Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công."}
               </p>
               <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayPayOS}>
                 {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
-                {hasActivePayOSLink ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới"}
+                {order.payment_status === "expired" ? "Tạo mã thanh toán mới" : (hasActivePayOSLink ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới")}
               </Button>
             </div>
           )}
@@ -813,6 +858,16 @@ function Tracking() {
                 <p className="text-xs text-muted-foreground">Tài xế đang trên đường giao đơn hàng tới bạn.</p>
               )}
             </div>
+          )}
+
+          {/* Canonical Reviews Panel when order is completed and customer has capability */}
+          {completed && Boolean(order.can_review) && (
+            <OrderReviewPanel
+              orderCode={order.order_code}
+              items={mapDirectOrderItemsToReviewable(order.items)}
+              canReview={true}
+              className="mt-6"
+            />
           )}
 
           {!cancelled && !completed && currentStep === 0 && (

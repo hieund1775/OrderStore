@@ -49,8 +49,11 @@ function createHarness({
   activate = async ({ attemptId }) => activeFrom(creating(attemptId)),
   findAttempts = async () => [],
   withCreationLock = async (_key, callback) => callback({ acquired: true }),
+  reconcileOrder = async () => ({ outcome: 'skipped', changed: false, skipped: true }),
+  directOrderForRegen = () => order({ user_id: 9, cancel_token_hash: null }),
+  attemptById = () => null,
 } = {}) {
-  const calls = { reserve: [], lookup: [], create: [], activate: [] };
+  const calls = { reserve: [], lookup: [], create: [], activate: [], reconcile: [] };
   const attemptsRepository = {
     async reserveOrRecoverCreatingAttempt(input) {
       calls.reserve.push(input);
@@ -63,7 +66,8 @@ function createHarness({
       return activate(input);
     },
     findAttemptsByTarget: findAttempts,
-    async findDirectOrderForRegeneration() { return order({ user_id: 9, cancel_token_hash: null }); },
+    findDirectOrderForRegeneration: typeof directOrderForRegen === 'function' ? directOrderForRegen : async () => directOrderForRegen,
+    findAttemptById: typeof attemptById === 'function' ? attemptById : async () => attemptById,
   };
   const service = createDirectPayOSAttemptService({
     attemptsRepository,
@@ -80,8 +84,12 @@ function createHarness({
     withCreationLock,
     now: () => new Date('2026-09-07T10:00:00.000Z'),
     makeProviderOrderCode: () => 91234567890123,
+    reconcileOrder: async (input) => {
+      calls.reconcile.push(input);
+      return reconcileOrder(input);
+    },
   });
-  return { service, calls };
+  return { service, calls, attemptsRepository };
 }
 
 describe('Direct PayOS payment-attempt runtime', () => {
@@ -110,6 +118,7 @@ describe('Direct PayOS payment-attempt runtime', () => {
         { kind: 'creating', attempt: replacement, recovered: false },
         { kind: 'creating', attempt: replacement, recovered: true },
       ],
+      reconcileOrder: async () => ({ outcome: 'terminal_unpaid', changed: false }),
     });
 
     const result = await service.regenerateForCustomer({ orderCode: 'TP2609070041', userId: 9 });
@@ -221,6 +230,120 @@ describe('Direct PayOS payment-attempt runtime', () => {
       const { service, calls } = createHarness({ reserveResults: [] });
       await assert.rejects(() => service.createForOrder({ order: invalidOrder, paymentProfile: { code: 'DIRECT_A' } }));
       assert.equal(calls.reserve.length, 0);
+    }
+  });
+
+  it('regenerateForCustomer reuses still-active attempt if provider has not cancelled/expired it', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 705,
+    });
+    const activeAttempt = activeFrom(creating(705), {
+      provider_payment_link_id: 'link-active-705',
+      checkout_url: 'https://payos.test/active-705',
+      qr_code: 'qr-active-705',
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'active', attempt: activeAttempt },
+      ],
+      directOrderForRegen: () => existingOrder,
+      attemptById: () => activeAttempt,
+      reconcileOrder: async () => ({ outcome: 'provider_pending', attempt: activeAttempt }),
+    });
+
+    const result = await service.regenerateForCustomer({
+      orderCode: 'TP2609070041',
+      userId: 15,
+    });
+
+    assert.equal(result.payment_link_id, 'link-active-705');
+    assert.equal(calls.create.length, 0, 'must reuse active link without creating a replacement at provider');
+  });
+
+  it('regenerateForCustomer creates a new attempt when current attempt is expired', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      payment_status: 'expired',
+      current_payment_attempt_id: 706,
+    });
+    const expiredAttempt = { ...creating(706), status: 'expired' };
+    const newAttempt = creating(707);
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+      ],
+      activate: async () => activeFrom(newAttempt),
+      directOrderForRegen: () => existingOrder,
+      attemptById: () => expiredAttempt,
+      reconcileOrder: async () => ({ outcome: 'terminal_unpaid', attempt: expiredAttempt }),
+    });
+
+    const result = await service.regenerateForCustomer({
+      orderCode: 'TP2609070041',
+      userId: 15,
+    });
+
+    assert.equal(result.payos_order_code, 91234567890123);
+    assert.equal(calls.create.length, 1, 'must create replacement attempt when current attempt was expired');
+  });
+
+  it('regenerateForCustomer rejects unauthorized callers before looking up or reconciling', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      cancel_token_hash: null,
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [],
+      directOrderForRegen: () => existingOrder,
+    });
+
+    await assert.rejects(
+      () => service.regenerateForCustomer({ orderCode: 'TP2609070041', userId: 999 }),
+      (err) => err.status === 403,
+    );
+    assert.equal(calls.reserve.length, 0);
+  });
+
+  it('fails closed with PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN on provider timeout, 401, 403, 5xx, missing profile, unsupported SDK, or malformed payload', async () => {
+    const existingOrder = order({
+      user_id: 15,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 708,
+    });
+    const activeAttempt = activeFrom(creating(708));
+
+    const uncertainCases = [
+      { name: 'timeout', recon: { outcome: 'provider_uncertain', error: new Error('timeout') } },
+      { name: '401', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Unauthorized'), { status: 401 }) } },
+      { name: '403', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Forbidden'), { status: 403 }) } },
+      { name: '5xx', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Internal error'), { status: 500 }) } },
+      { name: 'missing profile', recon: { outcome: 'provider_uncertain', reason: 'PROFILE_NOT_CONFIGURED' } },
+      { name: 'unsupported SDK', recon: { outcome: 'provider_uncertain', reason: 'LOOKUP_UNSUPPORTED' } },
+      { name: 'malformed/null payload', recon: { outcome: 'provider_uncertain' } },
+    ];
+
+    for (const testCase of uncertainCases) {
+      const { service, calls } = createHarness({
+        reserveResults: [],
+        directOrderForRegen: () => existingOrder,
+        attemptById: () => activeAttempt,
+        reconcileOrder: async () => testCase.recon,
+      });
+
+      await assert.rejects(
+        () => service.regenerateForCustomer({ orderCode: 'TP2609070041', userId: 15 }),
+        (err) => err.code === 'PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN' && err.status === 502,
+        `Expected PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN for case: ${testCase.name}`,
+      );
+
+      assert.equal(calls.create.length, 0, `Must produce zero replacement calls for case: ${testCase.name}`);
+      assert.equal(calls.activate.length, 0, `Must produce zero state mutation for case: ${testCase.name}`);
     }
   });
 });

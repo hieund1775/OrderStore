@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ProductReviewsService } from '../services/product-reviews-service.js';
 import { IdentityError } from '../repositories/postgres/errors.js';
 import { FakeReviewStorage } from '../services/review-storage.js';
+import { createCheckoutGroupsRepository } from '../repositories/postgres/checkout-groups.js';
 
 /**
  * Factory: returns a minimal mock repository that satisfies the service surface.
@@ -505,5 +506,139 @@ describe('ProductReviewsService — unit tests', () => {
       () => service.checkAdminReviewAccess(100, 'kitchen', null),
       { code: 'FORBIDDEN' },
     );
+  });
+
+  // ────── preorder check-in eligibility ──────
+
+  it('rejects review eligibility if preorder has not been checked in yet', async () => {
+    const repo = mockRepo();
+    repo.verifyOrderItemOwnership.mock.mockImplementation(() => ({
+      order_id: 10,
+      product_id: 1,
+      order_code: 'TP001',
+      preorder_id: 7,
+      preorder_checked_in_at: null,
+    }));
+    repo.getLatestOrderStatus.mock.mockImplementation(() => 'Hoàn thành');
+    const service = new ProductReviewsService(repo);
+
+    const result = await service.checkEligibility('TP001', 1, 5);
+    assert.equal(result.eligible, false);
+    assert.match(result.reason, /Preorder must be checked in/i);
+
+    await assert.rejects(
+      () => service.createReview({ userId: 5, productId: 1, orderItemId: 1, rating: 5, comment: 'Great' }),
+      { code: 'PREORDER_NOT_CHECKED_IN' },
+    );
+  });
+
+  it('allows review eligibility once preorder has been checked in and completed', async () => {
+    const repo = mockRepo();
+    repo.verifyOrderItemOwnership.mock.mockImplementation(() => ({
+      order_id: 10,
+      product_id: 1,
+      order_code: 'TP001',
+      preorder_id: 7,
+      preorder_checked_in_at: '2026-09-15T12:00:00.000Z',
+    }));
+    repo.getLatestOrderStatus.mock.mockImplementation(() => 'Hoàn thành');
+    repo.findByOrderItemAndUser.mock.mockImplementation(() => null);
+    const service = new ProductReviewsService(repo);
+
+    const result = await service.checkEligibility('TP001', 1, 5);
+    assert.equal(result.eligible, true);
+  });
+});
+
+describe('Customer Grouped Lookup Final DTO for OrderReviewPanel', () => {
+  it('checkoutGroupsRepository.findGroupForCustomerLookup produces canonical child order and item identities for reviews', async () => {
+    const rawGroup = {
+      id: 50,
+      group_code: 'GRP260914001',
+      user_id: 15,
+      cancel_token_hash: null,
+      payment_status: 'paid',
+      payment_provider: 'payos',
+      subtotal: 100000,
+      discount_amount: 10000,
+      shipping_fee: 15000,
+      total_amount: 105000,
+      child_orders: [
+        {
+          order_id: 101,
+          order_code: 'TP_CHILD_101',
+          user_id: 15,
+          status: 'Hoàn thành',
+          payment_status: 'paid',
+          allocated_subtotal: 50000,
+          allocated_discount: 5000,
+          allocated_shipping_fee: 15000,
+          allocated_total: 60000,
+          items: [
+            {
+              order_item_id: 501,
+              id: 501,
+              product_id: 12,
+              product_name: 'Trà Oolong Đào',
+              quantity: 2,
+              unit_price: 25000,
+              line_total: 50000,
+            },
+          ],
+        },
+        {
+          order_id: 102,
+          order_code: 'TP_CHILD_102',
+          user_id: 15,
+          status: 'Đang giao hàng',
+          payment_status: 'paid',
+          allocated_subtotal: 50000,
+          allocated_discount: 5000,
+          allocated_shipping_fee: 0,
+          allocated_total: 45000,
+          items: [
+            {
+              order_item_id: 502,
+              id: 502,
+              product_id: 15,
+              product_name: 'Trà Sữa Trân Châu',
+              quantity: 1,
+              unit_price: 50000,
+              line_total: 50000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const repo = createCheckoutGroupsRepository({
+      async query(sql) {
+        if (sql.includes('FROM checkout_groups')) {
+          return [[rawGroup], 1];
+        }
+        return [[], 0];
+      },
+    });
+
+    const result = await repo.findGroupForCustomerLookup('GRP260914001', { userId: 15 });
+    assert.ok(result);
+    assert.equal(result.child_orders.length, 2);
+
+    // Completed child order: can_review = true, item has exact order_item_id
+    const completedChild = result.child_orders[0];
+    assert.equal(completedChild.order_code, 'TP_CHILD_101');
+    assert.equal(completedChild.can_review, true);
+    assert.equal(completedChild.items.length, 1);
+    assert.equal(completedChild.items[0].order_item_id, '501');
+    assert.equal(completedChild.items[0].product_id, '12');
+    assert.equal(completedChild.items[0].product_name, 'Trà Oolong Đào');
+    assert.equal(completedChild.items[0].quantity, 2);
+    assert.equal(completedChild.items[0].can_review, true);
+
+    // In-flight child order: can_review = false
+    const inFlightChild = result.child_orders[1];
+    assert.equal(inFlightChild.order_code, 'TP_CHILD_102');
+    assert.equal(inFlightChild.can_review, false);
+    assert.equal(inFlightChild.items[0].can_review, false);
   });
 });

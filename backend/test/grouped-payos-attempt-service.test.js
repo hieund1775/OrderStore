@@ -51,8 +51,10 @@ function createHarness({
   findAttempts = async () => [],
   withCreationLock = async (_key, callback) => callback({ acquired: true }),
   loadedGroup = group(),
+  attemptById = () => null,
+  reconcileGroup = async () => ({ outcome: 'skipped', changed: false, skipped: true }),
 } = {}) {
-  const calls = { reserve: [], lookup: [], create: [], activate: [], groupLookup: [] };
+  const calls = { reserve: [], lookup: [], create: [], activate: [], groupLookup: [], reconcile: [] };
   const attemptsRepository = {
     async reserveOrRecoverCreatingAttempt(input) {
       calls.reserve.push(input);
@@ -65,6 +67,7 @@ function createHarness({
       return activate(input);
     },
     findAttemptsByTarget: findAttempts,
+    findAttemptById: typeof attemptById === 'function' ? attemptById : async () => attemptById,
   };
   const groupsRepository = {
     async findGroupByCode(groupCode) {
@@ -86,8 +89,12 @@ function createHarness({
     withCreationLock,
     now: () => new Date('2026-09-07T11:00:00.000Z'),
     makeProviderOrderCode: () => 92345678901234,
+    reconcileGroup: async (input) => {
+      calls.reconcile.push(input);
+      return reconcileGroup(input);
+    },
   });
-  return { service, calls };
+  return { service, calls, attemptsRepository };
 }
 
 describe('Grouped PayOS payment-attempt runtime', () => {
@@ -109,6 +116,7 @@ describe('Grouped PayOS payment-attempt runtime', () => {
     const replacement = creating(802, { provider_order_code: 92345678901235 });
     const { service, calls } = createHarness({
       reserveResults: [{ kind: 'creating', attempt: replacement, recovered: false }, { kind: 'creating', attempt: replacement, recovered: true }],
+      reconcileGroup: async () => ({ outcome: 'terminal_unpaid', changed: false }),
     });
 
     const result = await service.regenerateForCustomer({ groupCode: 'GRP2609070071', userId: 8 });
@@ -195,5 +203,117 @@ describe('Grouped PayOS payment-attempt runtime', () => {
     await assert.rejects(() => service.createForGroup({ group: paid }));
     assert.equal(calls.reserve.length, 0);
     assert.deepEqual(childOrders, [{ order_id: 801, allocated_total: 45000 }, { order_id: 802, allocated_total: 51000 }]);
+  });
+
+  it('regenerateForCustomer reuses still-active group attempt if provider has not cancelled/expired it', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 805,
+    });
+    const activeAttempt = activeFrom(creating(805), {
+      provider_payment_link_id: 'group-link-active-805',
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'active', attempt: activeAttempt },
+      ],
+      loadedGroup: existingGroup,
+      attemptById: () => activeAttempt,
+      reconcileGroup: async () => ({ outcome: 'provider_pending', attempt: activeAttempt }),
+    });
+
+    const result = await service.regenerateForCustomer({
+      groupCode: 'GRP2609070071',
+      userId: 8,
+    });
+
+    assert.equal(result.payment_link_id, 'group-link-active-805');
+    assert.equal(calls.create.length, 0, 'must reuse active link without duplicating at PayOS');
+  });
+
+  it('regenerateForCustomer creates replacement attempt when current attempt is expired', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      payment_status: 'expired',
+      current_payment_attempt_id: 806,
+    });
+    const expiredAttempt = { ...creating(806), status: 'expired' };
+    const newAttempt = creating(807);
+
+    const { service, calls } = createHarness({
+      reserveResults: [
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+        { kind: 'creating', attempt: newAttempt, recovered: false },
+      ],
+      activate: async () => activeFrom(newAttempt),
+      loadedGroup: existingGroup,
+      attemptById: () => expiredAttempt,
+      reconcileGroup: async () => ({ outcome: 'terminal_unpaid', attempt: expiredAttempt }),
+    });
+
+    const result = await service.regenerateForCustomer({
+      groupCode: 'GRP2609070071',
+      userId: 8,
+    });
+
+    assert.equal(result.payos_order_code, 92345678901234);
+    assert.equal(calls.create.length, 1, 'must create replacement attempt when current attempt was expired');
+  });
+
+  it('regenerateForCustomer rejects unauthorized callers before reconciling', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      cancel_token_hashes: [],
+    });
+
+    const { service, calls } = createHarness({
+      reserveResults: [],
+      loadedGroup: existingGroup,
+    });
+
+    await assert.rejects(
+      () => service.regenerateForCustomer({ groupCode: 'GRP2609070071', userId: 999 }),
+      (err) => err.status === 403,
+    );
+    assert.equal(calls.reserve.length, 0);
+  });
+
+  it('fails closed with PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN on provider timeout, 401, 403, 5xx, missing profile, unsupported SDK, or malformed payload', async () => {
+    const existingGroup = group({
+      user_id: 8,
+      payment_status: 'unpaid',
+      current_payment_attempt_id: 808,
+    });
+    const activeAttempt = activeFrom(creating(808));
+
+    const uncertainCases = [
+      { name: 'timeout', recon: { outcome: 'provider_uncertain', error: new Error('timeout') } },
+      { name: '401', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Unauthorized'), { status: 401 }) } },
+      { name: '403', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Forbidden'), { status: 403 }) } },
+      { name: '5xx', recon: { outcome: 'provider_uncertain', error: Object.assign(new Error('Internal error'), { status: 500 }) } },
+      { name: 'missing profile', recon: { outcome: 'provider_uncertain', reason: 'PROFILE_NOT_CONFIGURED' } },
+      { name: 'unsupported SDK', recon: { outcome: 'provider_uncertain', reason: 'LOOKUP_UNSUPPORTED' } },
+      { name: 'malformed/null payload', recon: { outcome: 'provider_uncertain' } },
+    ];
+
+    for (const testCase of uncertainCases) {
+      const { service, calls } = createHarness({
+        reserveResults: [],
+        loadedGroup: existingGroup,
+        attemptById: () => activeAttempt,
+        reconcileGroup: async () => testCase.recon,
+      });
+
+      await assert.rejects(
+        () => service.regenerateForCustomer({ groupCode: 'GRP2609070071', userId: 8 }),
+        (err) => err.code === 'PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN' && err.status === 502,
+        `Expected PAYMENT_ATTEMPT_PROVIDER_UNCERTAIN for case: ${testCase.name}`,
+      );
+
+      assert.equal(calls.create.length, 0, `Must produce zero replacement calls for case: ${testCase.name}`);
+      assert.equal(calls.activate.length, 0, `Must produce zero state mutation for case: ${testCase.name}`);
+    }
   });
 });

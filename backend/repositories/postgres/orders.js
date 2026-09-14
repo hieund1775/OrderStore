@@ -380,7 +380,7 @@ export function createOrdersRepository(
 
     async loadPublicDetails(orderId) {
       const [items] = await database.query(
-        `SELECT id, order_id, product_name, qty, size_label, base_tea, sugar_level, ice_level, note, unit_price, line_total
+        `SELECT id, id AS order_item_id, order_id, product_id, product_name, qty, size_label, base_tea, sugar_level, ice_level, note, unit_price, line_total
          FROM order_items WHERE order_id = $1 ORDER BY id ASC`,
         [orderId],
       );
@@ -394,7 +394,12 @@ export function createOrdersRepository(
         : [[]];
       const byItem = new Map();
       for (const topping of toppings) byItem.set(String(topping.order_item_id), [...(byItem.get(String(topping.order_item_id)) || []), topping]);
-      return normalizeRows(items).map((item) => ({ ...item, toppings: byItem.get(String(item.id)) || [] }));
+      return normalizeRows(items).map((item) => ({
+        ...item,
+        order_item_id: Number(item.order_item_id || item.id),
+        product_id: Number(item.product_id),
+        toppings: byItem.get(String(item.id)) || [],
+      }));
     },
 
     async loadStatusHistory(orderId) {

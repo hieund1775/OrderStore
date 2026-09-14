@@ -64,22 +64,46 @@ export function createPreordersRepository(database = postgresDb) {
 
   async function loadCustomerPreorders(customerUserId, preorderCode = null) {
     const values = [Number(customerUserId)];
-    const codeFilter = preorderCode == null ? '' : ` AND p.preorder_code = $${values.push(String(preorderCode))}`;
+    const codeFilter = preorderCode == null
+      ? " AND p.status NOT IN ('AWAITING_PAYMENT', 'PAYMENT_EXPIRED')"
+      : ` AND p.preorder_code = $${values.push(String(preorderCode))}`;
     const preorders = rowsOf(await database.query(
       `SELECT p.*, s.name AS store_name,
               r.table_id, t.name AS table_name, r.status AS reservation_status,
-              r.reserved_from, r.reserved_until
+              r.reserved_from, r.reserved_until,
+              checkin.id AS checkin_request_id,
+              checkin.status AS checkin_request_status,
+              checkin.requested_at AS checkin_requested_at,
+              checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
+              checkin.rejection_reason AS checkin_rejection_reason
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
          LEFT JOIN tables t ON t.id = r.table_id
+         LEFT JOIN LATERAL (
+           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
+           FROM preorder_checkin_requests pcr
+           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
+           ORDER BY pcr.id DESC LIMIT 1
+         ) checkin ON TRUE
         WHERE p.customer_user_id = $1${codeFilter}
         ORDER BY p.scheduled_start_at DESC, p.id DESC`,
       values,
     ));
     if (!preorders.length) return [];
 
-    return attachLinkedOrders(preorders);
+    const mapped = preorders.map((p) => ({
+      ...p,
+      checkin_request: p.checkin_request_id ? {
+        id: Number(p.checkin_request_id),
+        status: p.checkin_request_status,
+        requested_at: p.checkin_requested_at,
+        late_confirmation_reason: p.checkin_late_confirmation_reason,
+        rejection_reason: p.checkin_rejection_reason,
+      } : null,
+    }));
+
+    return attachLinkedOrders(mapped);
   }
 
   return {
@@ -225,14 +249,36 @@ export function createPreordersRepository(database = postgresDb) {
       const rows = rowsOf(await executor.query(
         `SELECT p.*, pss.is_enabled AS preorder_enabled,
                 r.id AS reservation_id, r.table_id, r.status AS reservation_status,
-                r.reserved_from, r.reserved_until
+                r.reserved_from, r.reserved_until,
+                checkin.id AS checkin_request_id,
+                checkin.status AS checkin_request_status,
+                checkin.requested_at AS checkin_requested_at,
+                checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
+                checkin.rejection_reason AS checkin_rejection_reason
          FROM preorders p
          LEFT JOIN preorder_store_settings pss ON pss.store_id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
+         LEFT JOIN LATERAL (
+           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
+           FROM preorder_checkin_requests pcr
+           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
+           ORDER BY pcr.id DESC LIMIT 1
+         ) checkin ON TRUE
          WHERE p.id = $1${forUpdate ? ' FOR UPDATE OF p' : ''}`,
         [Number(preorderId)],
       ));
-      return rows[0] || null;
+      const row = rows[0] || null;
+      if (!row) return null;
+      return {
+        ...row,
+        checkin_request: row.checkin_request_id ? {
+          id: Number(row.checkin_request_id),
+          status: row.checkin_request_status,
+          requested_at: row.checkin_requested_at,
+          late_confirmation_reason: row.checkin_late_confirmation_reason,
+          rejection_reason: row.checkin_rejection_reason,
+        } : null,
+      };
     },
 
     async findForCustomer(code, customerUserId) {
@@ -256,15 +302,36 @@ export function createPreordersRepository(database = postgresDb) {
       if (includePendingOnly) where.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
       const rows = rowsOf(await database.query(
         `SELECT p.*, s.name AS store_name, u.fullname AS customer_name,
-                EXISTS (SELECT 1 FROM preorder_table_reservations r WHERE r.preorder_id = p.id AND r.status IN ('pending_payment','held','checked_in')) AS has_active_table_reservation
+                EXISTS (SELECT 1 FROM preorder_table_reservations r WHERE r.preorder_id = p.id AND r.status IN ('pending_payment','held','checked_in')) AS has_active_table_reservation,
+                checkin.id AS checkin_request_id,
+                checkin.status AS checkin_request_status,
+                checkin.requested_at AS checkin_requested_at,
+                checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
+                checkin.rejection_reason AS checkin_rejection_reason
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          JOIN users u ON u.id = p.customer_user_id
+         LEFT JOIN LATERAL (
+           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
+           FROM preorder_checkin_requests pcr
+           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
+           ORDER BY pcr.id DESC LIMIT 1
+         ) checkin ON TRUE
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
          ORDER BY p.scheduled_start_at ASC, p.id ASC`,
         values,
       ));
-      return attachLinkedOrders(rows);
+      const mapped = rows.map((p) => ({
+        ...p,
+        checkin_request: p.checkin_request_id ? {
+          id: Number(p.checkin_request_id),
+          status: p.checkin_request_status,
+          requested_at: p.checkin_requested_at,
+          late_confirmation_reason: p.checkin_late_confirmation_reason,
+          rejection_reason: p.checkin_rejection_reason,
+        } : null,
+      }));
+      return attachLinkedOrders(mapped);
     },
 
     async findByPaymentTarget({ orderId = null, checkoutGroupId = null }, { tx = null, forUpdate = false } = {}) {
@@ -495,6 +562,110 @@ export function createPreordersRepository(database = postgresDb) {
                 (SELECT status FROM order_status_history h WHERE h.order_id = o.id ORDER BY h.created_at DESC, h.id DESC LIMIT 1) AS latest_status
          FROM orders o WHERE o.preorder_id = $1 ORDER BY o.id`, [Number(preorderId)],
       ));
+    },
+
+    async findCurrentCheckinRequest(preorderId, scheduledStart, { tx = null, forUpdate = false } = {}) {
+      const executor = tx || database;
+      const rows = rowsOf(await executor.query(
+        `SELECT *
+         FROM preorder_checkin_requests
+         WHERE preorder_id = $1 AND scheduled_start_at = $2
+         ORDER BY id DESC LIMIT 1${forUpdate ? ' FOR UPDATE' : ''}`,
+        [Number(preorderId), scheduledStart],
+      ));
+      return rows[0] || null;
+    },
+
+    async createOrGetCheckinRequest({ preorderId, storeId, customerUserId, scheduledStartAt, scheduledEndAt, requestedAt = null }, { tx = null } = {}) {
+      const executor = tx || database;
+      const reqTime = requestedAt ? new Date(requestedAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `INSERT INTO preorder_checkin_requests
+           (preorder_id, store_id, customer_user_id, scheduled_start_at, scheduled_end_at, requested_at, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+         ON CONFLICT (preorder_id, scheduled_start_at) DO UPDATE
+           SET updated_at = CURRENT_TIMESTAMP
+         RETURNING *`,
+        [Number(preorderId), Number(storeId), Number(customerUserId), scheduledStartAt, scheduledEndAt, reqTime],
+      ));
+      return rows[0] || null;
+    },
+
+    async confirmCheckinRequest({ requestId, actorId, resolvedAt = null, lateConfirmationReason = null }, { tx = null } = {}) {
+      const executor = tx || database;
+      const resTime = resolvedAt ? new Date(resolvedAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorder_checkin_requests
+         SET status = 'CONFIRMED',
+             resolved_by = $2,
+             resolved_at = $3,
+             late_confirmation_reason = $4,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [Number(requestId), Number(actorId), resTime, lateConfirmationReason ? String(lateConfirmationReason).trim() : null],
+      ));
+      return rows[0] || null;
+    },
+
+    async rejectCheckinRequest({ requestId, actorId, resolvedAt = null, reason }, { tx = null } = {}) {
+      const executor = tx || database;
+      const resTime = resolvedAt ? new Date(resolvedAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorder_checkin_requests
+         SET status = 'REJECTED',
+             resolved_by = $2,
+             resolved_at = $3,
+             rejection_reason = $4,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [Number(requestId), Number(actorId), resTime, String(reason).trim()],
+      ));
+      return rows[0] || null;
+    },
+
+    async markCheckinRequestRescheduled({ preorderId, oldScheduledStartAt, resolvedBy = null, resolvedAt = null }, { tx = null } = {}) {
+      const executor = tx || database;
+      const resTime = resolvedAt ? new Date(resolvedAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorder_checkin_requests
+         SET status = 'RESCHEDULED',
+             resolved_by = $3,
+             resolved_at = $4,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE preorder_id = $1 AND scheduled_start_at = $2 AND status = 'PENDING'
+         RETURNING *`,
+        [Number(preorderId), oldScheduledStartAt, resolvedBy ? Number(resolvedBy) : null, resTime],
+      ));
+      return rows;
+    },
+
+    async recordSlotStrikeOnce({ preorderId, scheduledStartAt, managerId, strikeSource }, { tx = null } = {}) {
+      const executor = tx || database;
+      const rows = rowsOf(await executor.query(
+        `INSERT INTO preorder_slot_strike_events
+           (preorder_id, scheduled_start_at, manager_id, strike_source)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (preorder_id, scheduled_start_at) DO NOTHING
+         RETURNING *`,
+        [Number(preorderId), scheduledStartAt, Number(managerId), String(strikeSource)],
+      ));
+      return rows[0] || null;
+    },
+
+    async markCheckinManagerBreachOnce({ requestId, breachedAt = null }, { tx = null } = {}) {
+      const executor = tx || database;
+      const time = breachedAt ? new Date(breachedAt) : new Date();
+      const rows = rowsOf(await executor.query(
+        `UPDATE preorder_checkin_requests
+         SET manager_breach_recorded_at = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND manager_breach_recorded_at IS NULL
+         RETURNING *`,
+        [Number(requestId), time],
+      ));
+      return rows[0] || null;
     },
   };
 }

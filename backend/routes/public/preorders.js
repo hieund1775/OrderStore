@@ -163,6 +163,16 @@ router.get('/:code', authenticate, customerOnly, asyncHandler(async (req, res) =
   } catch (error) { return sendError(res, error); }
 }));
 
+router.post('/:code/check-in-request', authenticate, customerOnly, asyncHandler(async (req, res) => {
+  try {
+    const result = await preorderService.requestCheckIn({
+      preorderCode: req.params.code,
+      customerUserId: Number(req.user.sub || req.user.id),
+    });
+    res.json(result);
+  } catch (error) { sendError(res, error); }
+}));
+
 router.post('/:code/cancel', authenticate, customerOnly, asyncHandler(async (req, res) => {
   try {
     const preorder = await preorderService.cancel({

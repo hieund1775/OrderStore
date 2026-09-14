@@ -276,7 +276,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
           {
             id: 2,
             preorder_code: 'PRE-DEF-2',
-            status: 'AWAITING_PAYMENT',
+            status: 'CONFIRMED',
             // Missing orders, table_name, etc.
           },
         ],
@@ -294,6 +294,15 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
       expect(container?.textContent).toContain('PRE-DEF-2');
       expect(container?.textContent).toContain('Cửa hàng sẽ sắp xếp bàn');
       expect(container?.textContent).toContain('Món đã đặt (0)');
+    });
+
+    it('filters out AWAITING_PAYMENT and PAYMENT_EXPIRED preorders from customer view', () => {
+      const normalized = normalizeCustomerPreorders([
+        { id: 1, preorder_code: 'PO-UNPAID', status: 'AWAITING_PAYMENT' },
+        { id: 2, preorder_code: 'PO-EXPIRED', status: 'PAYMENT_EXPIRED' },
+        { id: 3, preorder_code: 'PO-CONFIRMED', status: 'CONFIRMED' },
+      ]);
+      expect(normalized.map((p) => p.preorder_code)).toEqual(['PO-CONFIRMED']);
     });
 
     it('contains API error locally and provides retry button', async () => {
