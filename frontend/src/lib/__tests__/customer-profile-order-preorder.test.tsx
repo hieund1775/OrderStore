@@ -63,6 +63,15 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
   });
 
   describe('1. Profile Route Search Validation & Tabs Contract', () => {
+    it('imports CustomerDateTime before rendering order and notification timestamps', () => {
+      const hoSoPath = path.resolve(process.cwd(), 'src/routes/ho-so.tsx');
+      const content = fs.readFileSync(hoSoPath, 'utf8');
+
+      expect(content).toContain('import { CustomerDateTime } from "@/components/time/CustomerDateTime";');
+      expect(content).toContain('<CustomerDateTime value={o.created_at} />');
+      expect(content).toContain('<CustomerDateTime value={n.created_at}');
+    });
+
     it('validates allowed tabs and falls back to undefined (defaulting to orders) for malformed tab queries', () => {
       const validateSearch = HoSoRoute.options.validateSearch as (search: Record<string, unknown>) => { tab?: string; code?: string };
 
