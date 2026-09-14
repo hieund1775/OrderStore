@@ -17,6 +17,16 @@ router.get('/orders', noCache, requireRole('super', 'manager', 'kitchen'), async
     res.json(orders.map(toKitchenOrderDto));
   } catch (err) {
     const status = orderErrorStatus(err);
+    if (status >= 500) {
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'kitchen_orders_error',
+        requestId: req.id || 'req_unknown',
+        errorName: err?.name || 'Error',
+        errorCode: err?.code || null,
+        postgresCode: (err?.code && typeof err.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code)) ? err.code : null,
+      }));
+    }
     res.status(status).json({ error: err.message });
   }
 }));

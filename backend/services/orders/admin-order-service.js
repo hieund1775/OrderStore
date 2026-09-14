@@ -1,14 +1,17 @@
 import { buildPageInfo } from '../cursor-pagination.js';
 import adminOrdersRepository from '../../repositories/postgres/admin-orders.js';
 import { evaluateOrderTransition } from '../order-transition-policy.js';
-import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
+import defaultPaymentAttemptsRepository from '../../repositories/postgres/payment-attempts.js';
 import { reconcilePayOSOrder } from '../payos-reconciliation.js';
 
 /**
  * HTTP-agnostic composition for admin and KDS reads. Scope resolution and
  * validation remain at the route boundary; this service receives only values.
  */
-export function createAdminOrderService(repository = adminOrdersRepository, paymentsRepository = defaultPaymentsRepository) {
+export function createAdminOrderService(
+  repository = adminOrdersRepository,
+  attemptsRepository = defaultPaymentAttemptsRepository,
+) {
   return {
     async list({ status, storeId, dateFrom, dateTo, search, cursor, limit, paginated = false }) {
       const rows = await repository.list({
@@ -32,7 +35,7 @@ export function createAdminOrderService(repository = adminOrdersRepository, paym
     async listKitchen({ storeId }) {
       if (typeof repository.listPendingPayOS === 'function') {
         const pending = await repository.listPendingPayOS({ scopedStoreId: storeId });
-        await Promise.all(pending.map((order) => reconcilePayOSOrder({ order, paymentRepository: paymentsRepository })));
+        await Promise.all(pending.map((order) => reconcilePayOSOrder({ order, attemptsRepository })));
       }
       return repository.listKitchen({ scopedStoreId: storeId });
     },
