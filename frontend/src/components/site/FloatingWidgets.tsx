@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowUp, MessageCircle, Phone, ShoppingCart } from 'lucide-react';
+import { ArrowUp, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/lib/cart';
 import { vnd } from '@/lib/data';
@@ -14,30 +14,17 @@ export function FloatingWidgets() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  if (!show) return null;
+
   return (
     <div className="fixed right-4 bottom-24 z-40 flex flex-col gap-2 md:bottom-6">
-      <a
-        href="tel:19008386"
-        aria-label="Gọi hotline"
-        className="bg-leaf text-leaf-foreground flex size-11 items-center justify-center rounded-full shadow-glow transition-transform hover:scale-105"
-      >
-        <Phone className="size-5" />
-      </a>
       <button
-        aria-label="Chat với chúng tôi"
-        className="bg-primary text-primary-foreground flex size-11 items-center justify-center rounded-full shadow-glow transition-transform hover:scale-105"
+        aria-label="Lên đầu trang"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="bg-card text-foreground flex size-11 items-center justify-center rounded-full border shadow-card-soft"
       >
-        <MessageCircle className="size-5" />
+        <ArrowUp className="size-5" />
       </button>
-      {show && (
-        <button
-          aria-label="Lên đầu trang"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="bg-card text-foreground flex size-11 items-center justify-center rounded-full border shadow-card-soft"
-        >
-          <ArrowUp className="size-5" />
-        </button>
-      )}
     </div>
   );
 }

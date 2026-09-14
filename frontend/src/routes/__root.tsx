@@ -12,7 +12,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { CartProvider } from "@/lib/cart";
+import { CartProvider, PreorderCartProvider } from "@/lib/cart";
 import { BranchProvider } from "@/lib/branch";
 import { Header } from "@/components/site/Header";
 import { Footer } from "@/components/site/Footer";
@@ -127,23 +127,25 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <CartProvider>
-        {isAdmin ? (
-          <Outlet />
-        ) : (
-          <BranchProvider>
-            <div className="flex min-h-screen flex-col">
-              <Header />
-              <main className="flex-1 pb-20 md:pb-0">
-                {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-                <Outlet />
-              </main>
-              <Footer />
-            </div>
-            <FloatingWidgets />
-            <MobileCartBar />
-          </BranchProvider>
-        )}
-        <Toaster position="top-center" richColors />
+        <PreorderCartProvider>
+          {isAdmin ? (
+            <Outlet />
+          ) : (
+            <BranchProvider>
+              <div className="flex min-h-screen flex-col">
+                <Header />
+                <main className="flex-1 pb-20 md:pb-0">
+                  {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+                  <Outlet />
+                </main>
+                <Footer />
+              </div>
+              <FloatingWidgets />
+              <MobileCartBar />
+            </BranchProvider>
+          )}
+          <Toaster position="top-center" richColors />
+        </PreorderCartProvider>
       </CartProvider>
     </QueryClientProvider>
   );

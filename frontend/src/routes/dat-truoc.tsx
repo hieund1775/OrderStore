@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBranch } from '@/lib/branch';
-import { useCart } from '@/lib/cart';
+import { usePreorderCart } from '@/lib/cart';
 import { apiGet, apiPost, createIdempotencyKey, fetchPublicProducts, getCustomerToken, getCustomerUser } from '@/lib/api';
 import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 import { ProductCard } from '@/components/menu/ProductCard';
@@ -43,7 +43,7 @@ function hasAnyAvailableSlot(slots: PreorderSlot[] | undefined) {
 }
 
 function PreorderCheckoutPage() {
-  const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty } = useCart();
+  const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty } = usePreorderCart();
   const { stores, selectedStoreId, selectStore } = useBranch();
   const [date, setDate] = useState(vietnamToday());
   const [hour, setHour] = useState<string>('');
@@ -245,7 +245,7 @@ function PreorderCheckoutPage() {
           </div>
           <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Tìm món…" className="sm:max-w-52" aria-label="Tìm món preorder" />
         </div>
-        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} />)}</div>}
+        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} usePreorder />)}</div>}
       </> : null}
     </section>
 

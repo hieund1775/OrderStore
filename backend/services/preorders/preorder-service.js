@@ -204,6 +204,7 @@ export function createPreorderService({
             order_type: 'Take-away',
             payment_method: 'VietQR',
             preorder_id: existing.id,
+            preorder_code: existing.preorder_code,
             defer_fulfillment: true,
             checkout_channel: 'preorder',
           },
@@ -217,7 +218,7 @@ export function createPreorderService({
       try {
         preorder = await database.transaction(async (tx) => {
         const lockedSetting = await repository.getActiveStoreSetting(storeId, { tx, forUpdate: true });
-        if (!lockedSetting) throw new PreorderError('Chi nhÃ¡nh chÆ°a sáºµn sÃ ng nháº­n Ä‘áº·t trÆ°á»›c', 409, 'PREORDER_STORE_UNAVAILABLE');
+        if (!lockedSetting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
         return repository.createAwaitingPayment({
           preorderCode: preorderCode(), storeId, customerUserId, idempotencyKey,
           scheduledStartAt: slot.start, scheduledEndAt: slot.end,
@@ -242,6 +243,7 @@ export function createPreorderService({
             order_type: 'Take-away',
             payment_method: 'VietQR',
             preorder_id: preorder.id,
+            preorder_code: preorder.preorder_code,
             defer_fulfillment: true,
             checkout_channel: 'preorder',
           },
@@ -260,6 +262,7 @@ export function createPreorderService({
             order_type: 'Take-away',
             payment_method: 'VietQR',
             preorder_id: preorder.id,
+            preorder_code: preorder.preorder_code,
             defer_fulfillment: true,
             checkout_channel: 'preorder',
           },

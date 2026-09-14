@@ -77,6 +77,7 @@ function AdminCatalogPage() {
   const [editingRootCategory, setEditingRootCategory] = useState<CategoryNode | null>(null);
   const [newRootName, setNewRootName] = useState('');
   const [creatingRoot, setCreatingRoot] = useState(false);
+  const [rootError, setRootError] = useState<string | null>(null);
 
   // Modal Tạo / Sửa Sản Phẩm Nhanh (Ảnh ở trên, bỏ mô tả, step=1000)
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -191,12 +192,14 @@ function AdminCatalogPage() {
   const handleOpenCreateRoot = () => {
     setEditingRootCategory(null);
     setNewRootName('');
+    setRootError(null);
     setCreateRootOpen(true);
   };
 
   const handleOpenEditRoot = (root: any) => {
     setEditingRootCategory(root);
     setNewRootName(root.name);
+    setRootError(null);
     setCreateRootOpen(true);
   };
 
@@ -231,6 +234,7 @@ function AdminCatalogPage() {
     const autoSlug = editingRootCategory ? editingRootCategory.slug : generateSlugFromName(newRootName);
 
     try {
+      setRootError(null);
       setCreatingRoot(true);
       if (editingRootCategory) {
         await updateCatalogCategory(editingRootCategory.id, {
@@ -255,7 +259,9 @@ function AdminCatalogPage() {
       setNewRootName('');
       await loadAllData();
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi lưu ngành hàng gốc');
+      const errorMsg = err.response?.data?.error || err.data?.error || err.message || 'Lỗi lưu ngành hàng gốc';
+      setRootError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setCreatingRoot(false);
     }
@@ -412,6 +418,11 @@ function AdminCatalogPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-4">
+              {rootError && (
+                <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/15 p-3 text-xs font-semibold text-destructive">
+                  {rootError}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="root-name" className="text-xs font-semibold">
                   Tên ngành hàng gốc <span className="text-destructive">*</span>
@@ -420,7 +431,10 @@ function AdminCatalogPage() {
                   id="root-name"
                   placeholder="Ví dụ: Nước uống, Quần áo & Thời trang, Quà lưu niệm..."
                   value={newRootName}
-                  onChange={(e) => setNewRootName(e.target.value)}
+                  onChange={(e) => {
+                    setNewRootName(e.target.value);
+                    if (rootError) setRootError(null);
+                  }}
                   required
                 />
               </div>

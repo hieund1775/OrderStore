@@ -407,6 +407,10 @@ export function createCustomerOrderService({
             });
           }
 
+          const preorderCode = input.preorder_code
+            || createdChildOrders.find((co) => co.order_code?.startsWith('PO'))?.order_code
+            || null;
+
           // 6. Create checkout group and allocations
           const createdGroup = await checkoutGroupsRepo.createCheckoutGroup({
             storeId: input.store_id,
@@ -420,6 +424,7 @@ export function createCustomerOrderService({
             allocations: groupAllocations,
             paymentProvider: isPromotionSettled ? 'promotion' : 'payos',
             paymentStatus: isPromotionSettled ? 'paid' : 'unpaid',
+            preorderCode,
           }, { tx });
 
           const paymentSummary = {
@@ -518,8 +523,18 @@ export function createCustomerOrderService({
           const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, group.group_code);
 
           try {
+            const preorderCode = input.preorder_code
+              || childOrders.find((co) => co.order_code?.startsWith('PO'))?.order_code
+              || group?.preorder_code
+              || null;
+
             const payment = await createGroupPayOSAttempt({
-              group,
+              group: {
+                ...group,
+                child_orders: childOrders,
+                preorder_code: preorderCode,
+              },
+              preorderCode,
               returnUrl: effectiveReturnUrl,
               cancelUrl: effectiveCancelUrl,
             });

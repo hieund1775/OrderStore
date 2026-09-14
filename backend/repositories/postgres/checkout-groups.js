@@ -67,6 +67,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       allocations = [],
       paymentProvider = 'payos',
       paymentStatus = 'unpaid',
+      preorderCode = null,
     }, { tx: externalTx } = {}) {
       const runner = async (tx) => {
         const paymentProfileCode = String(paymentProfile?.code || '').trim();
@@ -164,6 +165,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
           ...group,
           id: Number(group.id),
           allocations,
+          preorder_code: preorderCode || null,
         };
       };
 
@@ -232,6 +234,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
     async findGroupByCode(groupCode) {
       const [rows] = await database.query(
         `SELECT cg.*,
+                COALESCE(MAX(p_direct.preorder_code), MAX(p.preorder_code), MAX(CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END)) AS preorder_code,
                 COALESCE(
                   JSONB_AGG(o.cancel_token_hash) FILTER (WHERE o.cancel_token_hash IS NOT NULL),
                   '[]'::jsonb
@@ -249,6 +252,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
                     'payment_status', o.payment_status,
                     'user_id', o.user_id,
                     'preorder_id', o.preorder_id,
+                    'preorder_code', COALESCE(p.preorder_code, p_direct.preorder_code, CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END),
                     'preorder_checked_in_at', p.checked_in_at,
                     'status', (
                       SELECT status FROM order_status_history osh
@@ -274,12 +278,18 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
          LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
          LEFT JOIN orders o ON o.id = cga.order_id
          LEFT JOIN preorders p ON p.id = o.preorder_id
+         LEFT JOIN preorders p_direct ON p_direct.checkout_group_id = cg.id
          WHERE cg.group_code = $1
          GROUP BY cg.id`,
         [groupCode],
       );
       const r = rows[0];
       if (!r) return null;
+      const effectivePreorderCode = r.preorder_code
+        || (Array.isArray(r.child_orders) ? r.child_orders.find((co) => co.preorder_code || co.order_code?.startsWith('PO'))?.preorder_code : null)
+        || (Array.isArray(r.child_orders) ? r.child_orders.find((co) => co.order_code?.startsWith('PO'))?.order_code : null)
+        || null;
+
       return {
         ...r,
         id: Number(r.id),
@@ -289,6 +299,7 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
         total_amount: Number(r.total_amount),
         cancel_token_hashes: Array.isArray(r.cancel_token_hashes) ? r.cancel_token_hashes : [],
         child_orders: Array.isArray(r.child_orders) ? r.child_orders : [],
+        preorder_code: effectivePreorderCode,
       };
     },
 
@@ -391,13 +402,27 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       return database.transaction(async (tx) => {
         const [groupRows] = await tx.query(
           `SELECT cg.*,
+                  COALESCE(MAX(p_direct.preorder_code), MAX(p.preorder_code), MAX(CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END)) AS preorder_code,
                   COALESCE(
                     JSONB_AGG(o.cancel_token_hash) FILTER (WHERE o.cancel_token_hash IS NOT NULL),
                     '[]'::jsonb
-                  ) AS cancel_token_hashes
+                  ) AS cancel_token_hashes,
+                  COALESCE(
+                    JSONB_AGG(
+                      JSONB_BUILD_OBJECT(
+                        'order_id', o.id,
+                        'order_code', o.order_code,
+                        'preorder_id', o.preorder_id,
+                        'preorder_code', COALESCE(p.preorder_code, p_direct.preorder_code, CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END)
+                      )
+                    ) FILTER (WHERE o.id IS NOT NULL),
+                    '[]'::jsonb
+                  ) AS child_orders
            FROM checkout_groups cg
            LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
            LEFT JOIN orders o ON o.id = cga.order_id
+           LEFT JOIN preorders p ON p.id = o.preorder_id
+           LEFT JOIN preorders p_direct ON p_direct.checkout_group_id = cg.id
            WHERE cg.group_code = $1
            GROUP BY cg.id
            FOR UPDATE`,
@@ -423,12 +448,22 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
         const timeoutMinutes = parseInt(process.env.PAYOS_PAYMENT_TIMEOUT_MINUTES || '15', 10);
         const newExpiresAt = new Date(Date.now() + timeoutMinutes * 60_000);
 
+        const effectivePreorderCode = group.preorder_code
+          || (Array.isArray(group.child_orders) ? group.child_orders.find((co) => co.preorder_code || co.order_code?.startsWith('PO'))?.preorder_code : null)
+          || (Array.isArray(group.child_orders) ? group.child_orders.find((co) => co.order_code?.startsWith('PO'))?.order_code : null)
+          || null;
+
+        const description = (effectivePreorderCode && String(effectivePreorderCode).startsWith('PO'))
+          ? String(effectivePreorderCode)
+          : `Don ${group.group_code}`;
+
         const link = await createPaymentLinkForOrder({
           orderId: group.id,
           orderCode: group.group_code,
           total: Number(group.total_amount),
           payosOrderCode: newPayosOrderCode,
           paymentExpiresAt: newExpiresAt,
+          description,
           paymentProfileCode: group.payment_profile_code,
         });
 

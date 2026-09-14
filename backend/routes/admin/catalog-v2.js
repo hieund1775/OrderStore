@@ -244,6 +244,9 @@ router.delete('/presets/:targetType/:targetId/:attributeId', requireRole('super'
 }));
 
 router.use((err, req, res, next) => {
+  if (err instanceof CatalogV2Error) {
+    return next(err);
+  }
   if (err?.code === '23505') {
     return next(new CatalogV2Error('Mã, slug, SKU hoặc tổ hợp biến thể đã tồn tại', 409));
   }

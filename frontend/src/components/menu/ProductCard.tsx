@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { useCart } from '@/lib/cart';
+import { useCart, usePreorderCart } from '@/lib/cart';
 import { useWishlist } from '@/lib/wishlist';
 import { useBranch } from '@/lib/branch';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
@@ -24,8 +24,10 @@ import {
   type Product,
 } from '@/lib/data';
 
-export function ProductCard({ product }: { product: Product }) {
-  const { addItem } = useCart();
+export function ProductCard({ product, usePreorder = false }: { product: Product; usePreorder?: boolean }) {
+  const normalCart = useCart();
+  const preorderCart = usePreorderCart();
+  const { addItem } = usePreorder ? preorderCart : normalCart;
   const { isFavorite, isPending, setFavorite } = useWishlist();
   const { selectedStore } = useBranch();
   const [open, setOpen] = useState(false);
@@ -181,7 +183,7 @@ export function ProductCard({ product }: { product: Product }) {
           }}
         />
       ) : (
-        <CustomizeDialog product={product} open={open} onOpenChange={setOpen} />
+        <CustomizeDialog product={product} open={open} onOpenChange={setOpen} usePreorder={usePreorder} />
       )}
     </>
   );
@@ -191,12 +193,16 @@ function CustomizeDialog({
   product,
   open,
   onOpenChange,
+  usePreorder = false,
 }: {
   product: Product;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  usePreorder?: boolean;
 }) {
-  const { addItem } = useCart();
+  const normalCart = useCart();
+  const preorderCart = usePreorderCart();
+  const { addItem } = usePreorder ? preorderCart : normalCart;
   const { selectedStore } = useBranch();
   const [size, setSize] = useState('M');
   const [base, setBase] = useState(baseOptions[0]);

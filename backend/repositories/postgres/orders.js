@@ -14,10 +14,10 @@ export class OrderError extends OrderDomainError {
   }
 }
 
-function generateCandidateOrderCode(instant, randomInt = crypto.randomInt) {
-  const prefix = formatVietnamOrderDatePrefix(instant);
+function generateCandidateOrderCode(instant, randomInt = crypto.randomInt, prefix = 'TP') {
+  const datePrefix = formatVietnamOrderDatePrefix(instant);
   const rand = randomInt(1000, 10000);
-  return `TP${prefix}${rand}`;
+  return `${prefix}${datePrefix}${rand}`;
 }
 
 function normalizeRows(rows) {
@@ -213,9 +213,11 @@ export function createOrdersRepository(
         const originalProfileCode = originalPaymentProfile?.code || profileCode;
 
         let order = null;
+        const isPreorder = Boolean(input.preorder_id || input.checkout_channel === 'preorder' || input.order_type === 'preorder');
+        const codePrefix = isPreorder ? 'PO' : 'TP';
         const MAX_CODE_ATTEMPTS = 5;
         for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
-          const candidateCode = generateCandidateOrderCode(orderInstant, randomInt);
+          const candidateCode = generateCandidateOrderCode(orderInstant, randomInt, codePrefix);
           await tx.query('SAVEPOINT order_code_attempt');
           try {
             const [orders] = await tx.query(

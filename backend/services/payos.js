@@ -180,7 +180,10 @@ export async function createPaymentLinkForOrder({
     : Math.floor(Date.now() / 1000) + timeoutMinutes * 60;
   const paymentExpiresAt = new Date(expiredAtSec * 1000);
 
-  const desc = (description || `Don ${orderCode}`).slice(0, 25);
+  const defaultDesc = (orderCode && String(orderCode).startsWith('PO'))
+    ? String(orderCode)
+    : `Don ${orderCode}`;
+  const desc = (description || defaultDesc).slice(0, 25);
   const rUrl = returnUrl || process.env.PAYOS_RETURN_URL || 'http://localhost:8080/theo-doi-don';
   const cUrl = cancelUrl || process.env.PAYOS_CANCEL_URL || 'http://localhost:8080/thanh-toan';
 
