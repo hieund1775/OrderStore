@@ -3,7 +3,7 @@ import path from 'node:path';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { Route as HoSoRoute } from '@/routes/ho-so';
+import { Route as HoSoRoute, normalizeProfileOrders } from '@/routes/ho-so';
 import { Route as DonDatTruocRoute } from '@/routes/don-dat-truoc';
 import {
   CustomerPreordersTab,
@@ -125,6 +125,18 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
   });
 
   describe('3. Preorder Normalizer & Render-Safety Contract', () => {
+    it('normalizes malformed normal-order payloads so the profile never maps a non-array items field', () => {
+      const rows = normalizeProfileOrders([
+        { id: 1, order_code: 'TP-1', items: 'invalid' },
+        { id: 2, order_code: 'TP-2', items: [{ id: 10, product_name: 'Trà', qty: 1 }] },
+      ]);
+
+      expect(rows).toHaveLength(2);
+      expect(rows[0].items).toEqual([]);
+      expect(rows[1].items).toEqual([expect.objectContaining({ product_name: 'Trà', qty: 1 })]);
+      expect(normalizeProfileOrders({ orders: [] })).toEqual([]);
+    });
+
     it('safely normalizes missing or non-array preorders without throwing', () => {
       expect(normalizeCustomerPreorders(null)).toEqual([]);
       expect(normalizeCustomerPreorders(undefined)).toEqual([]);

@@ -30,6 +30,9 @@ describe('Preorder reservation repository', () => {
     const repository = createPreordersRepository({
       async query(sql) {
         calls.push(sql);
+        if (sql.includes("to_regclass('preorder_checkin_requests')")) {
+          return [[{ available: false }], 1];
+        }
         if (sql.includes('FROM preorders p')) {
           return [[{ id: 12, preorder_code: 'PO-CUSTOMER', customer_user_id: 7, store_name: 'Store A' }], 1];
         }
@@ -52,6 +55,37 @@ describe('Preorder reservation repository', () => {
     assert.deepEqual(rows[0].orders[0].items.map((item) => item.product_name), ['Trà đào']);
     assert.equal(calls.some((sql) => sql.includes('WHERE p.customer_user_id = $1')), true);
     assert.equal(calls.some((sql) => sql.includes("AND p.status NOT IN ('AWAITING_PAYMENT', 'PAYMENT_EXPIRED')")), true);
+  });
+
+  it('keeps customer and operations preorder reads usable before additive 0033 exists', async () => {
+    const calls = [];
+    const repository = createPreordersRepository({
+      async query(sql) {
+        calls.push(sql);
+        if (sql.includes("to_regclass('preorder_checkin_requests')")) return [[{ available: false }], 1];
+        if (sql.includes('FROM preorders p')) return [[], 0];
+        throw new Error(`Unexpected preorder query: ${sql}`);
+      },
+    });
+
+    assert.deepEqual(await repository.listForCustomer(77), []);
+    assert.deepEqual(await repository.list(), []);
+    assert.equal(calls.some((sql) => sql.includes('FROM preorder_checkin_requests')), false);
+  });
+
+  it('keeps the canonical check-in projection when 0033 is present', async () => {
+    const calls = [];
+    const repository = createPreordersRepository({
+      async query(sql) {
+        calls.push(sql);
+        if (sql.includes("to_regclass('preorder_checkin_requests')")) return [[{ available: true }], 1];
+        if (sql.includes('FROM preorders p')) return [[], 0];
+        throw new Error(`Unexpected preorder query: ${sql}`);
+      },
+    });
+
+    assert.deepEqual(await repository.listForCustomer(77), []);
+    assert.equal(calls.some((sql) => sql.includes('FROM preorder_checkin_requests pcr')), true);
   });
 
   it('inserts customer check-in request with slot conflict handling', async () => {

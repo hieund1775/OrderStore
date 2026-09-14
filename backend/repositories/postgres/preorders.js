@@ -31,6 +31,41 @@ async function inTransaction(database, tx, runner) {
 }
 
 export function createPreordersRepository(database = postgresDb) {
+  // 0033 adds customer check-in requests.  Runtime can be deployed ahead of
+  // that additive migration, so read paths must not reference its table until
+  // PostgreSQL confirms that it exists.  This is deliberately read-only and
+  // preserves the full check-in projection once 0033 is present.
+  async function checkinProjection(executor = database) {
+    const availability = rowsOf(await executor.query(
+      "SELECT to_regclass('preorder_checkin_requests') IS NOT NULL AS available",
+    ));
+    const isAvailable = availability[0]?.available === true;
+    if (!isAvailable) {
+      return {
+        columns: `NULL::bigint AS checkin_request_id,
+                  NULL::varchar AS checkin_request_status,
+                  NULL::timestamptz AS checkin_requested_at,
+                  NULL::varchar AS checkin_late_confirmation_reason,
+                  NULL::varchar AS checkin_rejection_reason`,
+        join: '',
+      };
+    }
+
+    return {
+      columns: `checkin.id AS checkin_request_id,
+                checkin.status AS checkin_request_status,
+                checkin.requested_at AS checkin_requested_at,
+                checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
+                checkin.rejection_reason AS checkin_rejection_reason`,
+      join: `LEFT JOIN LATERAL (
+               SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
+               FROM preorder_checkin_requests pcr
+               WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
+               ORDER BY pcr.id DESC LIMIT 1
+             ) checkin ON TRUE`,
+    };
+  }
+
   async function attachLinkedOrders(preorders) {
     if (!preorders.length) return preorders;
     const preorderIds = preorders.map((preorder) => Number(preorder.id));
@@ -67,25 +102,17 @@ export function createPreordersRepository(database = postgresDb) {
     const codeFilter = preorderCode == null
       ? " AND p.status NOT IN ('AWAITING_PAYMENT', 'PAYMENT_EXPIRED')"
       : ` AND p.preorder_code = $${values.push(String(preorderCode))}`;
+    const checkin = await checkinProjection(database);
     const preorders = rowsOf(await database.query(
       `SELECT p.*, s.name AS store_name,
               r.table_id, t.name AS table_name, r.status AS reservation_status,
               r.reserved_from, r.reserved_until,
-              checkin.id AS checkin_request_id,
-              checkin.status AS checkin_request_status,
-              checkin.requested_at AS checkin_requested_at,
-              checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
-              checkin.rejection_reason AS checkin_rejection_reason
+              ${checkin.columns}
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
          LEFT JOIN tables t ON t.id = r.table_id
-         LEFT JOIN LATERAL (
-           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
-           FROM preorder_checkin_requests pcr
-           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
-           ORDER BY pcr.id DESC LIMIT 1
-         ) checkin ON TRUE
+         ${checkin.join}
         WHERE p.customer_user_id = $1${codeFilter}
         ORDER BY p.scheduled_start_at DESC, p.id DESC`,
       values,
@@ -246,24 +273,16 @@ export function createPreordersRepository(database = postgresDb) {
 
     async findById(preorderId, { tx = null, forUpdate = false } = {}) {
       const executor = tx || database;
+      const checkin = await checkinProjection(executor);
       const rows = rowsOf(await executor.query(
         `SELECT p.*, pss.is_enabled AS preorder_enabled,
                 r.id AS reservation_id, r.table_id, r.status AS reservation_status,
                 r.reserved_from, r.reserved_until,
-                checkin.id AS checkin_request_id,
-                checkin.status AS checkin_request_status,
-                checkin.requested_at AS checkin_requested_at,
-                checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
-                checkin.rejection_reason AS checkin_rejection_reason
+                ${checkin.columns}
          FROM preorders p
          LEFT JOIN preorder_store_settings pss ON pss.store_id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
-         LEFT JOIN LATERAL (
-           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
-           FROM preorder_checkin_requests pcr
-           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
-           ORDER BY pcr.id DESC LIMIT 1
-         ) checkin ON TRUE
+         ${checkin.join}
          WHERE p.id = $1${forUpdate ? ' FOR UPDATE OF p' : ''}`,
         [Number(preorderId)],
       ));
@@ -300,23 +319,15 @@ export function createPreordersRepository(database = postgresDb) {
       if (from) where.push(`p.scheduled_start_at >= ${add(from)}`);
       if (to) where.push(`p.scheduled_start_at < ${add(to)}`);
       if (includePendingOnly) where.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
+      const checkin = await checkinProjection(database);
       const rows = rowsOf(await database.query(
         `SELECT p.*, s.name AS store_name, u.fullname AS customer_name,
                 EXISTS (SELECT 1 FROM preorder_table_reservations r WHERE r.preorder_id = p.id AND r.status IN ('pending_payment','held','checked_in')) AS has_active_table_reservation,
-                checkin.id AS checkin_request_id,
-                checkin.status AS checkin_request_status,
-                checkin.requested_at AS checkin_requested_at,
-                checkin.late_confirmation_reason AS checkin_late_confirmation_reason,
-                checkin.rejection_reason AS checkin_rejection_reason
+                ${checkin.columns}
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          JOIN users u ON u.id = p.customer_user_id
-         LEFT JOIN LATERAL (
-           SELECT pcr.id, pcr.status, pcr.requested_at, pcr.late_confirmation_reason, pcr.rejection_reason
-           FROM preorder_checkin_requests pcr
-           WHERE pcr.preorder_id = p.id AND pcr.scheduled_start_at = p.scheduled_start_at
-           ORDER BY pcr.id DESC LIMIT 1
-         ) checkin ON TRUE
+         ${checkin.join}
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
          ORDER BY p.scheduled_start_at ASC, p.id ASC`,
         values,

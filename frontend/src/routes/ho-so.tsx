@@ -34,6 +34,53 @@ import {
 
 const PROFILE_TABS = new Set(["orders", "preorders", "notifications", "wishlist", "info"]);
 
+type ProfileOrderItem = {
+  id: number;
+  product_id: number;
+  product_name: string;
+  qty: number;
+  size_label: string;
+};
+
+type ProfileOrder = {
+  id: number;
+  order_code: string;
+  total: number;
+  payment_status?: string;
+  payment_provider?: string;
+  current_status: string;
+  created_at: string;
+  store_name: string;
+  items: ProfileOrderItem[];
+};
+
+export function normalizeProfileOrders(value: unknown): ProfileOrder[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((raw): raw is Record<string, unknown> => Boolean(raw) && typeof raw === 'object')
+    .map((raw, orderIndex) => ({
+      id: Number(raw.id) || orderIndex + 1,
+      order_code: String(raw.order_code || 'Chưa có mã đơn').trim(),
+      total: Number(raw.total) || 0,
+      payment_status: raw.payment_status ? String(raw.payment_status) : undefined,
+      payment_provider: raw.payment_provider ? String(raw.payment_provider) : undefined,
+      current_status: String(raw.current_status || 'Đang cập nhật').trim(),
+      created_at: String(raw.created_at || ''),
+      store_name: String(raw.store_name || 'TeaPlus').trim(),
+      items: Array.isArray(raw.items)
+        ? raw.items
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+          .map((item, itemIndex) => ({
+            id: Number(item.id) || itemIndex + 1,
+            product_id: Number(item.product_id) || 0,
+            product_name: String(item.product_name || 'Sản phẩm').trim(),
+            qty: Number(item.qty) > 0 ? Number(item.qty) : 1,
+            size_label: item.size_label ? String(item.size_label).trim() : '',
+          }))
+        : [],
+    }));
+}
+
 const tiers = [
   { name: "Đồng", min: 0, color: "from-stone-400 to-stone-500" },
   { name: "Bạc", min: 500, color: "from-slate-300 to-slate-400" },
@@ -95,17 +142,7 @@ function Profile() {
   const isLoggedIn = Boolean(token && user);
 
   const [activeTab, setActiveTab] = useState(search?.tab || "orders");
-  const [userOrders, setUserOrders] = useState<{
-    id: number;
-    order_code: string;
-    total: number;
-    payment_status?: string;
-    payment_provider?: string;
-    current_status: string;
-    created_at: string;
-    store_name: string;
-    items: { id: number; product_id: number; product_name: string; qty: number; size_label: string }[];
-  }[]>([]);
+  const [userOrders, setUserOrders] = useState<ProfileOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const notificationsList = notificationData?.notifications ?? [];
@@ -177,20 +214,14 @@ function Profile() {
     if (!isLoggedIn || !user?.id) return;
     let cancelled = false;
     setOrdersLoading(true);
-    apiGet<{
-      id: number;
-      order_code: string;
-      total: number;
-      payment_status?: string;
-      payment_provider?: string;
-      current_status: string;
-      created_at: string;
-      store_name: string;
-      items: { id: number; product_id: number; product_name: string; qty: number; size_label: string }[];
-    }[] | { orders: any[]; page_info: any }>(`/api/users/${user.id}/orders`)
+    apiGet<unknown>(`/api/users/${user.id}/orders`)
       .then((resData) => {
-        const rows = Array.isArray(resData) ? resData : (resData?.orders || []);
-        if (!cancelled) setUserOrders(rows);
+        const rows = Array.isArray(resData)
+          ? resData
+          : (resData && typeof resData === 'object' && Array.isArray((resData as { orders?: unknown }).orders)
+            ? (resData as { orders: unknown[] }).orders
+            : []);
+        if (!cancelled) setUserOrders(normalizeProfileOrders(rows));
       })
       .catch(() => {
         if (!cancelled) setUserOrders([]);
