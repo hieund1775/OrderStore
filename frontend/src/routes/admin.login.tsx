@@ -49,7 +49,7 @@ function AdminLogin() {
       });
       setToken(res.token);
       if (res.user) setUser(res.user as any);
-      toast.success(`Xin chào ${res.user.fullname}`);
+      toast.success(`Đăng nhập thành công! Xin chào ${res.user.fullname}`);
       navigate({ to: "/admin" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đăng nhập thất bại");

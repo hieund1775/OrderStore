@@ -50,8 +50,11 @@ export function toJobDto(job) {
     department: job.department || null,
     location: job.location || null,
     type: job.type || null,
+    salary: job.salary || null,
     description: job.description || null,
     requirements: job.requirements || null,
+    benefits: job.benefits || null,
+    stores: Array.isArray(job.stores) ? job.stores : [],
     is_active: job.is_active !== false,
     created_at: job.created_at,
   };

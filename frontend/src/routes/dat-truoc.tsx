@@ -72,7 +72,7 @@ function PreorderCheckoutPage() {
     && availability != null
     && !hasAnyAvailableSlot(availability.slots);
   const cartIsSingleStore = useMemo(
-    () => selectedItems.length > 0 && selectedItems.every((item) => !item.storeId || Number(item.storeId) === storeId),
+    () => selectedItems.every((item) => !item.storeId || Number(item.storeId) === storeId),
     [selectedItems, storeId],
   );
 
@@ -242,7 +242,6 @@ function PreorderCheckoutPage() {
         </div>)}
         <div className="flex items-center justify-between border-t pt-3 font-semibold"><span>Tạm tính</span><span>{vnd(selectedSubtotal)}</span></div>
       </div>}
-      {!cartIsSingleStore && <p className="mt-3 text-sm text-destructive">Giỏ hiện có món khác chi nhánh. Hãy bỏ các món khác chi nhánh trước khi thanh toán preorder.</p>}
     </section>
     <Button className="w-full" size="lg" disabled={submitting || selectedStorePreorderAvailable !== true || !cartIsSingleStore || selectedItems.length === 0} onClick={submit}><CreditCard className="mr-2 size-4" />{submitting ? 'Đang tạo thanh toán…' : 'Thanh toán preorder bằng VietQR'}</Button>
   </div>;

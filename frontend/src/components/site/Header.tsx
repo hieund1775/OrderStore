@@ -494,6 +494,12 @@ function ProfileButton() {
       setUserName(data.user.fullname);
       setUserTier(data.user.tier);
       setLoggedIn(true);
+      setOpen(false);
+      toast.success(
+        data.user.fullname
+          ? `Đăng nhập thành công! Xin chào ${data.user.fullname}`
+          : 'Đăng nhập thành công'
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Đăng nhập Google thất bại');
     } finally {
@@ -558,6 +564,19 @@ function ProfileButton() {
       setCustomerUser(data.user);
       setLoggedIn(true);
       setOpen(false);
+      if (authMode === 'register') {
+        toast.success(
+          data.user.fullname
+            ? `Đăng ký tài khoản thành công! Xin chào ${data.user.fullname}`
+            : 'Đăng ký tài khoản thành công'
+        );
+      } else {
+        toast.success(
+          data.user.fullname
+            ? `Đăng nhập thành công! Xin chào ${data.user.fullname}`
+            : 'Đăng nhập thành công'
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không thể kết nối đến máy chủ');
     } finally {
