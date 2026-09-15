@@ -98,9 +98,20 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
 router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
-    const limit = req.query.limit !== undefined ? validateLimit(req.query.limit, 6, 50) : null;
-    const rows = await repository.list({ storeId, status: 'CONFIRMED', limit, orderBy: 'active' });
-    return res.json(rows);
+    if (req.query.limit !== undefined) {
+      const limit = validateLimit(req.query.limit, 6, 50);
+      const result = await repository.list({
+        storeId,
+        status: 'CONFIRMED',
+        page: 1,
+        limit,
+        orderBy: 'active',
+      });
+      const items = Array.isArray(result) ? result : (result?.items || []);
+      return res.json(items);
+    }
+    const rows = await repository.list({ storeId, status: 'CONFIRMED', orderBy: 'active' });
+    return res.json(Array.isArray(rows) ? rows : (rows?.items || []));
   } catch (error) { return errorResponse(res, error); }
 }));
 

@@ -254,7 +254,7 @@ export function KdsPage() {
         }
       }
       setOrders(rows);
-      setConfirmedPreorders(Array.isArray(previews) ? previews.slice(0, 6) : []);
+      setConfirmedPreorders(Array.isArray(previews) ? previews : []);
       const ids = new Set(rows.map((o) => o.id));
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
       if (fresh.length > 0) {
@@ -812,7 +812,7 @@ export function KdsPage() {
             </div>
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {confirmedPreorders.slice(0, 6).map((preorder) => (
+            {confirmedPreorders.map((preorder) => (
               <article key={preorder.id} className="rounded-lg border border-violet-200 bg-background p-3 text-sm">
                 <p className="font-semibold">{preorder.preorder_code}</p>
                 <p className="mt-1 text-muted-foreground">{new Date(preorder.scheduled_start_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>

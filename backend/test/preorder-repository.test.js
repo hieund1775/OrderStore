@@ -146,15 +146,15 @@ describe('Preorder reservation repository', () => {
         if (sql.includes('FROM preorders p')) {
           capturedSql = sql;
           capturedParams = params;
-          return [[{ id: 10, preorder_code: 'PRE-10', scheduled_start_at: '2026-09-15T12:00:00.000Z' }], 1];
+          return [[{ id: 10, preorder_code: 'PRE-10', scheduled_start_at: '2026-09-15T12:00:00.000Z', total_count: 1 }], 1];
         }
         return [[], 0];
       },
     });
 
-    const rows = await repository.list({ storeId: 2, status: 'CONFIRMED', limit: 6, orderBy: 'active' });
-    assert.ok(Array.isArray(rows));
-    assert.equal(rows.length, 1);
+    const result = await repository.list({ storeId: 2, status: 'CONFIRMED', page: 1, limit: 6, orderBy: 'active' });
+    assert.ok(result && Array.isArray(result.items));
+    assert.equal(result.items.length, 1);
     assert.match(capturedSql, /ORDER BY p\.scheduled_start_at ASC, p\.id ASC/);
     assert.match(capturedSql, /LIMIT \$\d+/);
     assert.equal(capturedParams.includes(6), true);
@@ -173,8 +173,9 @@ describe('Preorder reservation repository', () => {
       },
     });
 
-    const rows = await repository.list({ storeId: 2, status: 'CONFIRMED' });
+    const rows = await repository.list({ storeId: 2, status: 'CONFIRMED', orderBy: 'active' });
     assert.ok(Array.isArray(rows));
     assert.equal(capturedSql.includes('LIMIT'), false);
+    assert.match(capturedSql, /ORDER BY p\.scheduled_start_at ASC, p\.id ASC/);
   });
 });

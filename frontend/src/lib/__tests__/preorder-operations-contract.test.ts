@@ -31,7 +31,7 @@ describe('preorder customer and operations contract', () => {
   it('shows confirmed preorders as a read-only kitchen preview bounded to 6 instead of a KDS action card', () => {
     expect(kitchen).toContain('/admin/preorders/kitchen/confirmed');
     expect(kitchen).toContain('limit: "6"');
-    expect(kitchen).toContain('confirmedPreorders.slice(0, 6)');
+    expect(kitchen).not.toContain('confirmedPreorders.slice');
     expect(kitchen).toContain('Preorder sắp tới');
     expect(kitchen).toContain('Bếp có thể chủ động chuẩn bị món theo lịch hẹn (không cần đợi khách check-in)');
   });

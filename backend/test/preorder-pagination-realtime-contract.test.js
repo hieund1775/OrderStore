@@ -95,6 +95,7 @@ describe('Offset Pagination Service Contract Tests', () => {
 
 import express from 'express';
 import { createAdminPreordersRouter } from '../routes/admin/preorders.js';
+import { createPreordersRepository } from '../repositories/postgres/preorders.js';
 
 describe('Admin Preorders Router Pagination Contract Tests', () => {
   async function startServer(repository) {
@@ -192,7 +193,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
   });
 
   describe('Kitchen Confirmed Preorder Preview', () => {
-    it('supports bounded read query with limit=6 and active nearest ordering', async () => {
+    it('supports bounded read query with limit=6, calls repository with page=1, limit=6, and unwraps { items } to bare array', async () => {
       const mockConfirmed = [
         { id: 101, preorder_code: 'PRE-CONF-1', scheduled_start_at: '2026-09-15T12:30:00.000Z' },
         { id: 102, preorder_code: 'PRE-CONF-2', scheduled_start_at: '2026-09-15T13:00:00.000Z' },
@@ -201,7 +202,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
       const repository = {
         async list(opts) {
           capturedOpts = opts;
-          return mockConfirmed;
+          return { items: mockConfirmed, totalItems: 2 };
         },
       };
       const fixture = await startServer(repository);
@@ -211,6 +212,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         const data = await res.json();
         assert.ok(Array.isArray(data));
         assert.deepEqual(data, mockConfirmed);
+        assert.equal(capturedOpts.page, 1);
         assert.equal(capturedOpts.limit, 6);
         assert.equal(capturedOpts.status, 'CONFIRMED');
         assert.equal(capturedOpts.orderBy, 'active');
@@ -219,7 +221,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
       }
     });
 
-    it('preserves legacy unpaginated array when limit query is omitted', async () => {
+    it('preserves legacy unpaginated bare array when limit query is omitted', async () => {
       const mockAllConfirmed = [
         { id: 101, preorder_code: 'PRE-CONF-1' },
         { id: 102, preorder_code: 'PRE-CONF-2' },
@@ -239,7 +241,8 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         const data = await res.json();
         assert.ok(Array.isArray(data));
         assert.deepEqual(data, mockAllConfirmed);
-        assert.equal(capturedOpts.limit, null);
+        assert.equal(capturedOpts.page, undefined);
+        assert.equal(capturedOpts.limit, undefined);
         assert.equal(capturedOpts.status, 'CONFIRMED');
         assert.equal(capturedOpts.orderBy, 'active');
       } finally {
@@ -254,6 +257,49 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         assert.equal(res.status, 400);
         const data = await res.json();
         assert.ok(data.error.includes('Giới hạn số lượng (limit) phải là số nguyên dương'));
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    it('end-to-end proves limit=6 executes SQL LIMIT 6, no limit omits LIMIT, and order is scheduled_start_at ASC, id ASC', async () => {
+      let capturedSql = '';
+      let capturedParams = [];
+      const db = {
+        async query(sql, params) {
+          if (sql.includes("to_regclass('preorder_checkin_requests')")) return { rows: [{ available: false }] };
+          if (sql.includes('FROM preorders p')) {
+            capturedSql = sql;
+            capturedParams = params;
+            return {
+              rows: [
+                { id: 1, scheduled_start_at: '2026-09-15T12:00:00.000Z', store_name: 'S1', customer_name: 'C1', total_count: 1 },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+      };
+      const realRepo = createPreordersRepository(db);
+      const fixture = await startServer(realRepo);
+      try {
+        const res = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed?limit=6`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.ok(Array.isArray(data));
+        assert.equal(data.length, 1);
+        assert.match(capturedSql, /LIMIT \$\d+/);
+        assert.equal(capturedParams[capturedParams.length - 2], 6); // LIMIT 6
+        assert.match(capturedSql, /ORDER BY p\.scheduled_start_at ASC, p\.id ASC/);
+
+        // Test without limit
+        capturedSql = '';
+        const resLegacy = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed`);
+        assert.equal(resLegacy.status, 200);
+        const dataLegacy = await resLegacy.json();
+        assert.ok(Array.isArray(dataLegacy));
+        assert.equal(capturedSql.includes('LIMIT'), false);
+        assert.match(capturedSql, /ORDER BY p\.scheduled_start_at ASC, p\.id ASC/);
       } finally {
         await fixture.close();
       }

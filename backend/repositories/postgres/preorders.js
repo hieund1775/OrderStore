@@ -407,8 +407,6 @@ export function createPreordersRepository(database = postgresDb) {
       if (isPaginated) {
         countColumn = ', COUNT(*) OVER() AS total_count';
         paginationClause = ` LIMIT $${values.push(limit)} OFFSET $${values.push((page - 1) * limit)}`;
-      } else if (limit != null) {
-        paginationClause = ` LIMIT $${values.push(Number(limit))}`;
       }
 
       const sortSql = orderBy === 'archive'
