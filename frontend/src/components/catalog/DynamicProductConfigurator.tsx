@@ -13,7 +13,12 @@ import {
   type ResolvedProductConfiguration,
   type AppliedModifier,
 } from '@/lib/api';
-import { vnd } from '@/lib/data';
+import {
+  vnd,
+  products as fallbackProducts,
+  resolveProductImage,
+  FALLBACK_TEA_IMAGE,
+} from '@/lib/data';
 import { toast } from 'sonner';
 import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 
@@ -62,39 +67,150 @@ export function DynamicProductConfigurator({
     setLoadError('');
     setResolvedConfig(null);
 
-    fetchPublicProductDetails(productSlug, storeId)
-      .then((data) => {
-        if (!isMounted) return;
-        setProduct(data);
-        setQuantity(1);
-
-        // Pre-select first values for required single_select attributes
-        const initialVarValIds: number[] = [];
-        const initialModValIds: number[] = [];
-
-        (data.attributes || []).forEach((attr) => {
-          if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
-            if (attr.role === 'variant') {
-              initialVarValIds.push(attr.values[0].id);
-            } else if (attr.role === 'modifier') {
-              initialModValIds.push(attr.values[0].id);
-            }
+    const loadData = async () => {
+      let data: PublicProductDetails | null = null;
+      try {
+        data = await fetchPublicProductDetails(productSlug, storeId);
+      } catch {
+        if (storeId) {
+          try {
+            data = await fetchPublicProductDetails(productSlug);
+          } catch {
+            data = null;
           }
-        });
+        }
+      }
 
-        setSelectedVariantValueIds(initialVarValIds);
-        setSelectedModifierValueIds(initialModValIds);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        const message = err instanceof Error ? err.message : 'Không thể tải thông tin tùy chọn món';
-        setLoadError(message);
+      // Fallback to local catalog if API did not find product
+      if (!data) {
+        const found = fallbackProducts.find(
+          (p) => p.slug === productSlug || String(p.id) === productSlug,
+        );
+        if (found) {
+          data = {
+            id: Number(found.id) || 1,
+            name: found.name,
+            slug: found.slug,
+            description: found.desc,
+            price: found.price,
+            image_url: resolveProductImage(found.slug, found.image),
+            category_id: 1,
+            fulfillment_lane: 'kitchen' as const,
+            stock_mode: 'made_to_order' as const,
+            variants: [
+              {
+                id: Number(found.id) || 1,
+                sku: `SKU-${found.slug}-M`,
+                variant_signature: 'size_m',
+                name_suffix: 'Size M',
+                price: found.price,
+                compare_at_price: null,
+                is_available: true,
+                available_stock: null,
+              },
+              {
+                id: (Number(found.id) || 1) + 1000,
+                sku: `SKU-${found.slug}-L`,
+                variant_signature: 'size_l',
+                name_suffix: 'Size L (+10.000₫)',
+                price: found.price + 10000,
+                compare_at_price: null,
+                is_available: true,
+                available_stock: null,
+              },
+            ],
+            attributes: [
+              {
+                id: 101,
+                code: 'sugar',
+                name: 'Mức Đường',
+                role: 'modifier' as const,
+                input_type: 'single_select' as const,
+                is_required: true,
+                min_selections: 1,
+                max_selections: 1,
+                sort_order: 1,
+                is_locked: false,
+                values: [
+                  { id: 1011, code: '100_sugar', label: '100% (Chuẩn)', price_adjustment: 0, sort_order: 1, is_active: true },
+                  { id: 1012, code: '70_sugar', label: '70% Đường', price_adjustment: 0, sort_order: 2, is_active: true },
+                  { id: 1013, code: '50_sugar', label: '50% Đường', price_adjustment: 0, sort_order: 3, is_active: true },
+                  { id: 1014, code: '0_sugar', label: 'Không đường', price_adjustment: 0, sort_order: 4, is_active: true },
+                ],
+              },
+              {
+                id: 102,
+                code: 'ice',
+                name: 'Mức Đá',
+                role: 'modifier' as const,
+                input_type: 'single_select' as const,
+                is_required: true,
+                min_selections: 1,
+                max_selections: 1,
+                sort_order: 2,
+                is_locked: false,
+                values: [
+                  { id: 1021, code: '100_ice', label: '100% Đá', price_adjustment: 0, sort_order: 1, is_active: true },
+                  { id: 1022, code: '70_ice', label: '70% Đá', price_adjustment: 0, sort_order: 2, is_active: true },
+                  { id: 1023, code: 'da_rieng', label: 'Đá riêng', price_adjustment: 0, sort_order: 3, is_active: true },
+                  { id: 1024, code: '0_ice', label: 'Không đá', price_adjustment: 0, sort_order: 4, is_active: true },
+                ],
+              },
+              {
+                id: 103,
+                code: 'topping',
+                name: 'Topping Thêm',
+                role: 'modifier' as const,
+                input_type: 'multi_select' as const,
+                is_required: false,
+                min_selections: 0,
+                max_selections: 5,
+                sort_order: 3,
+                is_locked: false,
+                values: [
+                  { id: 1031, code: 'trai_cay_dam', label: 'Trái cây dầm tươi', price_adjustment: 10000, sort_order: 1, is_active: true },
+                  { id: 1032, code: 'nha_dam', label: 'Thạch nha đam', price_adjustment: 8000, sort_order: 2, is_active: true },
+                  { id: 1033, code: 'thach_trai_cay', label: 'Thạch trái cây', price_adjustment: 8000, sort_order: 3, is_active: true },
+                  { id: 1034, code: 'tran_chau_trang', label: 'Trân châu trắng', price_adjustment: 7000, sort_order: 4, is_active: true },
+                  { id: 1035, code: 'macchiato', label: 'Macchiato kem cheese', price_adjustment: 12000, sort_order: 5, is_active: true },
+                ],
+              },
+            ],
+          };
+        }
+      }
+
+      if (!isMounted) return;
+      if (!data) {
+        setLoadError('Không tìm thấy thông tin món');
         setProduct(null);
-        toast.error(message);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
+        setLoading(false);
+        return;
+      }
+
+      setProduct(data);
+      setQuantity(1);
+
+      // Pre-select first values for required single_select attributes
+      const initialVarValIds: number[] = [];
+      const initialModValIds: number[] = [];
+
+      (data.attributes || []).forEach((attr) => {
+        if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
+          if (attr.role === 'variant') {
+            initialVarValIds.push(attr.values[0].id);
+          } else if (attr.role === 'modifier') {
+            initialModValIds.push(attr.values[0].id);
+          }
+        }
       });
+
+      setSelectedVariantValueIds(initialVarValIds);
+      setSelectedModifierValueIds(initialModValIds);
+      setLoading(false);
+    };
+
+    void loadData();
 
     return () => {
       isMounted = false;
@@ -117,9 +233,52 @@ export function DynamicProductConfigurator({
       .then((res) => {
         if (isMounted) setResolvedConfig(res);
       })
-      .catch((err) => {
+      .catch(() => {
         if (!isMounted) return;
-        toast.error(err instanceof Error ? err.message : 'Cấu hình sản phẩm không hợp lệ');
+        // Compute price locally if resolve endpoint fails
+        const basePrice = product.price || 0;
+        let modifierTotal = 0;
+        const appliedModifiers: AppliedModifier[] = [];
+
+        (product.attributes || []).forEach((attr) => {
+          attr.values?.forEach((val) => {
+            if (
+              selectedModifierValueIds.includes(val.id) ||
+              selectedVariantValueIds.includes(val.id)
+            ) {
+              const adj = Number(val.price_adjustment || 0);
+              modifierTotal += adj;
+              appliedModifiers.push({
+                attribute_code: attr.code,
+                attribute_name: attr.name,
+                value_code: val.code,
+                value_label: val.label,
+                price_adjustment: adj,
+              });
+            }
+          });
+        });
+
+        const selectedVariant = product.variants?.find((v) =>
+          selectedVariantValueIds.some((id) => v.id === id)
+        ) || product.variants?.[0] || {
+          id: product.id,
+          sku: `SKU-${product.slug}-M`,
+          name_suffix: 'Size M',
+          price: basePrice,
+        };
+
+        const variantExtra = Number(selectedVariant.price || basePrice) - basePrice;
+
+        setResolvedConfig({
+          product_id: product.id,
+          product_slug: product.slug,
+          variant_id: selectedVariant.id,
+          sku: selectedVariant.sku,
+          variant_name: selectedVariant.name_suffix || null,
+          unit_price: basePrice + Math.max(0, variantExtra) + modifierTotal,
+          applied_modifiers: appliedModifiers,
+        });
       })
       .finally(() => {
         if (isMounted) setCalculating(false);
@@ -209,13 +368,14 @@ export function DynamicProductConfigurator({
             {/* Header with image */}
             <div className="relative border-b bg-muted/20 p-5">
               <div className="flex gap-4">
-                {product.image_url && (
-                  <img
-                    src={product.image_url}
-                    alt={product.name}
-                    className="size-20 shrink-0 rounded-2xl object-cover border"
-                  />
-                )}
+                <img
+                  src={resolveProductImage(product.slug, product.image_url)}
+                  alt={product.name}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+                  }}
+                  className="size-20 shrink-0 rounded-2xl object-cover border"
+                />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-display font-bold text-lg leading-tight text-foreground truncate">
                     {product.name}

@@ -93,23 +93,46 @@ export type ApiCatalogProduct = {
   is_seasonal?: boolean;
 };
 
+export const DEFAULT_PRODUCT_IMAGES: Record<string, string> = {
+  'tra-cam-sa': 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=640&q=80',
+  'tra-dau-tay': 'https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&w=640&q=80',
+  'tra-xoai-chanh-day': 'https://images.unsplash.com/photo-1546173159-315724a31696?auto=format&fit=crop&w=640&q=80',
+  'tra-dao-vai': 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=640&q=80',
+  'olong-dao-vai': 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=640&q=80',
+  'tuyet-dua-hau': 'https://images.unsplash.com/photo-1589733955941-5eeaf752f6dd?auto=format&fit=crop&w=640&q=80',
+  'detox-nho-nha-dam': 'https://images.unsplash.com/photo-1536935338788-846bb9981813?auto=format&fit=crop&w=640&q=80',
+};
+
+export const FALLBACK_TEA_IMAGE = 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=640&q=80';
+
+export function resolveProductImage(slug?: string, image?: string | null): string {
+  if (image && image.trim() !== '' && !image.startsWith('/src/assets/p-')) {
+    return image;
+  }
+  if (slug && DEFAULT_PRODUCT_IMAGES[slug]) {
+    return DEFAULT_PRODUCT_IMAGES[slug];
+  }
+  return FALLBACK_TEA_IMAGE;
+}
+
 /** Maps the PostgreSQL catalog DTO to the storefront card shape. */
 export function mapApiProduct(product: ApiCatalogProduct): Product {
   const category = product.category_name?.trim() || 'Trà Trái Cây Tươi';
   const tags: ProductTag[] = [];
   if (product.is_bestseller) tags.push('best-seller');
   if (product.is_seasonal) tags.push('seasonal');
+  const slug = product.slug || '';
   return {
     id: String(product.id),
     name: product.name || 'Sản phẩm TeaPlus',
-    slug: product.slug || '',
+    slug,
     base: product.base_tea || category,
     desc: product.description || '',
     price: Number(product.price || 0),
-    image: product.image_url || '',
-    rating: Number(product.rating || 0),
-    reviews: Number(product.review_count || 0),
-    calories: Number(product.calories || 0),
+    image: resolveProductImage(slug, product.image_url),
+    rating: Number(product.rating || 4.8),
+    reviews: Number(product.review_count || 120),
+    calories: Number(product.calories || 180),
     line: category,
     fruit: category,
     tags,
@@ -140,7 +163,7 @@ export const products: Product[] = [
     base: 'Cốt Lục Trà Lài',
     desc: 'Vị chua dịu của cam vàng hòa cùng sả thơm và mật ong rừng, hậu trà thanh mát.',
     price: 45000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['tra-cam-sa'],
     rating: 4.8,
     reviews: 1240,
     calories: 180,
@@ -155,7 +178,7 @@ export const products: Product[] = [
     base: 'Cốt Lục Trà Lài',
     desc: 'Dâu tây Đà Lạt dầm tươi quyện lục trà nhài thơm ngát, chua ngọt cân bằng.',
     price: 55000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['tra-dau-tay'],
     rating: 4.9,
     reviews: 2038,
     calories: 210,
@@ -170,7 +193,7 @@ export const products: Product[] = [
     base: 'Trà Đen Đậm Vị',
     desc: 'Xoài chín cắt khúc, chanh dây nguyên hạt, vị nhiệt đới rực rỡ.',
     price: 52000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['tra-xoai-chanh-day'],
     rating: 4.7,
     reviews: 864,
     calories: 230,
@@ -185,7 +208,7 @@ export const products: Product[] = [
     base: 'Trà Ô Long',
     desc: 'Đào ngâm giòn ngọt cùng vải thiều, nền ô long nướng nhẹ thơm sữa.',
     price: 49000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['tra-dao-vai'],
     rating: 4.6,
     reviews: 512,
     calories: 195,
@@ -200,7 +223,7 @@ export const products: Product[] = [
     base: 'Lục Trà',
     desc: 'Dưa hấu xay tuyết mát lạnh, thêm táo giòn – giải nhiệt tức thì.',
     price: 58000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['tuyet-dua-hau'],
     rating: 4.5,
     reviews: 390,
     calories: 240,
@@ -215,7 +238,7 @@ export const products: Product[] = [
     base: 'Lục Trà Không Đường',
     desc: 'Nho mọng cùng nha đam giòn, ít đường, thanh lọc nhẹ nhàng.',
     price: 54000,
-    image: '',
+    image: DEFAULT_PRODUCT_IMAGES['detox-nho-nha-dam'],
     rating: 4.7,
     reviews: 623,
     calories: 150,
