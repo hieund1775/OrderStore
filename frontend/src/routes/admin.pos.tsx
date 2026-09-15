@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ShoppingCart, Trash2, X, Plus, Minus, AlertTriangle, RefreshCw } from "lucide-react";
+import { Loader2, ShoppingCart, Trash2, X, Plus, Minus, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";

@@ -24,10 +24,14 @@ describe('preorder customer and operations contract', () => {
     expect(adminPreorders).toContain("'pending' | 'check-in' | 'today' | 'upcoming' | 'archive'");
     expect(adminPreorders).toContain('<details className="group rounded-xl border bg-card p-4">');
     expect(adminPreorders).toContain('Tất cả chi nhánh');
+    expect(adminPreorders).not.toContain('useEffect(() => { void load(); }, [load])');
+    expect(adminPreorders).toContain('const isBackground = !isFirst;');
   });
 
-  it('shows confirmed preorders as a read-only kitchen preview instead of a KDS action card', () => {
+  it('shows confirmed preorders as a read-only kitchen preview bounded to 6 instead of a KDS action card', () => {
     expect(kitchen).toContain('/admin/preorders/kitchen/confirmed');
+    expect(kitchen).toContain('limit: "6"');
+    expect(kitchen).toContain('confirmedPreorders.slice(0, 6)');
     expect(kitchen).toContain('Preorder sắp tới');
     expect(kitchen).toContain('Bếp có thể chủ động chuẩn bị món theo lịch hẹn (không cần đợi khách check-in)');
   });

@@ -190,4 +190,73 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
       await fixture.close();
     }
   });
+
+  describe('Kitchen Confirmed Preorder Preview', () => {
+    it('supports bounded read query with limit=6 and active nearest ordering', async () => {
+      const mockConfirmed = [
+        { id: 101, preorder_code: 'PRE-CONF-1', scheduled_start_at: '2026-09-15T12:30:00.000Z' },
+        { id: 102, preorder_code: 'PRE-CONF-2', scheduled_start_at: '2026-09-15T13:00:00.000Z' },
+      ];
+      let capturedOpts = null;
+      const repository = {
+        async list(opts) {
+          capturedOpts = opts;
+          return mockConfirmed;
+        },
+      };
+      const fixture = await startServer(repository);
+      try {
+        const res = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed?limit=6`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.ok(Array.isArray(data));
+        assert.deepEqual(data, mockConfirmed);
+        assert.equal(capturedOpts.limit, 6);
+        assert.equal(capturedOpts.status, 'CONFIRMED');
+        assert.equal(capturedOpts.orderBy, 'active');
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    it('preserves legacy unpaginated array when limit query is omitted', async () => {
+      const mockAllConfirmed = [
+        { id: 101, preorder_code: 'PRE-CONF-1' },
+        { id: 102, preorder_code: 'PRE-CONF-2' },
+        { id: 103, preorder_code: 'PRE-CONF-3' },
+      ];
+      let capturedOpts = null;
+      const repository = {
+        async list(opts) {
+          capturedOpts = opts;
+          return mockAllConfirmed;
+        },
+      };
+      const fixture = await startServer(repository);
+      try {
+        const res = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.ok(Array.isArray(data));
+        assert.deepEqual(data, mockAllConfirmed);
+        assert.equal(capturedOpts.limit, null);
+        assert.equal(capturedOpts.status, 'CONFIRMED');
+        assert.equal(capturedOpts.orderBy, 'active');
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    it('rejects invalid limit with 400', async () => {
+      const fixture = await startServer({});
+      try {
+        const res = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed?limit=abc`);
+        assert.equal(res.status, 400);
+        const data = await res.json();
+        assert.ok(data.error.includes('Giới hạn số lượng (limit) phải là số nguyên dương'));
+      } finally {
+        await fixture.close();
+      }
+    });
+  });
 });

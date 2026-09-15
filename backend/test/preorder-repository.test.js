@@ -136,4 +136,45 @@ describe('Preorder reservation repository', () => {
     assert.match(capturedSql, /INSERT INTO preorder_slot_strike_events/i);
     assert.match(capturedSql, /ON CONFLICT \(preorder_id, scheduled_start_at\) DO NOTHING/i);
   });
+
+  it('supports bounded list queries with limit and deterministic nearest scheduled time ordering', async () => {
+    let capturedSql = '';
+    let capturedParams = [];
+    const repository = createPreordersRepository({
+      async query(sql, params) {
+        if (sql.includes("to_regclass('preorder_checkin_requests')")) return [[{ available: false }], 1];
+        if (sql.includes('FROM preorders p')) {
+          capturedSql = sql;
+          capturedParams = params;
+          return [[{ id: 10, preorder_code: 'PRE-10', scheduled_start_at: '2026-09-15T12:00:00.000Z' }], 1];
+        }
+        return [[], 0];
+      },
+    });
+
+    const rows = await repository.list({ storeId: 2, status: 'CONFIRMED', limit: 6, orderBy: 'active' });
+    assert.ok(Array.isArray(rows));
+    assert.equal(rows.length, 1);
+    assert.match(capturedSql, /ORDER BY p\.scheduled_start_at ASC, p\.id ASC/);
+    assert.match(capturedSql, /LIMIT \$\d+/);
+    assert.equal(capturedParams.includes(6), true);
+  });
+
+  it('omits LIMIT clause when limit is null (legacy compatibility)', async () => {
+    let capturedSql = '';
+    const repository = createPreordersRepository({
+      async query(sql) {
+        if (sql.includes("to_regclass('preorder_checkin_requests')")) return [[{ available: false }], 1];
+        if (sql.includes('FROM preorders p')) {
+          capturedSql = sql;
+          return [[{ id: 10, preorder_code: 'PRE-10' }], 1];
+        }
+        return [[], 0];
+      },
+    });
+
+    const rows = await repository.list({ storeId: 2, status: 'CONFIRMED' });
+    assert.ok(Array.isArray(rows));
+    assert.equal(capturedSql.includes('LIMIT'), false);
+  });
 });

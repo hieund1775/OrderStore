@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { CalendarClock, CheckCircle2, RefreshCw, Settings2, Loader2, Award } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Settings2, Loader2, Award } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,7 +64,7 @@ function settingsToDrafts(settings: PreorderStoreSetting[]) {
   ])) as Record<number, SettingDraft>;
 }
 
-function AdminPreordersPage() {
+export function AdminPreordersPage() {
   const user = getUser();
   const isSuper = user?.role === 'super';
   const [rows, setRows] = useState<Preorder[]>([]);
@@ -144,13 +144,15 @@ function AdminPreordersPage() {
     }
   }, [isSuper]);
 
-  useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
 
   useEffect(() => {
+    let isFirst = true;
     const controller = new PollingController({
       fetchFn: async () => {
-        await load(true);
+        const isBackground = !isFirst;
+        isFirst = false;
+        await load(isBackground);
       },
       visibleIntervalMs: 10_000,
       hiddenIntervalMs: 60_000,

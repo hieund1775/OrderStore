@@ -5,7 +5,6 @@ import {
   ShoppingBag,
   Boxes,
   Sliders,
-  RefreshCw,
   Plus,
   Image as ImageIcon,
   Upload,

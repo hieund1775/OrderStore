@@ -98,7 +98,8 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
 router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
-    const rows = await repository.list({ storeId, status: 'CONFIRMED' });
+    const limit = req.query.limit !== undefined ? validateLimit(req.query.limit, 6, 50) : null;
+    const rows = await repository.list({ storeId, status: 'CONFIRMED', limit, orderBy: 'active' });
     return res.json(rows);
   } catch (error) { return errorResponse(res, error); }
 }));
