@@ -189,6 +189,8 @@ function KdsPage() {
     return user?.branch_id ? String(user.branch_id) : "all";
   });
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [armedCompletion, setArmedCompletion] = useState<ArmedCompletionState>(null);
   const [completionLoadingId, setCompletionLoadingId] = useState<number | null>(null);
   const armedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -197,6 +199,7 @@ function KdsPage() {
 
   const handleStoreFilterChange = (newFilter: string) => {
     setStoreFilter(newFilter);
+    setPage(1);
     setDoneOrders([]);
     setDoneAt({});
     setDismissConfirmOrder(null);
@@ -221,18 +224,33 @@ function KdsPage() {
 
   const fetchOrders = useCallback(async (signal?: AbortSignal) => {
     try {
-      const query = storeFilter !== "all" ? `?store_id=${storeFilter}` : "";
-      const [rows, previews] = await Promise.all([
-        apiGet<KitchenOrder[]>(`/admin/kitchen/orders${query}`, {
+      const q = new URLSearchParams({ page: String(page), limit: "10" });
+      if (storeFilter !== "all") q.set("store_id", storeFilter);
+      const query = `?${q.toString()}`;
+      const [rawKitchen, previews] = await Promise.all([
+        apiGet<any>(`/admin/kitchen/orders${query}`, {
           ...(signal ? { signal } : {}),
           cache: "no-store",
         }),
-        apiGet<ConfirmedPreorderPreview[]>(`/admin/preorders/kitchen/confirmed${query}`, {
+        apiGet<ConfirmedPreorderPreview[]>(`/admin/preorders/kitchen/confirmed${storeFilter !== "all" ? `?store_id=${storeFilter}` : ""}`, {
           ...(signal ? { signal } : {}),
           cache: "no-store",
         }),
       ]);
       setFetchError(null);
+      let rows: KitchenOrder[] = [];
+      if (Array.isArray(rawKitchen)) {
+        rows = rawKitchen;
+      } else if (rawKitchen && typeof rawKitchen === "object") {
+        rows = Array.isArray(rawKitchen.items) ? rawKitchen.items : [];
+        if (rawKitchen.pagination) {
+          const tp = Math.max(1, rawKitchen.pagination.totalPages || 1);
+          setTotalPages(tp);
+          if (rawKitchen.pagination.totalPages > 0 && page > rawKitchen.pagination.totalPages) {
+            setPage(rawKitchen.pagination.totalPages);
+          }
+        }
+      }
       setOrders(rows);
       setConfirmedPreorders(previews);
       const ids = new Set(rows.map((o) => o.id));
@@ -272,7 +290,7 @@ function KdsPage() {
       }
       setFetchError(err instanceof Error ? err.message : "Mất kết nối máy chủ");
     }
-  }, [soundEnabled, storeFilter]);
+  }, [page, soundEnabled, storeFilter]);
 
   // Polling realtime (Non-overlapping) & Storage Event Listener cho Standalone mode
   useEffect(() => {
@@ -282,6 +300,7 @@ function KdsPage() {
       },
       visibleIntervalMs: 10_000,
       hiddenIntervalMs: 60_000,
+      backoffEnabled: true,
     });
     controller.start();
 
@@ -832,6 +851,28 @@ function KdsPage() {
       {/* DESKTOP & TABLET LANDSCAPE 3-COLUMN BOARD (>= 1024px) */}
       <div className="hidden lg:grid lg:grid-cols-3 gap-4">
         {lanes.map((lane) => renderLaneSection(lane))}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+        <span>Trang {page} / {Math.max(1, totalPages)}</span>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            Trang trước
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+            disabled={page >= totalPages}
+          >
+            Trang sau
+          </Button>
+        </div>
       </div>
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>

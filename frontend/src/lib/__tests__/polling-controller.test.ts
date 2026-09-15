@@ -145,4 +145,83 @@ describe('Production PollingController Suite (Direct Module Import)', () => {
     expect(controller.getStatus().isRunning).toBe(false);
     expect(aborted).toBe(true);
   });
+
+  it('preserves fixed interval by default (backoffEnabled false) even when errors occur', async () => {
+    let attempts = 0;
+    const failingFetch = async () => {
+      attempts++;
+      throw new Error('500 internal server error');
+    };
+
+    const controller = new PollingController({
+      fetchFn: failingFetch,
+      visibleIntervalMs: 10_000,
+      // backoffEnabled omitted (defaults to false)
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(attempts).toBe(1);
+
+    // Exactly at 10_000 ms, second attempt fires without backoff delay
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toBe(2);
+
+    // Exactly at next 10_000 ms, third attempt fires
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toBe(3);
+
+    controller.stop();
+  });
+
+  it('backs off polling interval when backoffEnabled is true on consecutive failures and resets upon success', async () => {
+    let attempts = 0;
+    let failAttempts = 2;
+
+    const flakyFetch = async () => {
+      attempts++;
+      if (attempts <= failAttempts) {
+        throw new Error('Network error 500');
+      }
+    };
+
+    const controller = new PollingController({
+      fetchFn: flakyFetch,
+      visibleIntervalMs: 10_000,
+      backoffEnabled: true,
+      maxBackoffIntervalMs: 40_000,
+    });
+
+    controller.start();
+    // 1st attempt immediately runs and fails -> consecutiveErrors = 1
+    await vi.advanceTimersByTimeAsync(0);
+    expect(attempts).toBe(1);
+    expect(controller.getStatus().consecutiveErrors).toBe(1);
+
+    // With 1 error: 10_000 * 1.5 = 15_000. At 10s, attempt 2 should not have fired yet.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toBe(1);
+
+    // Advance remaining 5_000 ms to hit 15_000 -> attempt 2 fires and fails -> consecutiveErrors = 2
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(attempts).toBe(2);
+    expect(controller.getStatus().consecutiveErrors).toBe(2);
+
+    // With 2 errors: 10_000 * 1.5^2 = 22_500 ms delay.
+    // Advance 20s -> still waiting
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(attempts).toBe(2);
+
+    // Advance 2_500 ms to hit 22_500 ms -> attempt 3 fires and succeeds!
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(attempts).toBe(3);
+    expect(controller.getStatus().consecutiveErrors).toBe(0);
+
+    // After success, next poll interval is reset back to base 10_000 ms
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toBe(4);
+    expect(controller.getStatus().consecutiveErrors).toBe(0);
+
+    controller.stop();
+  });
 });

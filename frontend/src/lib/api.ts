@@ -489,14 +489,16 @@ export async function createVariant(productId: number | string, data: any) {
 
 // ═══════════ BRANCH COMMERCE & INVENTORY APIS ═══════════
 
-export async function fetchBranchOffers(params?: { store_id?: number | string; category_id?: number | string; is_available?: boolean; search?: string }) {
+export async function fetchBranchOffers(params?: { store_id?: number | string; category_id?: number | string; is_available?: boolean; search?: string; page?: number | string; limit?: number | string }) {
   const q = new URLSearchParams();
   if (params?.store_id) q.set('store_id', String(params.store_id));
   if (params?.category_id) q.set('category_id', String(params.category_id));
   if (params?.is_available !== undefined) q.set('is_available', String(params.is_available));
   if (params?.search) q.set('search', params.search);
+  if (params?.page) q.set('page', String(params.page));
+  if (params?.limit) q.set('limit', String(params.limit));
   const query = q.toString() ? `?${q.toString()}` : '';
-  return apiFetch<any[]>(`/admin/branch-offers${query}`);
+  return apiFetch<any>(`/admin/branch-offers${query}`);
 }
 
 export async function updateBranchOffer(variantId: number | string, data: { store_id?: number | string; price: number; compare_at_price?: number | null; is_available?: boolean }) {

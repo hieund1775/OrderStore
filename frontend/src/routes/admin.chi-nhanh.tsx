@@ -387,6 +387,8 @@ function StoresAdminPage() {
   const user = getUser();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [editing, setEditing] = useState<Store | null>(null);
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
@@ -406,14 +408,27 @@ function StoresAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<Store[]>("/admin/branches");
-      setStores(Array.isArray(res) ? res : []);
+      const res = await apiGet<any>(`/admin/branches?page=${page}&limit=5`);
+      let list: Store[] = [];
+      if (Array.isArray(res)) {
+        list = res;
+      } else if (res && typeof res === "object") {
+        list = Array.isArray(res.items) ? res.items : [];
+        if (res.pagination) {
+          const tp = Math.max(1, res.pagination.totalPages || 1);
+          setTotalPages(tp);
+          if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
+            setPage(res.pagination.totalPages);
+          }
+        }
+      }
+      setStores(list);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được chi nhánh");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -598,6 +613,31 @@ function StoresAdminPage() {
             );
           })}
           </div>
+
+          {stores.length > 0 && (
+            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+              <span>Trang {page} / {Math.max(1, totalPages)}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || loading}
+                >
+                  Trang trước
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+                  disabled={page >= totalPages || loading}
+                >
+                  Trang sau
+                </Button>
+              </div>
+            </div>
+          )}
+
           {filteredStores.length === 0 && (
             <p className="text-muted-foreground py-10 text-center text-sm">
               Không tìm thấy chi nhánh phù hợp

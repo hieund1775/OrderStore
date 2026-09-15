@@ -6,6 +6,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { validatePromotionId, validatePromotionInput } from '../../validation/promotion-schemas.js';
 import { toPromotionDto } from '../../dto/promotion-dto.js';
 import adminPromotionService from '../../services/promotions/admin-promotion-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const router = Router();
 
@@ -13,6 +14,18 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
   try {
     const scopedStoreId = resolveStoreScope(req.user);
     const rows = await adminPromotionService.listPromotions({ scopedStoreId });
+    const isPaginated = isPaginationRequested(req.query);
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 5, 50);
+      const all = rows.map(toPromotionDto);
+      const totalItems = all.length;
+      const items = all.slice((page - 1) * limit, page * limit);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination });
+    }
+
     res.json(rows.map(toPromotionDto));
   } catch (err) {
     const status = err.status || 500;

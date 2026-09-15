@@ -180,8 +180,8 @@ export function createAdminOrdersRepository(
       return affected > 0;
     },
 
-    async listKitchen({ scopedStoreId }) {
-      return readRepository.listKitchen({ scopedStoreId });
+    async listKitchen({ scopedStoreId, page = null, limit = null } = {}) {
+      return readRepository.listKitchen({ scopedStoreId, page, limit });
     },
 
     async listPendingPayOS({ scopedStoreId }) {

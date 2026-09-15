@@ -6,6 +6,7 @@ import preorderService from '../../services/preorders/preorder-service.js';
 import preordersRepository from '../../repositories/postgres/preorders.js';
 import postgresDb from '../../config/db-postgres.js';
 import { getTodayBoundaries } from '../../services/business-time.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const ARCHIVE_VALID_STATUSES = Object.freeze(new Set([
   'COMPLETED',
@@ -60,12 +61,33 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
       statuses = ['PENDING_MANAGER_CONFIRMATION'];
     }
 
+    const isPaginated = isPaginationRequested(req.query);
+    const orderBy = view === 'archive' ? 'archive' : 'active';
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 6, 50);
+      const { items, totalItems } = await repository.list({
+        storeId,
+        statuses,
+        from,
+        to,
+        includeReviews,
+        page,
+        limit,
+        orderBy,
+      });
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination });
+    }
+
     const rows = await repository.list({
       storeId,
       statuses,
       from,
       to,
       includeReviews,
+      orderBy,
     });
     res.json(rows);
   } catch (error) { errorResponse(res, error); }

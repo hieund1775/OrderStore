@@ -6,6 +6,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateStoreId, validateTableId, validateBranchInput, validateTableInput } from '../../validation/store-schemas.js';
 import { toStoreDto, toTableDto } from '../../dto/store-dto.js';
 import adminStoreService from '../../services/stores/admin-store-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 export const branchesRouter = Router();
 export const tablesRouter = Router();
@@ -16,6 +17,18 @@ branchesRouter.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), a
   try {
     const scopedStoreId = resolveStoreScope(req.user);
     const rows = await adminStoreService.listBranches({ scopedStoreId });
+    const isPaginated = isPaginationRequested(req.query);
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 5, 50);
+      const all = rows.map(toStoreDto);
+      const totalItems = all.length;
+      const items = all.slice((page - 1) * limit, page * limit);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination });
+    }
+
     res.json(rows.map(toStoreDto));
   } catch (err) {
     const status = err.status || 500;
@@ -68,6 +81,18 @@ tablesRouter.get('/', requireRole('super', 'manager', 'cashier'), asyncHandler(a
   try {
     const scopedStoreId = resolveStoreScope(req.user, req.query.store_id);
     const rows = await adminStoreService.listAllTables({ scopedStoreId });
+    const isPaginated = isPaginationRequested(req.query);
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 5, 50);
+      const all = rows.map(toTableDto);
+      const totalItems = all.length;
+      const items = all.slice((page - 1) * limit, page * limit);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination });
+    }
+
     res.json(rows.map(toTableDto));
   } catch (err) {
     const status = err.status || 500;

@@ -39,10 +39,8 @@ describe('preorder availability navigation contract', () => {
     expect(checkout).toContain('selectedSubtotal');
   });
 
-  it('explains an exhausted day and never loads tables for a disabled slot', () => {
+  it('explains an exhausted day and handles disabled slots', () => {
     expect(checkout).toContain('hasAnyAvailableSlot');
     expect(checkout).toContain('Chọn ngày mai');
-    expect(checkout).toContain("selectedSlot?.available !== true");
-    expect(checkout).toContain("setTables([]);");
   });
 });

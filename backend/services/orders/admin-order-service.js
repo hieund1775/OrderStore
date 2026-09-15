@@ -32,12 +32,12 @@ export function createAdminOrderService(
       return repository.detail({ orderId, scopedStoreId: storeId });
     },
 
-    async listKitchen({ storeId }) {
+    async listKitchen({ storeId, page = null, limit = null } = {}) {
       if (typeof repository.listPendingPayOS === 'function') {
         const pending = await repository.listPendingPayOS({ scopedStoreId: storeId });
         await Promise.all(pending.map((order) => reconcilePayOSOrder({ order, attemptsRepository })));
       }
-      return repository.listKitchen({ scopedStoreId: storeId });
+      return repository.listKitchen({ scopedStoreId: storeId, page, limit });
     },
 
     updateStatus({ orderId, storeId, status, note, actor, driverName, driverPhone, trackingUrl }) {

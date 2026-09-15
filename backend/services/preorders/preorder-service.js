@@ -137,8 +137,8 @@ export function createPreorderService({
       return preorder;
     },
 
-    async listForCustomer({ customerUserId }) {
-      return repository.listForCustomer(customerUserId);
+    async listForCustomer({ customerUserId, page = null, limit = null } = {}) {
+      return repository.listForCustomer(customerUserId, { page, limit });
     },
 
     async availability({ storeId, date, now: currentNow = now() }) {

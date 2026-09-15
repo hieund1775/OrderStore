@@ -319,6 +319,8 @@ export function normalizeCustomerPreorders(rawList: any): CustomerPreorder[] {
     .filter((item): item is CustomerPreorder => item !== null && !['AWAITING_PAYMENT', 'PAYMENT_EXPIRED'].includes(item.status));
 }
 
+import { PollingController } from '@/lib/polling-controller';
+
 export function CustomerPreordersTab({
   isActive,
   highlightedCode,
@@ -333,10 +335,14 @@ export function CustomerPreordersTab({
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
   const [requestingCheckin, setRequestingCheckin] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const hasLoadedRef = useRef(false);
   const inFlightRef = useRef(false);
   const inFlightSessionKeyRef = useRef<string | null>(null);
   const sessionKeyRef = useRef<string | null>(sessionKey);
+  const controllerRef = useRef<PollingController | null>(null);
+
   // Keep the identity boundary current during render so a late response from
   // a previous customer cannot commit before the effect below has run.
   sessionKeyRef.current = sessionKey;
@@ -346,12 +352,14 @@ export function CustomerPreordersTab({
     setError(null);
     setCancelling(null);
     setRequestingCheckin(null);
+    setPage(1);
+    setTotalPages(1);
     hasLoadedRef.current = false;
     inFlightRef.current = false;
     inFlightSessionKeyRef.current = null;
   }, [sessionKey]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isBackground = false) => {
     if (!session) {
       setRows([]);
       setLoading(false);
@@ -362,20 +370,27 @@ export function CustomerPreordersTab({
     const requestSessionKey = `${session.userId}:${session.token}`;
     inFlightRef.current = true;
     inFlightSessionKeyRef.current = requestSessionKey;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     setError(null);
 
     try {
-      const result = await apiGet<{ preorders?: unknown }>('/api/preorders/mine');
+      // apiGet<{ preorders?: unknown }>('/api/preorders/mine')
+      const result = await apiGet<{ preorders?: unknown; items?: unknown; pagination?: { page: number; limit: number; totalItems: number; totalPages: number } }>(
+        `/api/preorders/mine?page=${page}&limit=6`
+      );
       if (sessionKeyRef.current !== requestSessionKey) return;
-      if (result && typeof result === 'object' && 'preorders' in result) {
-        if (Array.isArray(result.preorders)) {
-          setRows(normalizeCustomerPreorders(result.preorders));
-        } else {
-          setRows([]);
-        }
+      const rawList = result?.items ?? result?.preorders;
+      if (Array.isArray(rawList)) {
+        setRows(normalizeCustomerPreorders(rawList));
       } else {
         setRows([]);
+      }
+      if (result?.pagination) {
+        const tp = Math.max(1, result.pagination.totalPages || 1);
+        setTotalPages(tp);
+        if (result.pagination.totalPages > 0 && page > result.pagination.totalPages) {
+          setPage(result.pagination.totalPages);
+        }
       }
       if (sessionKeyRef.current === requestSessionKey) hasLoadedRef.current = true;
     } catch (err: any) {
@@ -387,18 +402,44 @@ export function CustomerPreordersTab({
         setError('Không thể tải đơn đặt trước. Vui lòng thử lại.');
       }
     } finally {
-      if (sessionKeyRef.current === requestSessionKey) setLoading(false);
+      if (sessionKeyRef.current === requestSessionKey && !isBackground) setLoading(false);
       if (inFlightSessionKeyRef.current === requestSessionKey) {
         inFlightRef.current = false;
         inFlightSessionKeyRef.current = null;
       }
     }
-  }, [session]);
+  }, [page, session]);
 
   useEffect(() => {
-    if (isActive && session && !hasLoadedRef.current) {
+    if (isActive && session) {
       void load();
     }
+  }, [isActive, load, session]);
+
+  useEffect(() => {
+    if (!isActive || !session) {
+      if (controllerRef.current) {
+        controllerRef.current.stop();
+        controllerRef.current = null;
+      }
+      return;
+    }
+
+    const controller = new PollingController({
+      fetchFn: async () => {
+        await load(true);
+      },
+      visibleIntervalMs: 5_000,
+      hiddenIntervalMs: 60_000,
+      backoffEnabled: true,
+    });
+    controllerRef.current = controller;
+    controller.start();
+
+    return () => {
+      controller.stop();
+      controllerRef.current = null;
+    };
   }, [isActive, load, session]);
 
   const activeHighlightedCode = useMemo(() => highlightedCode?.trim() || null, [highlightedCode]);
@@ -409,7 +450,7 @@ export function CustomerPreordersTab({
     try {
       await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in`, {});
       toast.success('Check-in thành công! Quý khách vui lòng chờ nhân viên bàn giao món.');
-      await load();
+      controllerRef.current?.triggerImmediate() || void load();
     } catch (err: any) {
       toast.error(err instanceof Error ? err.message : 'Không thể thực hiện check-in.');
     } finally {
@@ -425,7 +466,7 @@ export function CustomerPreordersTab({
     try {
       await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/cancel`, {});
       toast.success('Đã hủy preorder. Lịch sử thanh toán được giữ nguyên.');
-      await load();
+      controllerRef.current?.triggerImmediate() || void load();
     } catch (err: any) {
       toast.error(err instanceof Error ? err.message : 'Không thể hủy preorder.');
     } finally {
@@ -460,19 +501,6 @@ export function CustomerPreordersTab({
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          {loading ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 size-4" />
-          )}
-          Làm mới
-        </Button>
       </header>
 
       {loading && rows.length === 0 ? (
@@ -695,6 +723,32 @@ export function CustomerPreordersTab({
           </article>
         );
       })}
+
+      {rows.length > 0 && (
+        <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+          <span>
+            Trang {page} / {Math.max(1, totalPages)}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+            >
+              Trang trước
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+              disabled={page >= totalPages || loading}
+            >
+              Trang sau
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

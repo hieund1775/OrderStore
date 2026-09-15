@@ -148,27 +148,52 @@ export function createPreordersRepository(database = postgresDb) {
     return preorders;
   }
 
-  async function loadCustomerPreorders(customerUserId, preorderCode = null) {
+  async function loadCustomerPreorders(customerUserId, preorderCode = null, { page = null, limit = null } = {}) {
     const values = [Number(customerUserId)];
     const codeFilter = preorderCode == null
       ? " AND p.status NOT IN ('AWAITING_PAYMENT', 'PAYMENT_EXPIRED')"
       : ` AND p.preorder_code = $${values.push(String(preorderCode))}`;
     const checkin = await checkinProjection(database);
+
+    const isPaginated = page != null && limit != null;
+    let countColumn = '';
+    let paginationClause = '';
+    if (isPaginated) {
+      countColumn = ', COUNT(*) OVER() AS total_count';
+      paginationClause = ` LIMIT $${values.push(limit)} OFFSET $${values.push((page - 1) * limit)}`;
+    }
+
     const preorders = rowsOf(await database.query(
       `SELECT p.*, s.name AS store_name,
               r.table_id, t.name AS table_name, r.status AS reservation_status,
               r.reserved_from, r.reserved_until,
               ${checkin.columns}
+              ${countColumn}
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
          LEFT JOIN tables t ON t.id = r.table_id
          ${checkin.join}
         WHERE p.customer_user_id = $1${codeFilter}
-        ORDER BY p.scheduled_start_at DESC, p.id DESC`,
+        ORDER BY p.scheduled_start_at DESC, p.id DESC
+        ${paginationClause}`,
       values,
     ));
-    if (!preorders.length) return [];
+
+    let totalItems = 0;
+    if (isPaginated) {
+      if (preorders.length > 0) {
+        totalItems = Number(preorders[0].total_count) || 0;
+      } else if (page > 1) {
+        const countRes = rowsOf(await database.query(
+          `SELECT COUNT(*)::int AS total FROM preorders p WHERE p.customer_user_id = $1${codeFilter}`,
+          [Number(customerUserId)],
+        ));
+        totalItems = Number(countRes[0]?.total) || 0;
+      }
+    }
+
+    if (!preorders.length) return isPaginated ? { items: [], totalItems } : [];
 
     const mapped = preorders.map((p) => ({
       ...p,
@@ -181,7 +206,8 @@ export function createPreordersRepository(database = postgresDb) {
       } : null,
     }));
 
-    return attachLinkedOrders(mapped);
+    const items = await attachLinkedOrders(mapped);
+    return isPaginated ? { items, totalItems } : items;
   }
 
   return {
@@ -285,7 +311,7 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId }, { tx = null } = {}) {
+    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId, tableId = null }, { tx = null } = {}) {
       return inTransaction(database, tx, async (runner) => {
         const rows = rowsOf(await runner.query(
           `INSERT INTO preorders
@@ -297,6 +323,14 @@ export function createPreordersRepository(database = postgresDb) {
         ));
         const preorder = rows[0];
         if (!preorder) throw new PreorderRepositoryError('Không thể tạo đơn đặt trước', 500, 'PREORDER_CREATE_FAILED');
+        if (tableId != null) {
+          await runner.query(
+            `INSERT INTO preorder_table_reservations
+               (preorder_id, table_id, reserved_from, reserved_until, status)
+             VALUES ($1, $2, $3::timestamptz - INTERVAL '30 minutes', $3::timestamptz + INTERVAL '60 minutes', 'pending_payment')`,
+            [preorder.id, Number(tableId), scheduledStartAt],
+          );
+        }
         return preorder;
       });
     },
@@ -348,11 +382,22 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async listForCustomer(customerUserId) {
-      return loadCustomerPreorders(customerUserId);
+    async listForCustomer(customerUserId, options = {}) {
+      return loadCustomerPreorders(customerUserId, null, options);
     },
 
-    async list({ storeId = null, status = null, statuses = null, from = null, to = null, includePendingOnly = false, includeReviews = false } = {}) {
+    async list({
+      storeId = null,
+      status = null,
+      statuses = null,
+      from = null,
+      to = null,
+      includePendingOnly = false,
+      includeReviews = false,
+      page = null,
+      limit = null,
+      orderBy = 'active',
+    } = {}) {
       const values = [];
       const where = [];
       const add = (value) => { values.push(value); return `$${values.length}`; };
@@ -363,18 +408,58 @@ export function createPreordersRepository(database = postgresDb) {
       if (to) where.push(`p.scheduled_start_at < ${add(to)}`);
       if (includePendingOnly) where.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
       const checkin = await checkinProjection(database);
+
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        paginationClause = ` LIMIT $${values.push(limit)} OFFSET $${values.push((page - 1) * limit)}`;
+      }
+
+      const sortSql = orderBy === 'archive'
+        ? 'ORDER BY COALESCE(p.handover_confirmed_at, p.updated_at, p.created_at) DESC, p.id DESC'
+        : 'ORDER BY p.scheduled_start_at ASC, p.id ASC';
+
       const rows = rowsOf(await database.query(
         `SELECT p.*, s.name AS store_name, u.fullname AS customer_name,
                 EXISTS (SELECT 1 FROM preorder_table_reservations r WHERE r.preorder_id = p.id AND r.status IN ('pending_payment','held','checked_in')) AS has_active_table_reservation,
                 ${checkin.columns}
+                ${countColumn}
          FROM preorders p
          JOIN stores s ON s.id = p.store_id
          JOIN users u ON u.id = p.customer_user_id
          ${checkin.join}
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY p.scheduled_start_at ASC, p.id ASC`,
+         ${sortSql}
+         ${paginationClause}`,
         values,
       ));
+
+      let totalItems = 0;
+      if (isPaginated) {
+        if (rows.length > 0) {
+          totalItems = Number(rows[0].total_count) || 0;
+        } else if (page > 1) {
+          const countValues = [];
+          const countWhere = [];
+          const addC = (val) => { countValues.push(val); return `$${countValues.length}`; };
+          if (storeId != null) countWhere.push(`p.store_id = ${addC(Number(storeId))}`);
+          if (status) countWhere.push(`p.status = ${addC(String(status))}`);
+          if (Array.isArray(statuses) && statuses.length) countWhere.push(`p.status = ANY(${addC(statuses.map(String))}::varchar[])`);
+          if (from) countWhere.push(`p.scheduled_start_at >= ${addC(from)}`);
+          if (to) countWhere.push(`p.scheduled_start_at < ${addC(to)}`);
+          if (includePendingOnly) countWhere.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
+          const countRes = rowsOf(await database.query(
+            `SELECT COUNT(*)::int AS total FROM preorders p ${countWhere.length ? `WHERE ${countWhere.join(' AND ')}` : ''}`,
+            countValues,
+          ));
+          totalItems = Number(countRes[0]?.total) || 0;
+        }
+      }
+
+      if (!rows.length) return isPaginated ? { items: [], totalItems } : [];
+
       const mapped = rows.map((p) => ({
         ...p,
         checkin_request: p.checkin_request_id ? {
@@ -386,10 +471,8 @@ export function createPreordersRepository(database = postgresDb) {
         } : null,
       }));
       const attached = await attachLinkedOrders(mapped);
-      if (includeReviews) {
-        return attachReviewsToPreorders(attached);
-      }
-      return attached;
+      const items = includeReviews ? await attachReviewsToPreorders(attached) : attached;
+      return isPaginated ? { items, totalItems } : items;
     },
 
     async findByPaymentTarget({ orderId = null, checkoutGroupId = null }, { tx = null, forUpdate = false } = {}) {

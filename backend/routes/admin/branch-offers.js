@@ -5,6 +5,8 @@ import { logAudit } from '../../services/audit.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { createBranchOfferService } from '../../services/catalog/branch-offer-service.js';
 
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
+
 const router = Router();
 const service = createBranchOfferService();
 
@@ -15,6 +17,15 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
     isAvailable: req.query.is_available !== undefined ? req.query.is_available === 'true' : undefined,
     search: req.query.search,
   });
+  const isPaginated = isPaginationRequested(req.query);
+  if (isPaginated) {
+    const page = validatePage(req.query.page, 1);
+    const limit = validateLimit(req.query.limit, 5, 50);
+    const totalItems = offers.length;
+    const items = offers.slice((page - 1) * limit, page * limit);
+    const pagination = buildOffsetPagination({ totalItems, page, limit });
+    return res.json({ items, pagination });
+  }
   res.json(offers);
 }));
 

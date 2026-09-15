@@ -5,12 +5,24 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateCustomerNotificationInput } from '../../validation/customer-schemas.js';
 import { toNotificationDto } from '../../dto/customer-dto.js';
 import notificationService from '../../services/notifications/notification-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const router = Router();
 
 router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const adminId = Number(req.user?.sub);
+    const isPaginated = isPaginationRequested(req.query);
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 5, 50);
+      const { notifications, unread_count } = await notificationService.listForUser(adminId, 100);
+      const all = notifications.map(toNotificationDto);
+      const totalItems = all.length;
+      const items = all.slice((page - 1) * limit, page * limit);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination, unread_count });
+    }
     const { notifications, unread_count } = await notificationService.listForUser(adminId, req.query.limit);
     if (req.query.envelope === 'true') {
       return res.json({

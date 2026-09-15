@@ -10,6 +10,8 @@ export type PollingControllerOptions = {
   fetchFn: (signal?: AbortSignal) => Promise<void>;
   visibleIntervalMs?: number; // Default 10s (10,000ms)
   hiddenIntervalMs?: number;  // Default 60s (60,000ms)
+  backoffEnabled?: boolean;   // Default false (preserves legacy fixed interval timing)
+  maxBackoffIntervalMs?: number; // Default 60s (60,000ms)
   onError?: (error: unknown) => void;
 };
 
@@ -17,10 +19,13 @@ export class PollingController {
   private fetchFn: (signal?: AbortSignal) => Promise<void>;
   private visibleIntervalMs: number;
   private hiddenIntervalMs: number;
+  private backoffEnabled: boolean;
+  private maxBackoffIntervalMs: number;
   private onError?: (error: unknown) => void;
 
   private isRunning = false;
   private isFetching = false;
+  private consecutiveErrors = 0;
   private timerId: ReturnType<typeof setTimeout> | null = null;
   private abortController: AbortController | null = null;
 
@@ -28,6 +33,8 @@ export class PollingController {
     this.fetchFn = options.fetchFn;
     this.visibleIntervalMs = options.visibleIntervalMs ?? 10_000;
     this.hiddenIntervalMs = options.hiddenIntervalMs ?? 60_000;
+    this.backoffEnabled = options.backoffEnabled ?? false;
+    this.maxBackoffIntervalMs = options.maxBackoffIntervalMs ?? 60_000;
     this.onError = options.onError;
 
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
@@ -77,6 +84,10 @@ export class PollingController {
     void this.executePoll();
   }
 
+  public resetBackoff(): void {
+    this.consecutiveErrors = 0;
+  }
+
   private async executePoll(): Promise<void> {
     if (!this.isRunning || this.isFetching) return;
 
@@ -85,11 +96,13 @@ export class PollingController {
 
     try {
       await this.fetchFn(this.abortController.signal);
+      this.consecutiveErrors = 0;
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         // Normal cancellation
         return;
       }
+      this.consecutiveErrors += 1;
       if (this.onError) {
         this.onError(err);
       }
@@ -99,7 +112,11 @@ export class PollingController {
 
       if (this.isRunning) {
         const isHidden = typeof document !== 'undefined' && document.hidden;
-        const delay = isHidden ? this.hiddenIntervalMs : this.visibleIntervalMs;
+        let delay = isHidden ? this.hiddenIntervalMs : this.visibleIntervalMs;
+        if (this.backoffEnabled && this.consecutiveErrors > 0) {
+          const backoffFactor = Math.min(Math.pow(1.5, this.consecutiveErrors), 6);
+          delay = Math.min(Math.round(delay * backoffFactor), this.maxBackoffIntervalMs);
+        }
 
         this.timerId = setTimeout(() => {
           void this.executePoll();
@@ -112,7 +129,7 @@ export class PollingController {
     if (typeof document === 'undefined') return;
 
     if (!document.hidden && this.isRunning && !this.isFetching) {
-      // User switched back to the tab: immediately refetch latest KDS state
+      // User switched back to the tab: immediately refetch latest state
       if (this.timerId !== null) {
         clearTimeout(this.timerId);
         this.timerId = null;
@@ -125,6 +142,7 @@ export class PollingController {
     return {
       isRunning: this.isRunning,
       isFetching: this.isFetching,
+      consecutiveErrors: this.consecutiveErrors,
     };
   }
 }

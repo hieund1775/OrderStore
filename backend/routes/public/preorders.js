@@ -3,6 +3,7 @@ import { authenticate } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { isValidDateString } from '../../services/business-time.js';
 import preorderService from '../../services/preorders/preorder-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const router = Router();
 
@@ -145,13 +146,27 @@ router.post('/checkout', authenticate, customerOnly, asyncHandler(async (req, re
     res.status(result.replay ? 200 : 201).json(result);
   } catch (error) { sendCheckoutError(req, res, error); }
 }));
-
 // Keep customer preorder tracking distinct from normal order history. This
 // static route must be registered before `/:code` so `mine` is never treated
 // as a customer-controlled preorder code.
 router.get('/mine', authenticate, customerOnly, asyncHandler(async (req, res) => {
   try {
-    const preorders = await preorderService.listForCustomer({ customerUserId: Number(req.user.sub || req.user.id) });
+    const isPaginated = isPaginationRequested(req.query);
+    const customerUserId = Number(req.user.sub || req.user.id);
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 6, 50);
+      const { items, totalItems } = await preorderService.listForCustomer({
+        customerUserId,
+        page,
+        limit,
+      });
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination, preorders: items });
+    }
+
+    const preorders = await preorderService.listForCustomer({ customerUserId });
     return res.json({ preorders });
   } catch (error) { return sendError(res, error); }
 }));

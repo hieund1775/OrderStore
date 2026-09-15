@@ -15,6 +15,7 @@ import {
 } from '../../validation/catalog-schemas.js';
 import { toCategoryDto, toProductDto } from '../../dto/catalog-dto.js';
 import adminMenuService from '../../services/catalog/admin-menu-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const router = Router();
 
@@ -74,6 +75,18 @@ router.get('/products', requireRole('super', 'manager', 'cashier', 'kitchen'), a
   try {
     const filters = validateCatalogFilters(req.query);
     const rows = await adminMenuService.listProducts(filters);
+    const isPaginated = isPaginationRequested(req.query);
+
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 5, 50);
+      const all = rows.map(toProductDto);
+      const totalItems = all.length;
+      const items = all.slice((page - 1) * limit, page * limit);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items, pagination });
+    }
+
     res.json(rows.map(toProductDto));
   } catch (err) {
     const status = err.status || 500;

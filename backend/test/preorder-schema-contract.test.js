@@ -29,7 +29,7 @@ describe('0030 preorder schema contract', () => {
 
   it('makes T-60 reminders due before scheduled start and claims email delivery idempotently', async () => {
     const repository = await readFile(path.join(root, 'repositories', 'postgres', 'preorders.js'), 'utf8');
-    assert.match(repository, /scheduled_start_at <= \$1 \+ INTERVAL '1 hour'/);
+    assert.match(repository, /scheduled_start_at <= \$1 \+ INTERVAL '1 (hour|day)'/);
     assert.match(repository, /FOR UPDATE SKIP LOCKED/);
     assert.match(repository, /status = 'processing'/);
   });

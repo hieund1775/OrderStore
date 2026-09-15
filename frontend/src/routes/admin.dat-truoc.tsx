@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { CalendarClock, CheckCircle2, RefreshCw, Settings2, Loader2, Award } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiGet, apiPost, apiPut, getUser } from '@/lib/api';
+import { PollingController } from '@/lib/polling-controller';
 
 export const Route = createFileRoute('/admin/dat-truoc')({ component: AdminPreordersPage });
 
@@ -72,6 +73,9 @@ function AdminPreordersPage() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [storeFilter, setStoreFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const controllerRef = useRef<PollingController | null>(null);
   const [rescheduleId, setRescheduleId] = useState<number | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleHour, setRescheduleHour] = useState('');
@@ -83,25 +87,45 @@ function AdminPreordersPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [savingStoreId, setSavingStoreId] = useState<number | null>(null);
 
+  useEffect(() => {
+    setPage(1);
+  }, [view, archiveStatusFilter, storeFilter]);
+
   const query = useMemo(() => {
-    const params = new URLSearchParams({ view });
+    const params = new URLSearchParams({ view, page: String(page), limit: '6' });
     if (view === 'archive' && archiveStatusFilter) {
       params.set('status', archiveStatusFilter);
     }
     if (isSuper && storeFilter !== 'all') params.set('store_id', storeFilter);
     return `?${params.toString()}`;
-  }, [archiveStatusFilter, isSuper, storeFilter, view]);
+  }, [archiveStatusFilter, isSuper, page, storeFilter, view]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
-      setRows(await apiGet<Preorder[]>(`/admin/preorders${query}`));
+      const data = await apiGet<{ items?: Preorder[]; pagination?: { page: number; limit: number; totalItems: number; totalPages: number } } | Preorder[]>(`/admin/preorders${query}`);
+      let list: Preorder[] = [];
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (data && typeof data === 'object') {
+        list = Array.isArray(data.items) ? data.items : [];
+        if (data.pagination) {
+          const tp = Math.max(1, data.pagination.totalPages || 1);
+          setTotalPages(tp);
+          if (data.pagination.totalPages > 0 && page > data.pagination.totalPages) {
+            setPage(data.pagination.totalPages);
+          }
+        }
+      }
+      setRows(list);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể tải preorder');
+      if (!isBackground) {
+        toast.error(error instanceof Error ? error.message : 'Không thể tải preorder');
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
-  }, [query]);
+  }, [page, query]);
 
   const loadSettings = useCallback(async () => {
     if (!isSuper) return;
@@ -121,6 +145,25 @@ function AdminPreordersPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
+
+  useEffect(() => {
+    const controller = new PollingController({
+      fetchFn: async () => {
+        await load(true);
+      },
+      visibleIntervalMs: 10_000,
+      hiddenIntervalMs: 60_000,
+      backoffEnabled: true,
+    });
+    controllerRef.current = controller;
+    controller.start();
+
+    return () => {
+      controller.stop();
+      controllerRef.current = null;
+    };
+  }, [load]);
+
   useEffect(() => {
     if (!isSuper) return;
     apiGet<{ id: number; name: string }[]>('/admin/branches')
@@ -132,7 +175,7 @@ function AdminPreordersPage() {
     try {
       await apiPost(`/admin/preorders/${id}/confirm`, {});
       toast.success('Đã xác nhận preorder. Bếp có thể chủ động chuẩn bị món.');
-      await load();
+      controllerRef.current?.triggerImmediate() || void load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể xác nhận');
     }
@@ -144,7 +187,7 @@ function AdminPreordersPage() {
     try {
       await apiPost(`/admin/preorders/${id}/handover`, {});
       toast.success('Đã xác nhận bàn giao đơn đặt trước thành công!');
-      await load();
+      controllerRef.current?.triggerImmediate() || void load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể xác nhận bàn giao');
     } finally {
@@ -162,7 +205,7 @@ function AdminPreordersPage() {
       });
       toast.success('Đã lưu lịch hẹn mới.');
       setRescheduleId(null);
-      await load();
+      controllerRef.current?.triggerImmediate() || void load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể đổi lịch');
     }
@@ -209,9 +252,6 @@ function AdminPreordersPage() {
           <h1 className="text-2xl font-bold">Đơn đặt trước</h1>
           <p className="text-muted-foreground text-sm">Manager xác nhận đơn. Khách hàng tự check-in khi đến cửa hàng; bàn giao hoàn tất sau khi Bếp xong.</p>
         </div>
-        <Button variant="outline" onClick={() => void load()}>
-          <RefreshCw className="mr-2 size-4" />Làm mới
-        </Button>
       </div>
 
       {isSuper && (
@@ -437,6 +477,31 @@ function AdminPreordersPage() {
           })}
         </div>
       )}
+
+      {rows.length > 0 && (
+        <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+          <span>Trang {page} / {Math.max(1, totalPages)}</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+            >
+              Trang trước
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+              disabled={page >= totalPages || loading}
+            >
+              Trang sau
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isSuper && <p className="text-xs text-muted-foreground">Super xử lý incident/strike trong quản trị; re-enable Manager dùng luồng Tài khoản canonical.</p>}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ import {
   useCustomerNotifications,
   type AppNotification,
 } from "@/lib/notifications";
+import { PollingController } from "@/lib/polling-controller";
 
 const PROFILE_TABS = new Set(["orders", "preorders", "notifications", "wishlist", "info"]);
 
@@ -211,29 +212,107 @@ function Profile() {
     }
   };
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const ordersInFlightRef = useRef(false);
+
   useEffect(() => {
-    if (!isLoggedIn || !user?.id) return;
-    let cancelled = false;
-    setOrdersLoading(true);
-    apiGet<unknown>(`/api/users/${user.id}/orders`)
-      .then((resData) => {
-        const rows = Array.isArray(resData)
-          ? resData
-          : (resData && typeof resData === 'object' && Array.isArray((resData as { orders?: unknown }).orders)
-            ? (resData as { orders: unknown[] }).orders
-            : []);
-        if (!cancelled) setUserOrders(normalizeProfileOrders(rows));
-      })
-      .catch(() => {
-        if (!cancelled) setUserOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setOrdersLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    setPageIndex(0);
+    setCursorStack([null]);
+    setNextCursor(null);
+    setHasMore(false);
+    setUserOrders([]);
   }, [isLoggedIn, user?.id]);
+
+  const fetchUserOrders = useCallback(async (isBackground = false) => {
+    if (!isLoggedIn || !user?.id) {
+      setUserOrders([]);
+      return;
+    }
+    if (ordersInFlightRef.current) return;
+    ordersInFlightRef.current = true;
+    if (!isBackground) setOrdersLoading(true);
+
+    try {
+      const currentCursor = cursorStack[pageIndex];
+      const params = new URLSearchParams({ limit: '5' });
+      if (currentCursor) params.set('cursor', currentCursor);
+
+      const resData = await apiGet<{ orders?: unknown[]; next_cursor?: string | null; has_more?: boolean } | unknown[]>(
+        `/api/users/${user.id}/orders?${params.toString()}`
+      );
+
+      let rows: unknown[] = [];
+      let resNextCursor: string | null = null;
+      let resHasMore = false;
+
+      if (Array.isArray(resData)) {
+        rows = resData;
+      } else if (resData && typeof resData === 'object') {
+        if (Array.isArray((resData as any).orders)) {
+          rows = (resData as any).orders;
+        }
+        resNextCursor = (resData as any).next_cursor ?? null;
+        resHasMore = Boolean((resData as any).has_more);
+      }
+
+      const normalized = normalizeProfileOrders(rows);
+      setUserOrders(normalized);
+      setNextCursor(resNextCursor);
+      setHasMore(resHasMore);
+
+      if (pageIndex > 0 && normalized.length === 0) {
+        setPageIndex((p) => Math.max(0, p - 1));
+      }
+    } catch {
+      // Retain old userOrders on background polling failure
+    } finally {
+      ordersInFlightRef.current = false;
+      if (!isBackground) setOrdersLoading(false);
+    }
+  }, [cursorStack, isLoggedIn, pageIndex, user?.id]);
+
+  useEffect(() => {
+    if (isLoggedIn && user?.id && activeTab === 'orders') {
+      void fetchUserOrders();
+    }
+  }, [activeTab, fetchUserOrders, isLoggedIn, user?.id]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id || activeTab !== 'orders') return;
+
+    const controller = new PollingController({
+      fetchFn: async () => {
+        await fetchUserOrders(true);
+      },
+      visibleIntervalMs: 5_000,
+      hiddenIntervalMs: 60_000,
+      backoffEnabled: true,
+    });
+    controller.start();
+
+    return () => {
+      controller.stop();
+    };
+  }, [activeTab, fetchUserOrders, isLoggedIn, user?.id]);
+
+  const handleNextPage = () => {
+    if (!hasMore || !nextCursor) return;
+    const nextIndex = pageIndex + 1;
+    setCursorStack((prev) => {
+      const next = [...prev];
+      next[nextIndex] = nextCursor;
+      return next;
+    });
+    setPageIndex(nextIndex);
+  };
+
+  const handlePrevPage = () => {
+    if (pageIndex <= 0) return;
+    setPageIndex((prev) => Math.max(0, prev - 1));
+  };
 
   useEffect(() => {
     if (search?.tab && PROFILE_TABS.has(search.tab)) {
@@ -486,6 +565,30 @@ function Profile() {
                   </div>
                 </div>
               ))
+            )}
+
+            {userOrders.length > 0 && (
+              <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+                <span>Trang {pageIndex + 1}</span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrevPage}
+                    disabled={pageIndex <= 0 || ordersLoading}
+                  >
+                    Trang trước
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={!hasMore || ordersLoading}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
             )}
           </TabsContent>
 

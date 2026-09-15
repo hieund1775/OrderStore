@@ -127,25 +127,40 @@ function MenuAdminPage() {
   const [savingBase, setSavingBase] = useState(false);
   const [deleteBase, setDeleteBase] = useState<{ id: number; name: string } | null>(null);
   const [tab, setTab] = useState("products");
+  const [productPage, setProductPage] = useState(1);
+  const [totalProductPages, setTotalProductPages] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cats, prods, opts] = await Promise.all([
+      const [cats, prodsRes, opts] = await Promise.all([
         apiGet<Category[]>("/admin/menu/categories"),
-        apiGet<Product[]>("/admin/menu/products"),
+        apiGet<any>(`/admin/menu/products?page=${productPage}&limit=5`),
         apiGet<typeof options>("/admin/menu/options"),
       ]);
       setCategories(cats);
-      setProducts(prods);
+      let pList: Product[] = [];
+      if (Array.isArray(prodsRes)) {
+        pList = prodsRes;
+      } else if (prodsRes && typeof prodsRes === "object") {
+        pList = Array.isArray(prodsRes.items) ? prodsRes.items : [];
+        if (prodsRes.pagination) {
+          const tp = Math.max(1, prodsRes.pagination.totalPages || 1);
+          setTotalProductPages(tp);
+          if (prodsRes.pagination.totalPages > 0 && productPage > prodsRes.pagination.totalPages) {
+            setProductPage(prodsRes.pagination.totalPages);
+          }
+        }
+      }
+      setProducts(pList);
       setOptions(opts);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được thực đơn");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [productPage]);
 
   useEffect(() => {
     load();
@@ -391,6 +406,30 @@ function MenuAdminPage() {
                 </p>
               )}
             </div>
+
+            {products.length > 0 && (
+              <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+                <span>Trang {productPage} / {Math.max(1, totalProductPages)}</span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProductPage((p) => Math.max(1, p - 1))}
+                    disabled={productPage <= 1 || loading}
+                  >
+                    Trang trước
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProductPage((p) => (p < totalProductPages ? p + 1 : p))}
+                    disabled={productPage >= totalProductPages || loading}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="categories" className="mt-5">

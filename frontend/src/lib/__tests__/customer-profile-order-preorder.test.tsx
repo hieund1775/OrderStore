@@ -288,7 +288,7 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
         await Promise.resolve();
       });
 
-      expect(api.apiGet).toHaveBeenCalledWith('/api/preorders/mine');
+      expect(api.apiGet).toHaveBeenCalledWith('/api/preorders/mine?page=1&limit=6');
       expect(container?.textContent).toContain('PRE-ABC-1');
       expect(container?.textContent).toContain('Chi nhánh Quận 1');
       expect(container?.textContent).toContain('Đang chuẩn bị');

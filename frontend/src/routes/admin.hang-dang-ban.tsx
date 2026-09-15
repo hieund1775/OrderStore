@@ -41,6 +41,8 @@ function AdminHangDangBanPage() {
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [selectedChildId, setSelectedChildId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === 'super';
@@ -71,11 +73,24 @@ function AdminHangDangBanPage() {
         setStores(storeList || []);
       }
 
-      const [offerList, categoryList] = await Promise.all([
-        fetchBranchOffers({ store_id: effectiveStoreId }),
+      const [offersRes, categoryList] = await Promise.all([
+        fetchBranchOffers({ store_id: effectiveStoreId, page, limit: 5 }),
         fetchCatalogCategories(),
       ]);
-      setOffers(offerList || []);
+      let list: BranchOfferRow[] = [];
+      if (Array.isArray(offersRes)) {
+        list = offersRes;
+      } else if (offersRes && typeof offersRes === 'object') {
+        list = Array.isArray(offersRes.items) ? offersRes.items : [];
+        if (offersRes.pagination) {
+          const tp = Math.max(1, offersRes.pagination.totalPages || 1);
+          setTotalPages(tp);
+          if (offersRes.pagination.totalPages > 0 && page > offersRes.pagination.totalPages) {
+            setPage(offersRes.pagination.totalPages);
+          }
+        }
+      }
+      setOffers(list);
       setCategories(categoryList || []);
     } catch (err: any) {
       toast.error(err.message || 'Lỗi nạp danh sách hàng đang bán');
@@ -86,7 +101,7 @@ function AdminHangDangBanPage() {
 
   useEffect(() => {
     loadData();
-  }, [effectiveStoreId]);
+  }, [effectiveStoreId, page]);
 
   useEffect(() => {
     setSelectedChildId('all');
@@ -177,12 +192,37 @@ function AdminHangDangBanPage() {
           Đang tải dữ liệu hàng bán chi nhánh...
         </div>
       ) : (
-        <BranchOfferTable
-          offers={offers}
-          storeId={effectiveStoreId}
-          visibleCategoryIds={visibleCategoryIds}
-          onRefresh={loadData}
-        />
+        <>
+          <BranchOfferTable
+            offers={offers}
+            storeId={effectiveStoreId}
+            visibleCategoryIds={visibleCategoryIds}
+            onRefresh={loadData}
+          />
+          {offers.length > 0 && (
+            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+              <span>Trang {page} / {Math.max(1, totalPages)}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || loading}
+                >
+                  Trang trước
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+                  disabled={page >= totalPages || loading}
+                >
+                  Trang sau
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

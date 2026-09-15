@@ -65,6 +65,7 @@ const icons: Record<string, typeof Bell> = {
 function NotificationsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications();
   const rows = data?.notifications ?? [];
@@ -99,6 +100,9 @@ function NotificationsPage() {
 
   const shown = rows.filter((n) => filter === "all" || n.type === filter);
   const unreadCount = rows.filter((n) => !n.is_read).length;
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
+  const paginatedRows = shown.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <>
@@ -133,7 +137,10 @@ function NotificationsPage() {
             key={f.id}
             size="sm"
             variant={filter === f.id ? "default" : "outline"}
-            onClick={() => setFilter(f.id)}
+            onClick={() => {
+              setFilter(f.id);
+              setPage(1);
+            }}
           >
             {f.label}
           </Button>
@@ -155,7 +162,7 @@ function NotificationsPage() {
         <p className="text-muted-foreground py-20 text-center text-sm">Không có thông báo nào</p>
       ) : (
         <div className="space-y-3">
-          {shown.map((n) => {
+          {paginatedRows.map((n) => {
             const Icon = icons[n.type] ?? AlertTriangle;
             return (
               <Card
@@ -183,6 +190,30 @@ function NotificationsPage() {
               </Card>
             );
           })}
+
+          {shown.length > 0 && (
+            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+              <span>Trang {page} / {totalPages}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Trang trước
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+                  disabled={page >= totalPages}
+                >
+                  Trang sau
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>

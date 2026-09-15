@@ -57,7 +57,7 @@ export function ReviewModerationPanel() {
   async function loadReviews(reset = false) {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ limit: '20' });
+      const params = new URLSearchParams({ limit: '5' });
       if (storeFilter) params.set('store_id', storeFilter);
       if (visibilityFilter !== 'all') params.set('visibility', visibilityFilter);
       if (!reset && cursor) params.set('cursor', cursor);

@@ -75,6 +75,8 @@ function TablesPage() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [branchFilter, setBranchFilter] = useState(search.store_id ?? "all");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
   const [storeQrMap, setStoreQrMap] = useState<Record<number, string>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -87,8 +89,22 @@ function TablesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rawRows = await apiGet<TableRow[]>("/admin/tables");
-      const rows = Array.isArray(rawRows) ? rawRows : [];
+      const q = new URLSearchParams({ page: String(page), limit: "5" });
+      if (branchFilter !== "all") q.set("store_id", branchFilter);
+      const res = await apiGet<any>(`/admin/tables?${q.toString()}`);
+      let rows: TableRow[] = [];
+      if (Array.isArray(res)) {
+        rows = res;
+      } else if (res && typeof res === "object") {
+        rows = Array.isArray(res.items) ? res.items : [];
+        if (res.pagination) {
+          const tp = Math.max(1, res.pagination.totalPages || 1);
+          setTotalPages(tp);
+          if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
+            setPage(res.pagination.totalPages);
+          }
+        }
+      }
       setTables(rows);
       setQrMap({});
     } catch (err) {
@@ -96,7 +112,12 @@ function TablesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [branchFilter, page]);
+
+  const handleBranchFilterChange = (val: string) => {
+    setBranchFilter(val);
+    setPage(1);
+  };
 
   useEffect(() => {
     load();
@@ -295,7 +316,7 @@ function TablesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={branchFilter} onValueChange={setBranchFilter}>
+          <Select value={branchFilter} onValueChange={handleBranchFilterChange}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -429,6 +450,30 @@ function TablesPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {tables.length > 0 && (
+        <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+          <span>Trang {page} / {Math.max(1, totalPages)}</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+            >
+              Trang trước
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
+              disabled={page >= totalPages || loading}
+            >
+              Trang sau
+            </Button>
+          </div>
         </div>
       )}
 
