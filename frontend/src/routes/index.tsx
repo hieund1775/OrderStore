@@ -29,6 +29,7 @@ import {
   vnd,
   type ApiCatalogProduct,
   type Product,
+  type ProductTag,
   type Store,
 } from "@/lib/data";
 import { apiGet } from "@/lib/api";
@@ -236,14 +237,37 @@ function Home() {
 
   const bestSellers = useMemo(() => {
     const filtered = catalogProducts.filter(
-      (p) => p.tags.includes("best-seller") || p.tags.includes("new"),
+      (p) => p.tags && (p.tags.includes("best-seller") || p.tags.includes("new")),
     );
-    if (filtered.length >= 4) return filtered.slice(0, 4);
-    if (filtered.length > 0) {
+    let list: Product[] = [];
+    if (filtered.length >= 4) {
+      list = filtered.slice(0, 4);
+    } else if (filtered.length > 0) {
       const extra = catalogProducts.filter((p) => !filtered.some((f) => f.id === p.id));
-      return [...filtered, ...extra].slice(0, 4);
+      list = [...filtered, ...extra].slice(0, 4);
+    } else {
+      list = catalogProducts.length > 0 ? catalogProducts.slice(0, 4) : fallbackProducts.slice(0, 4);
     }
-    return catalogProducts.length > 0 ? catalogProducts.slice(0, 4) : fallbackProducts.slice(0, 4);
+
+    // Curated tag patterns from Image 1:
+    // Card 1: Best Seller + Trái Cây Theo Mùa
+    // Card 2: Best Seller
+    // Card 3: Món Mới
+    // Card 4: Món Mới + Trái Cây Theo Mùa
+    const defaultTagPatterns: ProductTag[][] = [
+      ["best-seller", "seasonal"],
+      ["best-seller"],
+      ["new"],
+      ["new", "seasonal"],
+    ];
+
+    return list.slice(0, 4).map((p, idx) => {
+      const hasTags = p.tags && p.tags.length > 0;
+      return {
+        ...p,
+        tags: hasTags ? p.tags : defaultTagPatterns[idx % defaultTagPatterns.length],
+      };
+    });
   }, [catalogProducts]);
 
   return (

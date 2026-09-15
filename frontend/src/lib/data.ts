@@ -119,9 +119,48 @@ export function resolveProductImage(slug?: string, image?: string | null): strin
 export function mapApiProduct(product: ApiCatalogProduct): Product {
   const category = product.category_name?.trim() || 'Trà Trái Cây Tươi';
   const tags: ProductTag[] = [];
-  if (product.is_bestseller) tags.push('best-seller');
-  if (product.is_seasonal) tags.push('seasonal');
+
+  if (Array.isArray(product.tags)) {
+    for (const t of product.tags) {
+      if ((t === 'best-seller' || t === 'new' || t === 'seasonal') && !tags.includes(t)) {
+        tags.push(t);
+      }
+    }
+  } else if (typeof product.tags === 'string' && product.tags.trim() !== '') {
+    try {
+      const parsed = JSON.parse(product.tags);
+      if (Array.isArray(parsed)) {
+        for (const t of parsed) {
+          if ((t === 'best-seller' || t === 'new' || t === 'seasonal') && !tags.includes(t)) {
+            tags.push(t);
+          }
+        }
+      }
+    } catch {
+      const parts = product.tags.split(',').map((s) => s.trim());
+      for (const t of parts) {
+        if ((t === 'best-seller' || t === 'new' || t === 'seasonal') && !tags.includes(t)) {
+          tags.push(t);
+        }
+      }
+    }
+  }
+
+  if (product.is_bestseller && !tags.includes('best-seller')) tags.push('best-seller');
+  if (product.is_seasonal && !tags.includes('seasonal')) tags.push('seasonal');
+
   const slug = product.slug || '';
+
+  // Fallback to match mock/catalog product tags if still empty
+  if (tags.length === 0) {
+    const matched = products.find(
+      (p) => p.slug === slug || p.id === String(product.id) || p.name === product.name
+    );
+    if (matched && matched.tags && matched.tags.length > 0) {
+      tags.push(...matched.tags);
+    }
+  }
+
   return {
     id: String(product.id),
     name: product.name || 'Sản phẩm TeaPlus',
@@ -251,7 +290,7 @@ export const products: Product[] = [
 export const tagLabel: Record<ProductTag, string> = {
   'best-seller': '🔥 Best Seller',
   new: '✨ Món Mới',
-  seasonal: '🍊 Trái Cây Theo Mùa',
+  seasonal: '🥭 Trái Cây Theo Mùa',
 };
 
 export const sizeOptions = [

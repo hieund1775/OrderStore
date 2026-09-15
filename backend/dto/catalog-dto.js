@@ -25,6 +25,8 @@ export function toProductDto(product) {
     calories: product.calories == null ? null : Number(product.calories),
     fruit_group: product.fruit_group || null,
     tags: parsedTags,
+    is_bestseller: parsedTags.includes('best-seller'),
+    is_seasonal: parsedTags.includes('seasonal'),
     rating: product.rating == null ? 5 : Number(product.rating),
     review_count: product.review_count == null ? 0 : Number(product.review_count),
     is_available: product.is_available !== false,
