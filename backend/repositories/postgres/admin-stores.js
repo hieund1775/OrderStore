@@ -15,25 +15,48 @@ function extractTableNumber(name) {
 
 export function createAdminStoresRepository(database = postgresDb) {
   return {
-    async listBranches({ scopedStoreId } = {}) {
+    async listBranches({ scopedStoreId, page = null, limit = null } = {}) {
       const params = [];
       let where = 'WHERE TRUE';
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND s.id = $${params.length}`;
       }
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      }
       const [rows] = await database.query(
         `SELECT s.*,
                 COUNT(o.id)::int AS total_orders,
                 COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0)::bigint AS revenue
+                ${countColumn}
          FROM stores s
          LEFT JOIN orders o ON o.store_id = s.id
          ${where}
          GROUP BY s.id
-         ORDER BY s.id`,
+         ORDER BY s.id DESC
+         ${paginationClause}`,
         params,
       );
-      return rows;
+      if (!isPaginated) return rows;
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        const countParams = scopedStoreId ? [scopedStoreId] : [];
+        const countWhere = scopedStoreId ? 'WHERE s.id = $1' : '';
+        const [countRows] = await database.query(`SELECT COUNT(*)::int AS total FROM stores s ${countWhere}`, countParams);
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async createBranch({ name, city, district, address, lat, lng, hours, phone, amenities, is_active = true }) {
@@ -95,23 +118,46 @@ export function createAdminStoresRepository(database = postgresDb) {
       });
     },
 
-    async listTables({ scopedStoreId } = {}) {
+    async listTables({ scopedStoreId, page = null, limit = null } = {}) {
       const params = [];
       let where = 'WHERE TRUE';
       if (scopedStoreId) {
         params.push(scopedStoreId);
         where += ` AND t.store_id = $${params.length}`;
       }
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      }
       const [rows] = await database.query(
         `SELECT t.id, t.store_id, s.name AS store_name, t.name,
                 (t.qr_checkout_token_hash IS NOT NULL) AS has_checkout_qr, t.is_active
+                ${countColumn}
          FROM tables t
          JOIN stores s ON s.id = t.store_id
          ${where}
-         ORDER BY t.store_id, t.id`,
+         ORDER BY t.store_id ASC, t.id DESC
+         ${paginationClause}`,
         params,
       );
-      return rows;
+      if (!isPaginated) return rows;
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        const countParams = scopedStoreId ? [scopedStoreId] : [];
+        const countWhere = scopedStoreId ? 'WHERE t.store_id = $1' : '';
+        const [countRows] = await database.query(`SELECT COUNT(*)::int AS total FROM tables t ${countWhere}`, countParams);
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async createTable({ store_id, name, qrCheckoutTokenHash = null }) {

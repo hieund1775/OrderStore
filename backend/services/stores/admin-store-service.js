@@ -3,8 +3,8 @@ import { createTableQrToken, hashTableQrToken } from '../table-qr-token.js';
 
 export function createAdminStoreService(repository = defaultAdminStoresRepository) {
   return {
-    async listBranches({ scopedStoreId } = {}) {
-      return repository.listBranches({ scopedStoreId });
+    async listBranches({ scopedStoreId, page, limit } = {}) {
+      return repository.listBranches({ scopedStoreId, page, limit });
     },
 
     async createBranch(data) {
@@ -23,12 +23,12 @@ export function createAdminStoreService(repository = defaultAdminStoresRepositor
       return repository.listTablesByStore(storeId, { scopedStoreId });
     },
 
-    async listAllTables({ scopedStoreId } = {}) {
+    async listAllTables({ scopedStoreId, page, limit } = {}) {
       if (typeof repository.listTables === 'function') {
-        return repository.listTables({ scopedStoreId });
+        return repository.listTables({ scopedStoreId, page, limit });
       }
       if (typeof repository.listAllTables === 'function') {
-        return repository.listAllTables({ scopedStoreId });
+        return repository.listAllTables({ scopedStoreId, page, limit });
       }
       return [];
     },

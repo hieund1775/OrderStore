@@ -401,6 +401,7 @@ export function CustomerPreordersTab({
       } else {
         setError('Không thể tải đơn đặt trước. Vui lòng thử lại.');
       }
+      if (isBackground) throw err;
     } finally {
       if (sessionKeyRef.current === requestSessionKey && !isBackground) setLoading(false);
       if (inFlightSessionKeyRef.current === requestSessionKey) {
@@ -450,7 +451,11 @@ export function CustomerPreordersTab({
     try {
       await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/check-in`, {});
       toast.success('Check-in thành công! Quý khách vui lòng chờ nhân viên bàn giao món.');
-      controllerRef.current?.triggerImmediate() || void load();
+      if (controllerRef.current) {
+        controllerRef.current.triggerImmediate();
+      } else {
+        void load();
+      }
     } catch (err: any) {
       toast.error(err instanceof Error ? err.message : 'Không thể thực hiện check-in.');
     } finally {
@@ -466,7 +471,11 @@ export function CustomerPreordersTab({
     try {
       await apiPost(`/api/preorders/${encodeURIComponent(preorder.preorder_code)}/cancel`, {});
       toast.success('Đã hủy preorder. Lịch sử thanh toán được giữ nguyên.');
-      controllerRef.current?.triggerImmediate() || void load();
+      if (controllerRef.current) {
+        controllerRef.current.triggerImmediate();
+      } else {
+        void load();
+      }
     } catch (err: any) {
       toast.error(err instanceof Error ? err.message : 'Không thể hủy preorder.');
     } finally {

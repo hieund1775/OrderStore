@@ -2,8 +2,8 @@ import defaultAdminPromotionsRepository from '../../repositories/postgres/admin-
 
 export function createAdminPromotionService(repository = defaultAdminPromotionsRepository) {
   return {
-    async listPromotions({ scopedStoreId } = {}) {
-      return repository.listPromotions({ scopedStoreId });
+    async listPromotions({ scopedStoreId, page, limit } = {}) {
+      return repository.listPromotions({ scopedStoreId, page, limit });
     },
 
     async createPromotion(data) {

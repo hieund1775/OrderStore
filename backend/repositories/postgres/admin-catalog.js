@@ -101,8 +101,13 @@ export function createAdminCatalogRepository(database = postgresDb) {
       return affected > 0;
     },
 
-    async listProducts({ category_id, search, tag } = {}) {
-      let sql = `SELECT p.*, c.name AS category_name
+    async listProducts({ category_id, search, tag, page = null, limit = null } = {}) {
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+      }
+      let sql = `SELECT p.*, c.name AS category_name${countColumn}
                  FROM products p
                  JOIN categories c ON p.category_id = c.id
                  WHERE TRUE`;
@@ -119,9 +124,42 @@ export function createAdminCatalogRepository(database = postgresDb) {
         params.push(`%"${tag}"%`);
         sql += ` AND p.tags ILIKE $${params.length}`;
       }
-      sql += ' ORDER BY c.sort_order, p.id';
+      sql += ' ORDER BY c.sort_order ASC, p.id DESC';
+      if (isPaginated) {
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        sql += ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      }
       const [rows] = await database.query(sql, params);
-      return rows;
+      if (!isPaginated) return rows;
+
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        let countSql = `SELECT COUNT(*)::int AS total
+                        FROM products p
+                        JOIN categories c ON p.category_id = c.id
+                        WHERE TRUE`;
+        const countParams = [];
+        if (category_id) {
+          countParams.push(Number(category_id));
+          countSql += ` AND p.category_id = $${countParams.length}`;
+        }
+        if (search) {
+          countParams.push(`%${search}%`);
+          countSql += ` AND (p.name ILIKE $${countParams.length} OR p.description ILIKE $${countParams.length})`;
+        }
+        if (tag) {
+          countParams.push(`%"${tag}"%`);
+          countSql += ` AND p.tags ILIKE $${countParams.length}`;
+        }
+        const [countRows] = await database.query(countSql, countParams);
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async createProduct({ category_id, name, slug, base_tea, description, price, image_url, calories, fruit_group, tags }) {

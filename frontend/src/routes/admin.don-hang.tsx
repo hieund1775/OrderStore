@@ -149,6 +149,18 @@ function OrdersPage() {
       .catch(() => setBranches([]));
   }, []);
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+
+  useEffect(() => {
+    setPageIndex(0);
+    setCursorStack([null]);
+    setNextCursor(null);
+    setHasMore(false);
+  }, [status, branchId, q, type, payment, view]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -156,8 +168,22 @@ function OrdersPage() {
       if (status !== "Tất cả") params.set("status", status);
       if (branchId !== "all") params.set("store_id", branchId);
       if (q.trim()) params.set("search", q.trim());
-      const res = await apiGet<AdminOrderRow[] | { orders: AdminOrderRow[]; page_info: any }>(`/admin/orders?${params.toString()}`);
-      const rows = Array.isArray(res) ? res : (res?.orders || []);
+      if (view === "list") {
+        params.set("limit", "5");
+        const cur = cursorStack[pageIndex];
+        if (cur) params.set("cursor", cur);
+      }
+      const res = await apiGet<AdminOrderRow[] | { orders: AdminOrderRow[]; page_info: { next_cursor: string | null; has_more: boolean } }>(`/admin/orders?${params.toString()}`);
+      let rows: AdminOrderRow[] = [];
+      let resNextCursor: string | null = null;
+      let resHasMore = false;
+      if (Array.isArray(res)) {
+        rows = res;
+      } else if (res && typeof res === "object") {
+        rows = res.orders || [];
+        resNextCursor = res.page_info?.next_cursor ?? null;
+        resHasMore = Boolean(res.page_info?.has_more);
+      }
       setOrders(
         rows.filter(
           (o) =>
@@ -165,12 +191,30 @@ function OrdersPage() {
             (payment === "Tất cả" || o.payment_method === payment),
         ),
       );
+      setNextCursor(resNextCursor);
+      setHasMore(resHasMore);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được đơn hàng");
     } finally {
       setLoading(false);
     }
-  }, [status, type, payment, branchId, q]);
+  }, [status, type, payment, branchId, q, view, cursorStack, pageIndex]);
+
+  const handleNextPage = () => {
+    if (!hasMore || !nextCursor) return;
+    const nextIdx = pageIndex + 1;
+    setCursorStack((prev) => {
+      const next = [...prev];
+      next[nextIdx] = nextCursor;
+      return next;
+    });
+    setPageIndex(nextIdx);
+  };
+
+  const handlePrevPage = () => {
+    if (pageIndex <= 0) return;
+    setPageIndex((prev) => Math.max(0, prev - 1));
+  };
 
   useEffect(() => {
     const t = window.setTimeout(load, 250);
@@ -399,6 +443,29 @@ function OrdersPage() {
               </Table>
             </div>
           </Card>
+
+          {/* CURSOR PAGINATION FOR LIST VIEW */}
+          <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+            <span>Trang {pageIndex + 1}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePrevPage}
+                disabled={pageIndex <= 0}
+              >
+                Trang trước
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNextPage}
+                disabled={!hasMore || !nextCursor}
+              >
+                Trang sau
+              </Button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

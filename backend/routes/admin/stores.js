@@ -16,19 +16,18 @@ export const tablesRouter = Router();
 branchesRouter.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const scopedStoreId = resolveStoreScope(req.user);
-    const rows = await adminStoreService.listBranches({ scopedStoreId });
     const isPaginated = isPaginationRequested(req.query);
 
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
       const limit = validateLimit(req.query.limit, 5, 50);
-      const all = rows.map(toStoreDto);
-      const totalItems = all.length;
-      const items = all.slice((page - 1) * limit, page * limit);
-      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      const result = await adminStoreService.listBranches({ scopedStoreId, page, limit });
+      const items = (result.items || []).map(toStoreDto);
+      const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });
       return res.json({ items, pagination });
     }
 
+    const rows = await adminStoreService.listBranches({ scopedStoreId });
     res.json(rows.map(toStoreDto));
   } catch (err) {
     const status = err.status || 500;
@@ -80,19 +79,18 @@ branchesRouter.delete('/:id', requireRole('super'), asyncHandler(async (req, res
 tablesRouter.get('/', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   try {
     const scopedStoreId = resolveStoreScope(req.user, req.query.store_id);
-    const rows = await adminStoreService.listAllTables({ scopedStoreId });
     const isPaginated = isPaginationRequested(req.query);
 
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
       const limit = validateLimit(req.query.limit, 5, 50);
-      const all = rows.map(toTableDto);
-      const totalItems = all.length;
-      const items = all.slice((page - 1) * limit, page * limit);
-      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      const result = await adminStoreService.listAllTables({ scopedStoreId, page, limit });
+      const items = (result.items || []).map(toTableDto);
+      const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });
       return res.json({ items, pagination });
     }
 
+    const rows = await adminStoreService.listAllTables({ scopedStoreId });
     res.json(rows.map(toTableDto));
   } catch (err) {
     const status = err.status || 500;

@@ -311,7 +311,7 @@ export function createPreordersRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
-    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId, tableId = null }, { tx = null } = {}) {
+    async createAwaitingPayment({ preorderCode, storeId, customerUserId, idempotencyKey, scheduledStartAt, scheduledEndAt, responsibleManagerId }, { tx = null } = {}) {
       return inTransaction(database, tx, async (runner) => {
         const rows = rowsOf(await runner.query(
           `INSERT INTO preorders
@@ -323,14 +323,6 @@ export function createPreordersRepository(database = postgresDb) {
         ));
         const preorder = rows[0];
         if (!preorder) throw new PreorderRepositoryError('Không thể tạo đơn đặt trước', 500, 'PREORDER_CREATE_FAILED');
-        if (tableId != null) {
-          await runner.query(
-            `INSERT INTO preorder_table_reservations
-               (preorder_id, table_id, reserved_from, reserved_until, status)
-             VALUES ($1, $2, $3::timestamptz - INTERVAL '30 minutes', $3::timestamptz + INTERVAL '60 minutes', 'pending_payment')`,
-            [preorder.id, Number(tableId), scheduledStartAt],
-          );
-        }
         return preorder;
       });
     },

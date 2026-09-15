@@ -16,12 +16,11 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
       const limit = validateLimit(req.query.limit, 5, 50);
-      const { notifications, unread_count } = await notificationService.listForUser(adminId, 100);
-      const all = notifications.map(toNotificationDto);
-      const totalItems = all.length;
-      const items = all.slice((page - 1) * limit, page * limit);
+      const type = req.query.type;
+      const { items, totalItems, unread_count } = await notificationService.listForUser(adminId, limit, { page, type });
+      const dtos = items.map(toNotificationDto);
       const pagination = buildOffsetPagination({ totalItems, page, limit });
-      return res.json({ items, pagination, unread_count });
+      return res.json({ items: dtos, pagination, unread_count });
     }
     const { notifications, unread_count } = await notificationService.listForUser(adminId, req.query.limit);
     if (req.query.envelope === 'true') {

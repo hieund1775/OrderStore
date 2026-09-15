@@ -44,11 +44,24 @@ function validateInternalLink(link) {
 
 export function createNotificationService(repository = defaultNotificationsRepository) {
   return {
-    async listForUser(userId, limit = 50) {
+    async listForUser(userId, limit = 50, options = {}) {
       const parsedUserId = parsePositiveInteger(userId, 'ID người dùng');
-      const parsedLimit = parseLimit(limit);
-      const notifications = await repository.listForUser(parsedUserId, parsedLimit);
+      const resolvedOptions = typeof limit === 'object' && limit !== null ? limit : options;
+      const rawLimit = typeof limit === 'object' && limit !== null ? limit.limit : limit;
+      const parsedLimit = parseLimit(rawLimit);
+      const page = resolvedOptions?.page != null ? Number(resolvedOptions.page) : null;
+      const type = resolvedOptions?.type || undefined;
+
       const unreadCount = await repository.countUnreadForUser(parsedUserId);
+      if (page != null) {
+        const result = await repository.listForUser(parsedUserId, { limit: parsedLimit, page, type });
+        return {
+          items: result.items || [],
+          totalItems: result.totalItems || 0,
+          unread_count: unreadCount,
+        };
+      }
+      const notifications = await repository.listForUser(parsedUserId, parsedLimit);
       return { notifications, unread_count: unreadCount };
     },
 

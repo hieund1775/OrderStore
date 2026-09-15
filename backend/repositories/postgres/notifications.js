@@ -132,20 +132,68 @@ export function createNotificationsRepository(database = postgresDb) {
       return rows;
     },
 
-    async listForUser(userId, limit = 50) {
+    async listForUser(userId, limitOrOptions = 50, options = {}) {
       const targetUserId = Number(userId);
       if (!Number.isInteger(targetUserId) || targetUserId <= 0) return [];
-      const parsedLimit = Math.min(Math.max(1, Number(limit) || 50), 100);
+
+      const opts = typeof limitOrOptions === 'object' && limitOrOptions !== null
+        ? limitOrOptions
+        : { limit: limitOrOptions, ...options };
+
+      const parsedLimit = Math.min(Math.max(1, Number(opts.limit) || 50), 100);
+      const isPaginated = opts.page != null;
+
+      const params = [targetUserId];
+      let where = 'WHERE user_id = $1';
+      if (opts.type && opts.type !== 'all') {
+        params.push(opts.type);
+        where += ` AND type = $${params.length}`;
+      }
+
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        const parsedPage = Math.max(1, Number(opts.page) || 1);
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(parsedLimit);
+        const limitParam = `$${params.length}`;
+        params.push((parsedPage - 1) * parsedLimit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      } else {
+        params.push(parsedLimit);
+        paginationClause = ` LIMIT $${params.length}`;
+      }
 
       const [rows] = await database.query(
         `SELECT *
+                ${countColumn}
          FROM notifications
-         WHERE user_id = $1
-         ORDER BY created_at DESC
-         LIMIT $2`,
-        [targetUserId, parsedLimit],
+         ${where}
+         ORDER BY created_at DESC, id DESC
+         ${paginationClause}`,
+        params,
       );
-      return rows;
+
+      if (!isPaginated) return rows;
+
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (Number(opts.page) > 1) {
+        const countParams = [targetUserId];
+        let countWhere = 'WHERE user_id = $1';
+        if (opts.type && opts.type !== 'all') {
+          countParams.push(opts.type);
+          countWhere += ` AND type = $${countParams.length}`;
+        }
+        const [countRows] = await database.query(
+          `SELECT COUNT(*)::int AS total FROM notifications ${countWhere}`,
+          countParams,
+        );
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async countUnreadForUser(userId) {

@@ -91,7 +91,42 @@ export const markAllCustomerNotificationsRead = (userId: number) =>
 export const clearAllCustomerNotifications = (userId: number) =>
   apiDelete<{ ok: boolean; count: number }>(`/api/users/${userId}/notifications`);
 
-export async function fetchAdminNotifications(limit = 100): Promise<NotificationResponse> {
+export type AdminNotificationsOptions = {
+  page?: number;
+  limit?: number;
+  type?: string;
+};
+
+export type PaginatedAdminNotificationResponse = {
+  items: AppNotification[];
+  pagination: {
+    page: number;
+    limit: number;
+    total_items: number;
+    total_pages: number;
+    has_prev: boolean;
+    has_next: boolean;
+  };
+  unread_count: number;
+};
+
+export async function fetchAdminNotifications(limitOrOptions: number | AdminNotificationsOptions = 100): Promise<NotificationResponse | PaginatedAdminNotificationResponse> {
+  const isOptions = typeof limitOrOptions === 'object' && limitOrOptions !== null;
+  const isPaginated = isOptions && limitOrOptions.page != null;
+
+  if (isPaginated) {
+    const page = limitOrOptions.page ?? 1;
+    const limit = limitOrOptions.limit ?? 5;
+    const type = limitOrOptions.type && limitOrOptions.type !== 'all' ? `&type=${encodeURIComponent(limitOrOptions.type)}` : '';
+    const res = await apiGet<PaginatedAdminNotificationResponse>(`/admin/notifications?page=${page}&limit=${limit}${type}`);
+    return {
+      items: Array.isArray(res?.items) ? res.items : [],
+      pagination: res?.pagination || { page, limit, total_items: 0, total_pages: 1, has_prev: false, has_next: false },
+      unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
+    };
+  }
+
+  const limit = typeof limitOrOptions === 'number' ? limitOrOptions : (limitOrOptions?.limit ?? 100);
   const existing = inFlightAdminNotifications.get(limit);
   if (existing) return existing;
 
@@ -261,11 +296,16 @@ function updateAdminData(client: QueryClient, update: (current: NotificationResp
     update(current ?? { notifications: [], unread_count: 0 }));
 }
 
-export function useAdminNotifications() {
+export function useAdminNotifications(options?: AdminNotificationsOptions) {
   const queryClient = useQueryClient();
+  const isPaginated = options?.page != null;
+  const queryKey = isPaginated
+    ? (['admin-notifications', options.page, options.limit ?? 5, options.type ?? 'all'] as const)
+    : adminNotificationsKey;
+
   const query = useQuery({
-    queryKey: adminNotificationsKey,
-    queryFn: () => fetchAdminNotifications(100),
+    queryKey,
+    queryFn: () => fetchAdminNotifications(options ?? 100),
     refetchInterval: 20_000,
     refetchIntervalInBackground: false,
     staleTime: 5_000,
@@ -274,7 +314,7 @@ export function useAdminNotifications() {
   const markReadMutation = useMutation({
     mutationFn: markAdminNotificationRead,
     onMutate: async (notificationId) => {
-      await queryClient.cancelQueries({ queryKey: adminNotificationsKey });
+      await queryClient.cancelQueries({ queryKey: ['admin-notifications'] });
       const previous = queryClient.getQueryData<NotificationResponse>(adminNotificationsKey);
       updateAdminData(queryClient, (current) => {
         const target = current.notifications.find((item) => item.id === notificationId);
@@ -288,13 +328,13 @@ export function useAdminNotifications() {
     onError: (_error, _id, previous) => {
       if (previous) queryClient.setQueryData(adminNotificationsKey, previous);
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: adminNotificationsKey }),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['admin-notifications'] }),
   });
 
   const markAllMutation = useMutation({
     mutationFn: markAllAdminNotificationsRead,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: adminNotificationsKey });
+      await queryClient.cancelQueries({ queryKey: ['admin-notifications'] });
       const previous = queryClient.getQueryData<NotificationResponse>(adminNotificationsKey);
       updateAdminData(queryClient, (current) => ({
         notifications: current.notifications.map((item) => ({ ...item, is_read: true })),
@@ -305,13 +345,13 @@ export function useAdminNotifications() {
     onError: (_error, _variables, previous) => {
       if (previous) queryClient.setQueryData(adminNotificationsKey, previous);
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: adminNotificationsKey }),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['admin-notifications'] }),
   });
 
   const clearMutation = useMutation({
     mutationFn: clearAllAdminNotifications,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: adminNotificationsKey });
+      await queryClient.cancelQueries({ queryKey: ['admin-notifications'] });
       const previous = queryClient.getQueryData<NotificationResponse>(adminNotificationsKey);
       queryClient.setQueryData<NotificationResponse>(adminNotificationsKey, { notifications: [], unread_count: 0 });
       return previous;
@@ -319,7 +359,7 @@ export function useAdminNotifications() {
     onError: (_error, _variables, previous) => {
       if (previous) queryClient.setQueryData(adminNotificationsKey, previous);
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: adminNotificationsKey }),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['admin-notifications'] }),
   });
 
   return {

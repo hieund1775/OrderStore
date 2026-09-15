@@ -17,7 +17,7 @@ function calculatePromotionStatus(startDate, endDate) {
 
 export function createAdminPromotionsRepository(database = postgresDb) {
   return {
-    async listPromotions({ scopedStoreId } = {}) {
+    async listPromotions({ scopedStoreId, page = null, limit = null } = {}) {
       const params = [];
       let where = 'WHERE p.deleted_at IS NULL';
       if (scopedStoreId) {
@@ -27,21 +27,49 @@ export function createAdminPromotionsRepository(database = postgresDb) {
           OR EXISTS (SELECT 1 FROM promotion_stores ps2 WHERE ps2.promotion_id = p.id AND ps2.store_id = $${params.length})
         )`;
       }
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      }
       const [rows] = await database.query(
         `SELECT p.*,
                 COALESCE(
                   json_agg(json_build_object('id', s.id, 'name', s.name)) FILTER (WHERE s.id IS NOT NULL),
                   '[]'
                 ) AS stores
+                ${countColumn}
          FROM promotions p
          LEFT JOIN promotion_stores ps ON ps.promotion_id = p.id
          LEFT JOIN stores s ON ps.store_id = s.id
          ${where}
          GROUP BY p.id
-         ORDER BY p.id DESC`,
+         ORDER BY p.id DESC
+         ${paginationClause}`,
         params,
       );
-      return rows;
+      if (!isPaginated) return rows;
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        const countParams = scopedStoreId ? [scopedStoreId] : [];
+        const countWhere = scopedStoreId
+          ? `WHERE p.deleted_at IS NULL AND (
+               NOT EXISTS (SELECT 1 FROM promotion_stores ps2 WHERE ps2.promotion_id = p.id)
+               OR EXISTS (SELECT 1 FROM promotion_stores ps2 WHERE ps2.promotion_id = p.id AND ps2.store_id = $1)
+             )`
+          : 'WHERE p.deleted_at IS NULL';
+        const [countRows] = await database.query(`SELECT COUNT(*)::int AS total FROM promotions p ${countWhere}`, countParams);
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async createPromotion({

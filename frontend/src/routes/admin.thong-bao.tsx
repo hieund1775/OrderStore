@@ -67,9 +67,15 @@ function NotificationsPage() {
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications();
-  const rows = data?.notifications ?? [];
-
+  const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications({
+    page,
+    limit: 5,
+    type: filter,
+  });
+  const paginatedData = data as any;
+  const rows: AppNotification[] = paginatedData?.items ?? paginatedData?.notifications ?? [];
+  const unreadCount = data?.unread_count ?? 0;
+  const totalPages = paginatedData?.pagination?.total_pages ?? 1;
   async function handleNotificationClick(n: AppNotification) {
     if (!n.is_read) {
       await markRead(n.id).catch(() => undefined);
@@ -97,12 +103,6 @@ function NotificationsPage() {
       toast.error("Không thể xóa thông báo");
     }
   }
-
-  const shown = rows.filter((n) => filter === "all" || n.type === filter);
-  const unreadCount = rows.filter((n) => !n.is_read).length;
-  const pageSize = 5;
-  const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
-  const paginatedRows = shown.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <>
@@ -158,11 +158,11 @@ function NotificationsPage() {
             Thử lại
           </Button>
         </div>
-      ) : shown.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="text-muted-foreground py-20 text-center text-sm">Không có thông báo nào</p>
       ) : (
         <div className="space-y-3">
-          {paginatedRows.map((n) => {
+          {rows.map((n) => {
             const Icon = icons[n.type] ?? AlertTriangle;
             return (
               <Card
@@ -191,7 +191,7 @@ function NotificationsPage() {
             );
           })}
 
-          {shown.length > 0 && (
+          {rows.length > 0 && (
             <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
               <span>Trang {page} / {totalPages}</span>
               <div className="flex gap-2">

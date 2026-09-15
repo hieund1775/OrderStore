@@ -122,6 +122,7 @@ function AdminPreordersPage() {
       if (!isBackground) {
         toast.error(error instanceof Error ? error.message : 'Không thể tải preorder');
       }
+      if (isBackground) throw error;
     } finally {
       if (!isBackground) setLoading(false);
     }
@@ -175,7 +176,11 @@ function AdminPreordersPage() {
     try {
       await apiPost(`/admin/preorders/${id}/confirm`, {});
       toast.success('Đã xác nhận preorder. Bếp có thể chủ động chuẩn bị món.');
-      controllerRef.current?.triggerImmediate() || void load();
+      if (controllerRef.current) {
+        controllerRef.current.triggerImmediate();
+      } else {
+        void load();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể xác nhận');
     }
@@ -187,7 +192,11 @@ function AdminPreordersPage() {
     try {
       await apiPost(`/admin/preorders/${id}/handover`, {});
       toast.success('Đã xác nhận bàn giao đơn đặt trước thành công!');
-      controllerRef.current?.triggerImmediate() || void load();
+      if (controllerRef.current) {
+        controllerRef.current.triggerImmediate();
+      } else {
+        void load();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể xác nhận bàn giao');
     } finally {
@@ -205,7 +214,11 @@ function AdminPreordersPage() {
       });
       toast.success('Đã lưu lịch hẹn mới.');
       setRescheduleId(null);
-      controllerRef.current?.triggerImmediate() || void load();
+      if (controllerRef.current) {
+        controllerRef.current.triggerImmediate();
+      } else {
+        void load();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể đổi lịch');
     }

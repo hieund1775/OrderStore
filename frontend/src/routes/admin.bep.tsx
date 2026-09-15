@@ -289,6 +289,7 @@ function KdsPage() {
         }
       }
       setFetchError(err instanceof Error ? err.message : "Mất kết nối máy chủ");
+      throw err;
     }
   }, [page, soundEnabled, storeFilter]);
 

@@ -240,7 +240,7 @@ function Profile() {
       const params = new URLSearchParams({ limit: '5' });
       if (currentCursor) params.set('cursor', currentCursor);
 
-      const resData = await apiGet<{ orders?: unknown[]; next_cursor?: string | null; has_more?: boolean } | unknown[]>(
+      const resData = await apiGet<{ orders?: unknown[]; page_info?: { next_cursor?: string | null; has_more?: boolean }; next_cursor?: string | null; has_more?: boolean } | unknown[]>(
         `/api/users/${user.id}/orders?${params.toString()}`
       );
 
@@ -254,8 +254,9 @@ function Profile() {
         if (Array.isArray((resData as any).orders)) {
           rows = (resData as any).orders;
         }
-        resNextCursor = (resData as any).next_cursor ?? null;
-        resHasMore = Boolean((resData as any).has_more);
+        const pageInfo = (resData as any).page_info;
+        resNextCursor = pageInfo?.next_cursor ?? (resData as any).next_cursor ?? null;
+        resHasMore = Boolean(pageInfo?.has_more ?? (resData as any).has_more);
       }
 
       const normalized = normalizeProfileOrders(rows);
@@ -266,8 +267,9 @@ function Profile() {
       if (pageIndex > 0 && normalized.length === 0) {
         setPageIndex((p) => Math.max(0, p - 1));
       }
-    } catch {
-      // Retain old userOrders on background polling failure
+    } catch (err) {
+      // Retain old userOrders on background polling failure, rethrow to PollingController so backoff triggers
+      if (isBackground) throw err;
     } finally {
       ordersInFlightRef.current = false;
       if (!isBackground) setOrdersLoading(false);

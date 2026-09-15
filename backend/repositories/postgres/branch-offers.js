@@ -65,7 +65,7 @@ export function createBranchOffersRepository(database = postgresDb) {
       return true;
     },
 
-    async listBranchOffers(storeId, { categoryId, isAvailable, search } = {}) {
+    async listBranchOffers(storeId, { categoryId, isAvailable, search, page = null, limit = null } = {}) {
       const params = [storeId];
       let where = "WHERE p.status <> 'archived' AND pv.status <> 'archived'";
 
@@ -82,6 +82,18 @@ export function createBranchOffersRepository(database = postgresDb) {
         where += ` AND (p.name ILIKE $${params.length} OR pv.sku ILIKE $${params.length})`;
       }
 
+      const isPaginated = page != null && limit != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      }
+
       const [rows] = await database.query(
         `SELECT pv.id AS variant_id, pv.sku, pv.name_suffix, pv.variant_signature,
                 p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
@@ -93,16 +105,49 @@ export function createBranchOffersRepository(database = postgresDb) {
                 COALESCE(bvi.on_hand, 0) AS on_hand,
                 COALESCE(bvi.reserved, 0) AS reserved,
                 (COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_quantity
+                ${countColumn}
          FROM product_variants pv
          JOIN products p ON p.id = pv.product_id
          JOIN categories c ON c.id = p.category_id
          LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
          LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
          ${where}
-         ORDER BY p.id DESC, pv.id ASC`,
+         ORDER BY p.id DESC, pv.id ASC
+         ${paginationClause}`,
         params,
       );
-      return rows;
+      if (!isPaginated) return rows;
+
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        const countParams = [storeId];
+        let countWhere = "WHERE p.status <> 'archived' AND pv.status <> 'archived'";
+        if (categoryId) {
+          countParams.push(Number(categoryId));
+          countWhere += ` AND p.category_id = $${countParams.length}`;
+        }
+        if (isAvailable !== undefined) {
+          countParams.push(Boolean(isAvailable));
+          countWhere += ` AND COALESCE(bvo.is_available, FALSE) = $${countParams.length}`;
+        }
+        if (search) {
+          countParams.push(`%${search}%`);
+          countWhere += ` AND (p.name ILIKE $${countParams.length} OR pv.sku ILIKE $${countParams.length})`;
+        }
+        const [countRows] = await database.query(
+          `SELECT COUNT(*)::int AS total
+           FROM product_variants pv
+           JOIN products p ON p.id = pv.product_id
+           JOIN categories c ON c.id = p.category_id
+           LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
+           ${countWhere}`,
+          countParams,
+        );
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { items: rows, totalItems };
     },
 
     async getBranchOffer(storeId, variantId) {

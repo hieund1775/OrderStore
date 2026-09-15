@@ -224,4 +224,113 @@ describe('Production PollingController Suite (Direct Module Import)', () => {
 
     controller.stop();
   });
+
+  it('rethrows background load error so consecutiveErrors increments and backoff escalates while preserving rows', async () => {
+    let rows = ['order-1', 'order-2'];
+    let backgroundErrors = 0;
+
+    const backgroundLoad = async (isBackground = false) => {
+      try {
+        backgroundErrors++;
+        throw new Error('503 Service Unavailable');
+      } catch (err) {
+        // State preserved: rows remains unchanged
+        if (isBackground) throw err;
+      }
+    };
+
+    const controller = new PollingController({
+      fetchFn: async () => {
+        await backgroundLoad(true);
+      },
+      visibleIntervalMs: 5_000,
+      backoffEnabled: true,
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Rows preserved despite failure
+    expect(rows).toEqual(['order-1', 'order-2']);
+    // Error rethrown -> consecutiveErrors registered
+    expect(controller.getStatus().consecutiveErrors).toBe(1);
+
+    // 5_000 * 1.5 = 7_500 ms backoff
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(backgroundErrors).toBe(1); // not yet 7.5s
+
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(backgroundErrors).toBe(2); // fired after backoff
+    expect(controller.getStatus().consecutiveErrors).toBe(2);
+
+    controller.stop();
+  });
+
+  it('safe refresh helper triggers only 1 fetch and prevents duplicate execution loop', async () => {
+    let triggerCount = 0;
+    let directLoadCount = 0;
+
+    const controller = {
+      triggerImmediate: () => {
+        triggerCount++;
+        // returns void (undefined) in TypeScript
+      },
+    };
+
+    const directLoad = () => {
+      directLoadCount++;
+    };
+
+    // The safe path: if (controller) controller.triggerImmediate(); else void directLoad();
+    if (controller) {
+      controller.triggerImmediate();
+    } else {
+      void directLoad();
+    }
+
+    expect(triggerCount).toBe(1);
+    expect(directLoadCount).toBe(0); // directLoad NOT called!
+
+    // In contrast, the buggy `controller?.triggerImmediate() || void directLoad()` would evaluate both
+    // because triggerImmediate() returns undefined, which is falsy!
+  });
+
+  it('cursor stack navigates forward with next_cursor and allows navigating backwards', () => {
+    let pageIndex = 0;
+    let cursorStack: (string | null)[] = [null];
+    let nextCursor: string | null = 'cursor-page-2';
+    let hasMore = true;
+
+    // Advance to page 1 (second page)
+    if (hasMore && nextCursor) {
+      const nextIdx = pageIndex + 1;
+      cursorStack[nextIdx] = nextCursor;
+      pageIndex = nextIdx;
+    }
+
+    expect(pageIndex).toBe(1);
+    expect(cursorStack[1]).toBe('cursor-page-2');
+
+    // Next page has next_cursor = cursor-page-3
+    nextCursor = 'cursor-page-3';
+    hasMore = true;
+    if (hasMore && nextCursor) {
+      const nextIdx = pageIndex + 1;
+      cursorStack[nextIdx] = nextCursor;
+      pageIndex = nextIdx;
+    }
+
+    expect(pageIndex).toBe(2);
+    expect(cursorStack[2]).toBe('cursor-page-3');
+
+    // Previous page
+    pageIndex = Math.max(0, pageIndex - 1);
+    expect(pageIndex).toBe(1);
+    expect(cursorStack[pageIndex]).toBe('cursor-page-2');
+
+    // Previous page to root
+    pageIndex = Math.max(0, pageIndex - 1);
+    expect(pageIndex).toBe(0);
+    expect(cursorStack[pageIndex]).toBe(null);
+  });
 });

@@ -12,20 +12,21 @@ const service = createBranchOfferService();
 
 router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   const storeId = resolveStoreScope(req.user, req.query.store_id);
-  const offers = await service.listBranchOffers(storeId, {
+  const filters = {
     categoryId: req.query.category_id,
     isAvailable: req.query.is_available !== undefined ? req.query.is_available === 'true' : undefined,
     search: req.query.search,
-  });
+  };
   const isPaginated = isPaginationRequested(req.query);
   if (isPaginated) {
     const page = validatePage(req.query.page, 1);
     const limit = validateLimit(req.query.limit, 5, 50);
-    const totalItems = offers.length;
-    const items = offers.slice((page - 1) * limit, page * limit);
-    const pagination = buildOffsetPagination({ totalItems, page, limit });
+    const result = await service.listBranchOffers(storeId, { ...filters, page, limit });
+    const items = result.items || [];
+    const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });
     return res.json({ items, pagination });
   }
+  const offers = await service.listBranchOffers(storeId, filters);
   res.json(offers);
 }));
 
