@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/site/PageHeader";
 import { ProductCard } from "@/components/menu/ProductCard";
 import { CatalogSection } from "@/components/catalog/CatalogSection";
 import { CategorySelector } from "@/components/catalog/CategorySelector";
+import { PublicReviewHub } from "@/components/reviews/PublicReviewHub";
 import { useCart } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
 import {
@@ -390,6 +391,14 @@ function MenuPage() {
             </div>
           </aside>
         </div>
+
+        <section className="border-t pt-10">
+          <div className="mb-6">
+            <h2 className="font-display text-2xl font-bold tracking-tight">Đánh giá từ khách hàng</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Đánh giá xác thực từ khách đã hoàn tất đơn hàng.</p>
+          </div>
+          <PublicReviewHub />
+        </section>
       </div>
     </div>
   );

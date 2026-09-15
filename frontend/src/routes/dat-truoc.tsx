@@ -11,6 +11,7 @@ import { usePreorderCart } from '@/lib/cart';
 import { apiGet, apiPost, createIdempotencyKey, fetchPublicProducts, getCustomerToken, getCustomerUser } from '@/lib/api';
 import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 import { ProductCard } from '@/components/menu/ProductCard';
+import { PublicReviewHub } from '@/components/reviews/PublicReviewHub';
 import { mapApiProduct, type Product, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import {
@@ -244,5 +245,12 @@ function PreorderCheckoutPage() {
       </div>}
     </section>
     <Button className="w-full" size="lg" disabled={submitting || selectedStorePreorderAvailable !== true || !cartIsSingleStore || selectedItems.length === 0} onClick={submit}><CreditCard className="mr-2 size-4" />{submitting ? 'Đang tạo thanh toán…' : 'Thanh toán preorder bằng VietQR'}</Button>
+    <section className="border-t pt-8">
+      <div className="mb-5">
+        <h2 className="text-xl font-bold">Đánh giá đơn đặt trước</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Chỉ hiển thị đánh giá từ khách đã nhận món đặt trước.</p>
+      </div>
+      <PublicReviewHub initialSource="preorder" lockSource />
+    </section>
   </div>;
 }

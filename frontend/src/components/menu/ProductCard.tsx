@@ -117,13 +117,11 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             </p>
 
             {/* Row 3: Rating & Reviews */}
-            {(product.rating > 0 || product.reviews > 0) && (
-              <div className="text-muted-foreground flex items-center gap-1 text-xs">
-                <Star className="fill-primary text-primary size-3.5 shrink-0" />
-                <span className="text-foreground font-semibold">{product.rating}</span>
-                <span className="truncate">· {Number(product.reviews || 0).toLocaleString('vi-VN')} đánh giá</span>
-              </div>
-            )}
+            <div className="text-muted-foreground flex items-center gap-1 text-xs">
+              <Star className="fill-primary text-primary size-3.5 shrink-0" />
+              <span className="text-foreground font-semibold">{Number(product.rating || 5).toFixed(1)}</span>
+              <span className="truncate">· {Number(product.reviews ?? 0).toLocaleString('vi-VN')} đánh giá</span>
+            </div>
 
             {/* Row 4: Price */}
             <p className="text-primary text-base sm:text-lg font-bold">

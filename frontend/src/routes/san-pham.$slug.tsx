@@ -105,6 +105,11 @@ function ProductDetailPage() {
     );
   }
 
+  const reviewCount = Number(product.review_count ?? 0);
+  const productRating = reviewCount > 0 && Number(product.rating) > 0
+    ? Number(product.rating)
+    : 5;
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
       {/* Breadcrumb */}
@@ -138,15 +143,13 @@ function ProductDetailPage() {
           )}
 
           <div className="mt-4 flex items-center gap-4">
-            {product.rating > 0 && (
-              <div className="flex items-center gap-1">
-                <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                <span className="font-medium">{Number(product.rating).toFixed(1)}</span>
-                <span className="text-sm text-gray-400">
-                  ({product.review_count || 0} đánh giá)
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-1">
+              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+              <span className="font-medium">{productRating.toFixed(1)}</span>
+              <span className="text-sm text-gray-400">
+                ({reviewCount} đánh giá)
+              </span>
+            </div>
             {product.calories > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {product.calories} cal
@@ -182,9 +185,9 @@ function ProductDetailPage() {
           <TabsTrigger value="info">Thông tin</TabsTrigger>
           <TabsTrigger value="reviews">
             Đánh giá
-            {product.review_count > 0 && (
+            {reviewCount > 0 && (
               <Badge variant="secondary" className="ml-2">
-                {product.review_count}
+                {reviewCount}
               </Badge>
             )}
           </TabsTrigger>

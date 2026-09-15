@@ -566,6 +566,8 @@ export type PublicCatalogProduct = {
   price: number;
   compare_at_price?: number | null;
   image_url: string | null;
+  rating?: number;
+  review_count?: number;
   category_id: number;
   category_name?: string;
   category_slug?: string;

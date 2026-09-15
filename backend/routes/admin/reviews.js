@@ -120,4 +120,22 @@ router.patch('/reviews/:id/visibility', requireRole('super', 'manager'), asyncHa
   res.json({ visibility: result.visibility_status });
 }));
 
+/**
+ * DELETE /admin/reviews/:id
+ * Permanently delete a review, its reply/history/media metadata, and update
+ * the aggregate rating/count for the reviewed product.
+ */
+router.delete('/reviews/:id', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  const reviewId = Number(req.params.id);
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    return res.status(400).json({ error: 'ID không hợp lệ' });
+  }
+
+  await productReviewsService.checkAdminReviewAccess(reviewId, req.user.role, req.user.branch_id);
+  await productReviewsService.deleteReviewPermanently(reviewId);
+  await logAudit(req.user.sub, 'Xóa vĩnh viễn đánh giá', `Review ID: ${reviewId}`, req);
+
+  return res.status(204).end();
+}));
+
 export default router;

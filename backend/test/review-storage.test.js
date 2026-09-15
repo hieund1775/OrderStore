@@ -263,6 +263,19 @@ describe('SupabaseReviewStorage — constructor validation', () => {
     await storage.deleteObject('key'); // should not throw
   });
 
+  it('surfaces a configured storage delete failure for post-commit cleanup logging', async () => {
+    const storage = new SupabaseReviewStorage({
+      supabaseUrl: 'https://abc123.supabase.co',
+      supabaseServiceKey: 'test-key',
+      fetchImpl: async () => ({ ok: false, status: 500, text: async () => 'storage unavailable' }),
+    });
+
+    await assert.rejects(
+      () => storage.deleteObject('reviews/1/image.webp'),
+      /không thể xóa media review/,
+    );
+  });
+
   it('generates correct storage URLs with config', () => {
     const storage = new SupabaseReviewStorage({
       supabaseUrl: 'https://abc123.supabase.co',

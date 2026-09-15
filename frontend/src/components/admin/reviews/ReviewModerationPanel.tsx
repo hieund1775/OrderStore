@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Star, Eye, EyeOff, MessageSquare, Search } from 'lucide-react';
+import { Star, Eye, EyeOff, MessageSquare, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiDelete, apiGet, apiPost, apiPatch } from '@/lib/api';
 
 interface ReviewItem {
   id: number;
@@ -52,6 +52,7 @@ export function ReviewModerationPanel() {
   const [replyText, setReplyText] = useState('');
   const [submittingReply, setSubmittingReply] = useState(false);
   const [showHideDialog, setShowHideDialog] = useState<{ id: number; current: string } | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState<number | null>(null);
   const [hideReason, setHideReason] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -130,6 +131,21 @@ export function ReviewModerationPanel() {
       void loadReviews(true);
     } catch (err) {
       toast.error('Không thể thay đổi trạng thái hiển thị');
+    }
+  }
+
+  async function handlePermanentDelete(reviewId: number) {
+    try {
+      await apiDelete(`/admin/reviews/${reviewId}`);
+      toast.success('Đã xóa vĩnh viễn đánh giá và phản hồi liên quan');
+      if (selectedReview?.id === reviewId) {
+        setSelectedReview(null);
+        setShowDetail(false);
+      }
+      setShowDeleteDialog(null);
+      void loadReviews(true);
+    } catch {
+      toast.error('Không thể xóa vĩnh viễn đánh giá');
     }
   }
 
@@ -255,6 +271,15 @@ export function ReviewModerationPanel() {
                     <EyeOff className="h-4 w-4 text-rose-500" />
                   )}
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Xóa vĩnh viễn đánh giá"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setShowDeleteDialog(review.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>
@@ -374,6 +399,28 @@ export function ReviewModerationPanel() {
               }
             >
               {showHideDialog?.current === 'hidden' ? 'Xác nhận hiện' : 'Xác nhận ẩn'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteDialog !== null} onOpenChange={() => setShowDeleteDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa vĩnh viễn đánh giá?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Thao tác này không thể hoàn tác. Nội dung đánh giá, phản hồi của cửa hàng,
+              lịch sử chỉnh sửa và media đính kèm sẽ bị xóa; điểm sao và số lượt đánh giá
+              của đúng sản phẩm cũng được tính lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => showDeleteDialog !== null && handlePermanentDelete(showDeleteDialog)}
+            >
+              Xóa vĩnh viễn
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

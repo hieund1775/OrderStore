@@ -150,6 +150,18 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
   if (product.is_seasonal && !tags.includes('seasonal')) tags.push('seasonal');
 
   const slug = product.slug || '';
+  const parsedReviewCount = Number(product.review_count);
+  const reviews = Number.isFinite(parsedReviewCount) && parsedReviewCount >= 0
+    ? parsedReviewCount
+    : 0;
+  const parsedRating = Number(product.rating);
+  // Products with no visible, verified review deliberately present as 5.0 / 0.
+  // Never invent catalogue social proof from the former 4.8 / 120 fallback.
+  const rating = reviews === 0
+    ? 5
+    : Number.isFinite(parsedRating) && parsedRating > 0
+      ? parsedRating
+      : 5;
 
   // Fallback to match mock/catalog product tags if still empty
   if (tags.length === 0) {
@@ -169,8 +181,8 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     desc: product.description || '',
     price: Number(product.price || 0),
     image: resolveProductImage(slug, product.image_url),
-    rating: Number(product.rating || 4.8),
-    reviews: Number(product.review_count || 120),
+    rating,
+    reviews,
     calories: Number(product.calories || 180),
     line: category,
     fruit: category,

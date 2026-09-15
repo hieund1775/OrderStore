@@ -93,6 +93,8 @@ export function toProductV2Dto(row) {
     description: row.description || null,
     price: Number(row.price || 0),
     image_url: row.image_url || null,
+    rating: Number(row.rating || 0),
+    review_count: Number(row.review_count || 0),
     status: row.status,
     fulfillment_lane: row.fulfillment_lane,
     stock_mode: row.stock_mode,

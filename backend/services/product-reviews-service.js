@@ -426,6 +426,26 @@ export class ProductReviewsService {
   }
 
   /**
+   * Irreversibly delete a review thread after the route has applied admin
+   * branch authorization. Database removal and aggregate recomputation are
+   * transactional; object storage is cleaned only after that commit.
+   */
+  async deleteReviewPermanently(reviewId) {
+    const deleted = await this.repo.deleteReviewPermanently(reviewId);
+    const cleanup = await Promise.allSettled(
+      deleted.storageKeys.map((storageKey) => this.storage.deleteObject(storageKey)),
+    );
+    const failed = cleanup.filter((result) => result.status === 'rejected').length;
+    if (failed > 0) {
+      console.error('[reviews] media cleanup pending after permanent deletion', {
+        reviewId: deleted.reviewId,
+        failedObjects: failed,
+      });
+    }
+    return { reviewId: deleted.reviewId, mediaCleanupPending: failed };
+  }
+
+  /**
    * Check if an admin has permission to act on a review (branch scope).
    */
   async checkAdminReviewAccess(reviewId, adminRole, adminBranchId) {

@@ -348,6 +348,55 @@ export class ProductReviewsRepository {
   }
 
   /**
+   * Permanently remove one review thread and recalculate only its product.
+   * Media storage objects are returned for deletion by the service after commit.
+   */
+  async deleteReviewPermanently(reviewId) {
+    return this.withTransaction(async (client) => {
+      const { rows: reviews } = await client.query(
+        `SELECT id, product_id
+         FROM reviews
+         WHERE id = $1
+         FOR UPDATE`,
+        [reviewId],
+      );
+      if (reviews.length === 0) {
+        throw new IdentityError('NOT_FOUND', 'Không tìm thấy đánh giá', 404);
+      }
+      const review = reviews[0];
+
+      const { rows: mediaRows } = await client.query(
+        `SELECT DISTINCT rm.storage_key
+         FROM review_media rm
+         JOIN review_revisions rr ON rr.id = rm.review_revision_id
+         WHERE rr.review_id = $1`,
+        [reviewId],
+      );
+      const storageKeys = mediaRows.map((row) => row.storage_key).filter(Boolean);
+
+      // review_media_uploads.review_id has a restrictive FK, while original
+      // upload intents are identified by the attached media storage key.
+      await client.query(
+        `DELETE FROM review_media_uploads
+         WHERE review_id = $1
+            OR storage_key = ANY($2::varchar[])`,
+        [reviewId, storageKeys],
+      );
+
+      // reviews.current_revision_id references a child row. Clear it before
+      // the review delete cascades revisions, replies, and media metadata.
+      await client.query(
+        `UPDATE reviews SET current_revision_id = NULL WHERE id = $1`,
+        [reviewId],
+      );
+      await client.query(`DELETE FROM reviews WHERE id = $1`, [reviewId]);
+      await this._recomputeProductRating(client, review.product_id);
+
+      return { reviewId: review.id, productId: review.product_id, storageKeys };
+    });
+  }
+
+  /**
    * Reply to a review (one reply max).
    */
   async replyToReview(reviewId, adminUserId, body) {

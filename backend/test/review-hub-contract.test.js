@@ -267,5 +267,41 @@ describe('Review Hub Public & Admin Reply Contract', () => {
         },
       );
     });
+
+    it('permanent deletion clears child references, cascades the thread, and recomputes one product', async () => {
+      const statements = [];
+      const mockDb = {
+        async transaction(callback) {
+          const client = {
+            async query(sql, params) {
+              statements.push({ sql, params });
+              if (sql.includes('FROM reviews') && sql.includes('FOR UPDATE')) {
+                return [[{ id: 20, product_id: 7 }]];
+              }
+              if (sql.includes('FROM review_media')) {
+                return [[{ storage_key: 'reviews/20/image.webp' }]];
+              }
+              return [[]];
+            },
+          };
+          return callback(client);
+        },
+      };
+      const repo = new ProductReviewsRepository(mockDb);
+
+      const deleted = await repo.deleteReviewPermanently(20);
+
+      assert.deepEqual(deleted, {
+        reviewId: 20,
+        productId: 7,
+        storageKeys: ['reviews/20/image.webp'],
+      });
+      assert.ok(statements.some(({ sql }) => sql.includes('DELETE FROM review_media_uploads')));
+      assert.ok(statements.some(({ sql }) => sql.includes('UPDATE reviews SET current_revision_id = NULL')));
+      assert.ok(statements.some(({ sql }) => sql.includes('DELETE FROM reviews WHERE id = $1')));
+      const aggregate = statements.find(({ sql }) => sql.includes('UPDATE products p'));
+      assert.ok(aggregate, 'must recompute aggregate after hard deletion');
+      assert.deepEqual(aggregate.params, [7]);
+    });
   });
 });

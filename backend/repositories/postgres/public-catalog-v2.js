@@ -1,5 +1,23 @@
 import postgresDb from '../../config/db-postgres.js';
 
+const REVIEW_AGGREGATE_SELECT = `
+  COALESCE((
+    SELECT ROUND(AVG(rr.rating)::numeric, 1)
+    FROM reviews rev
+    JOIN review_revisions rr ON rr.id = rev.current_revision_id
+    WHERE rev.product_id = p.id
+      AND rev.purchase_verified_at IS NOT NULL
+      AND rev.visibility_status = 'visible'
+  ), 0) AS rating,
+  (
+    SELECT COUNT(*)::int
+    FROM reviews rev
+    WHERE rev.product_id = p.id
+      AND rev.purchase_verified_at IS NOT NULL
+      AND rev.visibility_status = 'visible'
+  ) AS review_count,
+`;
+
 export function createPublicCatalogV2Repository(database = postgresDb) {
   return {
     async getCategoryTree(storeId = null) {
@@ -101,6 +119,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
            SELECT p.id, p.name, p.slug, p.description, p.image_url, p.fulfillment_lane, p.stock_mode,
                   p.category_id, c.name AS category_name, c.slug AS category_slug,
                   tree.root_id,
+                  ${REVIEW_AGGREGATE_SELECT}
                   COALESCE(branch_offer.price, p.price) AS price,
                   branch_offer.compare_at_price,
                   COALESCE(branch_offer.is_available, p.is_available, TRUE) AS is_available,
@@ -262,6 +281,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
                p.category_id, c.name AS category_name, c.slug AS category_slug,
                pt.code AS product_type_code, pt.name AS product_type_name,
                p.product_type_schema_id,
+               ${REVIEW_AGGREGATE_SELECT}
                ${priceSelect},
                (SELECT COUNT(*)::int FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active') AS variants_count
         FROM products p
@@ -296,6 +316,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
                 p.category_id, c.name AS category_name, c.slug AS category_slug,
                 pt.code AS product_type_code, pt.name AS product_type_name,
                 p.product_type_schema_id,
+                ${REVIEW_AGGREGATE_SELECT}
                 ${priceSelect}
          FROM products p
          JOIN categories c ON c.id = p.category_id

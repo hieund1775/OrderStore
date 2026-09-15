@@ -28,6 +28,7 @@ function mockRepo(overrides = {}) {
     getAdminReviewDetail: mock.fn(),
     replyToReview: mock.fn(),
     setVisibility: mock.fn(),
+    deleteReviewPermanently: mock.fn(),
     getReviewStoreId: mock.fn(),
     getReviewOwnerContext: mock.fn(),
     findById: mock.fn(),
@@ -466,6 +467,25 @@ describe('ProductReviewsService — unit tests', () => {
 
     assert.equal(result.visibility_status, 'hidden');
     assert.equal(repo.setVisibility.mock.callCount(), 1);
+  });
+
+  it('permanently deletes the review thread then cleans captured media after the database commit', async () => {
+    const repo = mockRepo();
+    const storage = { deleteObject: mock.fn(async () => undefined) };
+    repo.deleteReviewPermanently.mock.mockImplementation(() => ({
+      reviewId: 100,
+      productId: 7,
+      storageKeys: ['reviews/100/image.webp', 'reviews/100/video.mp4'],
+    }));
+    const service = new ProductReviewsService(repo, storage);
+
+    const result = await service.deleteReviewPermanently(100);
+
+    assert.equal(repo.deleteReviewPermanently.mock.callCount(), 1);
+    assert.deepEqual(repo.deleteReviewPermanently.mock.calls[0].arguments, [100]);
+    assert.equal(storage.deleteObject.mock.callCount(), 2);
+    assert.equal(result.reviewId, 100);
+    assert.equal(result.mediaCleanupPending, 0);
   });
 
   // ────── checkAdminReviewAccess ──────

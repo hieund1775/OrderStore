@@ -50,8 +50,14 @@ export interface PublicReviewHubResponse {
 
 type SourceTab = 'all' | 'normal' | 'preorder';
 
-export function PublicReviewHub() {
-  const [activeTab, setActiveTab] = useState<SourceTab>('all');
+export function PublicReviewHub({
+  initialSource = 'all',
+  lockSource = false,
+}: {
+  initialSource?: SourceTab;
+  lockSource?: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<SourceTab>(initialSource);
   const [reviews, setReviews] = useState<PublicReviewHubItem[]>([]);
   const [summary, setSummary] = useState<PublicReviewHubSummary | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -103,6 +109,10 @@ export function PublicReviewHub() {
       setLoadingMore(false);
     }
   };
+
+  useEffect(() => {
+    setActiveTab(initialSource);
+  }, [initialSource]);
 
   useEffect(() => {
     setReviews([]);
@@ -189,7 +199,7 @@ export function PublicReviewHub() {
 
       {/* Tabs Filter */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div className="flex items-center gap-2 bg-muted/60 p-1 rounded-2xl border">
+        {!lockSource ? <div className="flex items-center gap-2 bg-muted/60 p-1 rounded-2xl border">
           <button
             type="button"
             onClick={() => setActiveTab('all')}
@@ -223,7 +233,9 @@ export function PublicReviewHub() {
           >
             Đơn đặt trước
           </button>
-        </div>
+        </div> : <Badge variant="outline" className="rounded-xl px-3 py-1.5 text-xs">
+          Đánh giá đơn đặt trước
+        </Badge>}
 
         <div className="text-xs text-muted-foreground flex items-center gap-1">
           <ShieldCheck className="size-4 text-leaf" />

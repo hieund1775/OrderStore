@@ -322,13 +322,17 @@ export class SupabaseReviewStorage {
   async deleteObject(key) {
     if (!this._isConfigured) return;
 
-    await this.fetchImpl(
+    const response = await this.fetchImpl(
       `${this.supabaseUrl}/storage/v1/object/${this.bucketName}/${key}`,
       {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${this.supabaseServiceKey}` },
       },
     );
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`Supabase Storage không thể xóa media review: ${response.status} ${errorBody}`);
+    }
   }
 
   /**
