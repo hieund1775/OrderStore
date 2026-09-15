@@ -12,8 +12,8 @@ const router = Router();
 router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
   try {
     const adminId = Number(req.user?.sub);
-    const isPaginated = isPaginationRequested(req.query);
-    if (isPaginated) {
+    const hasPage = req.query.page !== undefined && req.query.page !== null && req.query.page !== '';
+    if (hasPage) {
       const page = validatePage(req.query.page, 1);
       const limit = validateLimit(req.query.limit, 10, 50);
       const type = req.query.type;

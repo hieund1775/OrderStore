@@ -204,6 +204,42 @@ export function validateAdminReviewListQuery(query = {}) {
     }
   }
 
+  if (query.search !== undefined && query.search !== null && query.search !== '') {
+    if (typeof query.search !== 'string') {
+      errors.push('Từ khóa tìm kiếm (search) phải là chuỗi ký tự');
+    } else if (query.search.trim().length > 100) {
+      errors.push('Từ khóa tìm kiếm không được vượt quá 100 ký tự');
+    }
+  }
+
+  const validVisibilities = ['visible', 'hidden', 'all'];
+  if (query.visibility !== undefined && query.visibility !== null && query.visibility !== '') {
+    if (!validVisibilities.includes(query.visibility)) {
+      errors.push(`Trạng thái hiển thị không hợp lệ. Cho phép: ${validVisibilities.join(', ')}`);
+    }
+  }
+
+  if (query.rating !== undefined && query.rating !== null && query.rating !== '') {
+    const r = Number(query.rating);
+    if (!Number.isInteger(r) || r < 1 || r > 5) {
+      errors.push('Lọc theo điểm đánh giá phải từ 1 đến 5');
+    }
+  }
+
+  if (query.cursor !== undefined && query.cursor !== null && query.cursor !== '') {
+    const c = Number(query.cursor);
+    if (!Number.isInteger(c) || c <= 0) {
+      errors.push('Cursor không hợp lệ (phải là số nguyên dương)');
+    }
+  }
+
+  if (query.store_id !== undefined && query.store_id !== null && query.store_id !== '') {
+    const sId = Number(query.store_id);
+    if (!Number.isInteger(sId) || sId <= 0) {
+      errors.push('Mã chi nhánh (store_id) phải là số nguyên dương');
+    }
+  }
+
   if (query.limit !== undefined && query.limit !== null && query.limit !== '') {
     const limit = Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
@@ -212,4 +248,4 @@ export function validateAdminReviewListQuery(query = {}) {
   }
 
   return { valid: errors.length === 0, errors };
-}
+}

@@ -106,14 +106,40 @@ describe('Review Hub Public & Admin Reply Contract', () => {
       assert.equal(highLimit.valid, false);
     });
 
-    it('validates admin review list query parameters', () => {
+    it('validates admin review list query parameters with robust hardening', () => {
       assert.equal(validateAdminReviewListQuery({ query: 'TP2609', limit: 15 }).valid, true);
+      assert.equal(validateAdminReviewListQuery({ search: 'Trà Đào', limit: 15 }).valid, true);
+      assert.equal(validateAdminReviewListQuery({ visibility: 'visible', rating: 5, cursor: 10, store_id: 2 }).valid, true);
+      assert.equal(validateAdminReviewListQuery({ visibility: 'all', rating: '1', cursor: '50', store_id: '3' }).valid, true);
       assert.equal(validateAdminReviewListQuery({ query: '' }).valid, true);
       assert.equal(validateAdminReviewListQuery({}).valid, true);
 
-      // Query exceeds 100 characters
-      const longQuery = validateAdminReviewListQuery({ query: 'a'.repeat(101) });
-      assert.equal(longQuery.valid, false);
+      // Search & Query character limit
+      assert.equal(validateAdminReviewListQuery({ query: 'a'.repeat(101) }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ search: 'a'.repeat(101) }).valid, false);
+
+      // Invalid visibility
+      assert.equal(validateAdminReviewListQuery({ visibility: 'deleted' }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ visibility: 'pending' }).valid, false);
+
+      // Invalid rating
+      assert.equal(validateAdminReviewListQuery({ rating: 0 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ rating: 6 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ rating: 'five' }).valid, false);
+
+      // Invalid cursor
+      assert.equal(validateAdminReviewListQuery({ cursor: 0 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ cursor: -5 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ cursor: 'invalid' }).valid, false);
+
+      // Invalid store_id
+      assert.equal(validateAdminReviewListQuery({ store_id: 0 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ store_id: -1 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ store_id: 'branch' }).valid, false);
+
+      // Invalid limit
+      assert.equal(validateAdminReviewListQuery({ limit: 0 }).valid, false);
+      assert.equal(validateAdminReviewListQuery({ limit: 51 }).valid, false);
     });
   });
 

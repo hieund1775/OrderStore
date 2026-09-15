@@ -161,8 +161,8 @@ router.delete('/users/:id/wishlist/:productId', authenticate, requireCustomerWis
 router.get('/users/:id/notifications', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.user.id || req.user.sub);
-    const isPaginated = isPaginationRequested(req.query);
-    if (isPaginated) {
+    const hasPage = req.query.page !== undefined && req.query.page !== null && req.query.page !== '';
+    if (hasPage) {
       const page = validatePage(req.query.page, 1);
       const limit = validateLimit(req.query.limit, 10, 50);
       const type = req.query.type;
