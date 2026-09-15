@@ -8,6 +8,7 @@ import { toCustomerDto, toNotificationDto } from '../../dto/customer-dto.js';
 import engagementService from '../../services/engagement/engagement-service.js';
 import recruitmentService from '../../services/recruitment/recruitment-service.js';
 import notificationService from '../../services/notifications/notification-service.js';
+import { isPaginationRequested, validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 
 const router = Router();
 
@@ -160,6 +161,16 @@ router.delete('/users/:id/wishlist/:productId', authenticate, requireCustomerWis
 router.get('/users/:id/notifications', authenticate, requireCustomerNotificationOwner, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.user.id || req.user.sub);
+    const isPaginated = isPaginationRequested(req.query);
+    if (isPaginated) {
+      const page = validatePage(req.query.page, 1);
+      const limit = validateLimit(req.query.limit, 10, 50);
+      const type = req.query.type;
+      const { items, totalItems, unread_count } = await notificationService.listForUser(id, limit, { page, type });
+      const dtos = items.map(toNotificationDto);
+      const pagination = buildOffsetPagination({ totalItems, page, limit });
+      return res.json({ items: dtos, pagination, unread_count });
+    }
     const { notifications, unread_count } = await notificationService.listForUser(id, req.query.limit);
     res.json({
       notifications: notifications.map(toNotificationDto),

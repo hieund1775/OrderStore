@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Heart, Settings2, ShoppingCart, Star } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { Heart, Settings2, ShoppingBag, ShoppingCart, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -12,6 +13,8 @@ import { toast } from 'sonner';
 import { useCart, usePreorderCart } from '@/lib/cart';
 import { useWishlist } from '@/lib/wishlist';
 import { useBranch } from '@/lib/branch';
+import { setBuyNowIntent } from '@/lib/buy-now';
+import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 import {
   baseOptions,
@@ -27,12 +30,14 @@ import {
 } from '@/lib/data';
 
 export function ProductCard({ product, usePreorder = false }: { product: Product; usePreorder?: boolean }) {
+  const navigate = useNavigate();
   const normalCart = useCart();
   const preorderCart = usePreorderCart();
   const { addItem } = usePreorder ? preorderCart : normalCart;
   const { isFavorite, isPending, setFavorite } = useWishlist();
   const { selectedStore } = useBranch();
   const [open, setOpen] = useState(false);
+  const [configMode, setConfigMode] = useState<'add' | 'buy'>('add');
   const liked = isFavorite(product.id);
   const pending = isPending(product.id);
   const [imgSrc, setImgSrc] = useState(() => resolveProductImage(product.slug, product.image));
@@ -42,12 +47,16 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
       <article className="group bg-card flex flex-col overflow-hidden rounded-2xl border transition-all hover:-translate-y-1 hover:shadow-card-soft">
         <div
           className="relative aspect-square overflow-hidden cursor-pointer"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setConfigMode('add');
+            setOpen(true);
+          }}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
+              setConfigMode('add');
               setOpen(true);
             }
           }}
@@ -93,7 +102,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             {/* Row 1: Product Name */}
             <h3
               title={product.name}
-              onClick={() => setOpen(true)}
+              onClick={() => {
+                setConfigMode('add');
+                setOpen(true);
+              }}
               className="font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words cursor-pointer hover:text-primary transition-colors"
             >
               {product.name}
@@ -121,48 +133,91 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
 
           {/* Action Buttons */}
           <div className="mt-3 flex items-center gap-1.5 sm:gap-2">
-            <Button
-              variant="soft"
-              size="sm"
-              aria-label="Thêm nhanh vào giỏ"
-              className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
-              onClick={() => {
-                if (product.slug) {
-                  setOpen(true);
-                  return;
-                }
-                const added = addItem({
-                  storeId: selectedStore?.id,
-                  storeName: selectedStore?.name,
-                  storeDistrict: selectedStore?.district,
-                  productId: product.id,
-                  name: product.name,
-                  image: product.image,
-                  size: 'M',
-                  base: product.base,
-                  sugar: '100%',
-                  ice: '100%',
-                  toppings: [],
-                  unitPrice: product.price,
-                  qty: 1,
-                });
-                if (added) {
-                  toast.success('Đã thêm vào giỏ', { description: product.name });
-                }
-              }}
-            >
-              <ShoppingCart className="size-4 shrink-0" />
-              <span className="hidden sm:inline text-xs sm:text-sm">Thêm nhanh</span>
-            </Button>
-            <Button
-              variant="hero"
-              size="sm"
-              className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
-              onClick={() => setOpen(true)}
-            >
-              <Settings2 className="size-3.5 sm:size-4 shrink-0" />
-              <span className="truncate">Tùy chọn</span>
-            </Button>
+            {usePreorder ? (
+              <>
+                <Button
+                  variant="soft"
+                  size="sm"
+                  aria-label="Thêm nhanh vào giỏ"
+                  className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
+                  onClick={() => {
+                    if (product.slug) {
+                      setConfigMode('add');
+                      setOpen(true);
+                      return;
+                    }
+                    const added = addItem({
+                      storeId: selectedStore?.id,
+                      storeName: selectedStore?.name,
+                      storeDistrict: selectedStore?.district,
+                      productId: product.id,
+                      name: product.name,
+                      image: product.image,
+                      size: 'M',
+                      base: product.base,
+                      sugar: '100%',
+                      ice: '100%',
+                      toppings: [],
+                      unitPrice: product.price,
+                      qty: 1,
+                    });
+                    if (added) {
+                      toast.success('Đã thêm vào giỏ', { description: product.name });
+                    }
+                  }}
+                >
+                  <ShoppingCart className="size-4 shrink-0" />
+                  <span className="hidden sm:inline text-xs sm:text-sm">Thêm nhanh</span>
+                </Button>
+                <Button
+                  variant="hero"
+                  size="sm"
+                  className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
+                  onClick={() => {
+                    setConfigMode('add');
+                    setOpen(true);
+                  }}
+                >
+                  <Settings2 className="size-3.5 sm:size-4 shrink-0" />
+                  <span className="truncate">Tùy chọn</span>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="soft"
+                  size="sm"
+                  aria-label="Thêm vào giỏ"
+                  className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
+                  onClick={() => {
+                    setConfigMode('add');
+                    setOpen(true);
+                  }}
+                >
+                  <ShoppingCart className="size-4 shrink-0" />
+                  <span className="text-xs sm:text-sm font-medium">Thêm</span>
+                </Button>
+                <Button
+                  variant="hero"
+                  size="sm"
+                  aria-label="Mua ngay"
+                  className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
+                  onClick={() => {
+                    const session = getCustomerSession();
+                    if (!session) {
+                      toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để Mua ngay');
+                      openCustomerLoginModal();
+                      return;
+                    }
+                    setConfigMode('buy');
+                    setOpen(true);
+                  }}
+                >
+                  <ShoppingBag className="size-3.5 sm:size-4 shrink-0" />
+                  <span className="truncate">Mua</span>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </article>
@@ -173,6 +228,7 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
           storeId={selectedStore?.id}
           open={open}
           onOpenChange={setOpen}
+          mode={configMode}
           onAddToCart={(configured) => {
             addItem({
               storeId: selectedStore?.id,
@@ -187,27 +243,107 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
               variantName: configured.variantName,
               stockMode: configured.stockMode,
               fulfillmentLane: configured.fulfillmentLane,
-              size: configured.appliedModifiers.find((m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size'))?.value_label || configured.variantName || 'M',
-              base: configured.appliedModifiers.find((m) => m.attribute_code === 'base' || m.attribute_name.toLowerCase().includes('nền') || m.attribute_name.toLowerCase().includes('base'))?.value_label || product.base,
-              sugar: configured.appliedModifiers.find((m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường'))?.value_label || '100%',
-              ice: configured.appliedModifiers.find((m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá'))?.value_label || '100%',
+              size:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size')
+                )?.value_label ||
+                configured.variantName ||
+                'M',
+              base:
+                configured.appliedModifiers.find(
+                  (m) =>
+                    m.attribute_code === 'base' ||
+                    m.attribute_name.toLowerCase().includes('nền') ||
+                    m.attribute_name.toLowerCase().includes('base')
+                )?.value_label || product.base,
+              sugar:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường')
+                )?.value_label || '100%',
+              ice:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá')
+                )?.value_label || '100%',
               toppings: configured.appliedModifiers
                 .filter((m) => m.attribute_code === 'toppings' || m.attribute_name.toLowerCase().includes('topping'))
-                .map((m) => m.value_label || m.attribute_label || m.attribute_name),
+                .map((m) => m.value_label || (m as { attribute_label?: string }).attribute_label || m.attribute_name),
               appliedModifiers: configured.appliedModifiers.map((m) => ({
-                attribute_code: m.attribute_code || `attr_${m.attribute_definition_id || 0}`,
+                attribute_code: m.attribute_code,
                 attribute_name: m.attribute_name,
-                value_code: m.value_code || `val_${m.attribute_value_id || 0}`,
-                value_label: m.value_label || m.attribute_label || m.attribute_name,
+                value_code: m.value_code,
+                value_label: m.value_label,
                 price_adjustment: m.price_adjustment,
               })),
               unitPrice: configured.unitPrice,
               qty: configured.quantity,
             });
           }}
+          onBuyNow={(configured) => {
+            const session = getCustomerSession();
+            if (!session) {
+              toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để Mua ngay');
+              openCustomerLoginModal();
+              return;
+            }
+            const buyNowItem = {
+              storeId: selectedStore?.id,
+              storeName: selectedStore?.name,
+              storeDistrict: selectedStore?.district,
+              productId: String(configured.productId),
+              productSlug: configured.productSlug,
+              name: configured.productName,
+              image: configured.image || product.image,
+              variantId: configured.variantId,
+              sku: configured.sku,
+              variantName: configured.variantName,
+              stockMode: configured.stockMode,
+              fulfillmentLane: configured.fulfillmentLane,
+              size:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size')
+                )?.value_label ||
+                configured.variantName ||
+                'M',
+              base:
+                configured.appliedModifiers.find(
+                  (m) =>
+                    m.attribute_code === 'base' ||
+                    m.attribute_name.toLowerCase().includes('nền') ||
+                    m.attribute_name.toLowerCase().includes('base')
+                )?.value_label || product.base,
+              sugar:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường')
+                )?.value_label || '100%',
+              ice:
+                configured.appliedModifiers.find(
+                  (m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá')
+                )?.value_label || '100%',
+              toppings: configured.appliedModifiers
+                .filter((m) => m.attribute_code === 'toppings' || m.attribute_name.toLowerCase().includes('topping'))
+                .map((m) => m.value_label || (m as { attribute_label?: string }).attribute_label || m.attribute_name),
+              appliedModifiers: configured.appliedModifiers.map((m) => ({
+                attribute_code: m.attribute_code,
+                attribute_name: m.attribute_name,
+                value_code: m.value_code,
+                value_label: m.value_label,
+                price_adjustment: m.price_adjustment,
+              })),
+              unitPrice: configured.unitPrice,
+              qty: configured.quantity,
+            };
+            setBuyNowIntent(session.userId, buyNowItem);
+            navigate({ to: '/thanh-toan' });
+          }}
         />
       ) : (
-        <CustomizeDialog product={product} open={open} onOpenChange={setOpen} usePreorder={usePreorder} />
+        <CustomizeDialog
+          product={product}
+          open={open}
+          onOpenChange={setOpen}
+          mode={configMode}
+          usePreorder={usePreorder}
+        />
       )}
     </>
   );
@@ -217,13 +353,16 @@ function CustomizeDialog({
   product,
   open,
   onOpenChange,
+  mode = 'add',
   usePreorder = false,
 }: {
   product: Product;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  mode?: 'add' | 'buy';
   usePreorder?: boolean;
 }) {
+  const navigate = useNavigate();
   const normalCart = useCart();
   const preorderCart = usePreorderCart();
   const { addItem } = usePreorder ? preorderCart : normalCart;
@@ -243,6 +382,101 @@ function CustomizeDialog({
       .reduce((s, t) => s + t.price, 0);
     return product.price + sizeExtra + topExtra;
   }, [size, toppings, product.price]);
+
+  const handleConfirm = () => {
+    if (mode === 'buy' && !usePreorder) {
+      const session = getCustomerSession();
+      if (!session) {
+        toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để Mua ngay');
+        openCustomerLoginModal();
+        return;
+      }
+      const buyNowItem = {
+        storeId: selectedStore?.id,
+        storeName: selectedStore?.name,
+        storeDistrict: selectedStore?.district,
+        productId: product.id,
+        name: product.name,
+        image: product.image,
+        size,
+        base,
+        sugar,
+        ice,
+        toppings: toppingOptions
+          .filter((t) => toppings.includes(t.id))
+          .map((t) => t.label),
+        appliedModifiers: [
+          {
+            attribute_code: 'size',
+            attribute_name: 'Size',
+            value_code: size.toLowerCase(),
+            value_label: size,
+            price_adjustment: sizeOptions.find((s) => s.id === size)?.extra ?? 0,
+          },
+          {
+            attribute_code: 'base',
+            attribute_name: 'Trà nền',
+            value_code: base.toLowerCase(),
+            value_label: base,
+            price_adjustment: 0,
+          },
+          {
+            attribute_code: 'sugar',
+            attribute_name: 'Đường',
+            value_code: sugar.toLowerCase(),
+            value_label: sugar,
+            price_adjustment: 0,
+          },
+          {
+            attribute_code: 'ice',
+            attribute_name: 'Đá',
+            value_code: ice.toLowerCase(),
+            value_label: ice,
+            price_adjustment: 0,
+          },
+          ...toppingOptions
+            .filter((t) => toppings.includes(t.id))
+            .map((t) => ({
+              attribute_code: 'topping',
+              attribute_name: 'Topping',
+              value_code: t.id,
+              value_label: t.label,
+              price_adjustment: t.price,
+            })),
+        ],
+        note,
+        unitPrice,
+        qty,
+      };
+      setBuyNowIntent(session.userId, buyNowItem);
+      navigate({ to: '/thanh-toan' });
+      onOpenChange(false);
+      return;
+    }
+
+    const added = addItem({
+      storeId: selectedStore?.id,
+      storeName: selectedStore?.name,
+      storeDistrict: selectedStore?.district,
+      productId: product.id,
+      name: product.name,
+      image: product.image,
+      size,
+      base,
+      sugar,
+      ice,
+      toppings: toppingOptions
+        .filter((t) => toppings.includes(t.id))
+        .map((t) => t.label),
+      note,
+      unitPrice,
+      qty,
+    });
+    if (added) {
+      toast.success('Đã thêm vào giỏ', { description: `${product.name} · ${size}` });
+      onOpenChange(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -373,32 +607,11 @@ function CustomizeDialog({
               <Button
                 variant="hero"
                 className="flex-1"
-                onClick={() => {
-                  const added = addItem({
-                    storeId: selectedStore?.id,
-                    storeName: selectedStore?.name,
-                    storeDistrict: selectedStore?.district,
-                    productId: product.id,
-                    name: product.name,
-                    image: product.image,
-                    size,
-                    base,
-                    sugar,
-                    ice,
-                    toppings: toppingOptions
-                      .filter((t) => toppings.includes(t.id))
-                      .map((t) => t.label),
-                    note,
-                    unitPrice,
-                    qty,
-                  });
-                  if (added) {
-                    toast.success('Đã thêm vào giỏ', { description: `${product.name} · ${size}` });
-                    onOpenChange(false);
-                  }
-                }}
+                onClick={handleConfirm}
               >
-                Thêm vào giỏ · {vnd(unitPrice * qty)}
+                {mode === 'buy' && !usePreorder
+                  ? `Mua ngay · ${vnd(unitPrice * qty)}`
+                  : `Thêm vào giỏ · ${vnd(unitPrice * qty)}`}
               </Button>
             </div>
           </div>

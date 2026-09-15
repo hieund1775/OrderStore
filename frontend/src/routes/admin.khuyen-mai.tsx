@@ -116,7 +116,7 @@ function PromotionsAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<any>(`/admin/promotions?page=${page}&limit=5`);
+      const res = await apiGet<any>(`/admin/promotions?page=${page}&limit=15`);
       let list: Promotion[] = [];
       if (Array.isArray(res)) {
         list = res;

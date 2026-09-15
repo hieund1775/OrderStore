@@ -356,9 +356,33 @@ export class ProductReviewsService {
   }
 
   /**
+   * List public reviews for review hub across normal/preorder sources.
+   */
+  async listPublicReviewHub({ source = 'all', cursor, limit = 15 }) {
+    const validSources = new Set(['all', 'normal', 'preorder']);
+    const safeSource = validSources.has(source) ? source : 'all';
+    const safeLimit = Math.min(Math.max(Number(limit) || 15, 1), 50);
+
+    return this.repo.listPublicReviewHub({
+      source: safeSource,
+      cursor: cursor || null,
+      limit: safeLimit,
+    });
+  }
+
+  /**
+   * Get public review hub summary.
+   */
+  async getPublicReviewHubSummary({ source = 'all' }) {
+    const validSources = new Set(['all', 'normal', 'preorder']);
+    const safeSource = validSources.has(source) ? source : 'all';
+    return this.repo.getPublicReviewHubSummary({ source: safeSource });
+  }
+
+  /**
    * Admin: list reviews with filters.
    */
-  async listAdminReviews({ storeId, visibility, rating, cursor, limit, adminRole, adminBranchId }) {
+  async listAdminReviews({ storeId, visibility, rating, cursor, limit, adminRole, adminBranchId, query }) {
     // Manager can only see their own store's reviews
     const effectiveStoreId = adminRole === 'manager' ? adminBranchId : storeId;
 
@@ -367,7 +391,8 @@ export class ProductReviewsService {
       visibility,
       rating,
       cursor,
-      limit: Math.min(limit || 20, 100),
+      limit: Math.min(Math.max(Number(limit) || 15, 1), 50),
+      query: query ? String(query).slice(0, 100).trim() : null,
     });
   }
 

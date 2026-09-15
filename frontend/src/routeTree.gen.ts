@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
+import { Route as DanhGiaRouteImport } from './routes/danh-gia'
 import { Route as DatTruocRouteImport } from './routes/dat-truoc'
 import { Route as DonDatTruocRouteImport } from './routes/don-dat-truoc'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
@@ -53,6 +54,11 @@ const AdminRoute = AdminRouteImport.update({
 const CuaHangRoute = CuaHangRouteImport.update({
   id: '/cua-hang',
   path: '/cua-hang',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DanhGiaRoute = DanhGiaRouteImport.update({
+  id: '/danh-gia',
+  path: '/danh-gia',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DatTruocRoute = DatTruocRouteImport.update({
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
+  '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cua-hang': typeof CuaHangRoute
+  '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/cua-hang': typeof CuaHangRoute
+  '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
@@ -293,6 +302,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/cua-hang'
+    | '/danh-gia'
     | '/dat-truoc'
     | '/don-dat-truoc'
     | '/gioi-thieu'
@@ -324,6 +334,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/cua-hang'
+    | '/danh-gia'
     | '/dat-truoc'
     | '/don-dat-truoc'
     | '/gioi-thieu'
@@ -356,6 +367,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/cua-hang'
+    | '/danh-gia'
     | '/dat-truoc'
     | '/don-dat-truoc'
     | '/gioi-thieu'
@@ -389,6 +401,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   CuaHangRoute: typeof CuaHangRoute
+  DanhGiaRoute: typeof DanhGiaRoute
   DatTruocRoute: typeof DatTruocRoute
   DonDatTruocRoute: typeof DonDatTruocRoute
   GioiThieuRoute: typeof GioiThieuRoute
@@ -422,6 +435,13 @@ declare module '@tanstack/react-router' {
       path: '/cua-hang'
       fullPath: '/cua-hang'
       preLoaderRoute: typeof CuaHangRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/danh-gia': {
+      id: '/danh-gia'
+      path: '/danh-gia'
+      fullPath: '/danh-gia'
+      preLoaderRoute: typeof DanhGiaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dat-truoc': {
@@ -662,6 +682,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   CuaHangRoute: CuaHangRoute,
+  DanhGiaRoute: DanhGiaRoute,
   DatTruocRoute: DatTruocRoute,
   DonDatTruocRoute: DonDatTruocRoute,
   GioiThieuRoute: GioiThieuRoute,

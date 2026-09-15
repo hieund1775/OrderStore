@@ -17,7 +17,7 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
 
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
-      const limit = validateLimit(req.query.limit, 5, 50);
+      const limit = validateLimit(req.query.limit, 15, 50);
       const result = await adminPromotionService.listPromotions({ scopedStoreId, page, limit });
       const items = (result.items || []).map(toPromotionDto);
       const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });

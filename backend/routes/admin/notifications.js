@@ -15,7 +15,7 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
     const isPaginated = isPaginationRequested(req.query);
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
-      const limit = validateLimit(req.query.limit, 5, 50);
+      const limit = validateLimit(req.query.limit, 10, 50);
       const type = req.query.type;
       const { items, totalItems, unread_count } = await notificationService.listForUser(adminId, limit, { page, type });
       const dtos = items.map(toNotificationDto);

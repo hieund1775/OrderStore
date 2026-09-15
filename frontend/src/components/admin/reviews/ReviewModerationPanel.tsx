@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Star, Eye, EyeOff, MessageSquare, Reply, Search, Filter as FilterIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Star, Eye, EyeOff, MessageSquare, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -31,11 +30,13 @@ interface ReviewItem {
   userFullname: string;
   productName: string;
   productSlug: string;
+  sizeLabel?: string | null;
   rating: number;
   comment: string | null;
   visibilityStatus: string;
   purchaseVerifiedAt: string | null;
   createdAt: string;
+  orderCode?: string | null;
   reply: { id: number; body: string; createdAt: string } | null;
 }
 
@@ -45,6 +46,7 @@ export function ReviewModerationPanel() {
   const [storeFilter, setStoreFilter] = useState<string>('');
   const [visibilityFilter, setVisibilityFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -54,12 +56,26 @@ export function ReviewModerationPanel() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
+  // Debounce search query 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load reviews automatically on mount and whenever filters change
+  useEffect(() => {
+    void loadReviews(true);
+  }, [debouncedQuery, visibilityFilter, storeFilter]);
+
   async function loadReviews(reset = false) {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ limit: '5' });
+      const params = new URLSearchParams({ limit: '15' });
       if (storeFilter) params.set('store_id', storeFilter);
       if (visibilityFilter !== 'all') params.set('visibility', visibilityFilter);
+      if (debouncedQuery) params.set('query', debouncedQuery);
       if (!reset && cursor) params.set('cursor', cursor);
 
       const data = await apiGet<{
@@ -69,12 +85,12 @@ export function ReviewModerationPanel() {
       }>(`/admin/reviews?${params}`);
 
       if (reset) {
-        setReviews(data.items);
+        setReviews(data.items || []);
       } else {
-        setReviews((prev) => [...prev, ...data.items]);
+        setReviews((prev) => [...prev, ...(data.items || [])]);
       }
-      setCursor(data.cursor);
-      setHasMore(data.hasMore);
+      setCursor(data.cursor || null);
+      setHasMore(Boolean(data.hasMore));
     } catch (err) {
       toast.error('Không thể tải danh sách đánh giá');
     } finally {
@@ -91,11 +107,12 @@ export function ReviewModerationPanel() {
     setSubmittingReply(true);
     try {
       await apiPost(`/admin/reviews/${reviewId}/reply`, { body: replyText.trim() });
-      toast.success('Đã gửi phản hồi');
+      toast.success('Đã gửi phản hồi chính thức');
       setReplyText('');
-      loadReviews(true);
+      setShowDetail(false);
+      void loadReviews(true);
     } catch (err) {
-      toast.error('Không thể gửi phản hồi');
+      toast.error('Không thể gửi phản hồi (có thể đã có phản hồi trước đó)');
     } finally {
       setSubmittingReply(false);
     }
@@ -110,9 +127,9 @@ export function ReviewModerationPanel() {
       toast.success(newVisibility === 'hidden' ? 'Đã ẩn đánh giá' : 'Đã hiện đánh giá');
       setShowHideDialog(null);
       setHideReason('');
-      loadReviews(true);
+      void loadReviews(true);
     } catch (err) {
-      toast.error('Không thể thay đổi trạng thái');
+      toast.error('Không thể thay đổi trạng thái hiển thị');
     }
   }
 
@@ -122,7 +139,7 @@ export function ReviewModerationPanel() {
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
-            className={`h-3 w-3 ${star <= rating ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+            className={`h-3.5 w-3.5 ${star <= rating ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
           />
         ))}
       </div>
@@ -131,12 +148,12 @@ export function ReviewModerationPanel() {
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Search and Filters Header */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Tìm theo tên sản phẩm..."
+            placeholder="Tìm theo mã đơn (TP/PO/GRP), tên món, size, tên khách..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -152,130 +169,164 @@ export function ReviewModerationPanel() {
             <SelectItem value="hidden">Đã ẩn</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={() => loadReviews(true)}>
-          <FilterIcon className="mr-1 h-4 w-4" />
-          Lọc
-        </Button>
       </div>
 
       {/* Review List */}
       <div className="space-y-3">
-        {reviews
-          .filter((r) => !searchQuery || r.productName?.toLowerCase().includes(searchQuery.toLowerCase()))
-          .map((review) => (
-            <div
-              key={review.id}
-              className="rounded-lg border bg-white p-4 transition-colors hover:border-gray-300"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">{review.userFullname}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {review.productName}
+        {reviews.map((review) => (
+          <div
+            key={review.id}
+            className="rounded-xl border bg-card p-4 transition-colors hover:border-primary/40 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-sm text-foreground">{review.userFullname}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {review.productName}
+                    {review.sizeLabel ? ` (Size ${review.sizeLabel})` : ''}
+                  </Badge>
+                  {review.orderCode && (
+                    <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                      {review.orderCode}
                     </Badge>
-                    {review.visibilityStatus === 'hidden' && (
-                      <Badge variant="outline" className="border-red-200 text-red-600">
-                        <EyeOff className="mr-0.5 h-3 w-3" />
-                        Đã ẩn
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    {renderStars(review.rating)}
-                    <span className="text-xs text-gray-400">
-                      {new Date(review.createdAt).toLocaleDateString('vi-VN')}
-                    </span>
-                  </div>
-                  {review.comment && (
-                    <p className="mt-1 text-sm text-gray-600 line-clamp-2">{review.comment}</p>
+                  )}
+                  {review.visibilityStatus === 'hidden' && (
+                    <Badge variant="outline" className="border-red-200 text-red-600 bg-red-50 text-[10px]">
+                      <EyeOff className="mr-0.5 h-3 w-3 inline" />
+                      Đã ẩn
+                    </Badge>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedReview(review);
-                      setShowDetail(true);
-                    }}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowHideDialog({ id: review.id, current: review.visibilityStatus })}
-                  >
-                    {review.visibilityStatus === 'hidden' ? (
-                      <Eye className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <EyeOff className="h-4 w-4 text-red-500" />
-                    )}
-                  </Button>
+                <div className="flex items-center gap-2">
+                  {renderStars(review.rating)}
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(review.createdAt).toLocaleDateString('vi-VN')}
+                  </span>
                 </div>
+
+                {review.comment && (
+                  <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">
+                    {review.comment}
+                  </p>
+                )}
+
+                {/* Reply display directly on card */}
+                {review.reply && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs space-y-1 mt-2">
+                    <div className="flex items-center gap-1.5 font-bold text-primary">
+                      <MessageSquare className="size-3.5" />
+                      <span>Phản hồi từ cửa hàng</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">
+                        ({new Date(review.reply.createdAt).toLocaleDateString('vi-VN')})
+                      </span>
+                    </div>
+                    <p className="text-foreground leading-relaxed whitespace-pre-line">
+                      {review.reply.body}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Xem chi tiết & Phản hồi"
+                  onClick={() => {
+                    setSelectedReview(review);
+                    setReplyText('');
+                    setShowDetail(true);
+                  }}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title={review.visibilityStatus === 'hidden' ? 'Hiện đánh giá' : 'Ẩn đánh giá'}
+                  onClick={() => setShowHideDialog({ id: review.id, current: review.visibilityStatus })}
+                >
+                  {review.visibilityStatus === 'hidden' ? (
+                    <Eye className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <EyeOff className="h-4 w-4 text-rose-500" />
+                  )}
+                </Button>
               </div>
             </div>
-          ))}
+          </div>
+        ))}
 
         {loading && (
-          <div className="py-8 text-center text-sm text-gray-400">Đang tải...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">Đang tải đánh giá...</div>
         )}
 
         {!loading && reviews.length === 0 && (
-          <div className="py-8 text-center text-sm text-gray-400">Chưa có đánh giá nào</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            Không tìm thấy đánh giá nào phù hợp.
+          </div>
         )}
       </div>
 
-      {/* Load More */}
+      {/* Load More Button */}
       {hasMore && !loading && (
-        <div className="text-center">
-          <Button variant="outline" size="sm" onClick={() => loadReviews(false)}>
-            Xem thêm
+        <div className="text-center pt-2">
+          <Button variant="outline" size="sm" onClick={() => void loadReviews(false)}>
+            Xem thêm đánh giá cũ hơn
           </Button>
         </div>
       )}
 
-      {/* Detail Dialog */}
+      {/* Detail & Reply Dialog */}
       <Dialog open={showDetail} onOpenChange={setShowDetail}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Chi tiết đánh giá</DialogTitle>
+            <DialogTitle>Chi tiết đánh giá & Phản hồi</DialogTitle>
           </DialogHeader>
           {selectedReview && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{selectedReview.userFullname}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold">{selectedReview.userFullname}</span>
                 <Badge variant="secondary">{selectedReview.productName}</Badge>
+                {selectedReview.sizeLabel && (
+                  <Badge variant="outline">Size {selectedReview.sizeLabel}</Badge>
+                )}
               </div>
               {renderStars(selectedReview.rating)}
               {selectedReview.comment && (
-                <p className="text-sm text-gray-700">{selectedReview.comment}</p>
+                <p className="text-sm text-foreground bg-muted/30 p-3 rounded-lg leading-relaxed whitespace-pre-line">
+                  {selectedReview.comment}
+                </p>
               )}
 
               {/* Reply section */}
               {selectedReview.reply ? (
-                <div className="rounded-lg bg-blue-50 p-3">
-                  <div className="flex items-center gap-1 text-xs font-medium text-blue-700">
-                    <MessageSquare className="h-3 w-3" />
-                    Đã phản hồi
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>Đã gửi phản hồi chính thức</span>
                   </div>
-                  <p className="mt-1 text-sm text-blue-900">{selectedReview.reply.body}</p>
+                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                    {selectedReview.reply.body}
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Phản hồi</label>
+                <div className="space-y-2 pt-2 border-t">
+                  <label className="text-sm font-semibold">Phản hồi chính thức tới khách hàng</label>
                   <Textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Nhập nội dung phản hồi..."
+                    placeholder="Nhập nội dung phản hồi từ cửa hàng..."
                     rows={3}
                   />
                   <Button
                     size="sm"
                     onClick={() => handleReply(selectedReview.id)}
                     disabled={submittingReply}
+                    className="rounded-xl"
                   >
                     {submittingReply ? 'Đang gửi...' : 'Gửi phản hồi'}
                   </Button>
@@ -286,7 +337,7 @@ export function ReviewModerationPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* Hide/Unhide Dialog */}
+      {/* Hide/Unhide Confirmation Dialog */}
       <AlertDialog open={!!showHideDialog} onOpenChange={() => setShowHideDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -295,8 +346,8 @@ export function ReviewModerationPanel() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {showHideDialog?.current === 'hidden'
-                ? 'Đánh giá sẽ hiển thị lại công khai.'
-                : 'Đánh giá sẽ bị ẩn khỏi trang sản phẩm. Bạn có thể hiện lại sau.'}
+                ? 'Đánh giá này sẽ được hiển thị công khai trở lại trên Review Hub.'
+                : 'Đánh giá sẽ bị ẩn khỏi trang Review Hub công khai. Bạn có thể hiện lại bất cứ lúc nào.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -306,7 +357,7 @@ export function ReviewModerationPanel() {
               <Input
                 value={hideReason}
                 onChange={(e) => setHideReason(e.target.value)}
-                placeholder="VD: Spam, nội dung không phù hợp..."
+                placeholder="VD: Spam, từ ngữ không phù hợp..."
               />
             </div>
           )}
@@ -322,7 +373,7 @@ export function ReviewModerationPanel() {
                 )
               }
             >
-              {showHideDialog?.current === 'hidden' ? 'Hiện' : 'Ẩn'}
+              {showHideDialog?.current === 'hidden' ? 'Xác nhận hiện' : 'Xác nhận ẩn'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

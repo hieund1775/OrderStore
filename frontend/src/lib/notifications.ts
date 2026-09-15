@@ -58,7 +58,52 @@ export function clearCustomerNotificationsInFlight(userId?: number) {
   }
 }
 
-export async function fetchCustomerNotifications(userId: number, limit = 50): Promise<NotificationResponse> {
+export type PaginatedCustomerNotificationResponse = {
+  items: AppNotification[];
+  pagination: {
+    page: number;
+    limit: number;
+    total_items: number;
+    total_pages: number;
+    has_prev: boolean;
+    has_next: boolean;
+  };
+  unread_count: number;
+};
+
+export type CustomerNotificationsOptions = {
+  page?: number;
+  limit?: number;
+};
+
+export async function fetchCustomerNotifications(
+  userId: number,
+  limitOrOptions: number | CustomerNotificationsOptions = 50
+): Promise<NotificationResponse | PaginatedCustomerNotificationResponse> {
+  const isOptions = typeof limitOrOptions === 'object' && limitOrOptions !== null;
+  const isPaginated = isOptions && limitOrOptions.page != null;
+
+  if (isPaginated) {
+    const page = limitOrOptions.page ?? 1;
+    const limit = limitOrOptions.limit ?? 10;
+    const res = await apiGet<PaginatedCustomerNotificationResponse>(
+      `/api/users/${userId}/notifications?page=${page}&limit=${limit}`
+    );
+    return {
+      items: Array.isArray(res?.items) ? res.items : [],
+      pagination: res?.pagination || {
+        page,
+        limit,
+        total_items: 0,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      },
+      unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
+    };
+  }
+
+  const limit = typeof limitOrOptions === 'number' ? limitOrOptions : (limitOrOptions?.limit ?? 50);
   const cacheKey = `${userId}:${limit}`;
   const existing = inFlightCustomerNotifications.get(cacheKey);
   if (existing) return existing;
@@ -116,7 +161,7 @@ export async function fetchAdminNotifications(limitOrOptions: number | AdminNoti
 
   if (isPaginated) {
     const page = limitOrOptions.page ?? 1;
-    const limit = limitOrOptions.limit ?? 5;
+    const limit = limitOrOptions.limit ?? 10;
     const type = limitOrOptions.type && limitOrOptions.type !== 'all' ? `&type=${encodeURIComponent(limitOrOptions.type)}` : '';
     const res = await apiGet<PaginatedAdminNotificationResponse>(`/admin/notifications?page=${page}&limit=${limit}${type}`);
     return {
@@ -179,34 +224,50 @@ function updateCustomerData(client: QueryClient, userId: number, update: (curren
     update(current ?? { notifications: [], unread_count: 0 }));
 }
 
-export function useCustomerNotifications() {
+export function useCustomerNotifications(options?: CustomerNotificationsOptions) {
   const queryClient = useQueryClient();
   const { token, user } = useCustomerIdentity();
   const userId = Number(user?.id) || null;
   const previousUserId = useRef<number | null>(null);
 
+  const isPaginated = options?.page != null;
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 10;
+
   useEffect(() => {
     const previous = previousUserId.current;
     if (previous && previous !== userId) {
-      void queryClient.cancelQueries({ queryKey: customerNotificationsKey(previous), exact: true });
-      queryClient.removeQueries({ queryKey: customerNotificationsKey(previous), exact: true });
+      void queryClient.cancelQueries({ queryKey: ['account-notifications', previous] });
+      queryClient.removeQueries({ queryKey: ['account-notifications', previous] });
       clearCustomerNotificationsInFlight(previous);
     }
     if (!userId) {
-      void queryClient.cancelQueries({ queryKey: ['account-notifications', 'signed-out'], exact: true });
-      queryClient.removeQueries({ queryKey: ['account-notifications', 'signed-out'], exact: true });
+      void queryClient.cancelQueries({ queryKey: ['account-notifications', 'signed-out'] });
+      queryClient.removeQueries({ queryKey: ['account-notifications', 'signed-out'] });
     }
     previousUserId.current = userId;
   }, [queryClient, userId]);
 
+  const queryKey = userId
+    ? isPaginated
+      ? (['account-notifications', userId, page, limit] as const)
+      : (['account-notifications', userId] as const)
+    : (['account-notifications', 'signed-out'] as const);
+
   const query = useQuery({
-    queryKey: userId ? customerNotificationsKey(userId) : ['account-notifications', 'signed-out'],
-    queryFn: () => fetchCustomerNotifications(userId as number, 50),
+    queryKey,
+    queryFn: () => fetchCustomerNotifications(userId as number, isPaginated ? { page, limit } : 50),
     enabled: Boolean(token && userId),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     staleTime: 10_000,
   });
+
+  const invalidateUserQueries = () => {
+    if (userId) {
+      void queryClient.invalidateQueries({ queryKey: ['account-notifications', userId] });
+    }
+  };
 
   const markReadMutation = useMutation({
     mutationFn: (notificationId: number) => markCustomerNotificationRead(userId as number, notificationId),
@@ -228,7 +289,7 @@ export function useCustomerNotifications() {
       if (userId && previous) queryClient.setQueryData(customerNotificationsKey(userId), previous);
     },
     onSettled: () => {
-      if (userId) void queryClient.invalidateQueries({ queryKey: customerNotificationsKey(userId) });
+      invalidateUserQueries();
     },
   });
 
@@ -249,7 +310,7 @@ export function useCustomerNotifications() {
       if (userId && previous) queryClient.setQueryData(customerNotificationsKey(userId), previous);
     },
     onSettled: () => {
-      if (userId) void queryClient.invalidateQueries({ queryKey: customerNotificationsKey(userId) });
+      invalidateUserQueries();
     },
   });
 
@@ -267,20 +328,34 @@ export function useCustomerNotifications() {
       if (userId && previous) queryClient.setQueryData(customerNotificationsKey(userId), previous);
     },
     onSettled: () => {
-      if (userId) void queryClient.invalidateQueries({ queryKey: customerNotificationsKey(userId) });
+      invalidateUserQueries();
     },
   });
 
   const isGuest = !token || !userId;
-  const notifications = isGuest ? [] : (query.data?.notifications ?? []);
-  const unreadCount = isGuest ? 0 : (query.data?.unread_count ?? 0);
-  const data = isGuest ? { notifications: [], unread_count: 0 } : query.data;
+  const paginatedData = isPaginated && !isGuest ? (query.data as PaginatedCustomerNotificationResponse | undefined) : undefined;
+  const standardData = !isPaginated && !isGuest ? (query.data as NotificationResponse | undefined) : undefined;
+
+  const notifications = isGuest
+    ? []
+    : isPaginated
+      ? (paginatedData?.items ?? [])
+      : (standardData?.notifications ?? []);
+
+  const unreadCount = isGuest
+    ? 0
+    : isPaginated
+      ? (paginatedData?.unread_count ?? 0)
+      : (standardData?.unread_count ?? 0);
+
+  const pagination = paginatedData?.pagination;
 
   return {
     ...query,
-    data,
+    data: isGuest ? { notifications: [], unread_count: 0 } : query.data,
     notifications,
     unreadCount,
+    pagination,
     token: isGuest ? null : token,
     user: isGuest ? null : user,
     userId: isGuest ? null : userId,
@@ -300,7 +375,7 @@ export function useAdminNotifications(options?: AdminNotificationsOptions) {
   const queryClient = useQueryClient();
   const isPaginated = options?.page != null;
   const queryKey = isPaginated
-    ? (['admin-notifications', options.page, options.limit ?? 5, options.type ?? 'all'] as const)
+    ? (['admin-notifications', options.page, options.limit ?? 10, options.type ?? 'all'] as const)
     : adminNotificationsKey;
 
   const query = useQuery({

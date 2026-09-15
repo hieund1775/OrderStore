@@ -169,7 +169,7 @@ function OrdersPage() {
       if (branchId !== "all") params.set("store_id", branchId);
       if (q.trim()) params.set("search", q.trim());
       if (view === "list") {
-        params.set("limit", "5");
+        params.set("limit", "20");
         const cur = cursorStack[pageIndex];
         if (cur) params.set("cursor", cur);
       }

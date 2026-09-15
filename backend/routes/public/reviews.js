@@ -7,14 +7,57 @@ import {
   validateEditReview,
   validateUploadIntent,
   validateReviewListQuery,
+  validatePublicReviewHubQuery,
 } from '../../validation/product-review-schemas.js';
 import {
   toPublicReviewDto,
   toCustomerReviewDto,
   toReviewSummaryDto,
+  toPublicReviewHubDto,
 } from '../../dto/product-review-dto.js';
 
 const router = Router();
+
+// ─────────────────────────────────────────────────────────
+// Public: Review Hub (Aggregated & Source-filtered)
+// ─────────────────────────────────────────────────────────
+
+/**
+ * GET /api/reviews
+ * Public: list verified visible reviews for Public Review Hub with safe DTOs and aggregate summary.
+ */
+router.get('/reviews', asyncHandler(async (req, res) => {
+  const queryValidation = validatePublicReviewHubQuery(req.query);
+  if (!queryValidation.valid) {
+    return res.status(400).json({ error: queryValidation.errors.join('; ') });
+  }
+
+  const source = req.query.source || 'all';
+  const cursor = req.query.cursor || null;
+  const limit = req.query.limit ? Number(req.query.limit) : 15;
+
+  try {
+    const [summary, reviewResult] = await Promise.all([
+      productReviewsService.getPublicReviewHubSummary({ source }),
+      productReviewsService.listPublicReviewHub({ source, cursor, limit }),
+    ]);
+
+    res.set('X-TeaPlus-Reviews-Contract', 'v1-object');
+    res.json({
+      summary: {
+        averageRating: summary.averageRating,
+        totalReviewCount: summary.totalReviewCount,
+        distribution: summary.distribution,
+      },
+      reviews: reviewResult.items.map(toPublicReviewHubDto),
+      cursor: reviewResult.nextCursor,
+      hasMore: reviewResult.hasMore,
+    });
+  } catch (err) {
+    const status = err.status || (err.name === 'IdentityError' ? err.status || 400 : 500);
+    res.status(status).json({ error: err.message });
+  }
+}));
 
 // ─────────────────────────────────────────────────────────
 // Public: Product Review Summary & List

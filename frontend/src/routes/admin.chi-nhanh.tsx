@@ -408,7 +408,7 @@ function StoresAdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<any>(`/admin/branches?page=${page}&limit=5`);
+      const res = await apiGet<any>(`/admin/branches?page=${page}&limit=6`);
       let list: Store[] = [];
       if (Array.isArray(res)) {
         list = res;

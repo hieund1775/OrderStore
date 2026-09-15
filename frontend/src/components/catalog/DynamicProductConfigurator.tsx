@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,25 +22,33 @@ import {
 import { toast } from 'sonner';
 import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 
+import { type CartItem } from '@/lib/cart';
+
+export interface ConfiguredItemPayload {
+  productId: number;
+  productName: string;
+  productSlug: string;
+  variantId: number | null;
+  sku: string;
+  variantName?: string | null;
+  quantity: number;
+  unitPrice: number;
+  appliedModifiers: AppliedModifier[];
+  stockMode: 'tracked' | 'made_to_order';
+  fulfillmentLane: 'kitchen' | 'packing';
+  image?: string;
+}
+
 export interface DynamicProductConfiguratorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productSlug: string;
   storeId?: number | string;
-  onAddToCart: (configuredItem: {
-    productId: number;
-    productName: string;
-    productSlug: string;
-    variantId: number | null;
-    sku: string;
-    variantName?: string | null;
-    quantity: number;
-    unitPrice: number;
-    appliedModifiers: AppliedModifier[];
-    stockMode: 'tracked' | 'made_to_order';
-    fulfillmentLane: 'kitchen' | 'packing';
-    image?: string;
-  }) => void;
+  mode?: 'add' | 'buy' | 'edit';
+  initialItem?: CartItem | null;
+  onAddToCart?: (configuredItem: ConfiguredItemPayload) => void;
+  onBuyNow?: (configuredItem: ConfiguredItemPayload) => void;
+  onUpdate?: (configuredItem: ConfiguredItemPayload) => void;
 }
 
 export function DynamicProductConfigurator({
@@ -48,7 +56,11 @@ export function DynamicProductConfigurator({
   onOpenChange,
   productSlug,
   storeId,
+  mode = 'add',
+  initialItem = null,
   onAddToCart,
+  onBuyNow,
+  onUpdate,
 }: DynamicProductConfiguratorProps) {
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<PublicProductDetails | null>(null);
@@ -58,6 +70,7 @@ export function DynamicProductConfigurator({
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedProductConfiguration | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [configWarning, setConfigWarning] = useState('');
 
   // 1. Fetch Product details with Schema & Variants
   useEffect(() => {
@@ -189,24 +202,106 @@ export function DynamicProductConfigurator({
       }
 
       setProduct(data);
-      setQuantity(1);
 
-      // Pre-select first values for required single_select attributes
-      const initialVarValIds: number[] = [];
-      const initialModValIds: number[] = [];
+      if (initialItem) {
+        setQuantity(initialItem.qty || 1);
+        const pastModifiers = Array.isArray(initialItem.appliedModifiers) ? initialItem.appliedModifiers : [];
+        let hasInvalidOption = false;
+        const initialVarValIds: number[] = [];
+        const initialModValIds: number[] = [];
 
-      (data.attributes || []).forEach((attr) => {
-        if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
+        // 1. Map past modifiers to attributes & values by attribute_code and value_code
+        for (const pastMod of pastModifiers) {
+          const attr = (data.attributes || []).find((a) => a.code === pastMod.attribute_code);
+          if (!attr) {
+            hasInvalidOption = true;
+            continue;
+          }
+          const val = (attr.values || []).find(
+            (v) => v.code === pastMod.value_code && v.is_active !== false
+          );
+          if (!val) {
+            hasInvalidOption = true;
+            continue;
+          }
           if (attr.role === 'variant') {
-            initialVarValIds.push(attr.values[0].id);
-          } else if (attr.role === 'modifier') {
-            initialModValIds.push(attr.values[0].id);
+            if (!initialVarValIds.includes(val.id)) initialVarValIds.push(val.id);
+          } else {
+            if (!initialModValIds.includes(val.id)) initialModValIds.push(val.id);
           }
         }
-      });
 
-      setSelectedVariantValueIds(initialVarValIds);
-      setSelectedModifierValueIds(initialModValIds);
+        // 2. Check variant matching if variantId or sku present and no variant attr matched yet
+        if (initialVarValIds.length === 0 && (initialItem.variantId || initialItem.sku)) {
+          const matchedVariant = (data.variants || []).find(
+            (v) =>
+              (initialItem.variantId && v.id === initialItem.variantId) ||
+              (initialItem.sku && v.sku === initialItem.sku)
+          );
+          if (matchedVariant && matchedVariant.is_available !== false) {
+            const varAttr = (data.attributes || []).find((a) => a.role === 'variant');
+            if (varAttr) {
+              const matchedVal = varAttr.values?.find(
+                (v) =>
+                  (matchedVariant.variant_signature &&
+                    v.code.toLowerCase() === matchedVariant.variant_signature.toLowerCase()) ||
+                  (matchedVariant.name_suffix &&
+                    v.label.toLowerCase() === matchedVariant.name_suffix.toLowerCase())
+              );
+              if (matchedVal) {
+                initialVarValIds.push(matchedVal.id);
+              }
+            }
+          } else {
+            hasInvalidOption = true;
+          }
+        }
+
+        // 3. Verify that all required attributes are satisfied
+        for (const attr of data.attributes || []) {
+          if (attr.is_required) {
+            if (attr.role === 'variant') {
+              const hasVal = attr.values?.some((v) => initialVarValIds.includes(v.id));
+              if (!hasVal) hasInvalidOption = true;
+            } else {
+              const hasVal = attr.values?.some((v) => initialModValIds.includes(v.id));
+              if (!hasVal) hasInvalidOption = true;
+            }
+          }
+        }
+
+        if (hasInvalidOption) {
+          setConfigWarning(
+            'Một số tuỳ chọn bạn đã chọn trước đây hiện không còn khả dụng tại chi nhánh này. Vui lòng chọn lại.'
+          );
+          // TUYỆT ĐỐI KHÔNG tự động chọn giá trị mặc định khi cấu hình cũ bị thiếu / không hợp lệ!
+        } else {
+          setConfigWarning('');
+        }
+
+        setSelectedVariantValueIds(initialVarValIds);
+        setSelectedModifierValueIds(initialModValIds);
+      } else {
+        setConfigWarning('');
+        setQuantity(1);
+        // Pre-select first values for required single_select attributes (new add/buy mode only)
+        const initialVarValIds: number[] = [];
+        const initialModValIds: number[] = [];
+
+        (data.attributes || []).forEach((attr) => {
+          if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
+            if (attr.role === 'variant') {
+              initialVarValIds.push(attr.values[0].id);
+            } else if (attr.role === 'modifier') {
+              initialModValIds.push(attr.values[0].id);
+            }
+          }
+        });
+
+        setSelectedVariantValueIds(initialVarValIds);
+        setSelectedModifierValueIds(initialModValIds);
+      }
+
       setLoading(false);
     };
 
@@ -215,7 +310,7 @@ export function DynamicProductConfigurator({
     return () => {
       isMounted = false;
     };
-  }, [open, productSlug, storeId]);
+  }, [open, productSlug, storeId, initialItem]);
 
   // 2. Resolve Price & Configuration whenever selections change
   useEffect(() => {
@@ -289,6 +384,23 @@ export function DynamicProductConfigurator({
     };
   }, [product, selectedVariantValueIds, selectedModifierValueIds, storeId, open]);
 
+  const isConfigurationComplete = useMemo(() => {
+    if (!product) return false;
+    for (const attr of product.attributes || []) {
+      if (attr.is_required) {
+        if (attr.role === 'variant') {
+          const hasSelected = (attr.values || []).some((v) => selectedVariantValueIds.includes(v.id));
+          if (!hasSelected) return false;
+        } else {
+          const count = (attr.values || []).filter((v) => selectedModifierValueIds.includes(v.id)).length;
+          const minReq = attr.min_selections || 1;
+          if (count < minReq) return false;
+        }
+      }
+    }
+    return true;
+  }, [product, selectedVariantValueIds, selectedModifierValueIds]);
+
   if (!open) return null;
 
   const handleSelectSingle = (role: 'variant' | 'modifier', attr: PublicProductDetails['attributes'][number], valId: number) => {
@@ -312,14 +424,8 @@ export function DynamicProductConfigurator({
     }
   };
 
-  const handleConfirmAddToCart = () => {
-    const session = getCustomerSession();
-    if (!session) {
-      toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng');
-      openCustomerLoginModal();
-      return;
-    }
-    if (!resolvedConfig) return;
+  const handleConfirmAction = () => {
+    if (!resolvedConfig || !product) return;
     const resolvedProduct = resolvedConfig.product;
     const resolvedVariant = resolvedConfig.variant;
 
@@ -337,7 +443,7 @@ export function DynamicProductConfigurator({
       return;
     }
 
-    onAddToCart({
+    const payload: ConfiguredItemPayload = {
       productId: resolvedProduct.id,
       productName: resolvedProduct.name,
       productSlug: resolvedProduct.slug,
@@ -350,8 +456,33 @@ export function DynamicProductConfigurator({
       stockMode: resolvedProduct.stock_mode,
       fulfillmentLane: resolvedProduct.fulfillment_lane,
       image: product?.image_url || undefined,
-    });
+    };
 
+    if (mode === 'edit') {
+      onUpdate?.(payload);
+      toast.success(`Đã cập nhật món ${resolvedProduct.name}`);
+      onOpenChange(false);
+      return;
+    }
+
+    const session = getCustomerSession();
+    if (!session) {
+      toast.error(
+        mode === 'buy'
+          ? 'Vui lòng đăng nhập hoặc đăng ký tài khoản để Mua ngay'
+          : 'Vui lòng đăng nhập hoặc đăng ký tài khoản để thêm món vào giỏ hàng'
+      );
+      openCustomerLoginModal();
+      return;
+    }
+
+    if (mode === 'buy') {
+      onBuyNow?.(payload);
+      onOpenChange(false);
+      return;
+    }
+
+    onAddToCart?.(payload);
     toast.success(`Đã thêm ${quantity}x ${resolvedProduct.name} vào giỏ hàng`);
     onOpenChange(false);
   };
@@ -389,6 +520,16 @@ export function DynamicProductConfigurator({
 
             {/* Attributes Body */}
             <div className="p-5 space-y-5">
+              {configWarning && (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-amber-700 dark:text-amber-400 text-xs">
+                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">Cấu hình cần chọn lại</p>
+                    <p>{configWarning}</p>
+                  </div>
+                </div>
+              )}
+
               {(product.attributes || []).map((attr) => {
                 const isVariant = attr.role === 'variant';
                 const isMulti = attr.input_type === 'multi_select';
@@ -499,14 +640,53 @@ export function DynamicProductConfigurator({
                 </p>
               </div>
 
-              <Button
-                onClick={handleConfirmAddToCart}
-                disabled={calculating || !resolvedConfig || resolvedConfig.variant.is_available === false}
-                className="gap-2 px-6 rounded-2xl"
-              >
-                <ShoppingBag className="size-4" />
-                <span>Thêm vào giỏ</span>
-              </Button>
+              {mode === 'edit' ? (
+                <Button
+                  onClick={handleConfirmAction}
+                  disabled={
+                    calculating ||
+                    !resolvedConfig ||
+                    !isConfigurationComplete ||
+                    resolvedConfig.variant.is_available === false
+                  }
+                  className="gap-2 px-6 rounded-2xl"
+                >
+                  <Check className="size-4" />
+                  <span>Cập nhật món</span>
+                </Button>
+              ) : mode === 'buy' ? (
+                <Button
+                  onClick={handleConfirmAction}
+                  disabled={
+                    calculating ||
+                    !resolvedConfig ||
+                    !isConfigurationComplete ||
+                    resolvedConfig.variant.is_available === false
+                  }
+                  variant="hero"
+                  className="gap-2 px-6 rounded-2xl"
+                >
+                  <ShoppingBag className="size-4" />
+                  <span>
+                    Mua ngay ·{' '}
+                    {resolvedConfig ? vnd(resolvedConfig.unit_price * quantity) : vnd(product.price * quantity)}
+                  </span>
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleConfirmAction}
+                  disabled={
+                    calculating ||
+                    !resolvedConfig ||
+                    !isConfigurationComplete ||
+                    resolvedConfig.variant.is_available === false
+                  }
+                  className="gap-2 px-6 rounded-2xl"
+                >
+                  <ShoppingBag className="size-4" />
+                  <span>Thêm vào giỏ</span>
+                </Button>
+              )}
             </div>
           </div>
         )}

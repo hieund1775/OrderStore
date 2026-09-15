@@ -153,10 +153,63 @@ export function validateReviewListQuery(query) {
 
   if (query.limit) {
     const limit = Number(query.limit);
-    if (limit < 1 || limit > 50) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
       errors.push('Giới hạn phải từ 1 đến 50');
     }
   }
 
   return { valid: errors.length === 0, errors };
 }
+
+/**
+ * Validate public review hub query params.
+ */
+export function validatePublicReviewHubQuery(query = {}) {
+  const errors = [];
+  const validSources = ['all', 'normal', 'preorder'];
+
+  if (query.source !== undefined && query.source !== null && query.source !== '') {
+    if (!validSources.includes(query.source)) {
+      errors.push(`Nguồn đánh giá không hợp lệ. Cho phép: ${validSources.join(', ')}`);
+    }
+  }
+
+  if (query.limit !== undefined && query.limit !== null && query.limit !== '') {
+    const limit = Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      errors.push('Giới hạn phải từ 1 đến 50');
+    }
+  }
+
+  if (query.cursor !== undefined && query.cursor !== null && query.cursor !== '') {
+    if (typeof query.cursor !== 'string' || !query.cursor.trim()) {
+      errors.push('Cursor không hợp lệ');
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate admin review list query params.
+ */
+export function validateAdminReviewListQuery(query = {}) {
+  const errors = [];
+
+  if (query.query !== undefined && query.query !== null && query.query !== '') {
+    if (typeof query.query !== 'string') {
+      errors.push('Từ khóa tìm kiếm phải là chuỗi ký tự');
+    } else if (query.query.trim().length > 100) {
+      errors.push('Từ khóa tìm kiếm không được vượt quá 100 ký tự');
+    }
+  }
+
+  if (query.limit !== undefined && query.limit !== null && query.limit !== '') {
+    const limit = Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      errors.push('Giới hạn phải từ 1 đến 50');
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}

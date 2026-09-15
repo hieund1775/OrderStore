@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Bike, MapPin, QrCode, Store, Ticket } from "lucide-react";
+import { Bike, MapPin, QrCode, Settings2, Store, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,12 +16,21 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
-import { useCart } from "@/lib/cart";
+import { useCart, type CartItem } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
 import { vnd } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
 import { getCustomerSession, useCustomerSession, openCustomerLoginModal } from "@/lib/customer-session";
 import { getOrderRequestHeaders } from "@/lib/order-access";
+import {
+  getBuyNowIntent,
+  updateBuyNowIntent,
+  clearBuyNowIntent,
+} from "@/lib/buy-now";
+import {
+  DynamicProductConfigurator,
+  type ConfiguredItemPayload,
+} from "@/components/catalog/DynamicProductConfigurator";
 import {
   PendingPayOSPayment,
   normalizePendingPayment,
@@ -93,9 +102,86 @@ type CreateOrderResponse = {
 
 function Checkout() {
   const session = useCustomerSession();
-  const { removeItems, selectedItems, selectedSubtotal } = useCart();
-  const checkoutItems = selectedItems;
-  const checkoutSubtotal = selectedSubtotal;
+  const { removeItems, updateItem, selectedItems, selectedSubtotal } = useCart();
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(() =>
+    getCustomerSession() ? getBuyNowIntent(getCustomerSession()?.userId) : null
+  );
+
+  useEffect(() => {
+    if (session?.userId) {
+      setBuyNowItem(getBuyNowIntent(session.userId));
+    } else {
+      setBuyNowItem(null);
+    }
+  }, [session?.userId]);
+
+  const isBuyNow = buyNowItem !== null;
+  const checkoutItems = useMemo(
+    () => (isBuyNow ? [buyNowItem] : selectedItems),
+    [isBuyNow, buyNowItem, selectedItems]
+  );
+  const checkoutSubtotal = useMemo(
+    () => (isBuyNow ? buyNowItem.unitPrice * buyNowItem.qty : selectedSubtotal),
+    [isBuyNow, buyNowItem, selectedSubtotal]
+  );
+
+  const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+  const [editingModalOpen, setEditingModalOpen] = useState(false);
+
+  const handleUpdateConfiguredItem = (configured: ConfiguredItemPayload) => {
+    if (!editingItem) return;
+    const updatedItem: CartItem = {
+      ...editingItem,
+      variantId: configured.variantId,
+      sku: configured.sku,
+      variantName: configured.variantName,
+      stockMode: configured.stockMode,
+      fulfillmentLane: configured.fulfillmentLane,
+      size:
+        configured.appliedModifiers.find(
+          (m) => m.attribute_code === "size" || m.attribute_name.toLowerCase().includes("size")
+        )?.value_label ||
+        configured.variantName ||
+        "M",
+      base:
+        configured.appliedModifiers.find(
+          (m) =>
+            m.attribute_code === "base" ||
+            m.attribute_name.toLowerCase().includes("nền") ||
+            m.attribute_name.toLowerCase().includes("base")
+        )?.value_label || editingItem.base,
+      sugar:
+        configured.appliedModifiers.find(
+          (m) => m.attribute_code === "sugar" || m.attribute_name.toLowerCase().includes("đường")
+        )?.value_label || "100%",
+      ice:
+        configured.appliedModifiers.find(
+          (m) => m.attribute_code === "ice" || m.attribute_name.toLowerCase().includes("đá")
+        )?.value_label || "100%",
+      toppings: configured.appliedModifiers
+        .filter((m) => m.attribute_code === "toppings" || m.attribute_name.toLowerCase().includes("topping"))
+        .map((m) => m.value_label || (m as { attribute_label?: string }).attribute_label || m.attribute_name),
+      appliedModifiers: configured.appliedModifiers.map((m) => ({
+        attribute_code: m.attribute_code,
+        attribute_name: m.attribute_name,
+        value_code: m.value_code,
+        value_label: m.value_label,
+        price_adjustment: m.price_adjustment,
+      })),
+      unitPrice: configured.unitPrice,
+      qty: configured.quantity,
+    };
+
+    if (isBuyNow && session?.userId) {
+      const saved = updateBuyNowIntent(session.userId, updatedItem);
+      setBuyNowItem(saved);
+    } else {
+      updateItem(editingItem.key, updatedItem);
+    }
+
+    setEditingItem(null);
+    setEditingModalOpen(false);
+  };
   const {
     stores: storeOptions,
     selectedStoreId,
@@ -653,8 +739,17 @@ function Checkout() {
         } catch {}
       }
 
+      const handleOrderSuccessCleanup = () => {
+        if (isBuyNow) {
+          clearBuyNowIntent(session?.userId);
+          setBuyNowItem(null);
+        } else {
+          removeItems(checkoutItems.map((item) => item.key));
+        }
+      };
+
       if (res.checkout_url) {
-        removeItems(checkoutItems.map((item) => item.key));
+        handleOrderSuccessCleanup();
         try {
           sessionStorage.removeItem("teaplus_pending_payment");
         } catch {}
@@ -662,7 +757,7 @@ function Checkout() {
         window.location.href = res.checkout_url;
         return;
       } else if (res.payment_required === false && createdPaymentCode) {
-        removeItems(checkoutItems.map((item) => item.key));
+        handleOrderSuccessCleanup();
         try {
           sessionStorage.removeItem("teaplus_pending_payment");
         } catch {}
@@ -670,7 +765,7 @@ function Checkout() {
         void navigate({ to: "/theo-doi-don", search: { code: createdPaymentCode } });
         return;
       } else if (res.qr_code) {
-        removeItems(checkoutItems.map((item) => item.key));
+        handleOrderSuccessCleanup();
         const pending = normalizePendingPayment(res);
         if (pending) {
           setPendingOrder(pending);
@@ -933,6 +1028,33 @@ function Checkout() {
 
       <div className="container-page grid gap-6 py-10 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          {/* Buy Now Active Banner */}
+          {isBuyNow && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Badge variant="default" className="text-xs px-2.5 py-1 font-bold shrink-0">
+                  Mua ngay
+                </Badge>
+                <div className="text-xs">
+                  <p className="font-semibold text-foreground">Bạn đang thanh toán nhanh cho 1 món riêng biệt</p>
+                  <p className="text-muted-foreground">Giỏ hàng của bạn vẫn được giữ nguyên đầy đủ.</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-8 px-3 border-border hover:bg-background shrink-0"
+                onClick={() => {
+                  clearBuyNowIntent(session?.userId);
+                  setBuyNowItem(null);
+                  toast.info("Đã hủy thanh toán Mua ngay, quay lại giỏ hàng.");
+                }}
+              >
+                Hủy mua ngay
+              </Button>
+            </div>
+          )}
+
           {/* Items by Industry */}
           <section className="bg-card rounded-2xl border p-5 space-y-6">
             <div className="flex items-center justify-between">
@@ -979,7 +1101,23 @@ function Checkout() {
                             className="size-14 rounded-lg object-cover shrink-0"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-sm">{i.name}</p>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-semibold text-sm">{i.name}</p>
+                              {!pendingOrder && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1 shrink-0"
+                                  onClick={() => {
+                                    setEditingItem(i);
+                                    setEditingModalOpen(true);
+                                  }}
+                                >
+                                  <Settings2 className="size-3" />
+                                  <span>Chỉnh sửa</span>
+                                </Button>
+                              )}
+                            </div>
                             <p className="text-muted-foreground text-xs">
                               Size {i.size} · {i.base} · {i.sugar} đường · {i.ice} đá
                             </p>
@@ -1234,6 +1372,21 @@ function Checkout() {
           </div>
         </aside>
       </div>
+
+      {editingItem && (
+        <DynamicProductConfigurator
+          open={editingModalOpen}
+          onOpenChange={(open) => {
+            setEditingModalOpen(open);
+            if (!open) setEditingItem(null);
+          }}
+          productSlug={editingItem.productSlug || editingItem.productId}
+          storeId={editingItem.storeId || checkoutStoreId || undefined}
+          mode="edit"
+          initialItem={editingItem}
+          onUpdate={handleUpdateConfiguredItem}
+        />
+      )}
     </>
   );
 }

@@ -20,7 +20,7 @@ branchesRouter.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), a
 
     if (isPaginated) {
       const page = validatePage(req.query.page, 1);
-      const limit = validateLimit(req.query.limit, 5, 50);
+      const limit = validateLimit(req.query.limit, 6, 50);
       const result = await adminStoreService.listBranches({ scopedStoreId, page, limit });
       const items = (result.items || []).map(toStoreDto);
       const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });

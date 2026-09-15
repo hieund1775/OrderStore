@@ -31,6 +31,11 @@ export function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/danh-gia" className="hover:text-primary">
+                Đánh giá khách hàng
+              </Link>
+            </li>
+            <li>
               <Link to="/tuyen-dung" className="hover:text-primary">
                 Tuyển dụng
               </Link>

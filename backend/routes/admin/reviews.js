@@ -6,6 +6,7 @@ import productReviewsService from '../../services/product-reviews-service.js';
 import {
   validateAdminReply,
   validateVisibilityChange,
+  validateAdminReviewListQuery,
 } from '../../validation/product-review-schemas.js';
 import { toAdminReviewDto } from '../../dto/product-review-dto.js';
 
@@ -17,15 +18,23 @@ const router = Router();
 
 /**
  * GET /admin/reviews
- * List reviews with filters (store, visibility, rating).
+ * List reviews with filters (store, visibility, rating, query).
  */
 router.get('/reviews', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  const queryValidation = validateAdminReviewListQuery(req.query);
+  if (!queryValidation.valid) {
+    return res.status(400).json({ error: queryValidation.errors.join('; ') });
+  }
+
+  const queryTerm = req.query.query ? String(req.query.query).trim() : (req.query.search ? String(req.query.search).trim() : null);
+
   const result = await productReviewsService.listAdminReviews({
     storeId: req.query.store_id ? Number(req.query.store_id) : null,
     visibility: req.query.visibility || null,
     rating: req.query.rating ? Number(req.query.rating) : null,
     cursor: req.query.cursor || null,
-    limit: Number(req.query.limit) || 20,
+    limit: Number(req.query.limit) || 15,
+    query: queryTerm,
     adminRole: req.user.role,
     adminBranchId: req.user.branch_id,
   });

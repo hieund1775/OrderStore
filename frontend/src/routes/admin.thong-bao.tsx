@@ -69,7 +69,7 @@ function NotificationsPage() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications({
     page,
-    limit: 5,
+    limit: 10,
     type: filter,
   });
   const paginatedData = data as any;

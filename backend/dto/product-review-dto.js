@@ -31,8 +31,59 @@ export function toPublicReviewDto(row) {
 }
 
 /**
+ * Mask customer name for public display (e.g., "Hoàng Nam" -> "H*** N**").
+ */
+export function maskCustomerName(fullname) {
+  if (!fullname || typeof fullname !== 'string') return 'Khách hàng';
+  const parts = fullname.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'Khách hàng';
+  return parts
+    .map((word) => {
+      if (word.length <= 1) return word.toUpperCase();
+      const starsCount = word.length >= 4 ? 3 : Math.max(2, word.length - 1);
+      return word[0].toUpperCase() + '*'.repeat(starsCount);
+    })
+    .join(' ');
+}
+
+/**
+ * Build a public review hub DTO with masked customer name and public product fields.
+ */
+export function toPublicReviewHubDto(row) {
+  return {
+    id: row.id,
+    rating: row.rating,
+    comment: row.comment,
+    createdAt: row.revision_created_at || row.created_at,
+    user: {
+      fullname: maskCustomerName(row.fullname || row.user_fullname),
+    },
+    media: (row.media || []).map((m) => ({
+      id: m.id,
+      mediaType: m.media_type,
+      storageKey: m.storage_key,
+      contentType: m.content_type,
+      byteSize: m.byte_size,
+    })),
+    reply: row.reply
+      ? {
+          id: row.reply.id,
+          body: row.reply.body,
+          createdAt: row.reply.created_at,
+        }
+      : null,
+    product: {
+      name: row.product_name,
+      slug: row.product_slug,
+    },
+    source: row.preorder_id ? 'preorder' : 'normal',
+  };
+}
+
+/**
  * Build a customer-facing review DTO (includes edit state, timeline).
  */
+
 export function toCustomerReviewDto(review) {
   return {
     id: review.id,

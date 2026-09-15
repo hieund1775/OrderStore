@@ -5,6 +5,29 @@ function normalizeQueryResult(result) {
   return Array.isArray(result) ? { rows: result[0], rowCount: result[1] ?? 0 } : result;
 }
 
+export function encodeHubCursor(createdAt, id) {
+  if (!createdAt || !id) return null;
+  return Buffer.from(JSON.stringify([new Date(createdAt).toISOString(), Number(id)])).toString('base64url');
+}
+
+export function decodeHubCursor(cursorStr) {
+  if (!cursorStr || typeof cursorStr !== 'string') return null;
+  try {
+    const json = Buffer.from(cursorStr, 'base64url').toString('utf8');
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+    const [createdAt, id] = parsed;
+    const d = new Date(createdAt);
+    if (isNaN(d.getTime())) return null;
+    const numId = Number(id);
+    if (!Number.isInteger(numId) || numId <= 0) return null;
+    return { createdAt: d.toISOString(), id: numId };
+  } catch {
+    return null;
+  }
+}
+
+
 /**
  * Product Reviews Repository — Postgres implementation.
  * All queries are parameterized. No raw string interpolation.
@@ -345,17 +368,25 @@ export class ProductReviewsRepository {
         [reviewId],
       );
       if (existingReplies.length > 0) {
-        throw new IdentityError('DUPLICATE_REPLY', 'Đánh giá này đã được phản hồi');
+        throw new IdentityError('DUPLICATE_REPLY', 'Đánh giá này đã được phản hồi', 409);
       }
 
       // Create reply
-      const { rows: replies } = await client.query(
-        `INSERT INTO review_replies (review_id, admin_user_id, body)
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [reviewId, adminUserId, body],
-      );
-      const reply = replies[0];
+      let reply;
+      try {
+        const { rows: replies } = await client.query(
+          `INSERT INTO review_replies (review_id, admin_user_id, body)
+           VALUES ($1, $2, $3)
+           RETURNING *`,
+          [reviewId, adminUserId, body],
+        );
+        reply = replies[0];
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new IdentityError('DUPLICATE_REPLY', 'Đánh giá này đã được phản hồi', 409);
+        }
+        throw err;
+      }
 
       // Open 7-day edit window for customer (if not already used)
       if (!review.customer_edit_used_at && !review.edit_window_expires_at) {
@@ -469,6 +500,124 @@ export class ProductReviewsRepository {
     return rows[0] || { total_review_count: 0, average_rating: 0, rating_5: 0, rating_4: 0, rating_3: 0, rating_2: 0, rating_1: 0 };
   }
 
+  /**
+   * List verified visible reviews for public review hub across normal/preorder sources.
+   */
+  async listPublicReviewHub({ source = 'all', cursor, limit = 15 }) {
+    if (cursor) {
+      const decoded = decodeHubCursor(cursor);
+      if (!decoded) {
+        throw new IdentityError('INVALID_CURSOR', 'Cursor không hợp lệ', 400);
+      }
+    }
+
+    const conditions = [
+      'rev.purchase_verified_at IS NOT NULL',
+      "rev.visibility_status = 'visible'",
+    ];
+    const params = [];
+    let paramIdx = 1;
+
+    if (source === 'normal') {
+      conditions.push('o.preorder_id IS NULL');
+    } else if (source === 'preorder') {
+      conditions.push('o.preorder_id IS NOT NULL');
+    }
+
+    if (cursor) {
+      const decoded = decodeHubCursor(cursor);
+      conditions.push(`(rev.created_at < $${paramIdx} OR (rev.created_at = $${paramIdx} AND rev.id < $${paramIdx + 1}))`);
+      params.push(decoded.createdAt, decoded.id);
+      paramIdx += 2;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const { rows } = await this.db.query(
+      `SELECT
+        rev.id, rev.created_at, rev.updated_at,
+        rr.rating, rr.comment, rr.created_at AS revision_created_at,
+        u.fullname,
+        p.name AS product_name, p.slug AS product_slug,
+        o.preorder_id,
+        (SELECT jsonb_agg(jsonb_build_object(
+          'id', rm.id,
+          'media_type', rm.media_type,
+          'storage_key', rm.storage_key,
+          'content_type', rm.content_type,
+          'byte_size', rm.byte_size
+        )) FROM review_media rm WHERE rm.review_revision_id = rr.id) AS media,
+        (SELECT jsonb_build_object(
+          'id', rp.id,
+          'body', rp.body,
+          'created_at', rp.created_at
+        ) FROM review_replies rp WHERE rp.review_id = rev.id) AS reply
+      FROM reviews rev
+      JOIN review_revisions rr ON rr.id = rev.current_revision_id
+      JOIN users u ON u.id = rev.user_id
+      JOIN products p ON p.id = rev.product_id
+      JOIN order_items oi ON oi.id = rev.order_item_id
+      JOIN orders o ON o.id = oi.order_id
+      WHERE ${whereClause}
+      ORDER BY rev.created_at DESC, rev.id DESC
+      LIMIT $${paramIdx}`,
+      [...params, limit + 1],
+    );
+
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const lastItem = hasMore ? items[items.length - 1] : null;
+    const nextCursor = lastItem ? encodeHubCursor(lastItem.created_at, lastItem.id) : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  /**
+   * Get public review hub summary (aggregate count, average, distribution).
+   */
+  async getPublicReviewHubSummary({ source = 'all' }) {
+    const conditions = [
+      'rev.purchase_verified_at IS NOT NULL',
+      "rev.visibility_status = 'visible'",
+    ];
+
+    if (source === 'normal') {
+      conditions.push('o.preorder_id IS NULL');
+    } else if (source === 'preorder') {
+      conditions.push('o.preorder_id IS NOT NULL');
+    }
+
+    const { rows } = await this.db.query(
+      `SELECT
+        COUNT(rev.id)::INTEGER AS total_review_count,
+        COALESCE(ROUND(AVG(rr.rating)::numeric, 1), 0) AS average_rating,
+        COUNT(rev.id) FILTER (WHERE rr.rating = 5)::INTEGER AS rating_5,
+        COUNT(rev.id) FILTER (WHERE rr.rating = 4)::INTEGER AS rating_4,
+        COUNT(rev.id) FILTER (WHERE rr.rating = 3)::INTEGER AS rating_3,
+        COUNT(rev.id) FILTER (WHERE rr.rating = 2)::INTEGER AS rating_2,
+        COUNT(rev.id) FILTER (WHERE rr.rating = 1)::INTEGER AS rating_1
+      FROM reviews rev
+      JOIN review_revisions rr ON rr.id = rev.current_revision_id
+      JOIN order_items oi ON oi.id = rev.order_item_id
+      JOIN orders o ON o.id = oi.order_id
+      WHERE ${conditions.join(' AND ')}`,
+    );
+
+    const row = rows[0] || {};
+    return {
+      averageRating: Number(row.average_rating || 0),
+      totalReviewCount: Number(row.total_review_count || 0),
+      distribution: {
+        5: Number(row.rating_5 || 0),
+        4: Number(row.rating_4 || 0),
+        3: Number(row.rating_3 || 0),
+        2: Number(row.rating_2 || 0),
+        1: Number(row.rating_1 || 0),
+      },
+    };
+  }
+
+
   // ────── Customer reads ──────
 
   /**
@@ -525,16 +674,16 @@ export class ProductReviewsRepository {
   /**
    * List all reviews for admin moderation with filters.
    */
-  async listAdminReviews({ storeId, visibility, rating, cursor, limit = 20 }) {
+  async listAdminReviews({ storeId, visibility, rating, cursor, limit = 15, query }) {
     const conditions = ['1=1'];
     const params = [];
     let paramIdx = 1;
 
     if (storeId) {
       conditions.push(`EXISTS (
-        SELECT 1 FROM order_items oi
-        JOIN orders o ON o.id = oi.order_id
-        WHERE oi.id = rev.order_item_id AND o.store_id = $${paramIdx}
+        SELECT 1 FROM order_items oi_filter
+        JOIN orders o_filter ON o_filter.id = oi_filter.order_id
+        WHERE oi_filter.id = rev.order_item_id AND o_filter.store_id = $${paramIdx}
       )`);
       params.push(Number(storeId));
       paramIdx++;
@@ -555,6 +704,22 @@ export class ProductReviewsRepository {
       params.push(Number(cursor));
     }
 
+    if (query && String(query).trim()) {
+      const trimmed = String(query).trim();
+      const searchParam = `%${trimmed}%`;
+      conditions.push(`(
+        o.order_code ILIKE $${paramIdx}
+        OR po.preorder_code ILIKE $${paramIdx}
+        OR cg.group_code ILIKE $${paramIdx}
+        OR p.name ILIKE $${paramIdx}
+        OR oi.product_name ILIKE $${paramIdx}
+        OR oi.size_label ILIKE $${paramIdx}
+        OR u.fullname ILIKE $${paramIdx}
+      )`);
+      params.push(searchParam);
+      paramIdx++;
+    }
+
     const whereClause = conditions.join(' AND ');
 
     const { rows } = await this.db.query(
@@ -567,12 +732,20 @@ export class ProductReviewsRepository {
         rr.rating, rr.comment, rr.revision_type, rr.created_at AS revision_created_at,
         u.fullname AS user_fullname,
         p.name AS product_name, p.slug AS product_slug,
+        o.order_code,
+        po.preorder_code,
+        cg.group_code,
+        oi.size_label,
         (SELECT jsonb_build_object('id', rp.id, 'body', rp.body, 'created_at', rp.created_at)
          FROM review_replies rp WHERE rp.review_id = rev.id) AS reply
       FROM reviews rev
       LEFT JOIN review_revisions rr ON rr.id = rev.current_revision_id
       LEFT JOIN users u ON u.id = rev.user_id
       LEFT JOIN products p ON p.id = rev.product_id
+      LEFT JOIN order_items oi ON oi.id = rev.order_item_id
+      LEFT JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN preorders po ON po.id = o.preorder_id
+      LEFT JOIN checkout_groups cg ON cg.id = o.checkout_group_id
       WHERE ${whereClause}
       ORDER BY rev.id DESC
       LIMIT $${paramIdx}`,

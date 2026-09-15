@@ -130,24 +130,25 @@ function Profile() {
     removeFavorite,
     isPending: isWishlistPending,
   } = useWishlist();
+  const [notifsPage, setNotifsPage] = useState(1);
   const {
     user,
     token,
-    data: notificationData,
+    notifications: notificationsList,
+    pagination: notifsPagination,
     isLoading: notifsLoading,
     isError: notifsError,
     refetch: refetchNotifications,
     markRead,
     markAllRead,
     clearAll,
-  } = useCustomerNotifications();
+  } = useCustomerNotifications({ page: notifsPage, limit: 10 });
   const isLoggedIn = Boolean(token && user);
 
   const [activeTab, setActiveTab] = useState(search?.tab || "orders");
   const [userOrders, setUserOrders] = useState<ProfileOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const notificationsList = notificationData?.notifications ?? [];
 
   const [emailEditing, setEmailEditing] = useState(false);
   const [newEmail, setNewEmail] = useState('');
@@ -419,18 +420,6 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
-          <div className="rounded-2xl border bg-card p-5 shadow-sm">
-            <p className="font-semibold">Đơn đặt trước</p>
-            <p className="mt-1 text-sm text-muted-foreground">Xem riêng lịch nhận món, trạng thái xác nhận và các món đã đặt.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4 w-full"
-              onClick={() => handleTabChange('preorders')}
-            >
-              Xem đơn đặt trước
-            </Button>
-          </div>
         </aside>
 
         <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -675,6 +664,32 @@ function Profile() {
                     {n.body && <p className="text-xs text-muted-foreground mt-2 pl-9">{n.body}</p>}
                   </div>
                 ))}
+
+                {notifsPagination && notifsPagination.total_pages > 1 && (
+                  <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
+                    <span>
+                      Trang {notifsPagination.page} / {notifsPagination.total_pages} ({notifsPagination.total_items} thông báo)
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNotifsPage((p) => Math.max(1, p - 1))}
+                        disabled={!notifsPagination.has_prev || notifsLoading}
+                      >
+                        Trang trước
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNotifsPage((p) => Math.min(notifsPagination.total_pages, p + 1))}
+                        disabled={!notifsPagination.has_next || notifsLoading}
+                      >
+                        Trang sau
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>
