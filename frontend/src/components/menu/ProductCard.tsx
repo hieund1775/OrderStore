@@ -21,6 +21,8 @@ import {
   tagLabel,
   toppingOptions,
   vnd,
+  resolveProductImage,
+  FALLBACK_TEA_IMAGE,
   type Product,
 } from '@/lib/data';
 
@@ -33,20 +35,38 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
   const [open, setOpen] = useState(false);
   const liked = isFavorite(product.id);
   const pending = isPending(product.id);
+  const [imgSrc, setImgSrc] = useState(() => resolveProductImage(product.slug, product.image));
 
   return (
     <>
       <article className="group bg-card flex flex-col overflow-hidden rounded-2xl border transition-all hover:-translate-y-1 hover:shadow-card-soft">
-        <div className="relative aspect-square overflow-hidden">
+        <div
+          className="relative aspect-square overflow-hidden cursor-pointer"
+          onClick={() => setOpen(true)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpen(true);
+            }
+          }}
+          aria-label={`Xem chi tiết và tùy chọn ${product.name}`}
+        >
           <img
-            src={product.image}
+            src={imgSrc}
             alt={product.name}
             loading="lazy"
             width={640}
             height={640}
+            onError={() => {
+              if (imgSrc !== FALLBACK_TEA_IMAGE) {
+                setImgSrc(FALLBACK_TEA_IMAGE);
+              }
+            }}
             className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
-          <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1">
+          <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1 pointer-events-none">
             {product.tags.map((t) => (
               <Badge key={t} className="bg-card text-foreground rounded-full text-[10px] shadow-sm">
                 {tagLabel[t]}
@@ -54,7 +74,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             ))}
           </div>
           <button
-            onClick={() => setFavorite(product, !liked)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFavorite(product, !liked);
+            }}
             disabled={pending}
             aria-label={liked ? `Bỏ ${product.name} khỏi yêu thích` : `Thêm ${product.name} vào yêu thích`}
             className="bg-card/90 disabled:opacity-50 absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-full shadow-sm transition-transform active:scale-95"
@@ -70,7 +93,8 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             {/* Row 1: Product Name */}
             <h3
               title={product.name}
-              className="font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words"
+              onClick={() => setOpen(true)}
+              className="font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words cursor-pointer hover:text-primary transition-colors"
             >
               {product.name}
             </h3>
@@ -229,9 +253,12 @@ function CustomizeDialog({
         <div className="grid md:grid-cols-[minmax(0,320px)_1fr]">
           <div className="bg-accent/50 relative hidden md:block">
             <img
-              src={product.image}
+              src={resolveProductImage(product.slug, product.image)}
               alt={product.name}
               loading="lazy"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+              }}
               className="size-full object-cover"
             />
           </div>

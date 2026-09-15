@@ -7,7 +7,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProductReviews } from '@/components/reviews/ProductReviews';
 import { apiGet } from '@/lib/api';
-import { vnd } from '@/lib/data';
+import {
+  vnd,
+  products as fallbackProducts,
+  resolveProductImage,
+  FALLBACK_TEA_IMAGE,
+} from '@/lib/data';
 
 export const Route = createFileRoute('/san-pham/$slug')({
   head: ({ params }) => ({
@@ -32,8 +37,46 @@ function ProductDetailPage() {
   async function loadProduct() {
     try {
       setLoading(true);
-      const data = await apiGet<any>(`/catalog/products/${slug}`);
-      setProduct(data);
+      setError(null);
+
+      let data: any = null;
+      try {
+        data = await apiGet<any>(`/api/catalog/products/${slug}`);
+      } catch {
+        try {
+          data = await apiGet<any>(`/api/products/${slug}`);
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!data) {
+        const found = fallbackProducts.find(
+          (p) => p.slug === slug || String(p.id) === slug,
+        );
+        if (found) {
+          data = {
+            id: found.id,
+            name: found.name,
+            slug: found.slug,
+            description: found.desc,
+            price: found.price,
+            image_url: resolveProductImage(found.slug, found.image),
+            rating: found.rating,
+            review_count: found.reviews,
+            calories: found.calories,
+            base_tea: found.base,
+            line: found.line,
+            tags: found.tags,
+          };
+        }
+      }
+
+      if (data) {
+        setProduct(data);
+      } else {
+        setError('Không tìm thấy sản phẩm');
+      }
     } catch (err) {
       setError('Không thể tải thông tin sản phẩm');
     } finally {
@@ -78,15 +121,14 @@ function ProductDetailPage() {
       {/* Product Header */}
       <div className="mb-6 flex flex-col gap-6 sm:flex-row">
         <div className="flex h-64 w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 sm:w-64">
-          {product.image_url ? (
-            <img
-              src={product.image_url}
-              alt={product.name}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <ShoppingBag className="h-16 w-16 text-amber-300" />
-          )}
+          <img
+            src={resolveProductImage(product.slug, product.image_url)}
+            alt={product.name}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+            }}
+            className="h-full w-full object-cover"
+          />
         </div>
 
         <div className="flex-1">
