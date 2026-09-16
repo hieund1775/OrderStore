@@ -19,6 +19,7 @@ export function createCatalogV2Repository(database = postgresDb) {
                 c.default_fulfillment_lane,
                 c.sort_order, c.is_visible, c.archived_at, c.created_at,
                 pt.name AS product_type_name, pt.code AS product_type_code,
+                pt.default_fulfillment_lane AS product_type_default_fulfillment_lane,
                 (SELECT COUNT(*)::int FROM categories sub WHERE sub.parent_id = c.id AND sub.archived_at IS NULL) AS children_count,
                 (SELECT COUNT(*)::int FROM products p WHERE p.category_id = c.id AND p.status <> 'archived') AS products_count
          FROM categories c
@@ -62,8 +63,11 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (productTypeId && Number(productTypeId) !== Number(parent.product_type_id)) {
           throw new CatalogV2Error('Danh mục con phải kế thừa đúng ngành hàng của danh mục gốc', 400);
         }
+        if (parent.default_fulfillment_lane && parent.default_fulfillment_lane !== defaultFulfillmentLane) {
+          throw new CatalogV2Error('Danh mục con phải thuộc đúng khu vực của ngành hàng', 400);
+        }
         productTypeId = parent.product_type_id;
-      } else if (defaultFulfillmentLane !== null) {
+      } else if (!['kitchen', 'packing'].includes(defaultFulfillmentLane)) {
         throw new CatalogV2Error('Ngành hàng không thuộc riêng khu vực Bếp hoặc Đóng gói', 400);
       }
 
@@ -102,6 +106,10 @@ export function createCatalogV2Repository(database = postgresDb) {
       const current = await this.getCategoryById(id);
       if (!current) {
         throw new CatalogV2Error('Danh mục không tồn tại', 404);
+      }
+
+      if (data.default_fulfillment_lane !== undefined && data.default_fulfillment_lane !== current.default_fulfillment_lane) {
+        throw new CatalogV2Error('Không thể chuyển ngành hàng hoặc danh mục sang khu vực khác', 400);
       }
 
       let depth = current.depth;
@@ -172,7 +180,7 @@ export function createCatalogV2Repository(database = postgresDb) {
               data.parent_id !== undefined ? data.parent_id : current.parent_id,
               depth,
               data.product_type_id !== undefined ? data.product_type_id : current.product_type_id,
-              depth === 0 ? null : (data.default_fulfillment_lane ?? current.default_fulfillment_lane),
+              current.default_fulfillment_lane,
               data.sort_order,
               data.is_visible,
               id,
@@ -407,9 +415,9 @@ export function createCatalogV2Repository(database = postgresDb) {
         const [rootRows] = await tx.query(
           `INSERT INTO categories (
              name, slug, parent_id, depth, product_type_id, default_fulfillment_lane, sort_order, is_visible
-           ) VALUES ($1, $2, NULL, 0, $3, NULL, 0, TRUE)
+           ) VALUES ($1, $2, NULL, 0, $3, $4, 0, TRUE)
            RETURNING *`,
-          [data.name, data.code.replace(/_/g, '-'), productType.id],
+          [data.name, data.code.replace(/_/g, '-'), productType.id, data.default_fulfillment_lane || 'kitchen'],
         );
         return { productType, schema: schemaRows[0], rootCategory: rootRows[0] };
       });

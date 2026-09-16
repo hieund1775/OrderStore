@@ -18,6 +18,7 @@ import {
   Package,
   Star,
   CalendarClock,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchBranchCapabilities, getUser } from '@/lib/api';
@@ -69,6 +70,7 @@ export function AdminSidebar({
   const [enabledLanes, setEnabledLanes] = useState<Set<string>>(() =>
     role === 'super' ? new Set(['kitchen', 'packing']) : new Set(),
   );
+  const [catalogExpanded, setCatalogExpanded] = useState(() => pathname.startsWith('/admin/catalog'));
 
   useEffect(() => {
     if (role === 'super') {
@@ -144,6 +146,29 @@ export function AdminSidebar({
                 </p>
               )}
               {item.section !== previousSection && collapsed && index > 0 && <div className="my-2 border-t" />}
+              {item.to === '/admin/catalog' ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogExpanded((open) => !open)}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                      active ? 'bg-primary text-primary-foreground font-semibold shadow-xs' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                      collapsed && 'justify-center px-2',
+                    )}
+                  >
+                    <Icon className={cn('size-4.5 shrink-0 transition-transform duration-150 group-hover:scale-105', active && 'text-primary-foreground')} />
+                    {!collapsed && <><span className="min-w-0 flex-1 truncate text-left">{item.label}</span><ChevronDown className={cn('size-4 transition-transform', catalogExpanded && 'rotate-180')} /></>}
+                  </button>
+                  {!collapsed && catalogExpanded && (
+                    <div className="ml-5 mt-1 space-y-1 border-l pl-2">
+                      <Link to="/admin/catalog/kitchen" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium', pathname === '/admin/catalog/kitchen' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent')}><ChefHat className="size-3.5" />Danh mục Bếp</Link>
+                      <Link to="/admin/catalog/packing" onClick={onNavigate} className={cn('flex items-center gap-2 rounded-md px-2 py-2 text-xs font-medium', pathname === '/admin/catalog/packing' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent')}><Package className="size-3.5" />Danh mục Đóng gói</Link>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <Link
                 to={item.to}
                 onClick={onNavigate}
@@ -159,6 +184,7 @@ export function AdminSidebar({
                 <Icon className={cn('size-4.5 shrink-0 transition-transform duration-150 group-hover:scale-105', active && 'text-primary-foreground')} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
+              )}
             </Fragment>
           );
         })}

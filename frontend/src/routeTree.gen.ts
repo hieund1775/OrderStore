@@ -40,6 +40,8 @@ import { Route as AdminThucDonRouteImport } from './routes/admin.thuc-don'
 import { Route as AdminTuyenDungRouteImport } from './routes/admin.tuyen-dung'
 import { Route as AdminViTriRouteImport } from './routes/admin.vi-tri'
 import { Route as SanPhamSlugRouteImport } from './routes/san-pham.$slug'
+import { Route as AdminCatalogKitchenRouteImport } from './routes/admin.catalog.kitchen'
+import { Route as AdminCatalogPackingRouteImport } from './routes/admin.catalog.packing'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -196,6 +198,16 @@ const SanPhamSlugRoute = SanPhamSlugRouteImport.update({
   path: '/san-pham/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCatalogKitchenRoute = AdminCatalogKitchenRouteImport.update({
+  id: '/kitchen',
+  path: '/kitchen',
+  getParentRoute: () => AdminCatalogRoute,
+} as any)
+const AdminCatalogPackingRoute = AdminCatalogPackingRouteImport.update({
+  id: '/packing',
+  path: '/packing',
+  getParentRoute: () => AdminCatalogRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -213,7 +225,7 @@ export interface FileRoutesByFullPath {
   '/tuyen-dung': typeof TuyenDungRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
-  '/admin/catalog': typeof AdminCatalogRoute
+  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/dat-truoc': typeof AdminDatTruocRoute
@@ -229,6 +241,8 @@ export interface FileRoutesByFullPath {
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
+  '/admin/catalog/packing': typeof AdminCatalogPackingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -245,7 +259,7 @@ export interface FileRoutesByTo {
   '/tuyen-dung': typeof TuyenDungRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
-  '/admin/catalog': typeof AdminCatalogRoute
+  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/dat-truoc': typeof AdminDatTruocRoute
@@ -261,6 +275,8 @@ export interface FileRoutesByTo {
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
+  '/admin/catalog/packing': typeof AdminCatalogPackingRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -279,7 +295,7 @@ export interface FileRoutesById {
   '/tuyen-dung': typeof TuyenDungRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
-  '/admin/catalog': typeof AdminCatalogRoute
+  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/chi-nhanh': typeof AdminChiNhanhRoute
   '/admin/danh-gia': typeof AdminDanhGiaRoute
   '/admin/dat-truoc': typeof AdminDatTruocRoute
@@ -295,6 +311,8 @@ export interface FileRoutesById {
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
+  '/admin/catalog/packing': typeof AdminCatalogPackingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -330,6 +348,8 @@ export interface FileRouteTypes {
     | '/admin/vi-tri'
     | '/san-pham/$slug'
     | '/admin/'
+    | '/admin/catalog/kitchen'
+    | '/admin/catalog/packing'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -362,6 +382,8 @@ export interface FileRouteTypes {
     | '/admin/vi-tri'
     | '/san-pham/$slug'
     | '/admin'
+    | '/admin/catalog/kitchen'
+    | '/admin/catalog/packing'
   id:
     | '__root__'
     | '/'
@@ -395,6 +417,8 @@ export interface FileRouteTypes {
     | '/admin/vi-tri'
     | '/san-pham/$slug'
     | '/admin/'
+    | '/admin/catalog/kitchen'
+    | '/admin/catalog/packing'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -633,13 +657,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SanPhamSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/catalog/kitchen': {
+      id: '/admin/catalog/kitchen'
+      path: '/kitchen'
+      fullPath: '/admin/catalog/kitchen'
+      preLoaderRoute: typeof AdminCatalogKitchenRouteImport
+      parentRoute: typeof AdminCatalogRoute
+    }
+    '/admin/catalog/packing': {
+      id: '/admin/catalog/packing'
+      path: '/packing'
+      fullPath: '/admin/catalog/packing'
+      preLoaderRoute: typeof AdminCatalogPackingRouteImport
+      parentRoute: typeof AdminCatalogRoute
+    }
   }
 }
+
+interface AdminCatalogRouteChildren {
+  AdminCatalogKitchenRoute: typeof AdminCatalogKitchenRoute
+  AdminCatalogPackingRoute: typeof AdminCatalogPackingRoute
+}
+
+const AdminCatalogRouteChildren: AdminCatalogRouteChildren = {
+  AdminCatalogKitchenRoute: AdminCatalogKitchenRoute,
+  AdminCatalogPackingRoute: AdminCatalogPackingRoute,
+}
+
+const AdminCatalogRouteWithChildren = AdminCatalogRoute._addFileChildren(
+  AdminCatalogRouteChildren,
+)
 
 interface AdminRouteChildren {
   AdminBepRoute: typeof AdminBepRoute
   AdminCaiDatRoute: typeof AdminCaiDatRoute
-  AdminCatalogRoute: typeof AdminCatalogRoute
+  AdminCatalogRoute: typeof AdminCatalogRouteWithChildren
   AdminChiNhanhRoute: typeof AdminChiNhanhRoute
   AdminDanhGiaRoute: typeof AdminDanhGiaRoute
   AdminDatTruocRoute: typeof AdminDatTruocRoute
@@ -659,7 +711,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminBepRoute: AdminBepRoute,
   AdminCaiDatRoute: AdminCaiDatRoute,
-  AdminCatalogRoute: AdminCatalogRoute,
+  AdminCatalogRoute: AdminCatalogRouteWithChildren,
   AdminChiNhanhRoute: AdminChiNhanhRoute,
   AdminDanhGiaRoute: AdminDanhGiaRoute,
   AdminDatTruocRoute: AdminDatTruocRoute,
