@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
-import { apiGet, apiPatch, clearToken, getUser } from "@/lib/api";
+import { apiGet, apiPatch, apiPost, clearToken, getUser } from "@/lib/api";
 import { elapsedDurationMs, fmtClockTimer, fmtDate, fmtDateTime, fmtTime } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
@@ -459,12 +459,11 @@ export function KdsPage() {
     setHandoverLoading(true);
     try {
       await markKitchenTaskReady(o);
-      await apiPatch(`/admin/orders/${o.id}/status`, {
+      await apiPost(`/admin/fulfillment/orders/${o.id}/handover`, {
         status: "Đang giao",
         driver_name: trimmedName,
         driver_phone: trimmedPhone,
       });
-      await completeKitchenTask(o);
       toast.success(`Đơn ${o.order_code} → 🚚 Đang giao (Đã bàn giao shipper)`);
       setHandoverOrder(null);
       await fetchOrders();

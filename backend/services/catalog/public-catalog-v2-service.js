@@ -40,15 +40,13 @@ export function createPublicCatalogV2Service(options = {}) {
 
     if (scopeData && (
       (scopeData.categoryAssignments && scopeData.categoryAssignments.length > 0) ||
-      (scopeData.productOverrides && scopeData.productOverrides.length > 0) ||
-      (scopeData.categoryPresets && scopeData.categoryPresets.length > 0) ||
-      (scopeData.productPresets && scopeData.productPresets.length > 0)
+      (scopeData.productOverrides && scopeData.productOverrides.length > 0)
     )) {
       const resolvedScopes = resolveProductOptions({
         categoryAssignments: scopeData.categoryAssignments,
         productOverrides: scopeData.productOverrides,
-        categoryPresets: scopeData.categoryPresets,
-        productPresets: scopeData.productPresets,
+        categoryPresets: [],
+        productPresets: [],
       });
       const attributesById = new Map(schemaAttributes.map((attribute) => [Number(attribute.id), attribute]));
       attributes = resolvedScopes

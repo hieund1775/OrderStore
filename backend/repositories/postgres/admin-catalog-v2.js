@@ -4,7 +4,7 @@ import { generateCanonicalVariantSignature } from '../../validation/catalog-v2-s
 
 export function createAdminCatalogV2Repository(database = postgresDb) {
   return {
-    async listProducts({ categoryId, status, search, limit = 50, offset = 0 } = {}) {
+    async listProducts({ categoryId, status, search, lane, limit = 50, offset = 0 } = {}) {
       const params = [];
       let where = "WHERE p.status <> 'archived'";
 
@@ -27,6 +27,10 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
       if (search) {
         params.push(`%${search}%`);
         where += ` AND (p.name ILIKE $${params.length} OR p.slug ILIKE $${params.length})`;
+      }
+      if (lane) {
+        params.push(lane);
+        where += ` AND COALESCE(p.fulfillment_lane, c.default_fulfillment_lane) = $${params.length}`;
       }
 
       params.push(limit);
@@ -124,8 +128,15 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         }
 
         let schemaId = data.product_type_schema_id || null;
-        let fulfillmentLane;
+        const fulfillmentLane = data.fulfillment_lane ?? category.default_fulfillment_lane;
         let stockMode;
+
+        if (!['kitchen', 'packing'].includes(fulfillmentLane)) {
+          throw new CatalogV2Error('Sản phẩm phải chọn khu vực Bếp hoặc Đóng gói', 400);
+        }
+        if (!category.default_fulfillment_lane || category.default_fulfillment_lane !== fulfillmentLane) {
+          throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
+        }
 
         if (!schemaId && category.product_type_id) {
           const [pubSchemaRows] = await tx.query(
@@ -177,12 +188,10 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
             [schemaId],
           );
           if (sRows[0]) {
-            fulfillmentLane = data.fulfillment_lane || sRows[0].default_fulfillment_lane;
             stockMode = data.stock_mode || sRows[0].default_stock_mode;
           }
         }
 
-        if (!fulfillmentLane) fulfillmentLane = data.fulfillment_lane || 'kitchen';
         if (!stockMode) stockMode = data.stock_mode || 'made_to_order';
 
         const [pRows] = await tx.query(
@@ -283,6 +292,13 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         if (category.has_children) {
           throw new CatalogV2Error('Không thể gắn sản phẩm trực tiếp vào danh mục cha', 400);
         }
+        const targetLane = data.fulfillment_lane ?? current.fulfillment_lane;
+        if (!['kitchen', 'packing'].includes(targetLane)) {
+          throw new CatalogV2Error('Sản phẩm phải thuộc khu vực Bếp hoặc Đóng gói', 400);
+        }
+        if (category.default_fulfillment_lane !== targetLane) {
+          throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
+        }
         if (
           category.product_type_id
           && current.product_type_id
@@ -298,10 +314,12 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
              category_id = COALESCE($3, category_id),
              description = COALESCE($4, description),
              price = COALESCE($5, price),
-             image_url = COALESCE($6, image_url),
-             status = COALESCE($7, status),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $8
+              image_url = COALESCE($6, image_url),
+              status = COALESCE($7, status),
+              is_available = COALESCE($8, is_available),
+              fulfillment_lane = $9,
+              updated_at = CURRENT_TIMESTAMP
+         WHERE id = $10
          RETURNING *`,
           [
           data.name,
@@ -309,9 +327,11 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           data.category_id,
           data.description,
           data.price,
-          data.image_url,
-          data.status,
-          id,
+           data.image_url,
+           data.status,
+           data.is_available,
+           targetLane,
+           id,
           ],
         );
         return rows[0];

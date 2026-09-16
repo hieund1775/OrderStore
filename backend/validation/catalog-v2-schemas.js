@@ -73,13 +73,15 @@ export function validateCategoryInput(input) {
     throw badRequest('Category slug must be kebab-case (e.g. "tra-trai-cay", "ao-thun-nam")');
   }
 
-  const parentId = input.parent_id !== undefined && input.parent_id !== null ? Number(input.parent_id) : null;
+  const hasParentId = input.parent_id !== undefined;
+  const parentId = hasParentId && input.parent_id !== null ? Number(input.parent_id) : null;
   if (parentId !== null && (!Number.isInteger(parentId) || parentId <= 0)) {
     throw badRequest('parent_id must be a positive integer or null');
   }
 
+  const hasProductTypeId = input.product_type_id !== undefined;
   const productTypeId =
-    input.product_type_id !== undefined && input.product_type_id !== null ? Number(input.product_type_id) : null;
+    hasProductTypeId && input.product_type_id !== null ? Number(input.product_type_id) : null;
   if (productTypeId !== null && (!Number.isInteger(productTypeId) || productTypeId <= 0)) {
     throw badRequest('product_type_id must be a positive integer or null');
   }
@@ -94,13 +96,22 @@ export function validateCategoryInput(input) {
   }
   const isVisible = input.is_visible ?? true;
 
+  const hasDefaultFulfillmentLane = input.default_fulfillment_lane !== undefined;
+  const defaultFulfillmentLane = !hasDefaultFulfillmentLane || input.default_fulfillment_lane == null
+    ? null
+    : String(input.default_fulfillment_lane).trim();
+  if (defaultFulfillmentLane !== null && !['kitchen', 'packing'].includes(defaultFulfillmentLane)) {
+    throw badRequest('default_fulfillment_lane must be "kitchen", "packing", or null');
+  }
+
   return {
     name,
     slug,
-    parent_id: parentId,
-    product_type_id: productTypeId,
+    parent_id: hasParentId ? parentId : undefined,
+    product_type_id: hasProductTypeId ? productTypeId : undefined,
     sort_order: sortOrder,
     is_visible: isVisible,
+    default_fulfillment_lane: hasDefaultFulfillmentLane ? defaultFulfillmentLane : undefined,
   };
 }
 

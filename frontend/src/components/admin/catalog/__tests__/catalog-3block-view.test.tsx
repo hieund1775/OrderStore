@@ -193,4 +193,64 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
     expect(html).not.toContain('Slug (URL)');
     expect(html).not.toContain('Mã Slug');
   });
+
+  it('filters subcategories by activeLane="kitchen"', () => {
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId="1"
+        onSelectRootId={() => {}}
+        categories={allCategories}
+        products={sampleProducts}
+        activeSchema={sampleSchema}
+        activeLane="kitchen"
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenProductEditor={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Trà sữa');
+    expect(html).not.toContain('Nước giải khát đóng chai');
+  });
+
+  it('filters subcategories by activeLane="packing"', () => {
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId="1"
+        onSelectRootId={() => {}}
+        categories={allCategories}
+        products={sampleProducts}
+        activeSchema={sampleSchema}
+        activeLane="packing"
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenProductEditor={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Nước giải khát đóng chai');
+    expect(html).not.toContain('Trà sữa');
+  });
+
+  it('displays decoupled visibility action buttons (Tạm ẩn/Hiển thị) without claiming to mutate products', () => {
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId="1"
+        onSelectRootId={() => {}}
+        categories={allCategories}
+        products={sampleProducts}
+        activeSchema={sampleSchema}
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenProductEditor={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Tạm ẩn');
+    expect(html).not.toContain('Tạm ngưng danh mục con và tất cả món bên trong');
+    expect(html).toContain('Tạm ẩn danh mục con khỏi Menu khách');
+  });
 });

@@ -9,6 +9,8 @@ import {
   Image as ImageIcon,
   Upload,
   X,
+  ChefHat,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -33,6 +35,7 @@ import {
   fetchCatalogProducts,
   fetchSchemaDetails,
   createCatalogCategory,
+  createCatalogIndustry,
   updateCatalogCategory,
   archiveCatalogCategory,
   createCatalogProduct,
@@ -69,6 +72,7 @@ function AdminCatalogPage() {
   const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
+  const [activeLane, setActiveLane] = useState<'kitchen' | 'packing'>('kitchen');
   const [loading, setLoading] = useState(true);
 
   // Modal tạo / sửa danh mục gốc
@@ -168,13 +172,21 @@ function AdminCatalogPage() {
 
   // Sản phẩm hiển thị theo scope
   const filteredProducts = useMemo(() => {
-    if (!scopedCategoryIds) return products;
-    return products.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
-  }, [scopedCategoryIds, products]);
+    return products.filter((p) => {
+      if (scopedCategoryIds && !scopedCategoryIds.has(Number(p.category_id))) {
+        return false;
+      }
+      const cat = categories.find((c) => Number(c.id) === Number(p.category_id));
+      const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || 'kitchen';
+      return effectiveLane === activeLane;
+    });
+  }, [scopedCategoryIds, products, categories, activeLane]);
 
   // Danh sách danh mục con khả dụng để gán sản phẩm
   const productCategoryOptions = useMemo(() => {
-    const list = getLeafCategories(filteredCategories);
+    const list = getLeafCategories(filteredCategories).filter((category) => (
+      category.parent_id !== null && (category.default_fulfillment_lane || 'kitchen') === activeLane
+    ));
     if (list.length > 0) {
       return list.map((category) => ({
         ...category,
@@ -185,7 +197,7 @@ function AdminCatalogPage() {
       ...category,
       breadcrumb: category.name,
     }));
-  }, [categories, filteredCategories]);
+  }, [categories, filteredCategories, activeLane]);
 
   // Tạo / Sửa ngành gốc
   const handleOpenCreateRoot = () => {
@@ -243,16 +255,14 @@ function AdminCatalogPage() {
         });
         toast.success(`Đã cập nhật ngành hàng "${newRootName}"`);
       } else {
-        const created = await createCatalogCategory({
+        const created = await createCatalogIndustry({
           name: newRootName.trim(),
-          slug: autoSlug,
-          parent_id: null,
-          product_type_id: null,
-          sort_order: rootCategories.length + 1,
-          is_visible: true,
+          code: autoSlug.replace(/-/g, '_'),
+          default_stock_mode: 'made_to_order',
+          default_fulfillment_lane: 'kitchen',
         });
         toast.success(`Đã tạo ngành hàng "${newRootName}"`);
-        if (created?.id) setSelectedRootId(String(created.id));
+        if (created?.rootCategory?.id) setSelectedRootId(String(created.rootCategory.id));
       }
       setCreateRootOpen(false);
       setNewRootName('');
@@ -269,13 +279,15 @@ function AdminCatalogPage() {
   // Mở modal tạo / sửa sản phẩm
   const handleOpenProductModal = (product?: ProductV2, defaultCategoryId?: number) => {
     if (product) {
+      const cat = categories.find((c) => Number(c.id) === Number(product.category_id));
+      const effectiveLane = product.fulfillment_lane || (cat?.default_fulfillment_lane as any) || 'kitchen';
       setEditingProduct(product);
       setProductFormData({
         name: product.name,
         category_id: product.category_id,
         price: product.price,
         image_url: product.image_url || '',
-        fulfillment_lane: product.fulfillment_lane || 'kitchen',
+        fulfillment_lane: effectiveLane,
         stock_mode: product.stock_mode || 'made_to_order',
       });
     } else {
@@ -285,7 +297,7 @@ function AdminCatalogPage() {
         category_id: defaultCategoryId || (productCategoryOptions[0]?.id ?? ''),
         price: 35000,
         image_url: '',
-        fulfillment_lane: 'kitchen',
+        fulfillment_lane: activeLane,
         stock_mode: 'made_to_order',
       });
     }
@@ -392,6 +404,28 @@ function AdminCatalogPage() {
         onDeleteRoot={handleDeleteRootCategory}
       />
 
+      <div className="flex items-center gap-2 rounded-xl border bg-card p-2">
+        <Button
+          type="button"
+          variant={activeLane === 'kitchen' ? 'hero' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveLane('kitchen')}
+        >
+          <ChefHat className="mr-1.5 size-4" /> Bếp
+        </Button>
+        <Button
+          type="button"
+          variant={activeLane === 'packing' ? 'hero' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveLane('packing')}
+        >
+          <Package className="mr-1.5 size-4" /> Đóng gói
+        </Button>
+        <p className="ml-2 text-xs text-muted-foreground">
+          Khu vực chỉ dùng để quản lý vận hành; Menu và Đặt trước vẫn hiển thị mọi sản phẩm đang bán.
+        </p>
+      </div>
+
       {/* 3-TAB VIEW: SUB-CATEGORIES, PRODUCTS, OPTIONS */}
       <CatalogTabBlocksView
         rootCategories={rootCategories}
@@ -400,6 +434,7 @@ function AdminCatalogPage() {
         categories={filteredCategories}
         products={filteredProducts}
         activeSchema={activeSchema}
+        activeLane={activeLane}
         isSuperAdmin={isSuperAdmin}
         onRefresh={loadAllData}
         onOpenProductEditor={handleOpenProductModal}
@@ -549,7 +584,11 @@ function AdminCatalogPage() {
                   </Label>
                   <Select
                     value={String(productFormData.category_id)}
-                    onValueChange={(val) => setProductFormData((prev) => ({ ...prev, category_id: val }))}
+                    onValueChange={(val) => {
+                      const selectedCat = categories.find((c) => Number(c.id) === Number(val));
+                      const lane = (selectedCat?.default_fulfillment_lane || 'kitchen') as 'kitchen' | 'packing';
+                      setProductFormData((prev) => ({ ...prev, category_id: val, fulfillment_lane: lane }));
+                    }}
                   >
                     <SelectTrigger className="text-xs">
                       <SelectValue placeholder="Chọn danh mục con" />
@@ -584,10 +623,7 @@ function AdminCatalogPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold">Khu vực xử lý đơn</Label>
-                  <Select
-                    value={productFormData.fulfillment_lane}
-                    onValueChange={(val: any) => setProductFormData((prev) => ({ ...prev, fulfillment_lane: val }))}
-                  >
+                  <Select value={productFormData.fulfillment_lane} disabled>
                     <SelectTrigger className="text-xs">
                       <SelectValue />
                     </SelectTrigger>

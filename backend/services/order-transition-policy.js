@@ -22,6 +22,7 @@ export const VALID_TRANSITIONS = {
 };
 
 export const ROLE_ALLOWED_TARGET_STATUS = {
+  packing: ['Đang giao', 'Hoàn thành'],
   super: ['Đã xác nhận', 'Đang chuẩn bị', 'Đang giao', 'Hoàn thành', 'Đã hủy'],
   manager: ['Đã xác nhận', 'Đang chuẩn bị', 'Đang giao', 'Hoàn thành', 'Đã hủy'],
   kitchen: ['Đang chuẩn bị', 'Đang giao', 'Hoàn thành'],
@@ -97,6 +98,14 @@ export function evaluateOrderTransition({ currentStatus, targetStatus, role, isP
   }
 
   // Kitchen role specific rules
+  if (role === 'packing' && targetStatus === 'Hoàn thành' && currentStatus !== 'Đang giao') {
+    return {
+      allowed: false,
+      status: 400,
+      error: 'Nhân viên Đóng gói chỉ có thể xác nhận hoàn thành sau khi đơn đã bàn giao shipper',
+    };
+  }
+
   if (role === 'kitchen') {
     if (targetStatus === 'Đang chuẩn bị' && currentStatus !== 'Đã xác nhận' && currentStatus !== 'Chờ xác nhận') {
       return {

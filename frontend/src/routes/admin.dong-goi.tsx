@@ -20,7 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { apiGet, apiPatch, getUser } from '@/lib/api';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { apiGet, apiPatch, apiPost, getUser } from '@/lib/api';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/admin/dong-goi')({
@@ -53,6 +54,8 @@ type FulfillmentTask = {
   created_at: string;
   started_at?: string;
   completed_at?: string;
+  current_status?: string;
+  all_tasks_ready?: boolean;
   items: FulfillmentTaskItem[];
 };
 
@@ -61,13 +64,17 @@ export function PackingStationPage() {
   const isSuperAdmin = user?.role === 'super';
   const [tasks, setTasks] = useState<FulfillmentTask[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>('active');
+  const [activeTab, setActiveTab] = useState<'packing' | 'shipper' | 'completed'>('packing');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string>(() =>
     user?.role === 'super' ? '' : user?.branch_id ? String(user.branch_id) : '',
   );
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
+  const [handoverTask, setHandoverTask] = useState<FulfillmentTask | null>(null);
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [handoverLoading, setHandoverLoading] = useState(false);
 
   const fetchTasks = async () => {
     if (isSuperAdmin && !selectedBranch) {
@@ -106,7 +113,7 @@ export function PackingStationPage() {
       .catch(() => setBranches([]));
   }, [isSuperAdmin]);
 
-  const handleUpdateStatus = async (taskId: number, newStatus: 'preparing' | 'ready' | 'completed') => {
+  const handleUpdateStatus = async (taskId: number, newStatus: 'preparing' | 'ready') => {
     setUpdatingTaskId(taskId);
     try {
       const res = await apiPatch<{ success: boolean; message: string; allTasksCompleted?: boolean }>(
@@ -125,6 +132,34 @@ export function PackingStationPage() {
     }
   };
 
+  const openHandover = (task: FulfillmentTask) => {
+    setHandoverTask(task);
+    setDriverName('');
+    setDriverPhone('');
+  };
+
+  const submitHandover = async () => {
+    if (!handoverTask) return;
+    if (driverName.trim().length < 2 || !driverPhone.trim()) {
+      toast.error('Vui lòng nhập tên và số điện thoại Shipper hợp lệ');
+      return;
+    }
+    try {
+      setHandoverLoading(true);
+      await apiPost(`/admin/fulfillment/orders/${handoverTask.order_id}/handover`, {
+        driver_name: driverName.trim(),
+        driver_phone: driverPhone.trim(),
+      });
+      toast.success(`Đã bàn giao ${handoverTask.order_code} cho shipper`);
+      setHandoverTask(null);
+      await fetchTasks();
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể bàn giao; vui lòng kiểm tra khâu còn lại');
+    } finally {
+      setHandoverLoading(false);
+    }
+  };
+
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
       t.order_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -133,15 +168,15 @@ export function PackingStationPage() {
 
     if (!matchesSearch) return false;
 
-    if (activeTab === 'pending') return t.status === 'pending';
-    if (activeTab === 'preparing') return t.status === 'preparing';
-    if (activeTab === 'completed') return t.status === 'ready' || t.status === 'completed';
+    if (activeTab === 'shipper') return t.current_status !== 'Hoàn thành' && (t.status === 'ready' || t.current_status === 'Đang giao');
+    if (activeTab === 'completed') return t.current_status === 'Hoàn thành' || t.status === 'completed';
     return t.status === 'pending' || t.status === 'preparing';
   });
 
   const pendingCount = tasks.filter((t) => t.status === 'pending').length;
   const preparingCount = tasks.filter((t) => t.status === 'preparing').length;
-  const completedCount = tasks.filter((t) => t.status === 'ready' || t.status === 'completed').length;
+  const shipperCount = tasks.filter((t) => t.current_status !== 'Hoàn thành' && (t.status === 'ready' || t.current_status === 'Đang giao')).length;
+  const completedCount = tasks.filter((t) => t.current_status === 'Hoàn thành' || t.status === 'completed').length;
 
   return (
     <div className="space-y-6 p-6">
@@ -192,19 +227,16 @@ export function PackingStationPage() {
           )}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">
-          <TabsList className="grid grid-cols-4 w-full sm:w-[480px]">
-            <TabsTrigger value="active" className="text-xs">
-              Đang chờ ({pendingCount + preparingCount})
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-auto">
+          <TabsList className="grid grid-cols-3 w-full sm:w-[420px]">
+            <TabsTrigger value="packing" className="text-xs">
+              Đóng gói ({pendingCount + preparingCount})
             </TabsTrigger>
-            <TabsTrigger value="pending" className="text-xs">
-              Chưa làm ({pendingCount})
-            </TabsTrigger>
-            <TabsTrigger value="preparing" className="text-xs">
-              Đang gói ({preparingCount})
+            <TabsTrigger value="shipper" className="text-xs">
+              Shipper ({shipperCount})
             </TabsTrigger>
             <TabsTrigger value="completed" className="text-xs">
-              Đã xong ({completedCount})
+              Hoàn thành ({completedCount})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -244,21 +276,27 @@ export function PackingStationPage() {
                         {task.order_type}
                       </Badge>
                     </div>
-                    {task.status === 'pending' && (
+                    {task.current_status === 'Đang giao' ? (
+                      <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-500/20 font-bold text-xs">
+                        🚚 Đang giao
+                      </Badge>
+                    ) : task.current_status === 'Hoàn thành' || task.status === 'completed' ? (
+                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-bold text-xs">
+                        ✓ Hoàn thành
+                      </Badge>
+                    ) : task.status === 'pending' ? (
                       <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold text-xs">
                         Chờ đóng gói
                       </Badge>
-                    )}
-                    {task.status === 'preparing' && (
+                    ) : task.status === 'preparing' ? (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-500/20 font-bold text-xs animate-pulse">
                         Đang đóng gói
                       </Badge>
-                    )}
-                    {(task.status === 'ready' || task.status === 'completed') && (
+                    ) : task.status === 'ready' ? (
                       <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-bold text-xs">
                         ✓ Đã đóng gói
                       </Badge>
-                    )}
+                    ) : null}
                   </div>
                   <CardDescription className="text-xs flex items-center justify-between pt-1">
                     <span className="flex items-center gap-1">
@@ -339,21 +377,42 @@ export function PackingStationPage() {
                       <Button
                         className="w-full font-bold text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white"
                         disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(task.id, 'completed')}
+                        onClick={() => handleUpdateStatus(task.id, 'ready')}
                       >
                         <CheckCircle2 className="mr-1.5 size-3.5" /> Hoàn thành đóng gói
                       </Button>
                     )}
 
-                    {(task.status === 'ready' || task.status === 'completed') && (
+                    {task.status === 'ready' && task.current_status !== 'Đang giao' && (
+                      <Button
+                        variant="hero"
+                        className="w-full text-xs h-9"
+                        disabled={isUpdating || !task.all_tasks_ready}
+                        onClick={() => openHandover(task)}
+                      >
+                        <Truck className="mr-1 size-3" /> {task.all_tasks_ready ? 'Bàn giao Shipper' : 'Chờ khâu còn lại'}
+                      </Button>
+                    )}
+
+                    {task.current_status === 'Đang giao' && (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="w-full text-xs h-8"
+                        className="w-full text-xs h-9 text-emerald-600 hover:text-emerald-700 border-emerald-500/30"
                         disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(task.id, 'preparing')}
+                        onClick={async () => {
+                          try {
+                            setUpdatingTaskId(task.id);
+                            await apiPatch(`/admin/orders/${task.order_id}/status`, { status: 'Hoàn thành' });
+                            toast.success(`Đơn #${task.order_code} đã hoàn thành`);
+                            await fetchTasks();
+                          } catch (err: any) {
+                            toast.error(err?.message || 'Lỗi cập nhật trạng thái đơn');
+                          } finally {
+                            setUpdatingTaskId(null);
+                          }
+                        }}
                       >
-                        <RotateCcw className="mr-1 size-3" /> Mở lại gói hàng
+                        <CheckCircle2 className="mr-1.5 size-3.5" /> Xác nhận đã giao xong
                       </Button>
                     )}
                   </div>
@@ -363,6 +422,30 @@ export function PackingStationPage() {
           })}
         </div>
       )}
+
+      <Dialog open={Boolean(handoverTask)} onOpenChange={(open) => !open && setHandoverTask(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bàn giao shipper {handoverTask ? `#${handoverTask.order_code}` : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Tên Shipper</label>
+              <Input value={driverName} onChange={(event) => setDriverName(event.target.value)} placeholder="Nguyễn Văn A" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Số điện thoại</label>
+              <Input value={driverPhone} onChange={(event) => setDriverPhone(event.target.value)} placeholder="0900000000" inputMode="tel" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHandoverTask(null)} disabled={handoverLoading}>Hủy</Button>
+            <Button variant="hero" onClick={submitHandover} disabled={handoverLoading}>
+              {handoverLoading ? 'Đang bàn giao...' : 'Xác nhận bàn giao'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

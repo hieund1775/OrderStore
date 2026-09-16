@@ -64,6 +64,16 @@ export function createAdminCatalogV2Service({
       };
     },
 
+    async createIndustry(input, context) {
+      const validated = validateProductTypeInput(input);
+      const result = await schemaRepository.createIndustry(validated, context);
+      return {
+        productType: toProductTypeDto(result.productType),
+        schema: result.schema,
+        rootCategory: toCategoryTreeDto(result.rootCategory),
+      };
+    },
+
     async createNextSchemaVersion(productTypeId, context) {
       const normalizedId = Number(productTypeId);
       if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
@@ -201,10 +211,22 @@ export function createAdminCatalogV2Service({
         normalized.price = price;
       }
       if (input.status !== undefined) {
-        if (!['draft', 'active'].includes(input.status)) {
+        if (!['draft', 'active', 'inactive'].includes(input.status)) {
           throw new CatalogV2Error('Trạng thái sản phẩm không hợp lệ', 400);
         }
         normalized.status = input.status;
+      }
+      if (input.fulfillment_lane !== undefined) {
+        if (!['kitchen', 'packing'].includes(input.fulfillment_lane)) {
+          throw new CatalogV2Error('Sản phẩm phải chọn khu vực Bếp hoặc Đóng gói', 400);
+        }
+        normalized.fulfillment_lane = input.fulfillment_lane;
+      }
+      if (input.is_available !== undefined) {
+        if (typeof input.is_available !== 'boolean') {
+          throw new CatalogV2Error('Trạng thái bán sản phẩm không hợp lệ', 400);
+        }
+        normalized.is_available = input.is_available;
       }
       if (input.description !== undefined) normalized.description = input.description;
       if (input.image_url !== undefined) normalized.image_url = input.image_url;

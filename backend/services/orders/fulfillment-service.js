@@ -242,6 +242,87 @@ export function createFulfillmentService({
       if (!orderId) return false;
       return await repository.areAllTasksCompletedForOrder(orderId, client);
     },
+
+    async prepareHandoverToShipper({ orderId, user }) {
+      const normalizedOrderId = Number(orderId);
+      if (!Number.isInteger(normalizedOrderId) || normalizedOrderId <= 0) {
+        const err = new Error('Mã đơn hàng không hợp lệ');
+        err.status = 400;
+        err.code = 'FULFILLMENT_ORDER_INVALID';
+        throw err;
+      }
+
+      return database.transaction(async (tx) => {
+        const tasks = await repository.lockTasksForOrder(normalizedOrderId, tx);
+        const activeTasks = tasks.filter((task) => task.status !== 'cancelled');
+        if (activeTasks.length === 0) {
+          if (['super', 'manager'].includes(user?.role)) {
+            return { branchId: null, tasks: [], legacy: true };
+          }
+          const err = new Error('Đơn hàng không có khâu Bếp hoặc Đóng gói để bàn giao');
+          err.status = 409;
+          err.code = 'FULFILLMENT_TASKS_MISSING';
+          throw err;
+        }
+
+        const branchId = Number(activeTasks[0].branch_id);
+        if (activeTasks.some((task) => Number(task.branch_id) !== branchId)) {
+          const err = new Error('Các khâu của đơn hàng không cùng một chi nhánh');
+          err.status = 409;
+          err.code = 'FULFILLMENT_BRANCH_CONFLICT';
+          throw err;
+        }
+        if (user?.role !== 'super' && Number(user?.branch_id) !== branchId) {
+          const err = new Error('Bạn không có quyền bàn giao đơn của chi nhánh khác');
+          err.status = 403;
+          err.code = 'FULFILLMENT_BRANCH_FORBIDDEN';
+          throw err;
+        }
+        if (user?.role === 'kitchen' && !activeTasks.some((task) => task.lane === 'kitchen')) {
+          const err = new Error('Nhân viên Bếp chỉ được bàn giao đơn có khâu Bếp');
+          err.status = 403;
+          err.code = 'FULFILLMENT_LANE_FORBIDDEN';
+          throw err;
+        }
+        if (user?.role === 'packing' && !activeTasks.some((task) => task.lane === 'packing')) {
+          const err = new Error('Nhân viên Đóng gói chỉ được bàn giao đơn có khâu Đóng gói');
+          err.status = 403;
+          err.code = 'FULFILLMENT_LANE_FORBIDDEN';
+          throw err;
+        }
+        if (!['super', 'manager', 'kitchen', 'packing'].includes(user?.role)) {
+          const err = new Error('Vai trò hiện tại không được bàn giao shipper');
+          err.status = 403;
+          err.code = 'FULFILLMENT_HANDOVER_FORBIDDEN';
+          throw err;
+        }
+
+        const waiting = activeTasks.filter((task) => !['ready', 'completed'].includes(task.status));
+        if (waiting.length > 0) {
+          const err = new Error('Chờ khâu còn lại: đơn hàng vẫn có nhiệm vụ chưa sẵn sàng');
+          err.status = 409;
+          err.code = 'FULFILLMENT_OTHER_LANE_NOT_READY';
+          throw err;
+        }
+
+        const readyTasks = activeTasks.filter((task) => task.status === 'ready');
+        if (readyTasks.length === 0) {
+          const err = new Error('Đơn hàng đã được bàn giao cho shipper hoặc không có nhiệm vụ sẵn sàng');
+          err.status = 409;
+          err.code = 'FULFILLMENT_ALREADY_HANDED_OVER';
+          throw err;
+        }
+
+        return { branchId, tasks: activeTasks };
+      });
+    },
+
+    async completeReadyTasksForOrder(orderId) {
+      return database.transaction(async (tx) => {
+        await repository.lockTasksForOrder(orderId, tx);
+        return repository.completeReadyTasksForOrder(orderId, tx);
+      });
+    },
   };
 }
 

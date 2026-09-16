@@ -9,12 +9,13 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus } from '../../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../../validation/order-schemas.js';
 import adminOrderService from '../../services/orders/admin-order-service.js';
+import fulfillmentService from '../../services/orders/fulfillment-service.js';
 import preorderService from '../../services/preorders/preorder-service.js';
 import { toAdminOrderListItemDto, toAdminOrderDetailDto } from '../../dto/order-dto.js';
 
 const router = Router();
 
-router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
+router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
     const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
     validateOrderFilters({ status, store_id, search });
@@ -53,7 +54,7 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
   }
 }));
 
-router.get('/:id', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
+router.get('/:id', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
     validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
@@ -72,9 +73,29 @@ export const updateOrderStatus = async (req, res) => {
     validateOrderId(req.params.id);
     validateOrderStatus(status, VALID_STATUSES);
     const validatedInput = validateOrderMutationInput({ note, driver_name, driver_phone, tracking_url });
+    const orderId = Number(req.params.id);
+
+    if (status === 'Đang giao') {
+      const ready = await fulfillmentService.prepareHandoverToShipper({ orderId, user: req.user });
+      const scopedStoreId = ready.branchId || resolveStoreScope(req.user);
+      const result = await adminOrderService.updateStatus({
+        orderId,
+        storeId: scopedStoreId,
+        status: 'Đang giao',
+        note: validatedInput.note,
+        actor: { id: req.user.sub, role: req.user.role },
+        driverName: validatedInput.driverName,
+        driverPhone: validatedInput.driverPhone,
+        trackingUrl: validatedInput.trackingUrl,
+      });
+      await fulfillmentService.completeReadyTasksForOrder(orderId);
+      await logAudit(req.user.sub, `Cập nhật trạng thái đơn #${orderId}`, `→ ${status}`, req);
+      return res.json({ ...result, message: `Đơn hàng → ${status}` });
+    }
+
     const scopedStoreId = resolveStoreScope(req.user);
     const result = await adminOrderService.updateStatus({
-      orderId: req.params.id,
+      orderId,
       storeId: scopedStoreId,
       status,
       note: validatedInput.note,
@@ -94,12 +115,12 @@ export const updateOrderStatus = async (req, res) => {
     res.json({ ...result, message: `Đơn hàng → ${status}` });
   } catch (err) {
     const status = orderErrorStatus(err);
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.message, code: err.code });
   }
 };
 
-router.put('/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
-router.patch('/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(updateOrderStatus));
+router.put('/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(updateOrderStatus));
+router.patch('/:id/status', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(updateOrderStatus));
 
 router.put('/:id/cancel', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   try {

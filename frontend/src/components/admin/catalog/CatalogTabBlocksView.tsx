@@ -53,6 +53,7 @@ interface CatalogTabBlocksViewProps {
   categories: CategoryNode[];
   products: ProductV2[];
   activeSchema: SchemaDetails | null;
+  activeLane?: 'kitchen' | 'packing';
   isSuperAdmin: boolean;
   onRefresh: () => Promise<void>;
   onOpenProductEditor: (product?: ProductV2, defaultCategoryId?: number) => void;
@@ -65,6 +66,7 @@ export function CatalogTabBlocksView({
   categories,
   products,
   activeSchema,
+  activeLane,
   isSuperAdmin,
   onRefresh,
   onOpenProductEditor,
@@ -80,12 +82,16 @@ export function CatalogTabBlocksView({
 
   // Lọc danh sách danh mục con trực thuộc Root đang chọn
   const subcategories = useMemo(() => {
-    if (selectedRootId === 'all') {
-      return categories.filter((c) => c.parent_id !== null);
+    let list = categories.filter((c) => c.parent_id !== null);
+    if (selectedRootId !== 'all') {
+      const rootIdNum = Number(selectedRootId);
+      list = list.filter((c) => Number(c.parent_id) === rootIdNum);
     }
-    const rootIdNum = Number(selectedRootId);
-    return categories.filter((c) => Number(c.parent_id) === rootIdNum);
-  }, [categories, selectedRootId]);
+    if (activeLane) {
+      list = list.filter((c) => (c.default_fulfillment_lane || 'kitchen') === activeLane);
+    }
+    return list;
+  }, [categories, selectedRootId, activeLane]);
 
   // Toàn bộ category IDs thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
@@ -187,6 +193,14 @@ export function CatalogTabBlocksView({
       list = list.filter((p) => scopedCategoryIds.has(Number(p.category_id)));
     }
 
+    if (activeLane) {
+      list = list.filter((p) => {
+        const cat = categories.find((c) => Number(c.id) === Number(p.category_id));
+        const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || 'kitchen';
+        return effectiveLane === activeLane;
+      });
+    }
+
     if (productSearch.trim()) {
       const query = productSearch.toLowerCase().trim();
       list = list.filter(
@@ -196,23 +210,23 @@ export function CatalogTabBlocksView({
       );
     }
     return list;
-  }, [products, productFilterSubcat, scopedCategoryIds, productSearch]);
+  }, [products, productFilterSubcat, scopedCategoryIds, productSearch, activeLane, categories]);
 
   const handleOpenCreateCategory = () => {
     setEditingCategory(null);
     setCatName('');
-    setCatLane('inherit');
+    setCatLane(activeLane || 'kitchen');
     setCatDialogOpen(true);
   };
 
   const handleOpenEditCategory = (cat: CategoryNode) => {
     setEditingCategory(cat);
     setCatName(cat.name);
-    setCatLane((cat.default_fulfillment_lane as any) || 'inherit');
+    setCatLane((cat.default_fulfillment_lane as any) || activeLane || 'kitchen');
     setCatDialogOpen(true);
   };
 
-  // Toggle trạng thái Tạm ngưng / Hoạt động của Danh Mục Con kèm cập nhật toàn bộ sản phẩm bên trong
+  // Toggle trạng thái Tạm ẩn / Hiển thị của Danh Mục Con (độc lập với trạng thái từng sản phẩm)
   const handleToggleCategoryVisibility = async (cat: CategoryNode) => {
     const nextVisible = !cat.is_visible;
     try {
@@ -223,21 +237,7 @@ export function CatalogTabBlocksView({
         default_fulfillment_lane: cat.default_fulfillment_lane,
       });
 
-      // Cập nhật liên kết: Nếu danh mục con tạm ngưng -> tạm ngưng toàn bộ sản phẩm bên trong
-      // Nếu danh mục con bật lại -> mở lại toàn bộ sản phẩm bên trong
-      const relatedProds = products.filter((p) => Number(p.category_id) === Number(cat.id));
-      for (const prod of relatedProds) {
-        await updateCatalogProduct(prod.id, {
-          name: prod.name,
-          slug: prod.slug,
-          category_id: prod.category_id,
-          price: prod.price,
-          is_available: nextVisible,
-          status: nextVisible ? 'active' : 'inactive',
-        });
-      }
-
-      toast.success(`Đã ${nextVisible ? 'mở bán' : 'tạm ngưng'} danh mục "${cat.name}" và toàn bộ sản phẩm bên trong`);
+      toast.success(`Đã ${nextVisible ? 'hiển thị' : 'tạm ẩn'} danh mục "${cat.name}"`);
       await onRefresh();
     } catch (err: any) {
       toast.error(err.message || 'Lỗi cập nhật trạng thái danh mục');
@@ -312,7 +312,7 @@ export function CatalogTabBlocksView({
     }
   };
 
-  // Toggle trạng thái Tạm ngưng / Bán của Sản phẩm (Nếu mở sản phẩm thì tự động bật danh mục cha)
+  // Toggle trạng thái Tạm ngưng / Bán của Sản phẩm (độc lập với danh mục)
   const handleToggleProductAvailability = async (prod: ProductV2) => {
     try {
       const nextAvailable = !prod.is_available;
@@ -325,19 +325,6 @@ export function CatalogTabBlocksView({
         is_available: nextAvailable,
         status: nextStatus,
       });
-
-      // Nếu mở sản phẩm mà danh mục con đang tạm ngưng -> mở lại danh mục con luôn
-      if (nextAvailable) {
-        const parentCat = categories.find((c) => Number(c.id) === Number(prod.category_id));
-        if (parentCat && !parentCat.is_visible) {
-          await updateCatalogCategory(parentCat.id, {
-            name: parentCat.name,
-            slug: parentCat.slug,
-            is_visible: true,
-            default_fulfillment_lane: parentCat.default_fulfillment_lane,
-          });
-        }
-      }
 
       toast.success(`Đã ${nextAvailable ? 'mở bán' : 'tạm ngưng'} món "${prod.name}"`);
       await onRefresh();
@@ -474,7 +461,7 @@ export function CatalogTabBlocksView({
                         </td>
                         <td className="p-3.5">
                           <span className={cat.is_visible ? 'text-emerald-600 font-bold' : 'text-destructive font-bold'}>
-                            {cat.is_visible ? '🟢 Đang hoạt động' : '🔴 Tạm ngưng'}
+                            {cat.is_visible ? '🟢 Đang hiển thị' : '🔴 Tạm ẩn'}
                           </span>
                         </td>
                         <td className="p-3.5 text-right space-x-1.5">
@@ -485,10 +472,10 @@ export function CatalogTabBlocksView({
                                 size="sm"
                                 className={`h-7 text-xs px-2 ${cat.is_visible ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
                                 onClick={() => handleToggleCategoryVisibility(cat)}
-                                title={cat.is_visible ? 'Tạm ngưng danh mục con và tất cả món bên trong' : 'Mở bán lại danh mục con và tất cả món bên trong'}
+                                title={cat.is_visible ? 'Tạm ẩn danh mục con khỏi Menu khách' : 'Hiển thị lại danh mục con trên Menu khách'}
                               >
                                 <Power className="size-3 mr-1" />
-                                {cat.is_visible ? 'Tạm ngưng' : 'Mở bán'}
+                                {cat.is_visible ? 'Tạm ẩn' : 'Hiển thị'}
                               </Button>
                               <Button
                                 variant="ghost"

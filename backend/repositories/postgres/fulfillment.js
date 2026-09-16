@@ -22,6 +22,30 @@ export function createFulfillmentRepository(database = postgresDb) {
       return rows;
     },
 
+    async lockTasksForOrder(orderId, client = database) {
+      const [rows] = await client.query(
+        `SELECT id, order_id, branch_id, lane, status
+         FROM fulfillment_tasks
+         WHERE order_id = $1
+         FOR UPDATE`,
+        [Number(orderId)],
+      );
+      return rows;
+    },
+
+    async completeReadyTasksForOrder(orderId, client = database) {
+      const [rows] = await client.query(
+        `UPDATE fulfillment_tasks
+         SET status = 'completed',
+             completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = $1 AND status = 'ready'
+         RETURNING id, order_id, branch_id, lane, status`,
+        [Number(orderId)],
+      );
+      return rows;
+    },
+
     async createTasksForOrder({ orderId, branchId, laneItemsMap }, client = database) {
       const createdTasks = [];
 
@@ -114,7 +138,13 @@ export function createFulfillmentRepository(database = postgresDb) {
            t.id, t.order_id, t.branch_id, t.lane, t.status,
            t.assigned_to, t.started_at, t.completed_at, t.notes,
            t.created_at, t.updated_at,
-           o.order_code, o.order_type, o.table_id, o.location_name,
+           o.order_code, o.order_type, o.current_status, o.shipping_driver_name, o.shipping_driver_phone,
+           o.table_id, o.location_name,
+           NOT EXISTS (
+             SELECT 1 FROM fulfillment_tasks other_task
+             WHERE other_task.order_id = t.order_id
+               AND other_task.status NOT IN ('ready', 'completed', 'cancelled')
+           ) AS all_tasks_ready,
            p.preorder_code, p.scheduled_start_at AS preorder_scheduled_start_at,
            o.user_id, u.fullname AS customer_name, u.phone AS customer_phone,
            s.name AS store_name

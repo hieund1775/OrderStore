@@ -268,6 +268,13 @@ export async function createProductType(data: any) {
   });
 }
 
+export async function createCatalogIndustry(data: any) {
+  return apiFetch<any>('/admin/catalog/industries', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function createProductTypeSchema(productTypeId: number | string) {
   return apiFetch<unknown>(`/admin/catalog/product-types/${productTypeId}/schemas`, {
     method: 'POST',
