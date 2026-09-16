@@ -147,6 +147,12 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.equal(transactionRolledBack, true);
   });
 
+  await t.test('POST /industries route is registered on catalogV2Router', () => {
+    const layer = catalogV2Router.stack.find((l) => l.route && l.route.path === '/industries');
+    assert.ok(layer, 'POST /industries route must exist');
+    assert.ok(layer.route.methods.post, 'Route must handle POST');
+  });
+
   // -------------------------------------------------------------
   // 3. PRODUCT LANE VALIDATION MATCHING LEAF CATEGORY
   // -------------------------------------------------------------

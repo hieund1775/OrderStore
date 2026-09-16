@@ -48,6 +48,12 @@ router.post('/product-types', requireRole('super'), asyncHandler(async (req, res
   res.status(201).json(result);
 }));
 
+router.post('/industries', requireRole('super'), asyncHandler(async (req, res) => {
+  const result = await service.createIndustry(req.body, { createdBy: req.user.sub });
+  await logAudit(req.user.sub, 'Tạo ngành hàng', result.productType.name, req);
+  res.status(201).json(result);
+}));
+
 router.get('/product-type-schemas/:id', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
   const schema = await service.getSchemaDetails(req.params.id);
   if (!schema) return res.status(404).json({ error: 'Không tìm thấy cấu hình schema' });
