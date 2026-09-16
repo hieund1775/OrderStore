@@ -261,7 +261,8 @@ export function CatalogTabBlocksView({
 
     try {
       setCatSaving(true);
-      const laneValue = catLane === 'inherit' ? null : catLane;
+      const resolvedParentLane = (activeRootCategory?.default_fulfillment_lane || activeLane || 'kitchen') as 'kitchen' | 'packing';
+      const laneValue = catLane === 'inherit' ? (editingCategory?.default_fulfillment_lane || resolvedParentLane) : catLane;
 
       if (editingCategory) {
         await updateCatalogCategory(editingCategory.id, {

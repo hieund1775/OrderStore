@@ -261,7 +261,7 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
           name: newRootName.trim(),
           code: autoSlug.replace(/-/g, '_'),
           default_stock_mode: 'made_to_order',
-          default_fulfillment_lane: 'kitchen',
+          default_fulfillment_lane: activeLane,
         });
         toast.success(`Đã tạo ngành hàng "${newRootName}"`);
         if (created?.rootCategory?.id) setSelectedRootId(String(created.rootCategory.id));
