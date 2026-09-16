@@ -57,6 +57,9 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (!parent.product_type_id) {
           throw new CatalogV2Error('Danh mục gốc phải thuộc một ngành hàng trước khi tạo danh mục con', 400);
         }
+        if (!defaultFulfillmentLane && parent.default_fulfillment_lane) {
+          defaultFulfillmentLane = parent.default_fulfillment_lane;
+        }
         if (!['kitchen', 'packing'].includes(defaultFulfillmentLane)) {
           throw new CatalogV2Error('Danh mục con phải chọn khu vực Bếp hoặc Đóng gói', 400);
         }
@@ -108,7 +111,7 @@ export function createCatalogV2Repository(database = postgresDb) {
         throw new CatalogV2Error('Danh mục không tồn tại', 404);
       }
 
-      if (data.default_fulfillment_lane !== undefined && data.default_fulfillment_lane !== current.default_fulfillment_lane) {
+      if (data.default_fulfillment_lane !== undefined && data.default_fulfillment_lane !== null && data.default_fulfillment_lane !== current.default_fulfillment_lane) {
         throw new CatalogV2Error('Không thể chuyển ngành hàng hoặc danh mục sang khu vực khác', 400);
       }
 

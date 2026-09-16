@@ -580,6 +580,7 @@ describe('Regression: Preorder Code PO, Normal Code TP, PayOS Description & Dupl
             name: 'Đồ Uống',
             slug: 'do-uong',
             parent_id: null,
+            default_fulfillment_lane: 'kitchen',
           });
         },
         (err) => {
@@ -595,7 +596,7 @@ describe('Regression: Preorder Code PO, Normal Code TP, PayOS Description & Dupl
       const mockDb = {
         async query(sql) {
           if (sql.includes('WHERE c.id = $1')) {
-            return [[{ id: 1, depth: 0, name: 'Ngành Gốc' }], 1];
+            return [[{ id: 1, depth: 0, name: 'Ngành Gốc', product_type_id: 10, default_fulfillment_lane: 'kitchen' }], 1];
           }
           if (sql.includes('INSERT INTO categories')) {
             const err = new Error('duplicate key value violates unique constraint "categories_slug_key"');

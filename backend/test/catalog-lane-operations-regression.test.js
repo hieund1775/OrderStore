@@ -60,6 +60,32 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.equal(capturedCategory.default_fulfillment_lane, 'kitchen', 'Must persist default_fulfillment_lane');
   });
 
+  await t.test('child category creation in repository inherits parent lane when omitted', async () => {
+    let insertedParams = null;
+    const mockDb = {
+      async query(sql, params) {
+        if (sql.includes('WHERE c.id = $1')) {
+          return [[{ id: 1, depth: 0, name: 'Bách Hóa', product_type_id: 10, default_fulfillment_lane: 'packing' }], 1];
+        }
+        if (sql.includes('INSERT INTO categories')) {
+          insertedParams = params;
+          return [[{ id: 2, name: params[0], slug: params[1], default_fulfillment_lane: params[5] }], 1];
+        }
+        return [[], 0];
+      },
+    };
+
+    const repo = createCatalogV2Repository(mockDb);
+    const created = await repo.createCategory({
+      name: 'Khăn giấy',
+      slug: 'khan-giay',
+      parent_id: 1,
+    });
+
+    assert.equal(created.default_fulfillment_lane, 'packing');
+    assert.equal(insertedParams[5], 'packing', 'Must insert packing as inherited lane');
+  });
+
   // -------------------------------------------------------------
   // 2. ATOMIC CREATE INDUSTRY TRANSACTION
   // -------------------------------------------------------------
