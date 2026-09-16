@@ -29,6 +29,7 @@ PayOS được giữ nguyên và hoạt động lại khi `PAYMENT_MODE=payos`. 
 - Hàm `resolvePaymentMode(env)` trả mode hợp lệ hoặc ném lỗi cấu hình.
 - Hàm `isSandboxPaymentMode()` và `assertSandboxPaymentMode()` dùng ở service/route.
 - Không mặc định sang sandbox nếu biến thiếu/sai.
+- Automated tests và local development phải đặt `PAYMENT_MODE` tường minh trong test setup; không sửa resolver để âm thầm fallback chỉ nhằm làm test cũ pass.
 
 ### 1.2. Tích hợp startup validation
 
@@ -95,8 +96,9 @@ Service hỗ trợ cả target `order` và `checkout_group`:
 - Reserve bằng `paymentAttemptsRepository.reserveOrRecoverCreatingAttempt()` với `provider: 'sandbox'`.
 - Dùng amount/profile snapshot trên target.
 - Provider order code là safe integer duy nhất.
-- Sinh raw token bằng crypto; chỉ lưu SHA-256 token vào `provider_payment_link_id`.
-- `checkout_url` trỏ tới frontend `/thanh-toan/sandbox?token=<raw-token>`.
+- Sinh raw token bằng crypto và lưu SHA-256 token vào `provider_payment_link_id` để lookup.
+- `checkout_url` trỏ tới frontend `/thanh-toan/sandbox?token=<raw-token>`. URL snapshot này nằm trong DB giống checkout URL của provider hiện hữu, vì vậy implementation không được tuyên bố raw token hoàn toàn vắng khỏi DB.
+- Không log raw token hoặc `checkout_url` đầy đủ. Khi recover một active attempt, phải tái sử dụng nguyên checkout URL đã snapshot; không sinh token mới làm lệch hash.
 - Activate qua repository canonical; không tự cập nhật current pointer.
 - TTL dùng biến `SANDBOX_PAYMENT_TIMEOUT_MINUTES`, mặc định bằng thời hạn PayOS hiện hành.
 - Trả artifact tương thích gồm provider, URL, expiry, status và payment code.
@@ -106,18 +108,26 @@ Service hỗ trợ cả target `order` và `checkout_group`:
 Service phải:
 
 - Hash token nhận từ client và tìm attempt `provider='sandbox'` theo identity đã lưu.
-- Load target cùng owner và khóa trong transaction khi thanh toán.
-- Chỉ chấp nhận customer đang đăng nhập và đúng `user_id` của order/group.
+- Order ownership phải tái sử dụng helper canonical đang dùng cho regeneration; checkout group phải tái sử dụng `verifyGroupOwnership()`. Không viết phép so sánh `user_id` giản lược riêng cho group.
+- Chỉ chấp nhận customer đang đăng nhập và đúng owner canonical của order/group.
 - Từ chối attempt không active, expired, cancelled hoặc superseded.
 - Không hỗ trợ guest sandbox checkout; nếu luồng guest hiện hữu cần giữ, phải dùng cancel-token ownership canonical và bổ sung test riêng trước khi mở. Mặc định plan này yêu cầu đăng nhập theo spec.
 
 ### 3.3. Settlement số tiền
 
-- Parse amount thành số nguyên VND dương.
-- So sánh chính xác với `attempt.amount` đã snapshot.
+- Parse bằng `const parsedAmount = Number(amount)`; bắt buộc `Number.isSafeInteger(parsedAmount)` và `parsedAmount > 0`.
+- Tuyệt đối không dùng `Math.round`, `parseInt` hoặc phép làm tròn nào có thể biến số lẻ thành amount hợp lệ.
+- So sánh tuyệt đối `parsedAmount === Number(attempt.amount)`.
 - Thiếu/dư/NaN không mutation.
 - Đúng tiền gọi settlement core với identity deterministic `sandbox_transfer:<attempt-id>`.
 - Double-submit trả kết quả idempotent, không tạo payment event thứ hai.
+
+### 3.3.1. Quy tắc transaction và locking
+
+- Không mở một outer transaction để khóa attempt/target rồi gọi `processSuccessfulAttemptEvent()` bằng transaction khác.
+- Ownership/token có thể được kiểm tra trước bằng query canonical vì owner của target là immutable; settlement race được quyết định tại repository canonical.
+- `processSuccessfulAttemptEvent()` là nguồn khóa và transaction duy nhất cho bước mutation; nó phải revalidate attempt id, provider `sandbox`, amount snapshot, trạng thái và current target dưới lock.
+- Nếu implementation cần thêm query trong cùng transaction, mở rộng repository để nhận/truyền cùng `tx`; không tạo nested transaction hoặc giữ lock ở connection A rồi chờ connection B.
 
 ### 3.4. Regeneration và expiry
 
@@ -131,12 +141,15 @@ Service phải:
 **Tạo:** `backend/test/sandbox-payment-attempt.test.js`
 
 - Direct/group creation và activation.
-- Token lưu dạng hash, raw token không xuất hiện trong DB/log fixture.
+- Token hash lookup đúng; raw token chỉ xuất hiện trong checkout URL snapshot cần thiết và không xuất hiện trong log.
 - Ownership/cross-user denial.
 - Exact amount, underpay, overpay, invalid amount.
+- Số lẻ gần amount (ví dụ `49999.6` cho attempt `50000`) bị từ chối, chứng minh không có rounding.
 - Double-submit và concurrent settlement.
 - Expiry, cancel, supersede, regenerate.
 - Preorder direct/group settlement.
+- PayOS attempt không thể sandbox settlement; sandbox attempt không thể PayOS reconcile.
+- Sau đổi mode, regeneration tạo attempt bằng provider mới; target đã paid giữ nguyên.
 - Không có lời gọi mock PayOS nào.
 
 ## Phase 4: Provider dispatcher trong checkout
@@ -255,6 +268,7 @@ Trang gọi session API để lấy dữ liệu từ token; không đọc amount
 **Sửa/Tạo:**
 
 - `frontend/src/lib/api.ts` nếu cần type helper.
+- `frontend/src/lib/pending-payment.ts` để preserve `payment_provider`, payment code/group code, `checkout_url` và expiry qua refresh.
 - `frontend/src/lib/__tests__/sandbox-payment.test.tsx`
 - Cập nhật checkout/payment contract tests liên quan.
 
@@ -265,6 +279,7 @@ Test:
 - Disable double-submit.
 - Expiry countdown và regeneration path.
 - Sandbox UI không được render từ PayOS artifact.
+- Refresh trang vẫn khôi phục đúng sandbox pending payment; không rơi về endpoint PayOS.
 - Buy Now và cart không regression.
 
 Sau khi thêm route, chạy generator chuẩn của TanStack Router; chỉ commit `routeTree.gen.ts` nếu build tạo thay đổi canonical.
@@ -294,6 +309,8 @@ git diff --check
 ### 7.3. Test invariant
 
 Trong test sandbox, inject mock PayOS functions ném lỗi ngay nếu bị gọi. Toàn bộ sandbox suite phải pass với call count PayOS bằng 0.
+
+Mỗi suite phải đặt `PAYMENT_MODE` tường minh và khôi phục environment sau test; không phụ thuộc mode còn sót từ shell hoặc `.env` cá nhân.
 
 ## Phase 8: Git, Render và browser smoke
 
