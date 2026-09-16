@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    env: {
+      VITE_STANDALONE: 'false',
+    },
   },
   resolve: {
     alias: {

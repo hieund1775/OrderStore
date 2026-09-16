@@ -6,6 +6,7 @@ import {
   extractPayOSIdentifiers,
 } from './payment-attempt-provider-identity.js';
 import preorderService from './preorders/preorder-service.js';
+import { settleVerifiedAttemptEvent } from './payment-attempt-settlement-core.js';
 
 export async function resolveVerifiedPayOSAttempt({
   body,
@@ -43,6 +44,7 @@ export async function settleVerifiedPayOSAttempt({
   data,
   attemptsRepository = paymentAttemptsRepository,
   payload = data,
+  preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
 } = {}) {
   const { orderCode, paymentLinkId, reference } = extractPayOSIdentifiers(data);
   const amount = Number(data?.amount);
@@ -50,14 +52,16 @@ export async function settleVerifiedPayOSAttempt({
   if (!providerPaymentIdentity || !Number.isFinite(amount)) {
     return { kind: 'invalid_payload' };
   }
-  return attemptsRepository.processSuccessfulAttemptEvent({
-    attemptId: attempt.id,
+  return settleVerifiedAttemptEvent({
+    attempt,
     provider: 'payos',
     providerPaymentIdentity,
     amount,
     reference,
     paymentLinkId,
     payload,
+    attemptsRepository,
+    preorderBridge,
   });
 }
 
@@ -71,20 +75,11 @@ export async function processPayOSWebhookWithAttempts({
   if (resolution.kind !== 'resolved') return resolution;
   const { code } = resolution.data || {};
   if (code !== '00') return { kind: 'not_successful', attempt: resolution.attempt, data: resolution.data };
-  const settled = await settleVerifiedPayOSAttempt({
+  return settleVerifiedPayOSAttempt({
     attempt: resolution.attempt,
     data: resolution.data,
     attemptsRepository,
     payload: resolution.data,
+    preorderBridge,
   });
-  // Payment attempts remain the source of truth. The preorder bridge is an
-  // idempotent post-settlement projection and never changes P1 state.
-  if (preorderBridge && ['paid', 'duplicate', 'already_paid'].includes(settled.kind)) {
-    await preorderBridge.onPaymentSettled({
-      orderId: resolution.attempt.order_id,
-      checkoutGroupId: resolution.attempt.checkout_group_id,
-      late: ['expired', 'superseded'].includes(resolution.attempt.status),
-    });
-  }
-  return settled;
 }

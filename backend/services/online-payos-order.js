@@ -3,6 +3,7 @@ import ordersRepository from '../repositories/postgres/orders.js';
 import { hashOrderRequest } from './order-idempotency.js';
 import config from '../config/env.js';
 import directPayOSAttemptService from './direct-payos-attempt.js';
+import paymentProviderService, { getActivePaymentProvider } from './payment-provider.js';
 
 export function appendOrderCodeToUrl(baseUrlString, code) {
   if (!baseUrlString || typeof baseUrlString !== 'string') return null;
@@ -49,8 +50,12 @@ export async function createOnlinePayOSOrder({
   rootCategoryId = null,
   paymentProfile = null,
   ordersRepository: repository = ordersRepository,
-  directPayOSAttempts = directPayOSAttemptService,
+  directPayOSAttempts = null,
+  paymentAttempts = paymentProviderService,
 }) {
+  const effectiveAttempts = directPayOSAttempts || paymentAttempts;
+  const currentProvider = getActivePaymentProvider();
+
   const requestHash = hashOrderRequest(input);
   let rawCancelToken = cancelToken;
   let tokenHash = cancelTokenHash;
@@ -65,7 +70,7 @@ export async function createOnlinePayOSOrder({
     cancelToken: rawCancelToken,
     idempotencyKey,
     requestHash,
-    paymentProvider: 'payos',
+    paymentProvider: currentProvider,
     rootCategoryId,
     paymentProfile,
   });
@@ -76,7 +81,7 @@ export async function createOnlinePayOSOrder({
   }
   const effectiveReturnUrl = buildSafePayOSRedirectUrl(input.return_url, config.payos.returnUrl, order.order_code);
   const effectiveCancelUrl = buildSafePayOSRedirectUrl(input.cancel_url, config.payos.cancelUrl, order.order_code);
-  const payment = await directPayOSAttempts.createForOrder({
+  const payment = await effectiveAttempts.createForOrder({
     order,
     paymentProfile,
     returnUrl: effectiveReturnUrl,
@@ -84,6 +89,7 @@ export async function createOnlinePayOSOrder({
   });
   return {
     ...order,
+    payment_provider: payment.payment_provider || currentProvider,
     checkout_url: payment.payment_checkout_url,
     qr_code: payment.payment_qr_code,
     payment_link_id: payment.payment_link_id,

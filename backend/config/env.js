@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { resolvePaymentMode } from './payment-mode.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
@@ -33,6 +35,19 @@ export function validateEnv(envVars = {}, isProd = false) {
     }
     if (!envVars.DATABASE_URL?.trim()) {
       throw new Error('[FATAL] Production requires DATABASE_URL environment variable.');
+    }
+  }
+
+  // Validate PAYMENT_MODE
+  if (isProd || envVars.PAYMENT_MODE !== undefined) {
+    const validatedMode = resolvePaymentMode(envVars, isProd);
+    if (isProd && validatedMode === 'payos') {
+      const payosClientId = envVars.PAYOS_CLIENT_ID?.trim();
+      const payosApiKey = envVars.PAYOS_API_KEY?.trim();
+      const payosChecksumKey = envVars.PAYOS_CHECKSUM_KEY?.trim();
+      if (!payosClientId || !payosApiKey || !payosChecksumKey) {
+        throw new Error('[FATAL] Production in "payos" mode requires PAYOS_CLIENT_ID, PAYOS_API_KEY, and PAYOS_CHECKSUM_KEY.');
+      }
     }
   }
 
@@ -97,6 +112,9 @@ export const config = {
   port: PORT,
   jwtSecret: JWT_SECRET,
   allowedOrigins,
+  get paymentMode() {
+    return resolvePaymentMode(process.env, isProduction);
+  },
   db: {
     server: process.env.DB_SERVER || 'localhost\\SQLEXPRESS',
     name: process.env.DB_NAME || 'teaplus_db',

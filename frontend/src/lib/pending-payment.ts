@@ -4,10 +4,13 @@ export type PendingPayOSPayment = {
   order_id?: number | null;
   total: number;
   is_grouped: boolean;
+  payment_provider?: string;
   checkout_url?: string | null;
   qr_code?: string | null;
   payment_expires_at?: string | null;
 };
+
+export type PendingPayment = PendingPayOSPayment;
 
 export function normalizePendingPayment(
   response: {
@@ -18,6 +21,7 @@ export function normalizePendingPayment(
     total?: number | string | null;
     total_amount?: number | string | null;
     is_grouped?: boolean;
+    payment_provider?: string;
     checkout_url?: string | null;
     qr_code?: string | null;
     payment_expires_at?: string | null;
@@ -38,12 +42,16 @@ export function normalizePendingPayment(
   const rawOrderId = response.order_id != null ? Number(response.order_id) : null;
   const orderId = Number.isInteger(rawOrderId) ? rawOrderId : null;
 
+  const provider = response.payment_provider ||
+    (response.checkout_url && response.checkout_url.includes('/thanh-toan/sandbox') ? 'sandbox' : 'payos');
+
   return {
     payment_code: code,
     order_code: code,
     order_id: orderId,
     total,
     is_grouped: isGrouped,
+    payment_provider: provider,
     checkout_url: response.checkout_url || null,
     qr_code: response.qr_code || null,
     payment_expires_at: response.payment_expires_at || null,
@@ -64,4 +72,3 @@ export function canCancelPendingPayment(payment: PendingPayOSPayment | null | un
   if (!payment) return false;
   return !payment.is_grouped && Boolean(payment.payment_code && !payment.payment_code.startsWith('GRP'));
 }
-

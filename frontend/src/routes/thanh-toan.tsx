@@ -295,7 +295,7 @@ function Checkout() {
     const promise = (async () => {
       try {
         return await apiGet<{ order?: { payment_status: string }; group?: { payment_status: string } }>(
-          `/api/payments/payos/status?code=${encodeURIComponent(paymentCode)}`,
+          `/api/payments/status?code=${encodeURIComponent(paymentCode)}`,
           { headers: getOrderRequestHeaders(paymentCode) }
         );
       } finally {
@@ -433,7 +433,7 @@ function Checkout() {
           qr_code?: string;
           payment_expires_at?: string;
         };
-      }>("/api/payments/payos/regenerate-qr", {
+      }>("/api/payments/regenerate", {
         order_code: pendingOrder.payment_code,
         cancel_token: cancelToken,
         return_url: `${window.location.origin}/theo-doi-don`,
@@ -487,19 +487,6 @@ function Checkout() {
       toast.error(err instanceof Error ? err.message : "Hủy đơn thất bại");
     } finally {
       setCancellingOrder(false);
-    }
-  }
-
-  async function simulatePaymentDev() {
-    if (!pendingOrder) return;
-    try {
-      await apiPost("/api/payments/payos/simulate-success", {
-        order_code: pendingOrder.payment_code,
-      });
-      toast.success("Đã kích hoạt giả lập thanh toán!");
-      await checkPaymentNow();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Không thể giả lập thanh toán");
     }
   }
 
@@ -753,7 +740,7 @@ function Checkout() {
         try {
           sessionStorage.removeItem("teaplus_pending_payment");
         } catch {}
-        toast.success("Đang chuyển hướng sang cổng thanh toán PayOS...");
+        toast.success("Đang chuyển hướng sang cổng thanh toán...");
         window.location.href = res.checkout_url;
         return;
       } else if (res.payment_required === false && createdPaymentCode) {
@@ -773,7 +760,7 @@ function Checkout() {
         }
         toast.info("Đã tạo đơn hàng! Vui lòng quét mã QR để chuyển khoản.");
       } else {
-        toast.error("PayOS chưa trả về liên kết thanh toán. Vui lòng thử lại.");
+        toast.error("Chưa nhận được liên kết thanh toán. Vui lòng thử lại.");
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại";
@@ -943,20 +930,6 @@ function Checkout() {
                       Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.
                     </p>
                   )}
-                </div>
-              )}
-
-              {/* Dev Simulation Helper */}
-              {import.meta.env.DEV && (
-                <div className="pt-2 border-t">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="text-xs bg-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-500/30"
-                    onClick={simulatePaymentDev}
-                  >
-                    ⚡ [Dev Test] Giả lập thanh toán PayOS thành công
-                  </Button>
                 </div>
               )}
             </div>

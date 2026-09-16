@@ -2,6 +2,7 @@ import paymentAttemptsRepository from '../repositories/postgres/payment-attempts
 import { getPaymentLinkInformation, classifyPayOSPaymentStatus } from './payos.js';
 import { settleVerifiedPayOSAttempt } from './payment-attempt-settlement.js';
 import preorderService from './preorders/preorder-service.js';
+import { isSandboxPaymentMode } from '../config/payment-mode.js';
 
 // Avoid hammering PayOS when several browser polls arrive at the same time.
 const lastChecks = new Map();
@@ -22,7 +23,8 @@ export async function reconcilePayOSAttempt({
   preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
   bypassThrottle = false,
 } = {}) {
-  if (!attempt || attempt.provider !== 'payos'
+  if (isSandboxPaymentMode()
+    || !attempt || attempt.provider !== 'payos'
     || !['active', 'expired', 'superseded'].includes(attempt.status)
     || attempt.provider_order_code == null) {
     return { outcome: 'skipped', changed: false, skipped: true };
@@ -138,14 +140,8 @@ export async function reconcilePayOSAttempt({
       data,
       attemptsRepository,
       payload: payosInfo,
+      preorderBridge,
     });
-    if (preorderBridge && ['paid', 'already_paid', 'duplicate'].includes(result?.kind)) {
-      await preorderBridge.onPaymentSettled({
-        orderId: attempt.order_id,
-        checkoutGroupId: attempt.checkout_group_id,
-        late: ['expired', 'superseded'].includes(attempt.status),
-      });
-    }
     return {
       outcome: 'paid',
       changed: result?.kind === 'paid' || result?.kind === 'already_paid',
@@ -192,7 +188,7 @@ export async function reconcilePayOSOrder({
   const effectivePreorderBridge = preorderBridge !== undefined
     ? preorderBridge
     : (effectiveAttemptsRepo === paymentAttemptsRepository ? preorderService : null);
-  if (!order || !order.id || order.payment_provider !== 'payos'
+  if (isSandboxPaymentMode() || !order || !order.id || order.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(order.payment_status)) {
     return { outcome: 'skipped', changed: false, skipped: true };
   }
@@ -218,7 +214,7 @@ export async function reconcilePayOSCheckoutGroup({
   const effectivePreorderBridge = preorderBridge !== undefined
     ? preorderBridge
     : (effectiveAttemptsRepo === paymentAttemptsRepository ? preorderService : null);
-  if (!checkoutGroup || !checkoutGroup.id || checkoutGroup.payment_provider !== 'payos'
+  if (isSandboxPaymentMode() || !checkoutGroup || !checkoutGroup.id || checkoutGroup.payment_provider !== 'payos'
     || !['unpaid', 'expired'].includes(checkoutGroup.payment_status)) {
     return { outcome: 'skipped', changed: false, skipped: true };
   }

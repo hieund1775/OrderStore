@@ -231,6 +231,41 @@ export function createCheckoutGroupsRepository(database = postgresDb) {
       return rows[0] || null;
     },
 
+    async findGroupById(groupId, { tx: externalTx = null } = {}) {
+      if (!groupId) return null;
+      const runner = async (tx) => {
+        const [rows] = await tx.query(
+          `SELECT cg.*,
+                  COALESCE(MAX(p_direct.preorder_code), MAX(p.preorder_code), MAX(CASE WHEN o.order_code LIKE 'PO%' THEN o.order_code END)) AS preorder_code,
+                  COALESCE(
+                    JSONB_AGG(o.cancel_token_hash) FILTER (WHERE o.cancel_token_hash IS NOT NULL),
+                    '[]'::jsonb
+                  ) AS cancel_token_hashes
+           FROM checkout_groups cg
+           LEFT JOIN checkout_group_allocations cga ON cga.checkout_group_id = cg.id
+           LEFT JOIN orders o ON o.id = cga.order_id
+           LEFT JOIN preorders p ON p.id = o.preorder_id
+           LEFT JOIN preorders p_direct ON p_direct.checkout_group_id = cg.id
+           WHERE cg.id = $1
+           GROUP BY cg.id`,
+          [Number(groupId)],
+        );
+        const r = rows[0];
+        if (!r) return null;
+        return {
+          ...r,
+          id: Number(r.id),
+          subtotal: Number(r.subtotal),
+          discount_amount: Number(r.discount_amount),
+          shipping_fee: Number(r.shipping_fee),
+          total_amount: Number(r.total_amount),
+          cancel_token_hashes: Array.isArray(r.cancel_token_hashes) ? r.cancel_token_hashes : [],
+        };
+      };
+      if (externalTx) return runner(externalTx);
+      return database.transaction(runner);
+    },
+
     async findGroupByCode(groupCode) {
       const [rows] = await database.query(
         `SELECT cg.*,

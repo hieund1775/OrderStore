@@ -40,6 +40,7 @@ import { Route as AdminThucDonRouteImport } from './routes/admin.thuc-don'
 import { Route as AdminTuyenDungRouteImport } from './routes/admin.tuyen-dung'
 import { Route as AdminViTriRouteImport } from './routes/admin.vi-tri'
 import { Route as SanPhamSlugRouteImport } from './routes/san-pham.$slug'
+import { Route as ThanhToanSandboxRouteImport } from './routes/thanh-toan_.sandbox'
 import { Route as AdminCatalogKitchenRouteImport } from './routes/admin.catalog.kitchen'
 import { Route as AdminCatalogPackingRouteImport } from './routes/admin.catalog.packing'
 
@@ -198,6 +199,11 @@ const SanPhamSlugRoute = SanPhamSlugRouteImport.update({
   path: '/san-pham/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ThanhToanSandboxRoute = ThanhToanSandboxRouteImport.update({
+  id: '/thanh-toan_/sandbox',
+  path: '/thanh-toan/sandbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminCatalogKitchenRoute = AdminCatalogKitchenRouteImport.update({
   id: '/kitchen',
   path: '/kitchen',
@@ -240,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
+  '/thanh-toan/sandbox': typeof ThanhToanSandboxRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
   '/admin/catalog/packing': typeof AdminCatalogPackingRoute
@@ -274,6 +281,7 @@ export interface FileRoutesByTo {
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
+  '/thanh-toan/sandbox': typeof ThanhToanSandboxRoute
   '/admin': typeof AdminIndexRoute
   '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
   '/admin/catalog/packing': typeof AdminCatalogPackingRoute
@@ -310,6 +318,7 @@ export interface FileRoutesById {
   '/admin/tuyen-dung': typeof AdminTuyenDungRoute
   '/admin/vi-tri': typeof AdminViTriRoute
   '/san-pham/$slug': typeof SanPhamSlugRoute
+  '/thanh-toan_/sandbox': typeof ThanhToanSandboxRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/catalog/kitchen': typeof AdminCatalogKitchenRoute
   '/admin/catalog/packing': typeof AdminCatalogPackingRoute
@@ -347,6 +356,7 @@ export interface FileRouteTypes {
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/san-pham/$slug'
+    | '/thanh-toan/sandbox'
     | '/admin/'
     | '/admin/catalog/kitchen'
     | '/admin/catalog/packing'
@@ -381,6 +391,7 @@ export interface FileRouteTypes {
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/san-pham/$slug'
+    | '/thanh-toan/sandbox'
     | '/admin'
     | '/admin/catalog/kitchen'
     | '/admin/catalog/packing'
@@ -416,6 +427,7 @@ export interface FileRouteTypes {
     | '/admin/tuyen-dung'
     | '/admin/vi-tri'
     | '/san-pham/$slug'
+    | '/thanh-toan_/sandbox'
     | '/admin/'
     | '/admin/catalog/kitchen'
     | '/admin/catalog/packing'
@@ -436,6 +448,7 @@ export interface RootRouteChildren {
   TheoDoiDonRoute: typeof TheoDoiDonRoute
   TuyenDungRoute: typeof TuyenDungRoute
   SanPhamSlugRoute: typeof SanPhamSlugRoute
+  ThanhToanSandboxRoute: typeof ThanhToanSandboxRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -657,6 +670,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SanPhamSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/thanh-toan_/sandbox': {
+      id: '/thanh-toan_/sandbox'
+      path: '/thanh-toan/sandbox'
+      fullPath: '/thanh-toan/sandbox'
+      preLoaderRoute: typeof ThanhToanSandboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/catalog/kitchen': {
       id: '/admin/catalog/kitchen'
       path: '/kitchen'
@@ -745,6 +765,7 @@ const rootRouteChildren: RootRouteChildren = {
   TheoDoiDonRoute: TheoDoiDonRoute,
   TuyenDungRoute: TuyenDungRoute,
   SanPhamSlugRoute: SanPhamSlugRoute,
+  ThanhToanSandboxRoute: ThanhToanSandboxRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

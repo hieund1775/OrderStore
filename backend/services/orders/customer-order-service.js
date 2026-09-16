@@ -8,7 +8,9 @@ import { hashOrderRequest, claimOrderIdempotency, completeOrderIdempotency } fro
 import { OrderDomainError } from './order-errors.js';
 import defaultOrdersRepository from '../../repositories/postgres/orders.js';
 import { createOnlinePayOSOrder as defaultCreateOnlinePayOSOrder, appendOrderCodeToUrl } from '../online-payos-order.js';
+import paymentProviderService from '../payment-provider.js';
 import groupedPayOSAttemptService from '../grouped-payos-attempt.js';
+import { isSandboxPaymentMode } from '../../config/payment-mode.js';
 import defaultPaymentsRepository from '../../repositories/postgres/payments.js';
 import defaultCheckoutGroupsRepository from '../../repositories/postgres/checkout-groups.js';
 import defaultPromotionsRepository from '../../repositories/postgres/promotions.js';
@@ -167,8 +169,8 @@ async function calculateDbLineSubtotal(items, tx) {
 export function createCustomerOrderService({
   repository = defaultOrdersRepository,
   createPayOSOrder = defaultCreateOnlinePayOSOrder,
-  createGroupPayOSAttempt = groupedPayOSAttemptService.createForGroup.bind(groupedPayOSAttemptService),
-  regenerateGroupPayOSAttempt = groupedPayOSAttemptService.regenerateForCustomer.bind(groupedPayOSAttemptService),
+  createGroupPayOSAttempt = paymentProviderService.createForGroup.bind(paymentProviderService),
+  regenerateGroupPayOSAttempt = paymentProviderService.regenerateForCustomer.bind(paymentProviderService),
   checkPayOSConfigured = isPayOSConfigured,
   batchLoader = batchLoadPostgresOrderDetails,
   paymentsRepository = defaultPaymentsRepository,
@@ -264,7 +266,9 @@ export function createCustomerOrderService({
         }
       } else {
         if (normalizedPaymentMethod === 'VietQR') {
-          if (checkPayOSConfigured(resolved?.profile?.code)) {
+          if (isSandboxPaymentMode()) {
+            payment_provider = 'sandbox';
+          } else if (checkPayOSConfigured(resolved?.profile?.code)) {
             payment_provider = 'payos';
           } else {
             throw new OrderDomainError('Cổng thanh toán trực tuyến PayOS chưa được kích hoạt trên hệ thống', { status: 400, code: 'PAYOS_NOT_CONFIGURED', expose: true });
@@ -422,7 +426,7 @@ export function createCustomerOrderService({
             voucherCode: input.voucher_code || null,
             paymentProfile: resolved.profile,
             allocations: groupAllocations,
-            paymentProvider: isPromotionSettled ? 'promotion' : 'payos',
+            paymentProvider: isPromotionSettled ? 'promotion' : payment_provider,
             paymentStatus: isPromotionSettled ? 'paid' : 'unpaid',
             preorderCode,
           }, { tx });

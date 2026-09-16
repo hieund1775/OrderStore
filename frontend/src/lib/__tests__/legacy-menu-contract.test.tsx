@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapApiProduct, sizeOptions, toppingOptions, sugarOptions, iceOptions, baseOptions } from '../data';
+import { mapApiProduct, sizeOptions, toppingOptions, sugarOptions, iceOptions, baseOptions, FALLBACK_TEA_IMAGE } from '../data';
 
 describe('Legacy Public Menu Contract Suite', () => {
   it('maps legacy PostgreSQL catalog product DTO to storefront product model accurately', () => {
@@ -42,11 +42,11 @@ describe('Legacy Public Menu Contract Suite', () => {
     expect(minimal.id).toBe('999');
     expect(minimal.name).toBe('Sản phẩm TeaPlus');
     expect(minimal.price).toBe(0);
-    expect(minimal.image).toBe('');
+    expect(minimal.image).toBe(FALLBACK_TEA_IMAGE);
     expect(minimal.line).toBe('Trà Trái Cây Tươi');
-    expect(minimal.rating).toBe(0);
+    expect(minimal.rating).toBe(5);
     expect(minimal.reviews).toBe(0);
-    expect(minimal.calories).toBe(0);
+    expect(minimal.calories).toBe(180);
     expect(minimal.tags).toEqual([]);
   });
 

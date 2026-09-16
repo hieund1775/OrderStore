@@ -447,6 +447,24 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
       return inTransaction(database, externalTx, runner);
     },
 
+    async findDirectOrderById(orderId, { tx: externalTx = null } = {}) {
+      if (!orderId) return null;
+      const runner = async (tx) => {
+        const [rows] = await tx.query(
+          `SELECT o.id, o.order_code, o.user_id, o.cancel_token_hash, o.total, o.payment_provider,
+                  o.payment_status, latest_status.status AS current_status, o.checkout_group_id,
+                  o.payment_profile_code, o.payment_profile_version,
+                  o.current_payment_attempt_id, o.payment_link_id, o.payos_order_code,
+                  o.payment_checkout_url, o.payment_qr_code, o.payment_expires_at
+           FROM orders o${LATEST_ORDER_STATUS_JOIN}
+           WHERE o.id = $1`,
+          [Number(orderId)],
+        );
+        return rows[0] || null;
+      };
+      return inTransaction(database, externalTx, runner);
+    },
+
     async findAttemptById(attemptId, { tx: externalTx = null, forUpdate = false } = {}) {
       const runner = async (tx) => {
         const [rows] = await tx.query(`SELECT * FROM payment_attempts WHERE id = $1${forUpdate ? ' FOR UPDATE' : ''}`, [Number(attemptId)]);
@@ -548,10 +566,10 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         if (lockedTarget.target_type === 'order' && lockedTarget.checkout_group_id != null) {
           throw new PaymentAttemptError('Grouped child orders cannot own direct payment attempts', 409, 'GROUP_CHILD_DIRECT_ATTEMPT_FORBIDDEN');
         }
-        if (lockedTarget.payment_provider !== 'payos') {
-          throw new PaymentAttemptError('Payment attempt target must use PayOS', 409, 'PAYMENT_ATTEMPT_WRONG_PROVIDER');
-        }
         const attempt = await findAttemptForUpdate(tx, attemptId);
+        if (!['payos', 'sandbox'].includes(lockedTarget.payment_provider) && lockedTarget.payment_provider !== attempt.provider) {
+          throw new PaymentAttemptError(`Payment attempt target must use ${attempt.provider}`, 409, 'PAYMENT_ATTEMPT_WRONG_PROVIDER');
+        }
         const code = Number(providerOrderCode);
         if (!Number.isSafeInteger(code) || code <= 0 || code !== Number(attempt.provider_order_code)) {
           throw new PaymentAttemptError('Activation provider order code must match the reserved attempt code', 409, 'PAYMENT_ATTEMPT_PROVIDER_CODE_MISMATCH');

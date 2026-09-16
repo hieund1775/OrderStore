@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
@@ -9,6 +9,16 @@ import { OrderDomainError, orderErrorStatus } from '../services/orders/order-err
 import { createOnlinePayOSOrder } from '../services/online-payos-order.js';
 
 describe('Checkout Voucher Stability Suite', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env.PAYMENT_MODE = 'payos';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
   const basePromotionRow = {
     id: 1,
     title: 'Giảm 20%',
