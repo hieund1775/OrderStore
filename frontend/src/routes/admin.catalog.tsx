@@ -65,14 +65,15 @@ export const Route = createFileRoute('/admin/catalog')({
   }),
 });
 
-function AdminCatalogPage() {
+export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'packing' }) {
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [products, setProducts] = useState<ProductV2[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
-  const [activeLane, setActiveLane] = useState<'kitchen' | 'packing'>('kitchen');
+  const activeLane = lane;
+  const setActiveLane = () => undefined;
   const [loading, setLoading] = useState(true);
 
   // Modal tạo / sửa danh mục gốc
@@ -117,10 +118,10 @@ function AdminCatalogPage() {
       const [cats, types, prods] = await Promise.all([
         fetchCatalogCategories({ includeArchived: false }),
         fetchProductTypes(),
-        fetchCatalogProducts(),
+        fetchCatalogProducts({ lane: activeLane }),
       ]);
       setCategories(cats);
-      setProductTypes(types);
+      setProductTypes(types.filter((type) => (type.default_fulfillment_lane || 'kitchen') === activeLane));
       setProducts(prods);
 
       if (types.length > 0) {
@@ -144,18 +145,19 @@ function AdminCatalogPage() {
 
   useEffect(() => {
     loadAllData();
-  }, []);
+  }, [activeLane]);
 
   // Danh mục gốc (depth = 0)
   const rootCategories = useMemo(() => {
-    return getRootCategories(categories);
-  }, [categories]);
+    return getRootCategories(categories).filter((category) => (
+      (category.default_fulfillment_lane || category.product_type_default_fulfillment_lane || 'kitchen') === activeLane
+    ));
+  }, [categories, activeLane]);
 
   // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn
   useEffect(() => {
-    if (selectedRootId === 'all' && rootCategories.length > 0) {
-      setSelectedRootId(String(rootCategories[0].id));
-    }
+    const selectedExists = rootCategories.some((root) => String(root.id) === selectedRootId);
+    if (rootCategories.length > 0 && !selectedExists) setSelectedRootId(String(rootCategories[0].id));
   }, [rootCategories]);
 
   // Tập hợp các category ID thuộc subtree của root đang chọn
@@ -404,7 +406,7 @@ function AdminCatalogPage() {
         onDeleteRoot={handleDeleteRootCategory}
       />
 
-      <div className="flex items-center gap-2 rounded-xl border bg-card p-2">
+      {false && (<div className="flex items-center gap-2 rounded-xl border bg-card p-2">
         <Button
           type="button"
           variant={activeLane === 'kitchen' ? 'hero' : 'ghost'}
@@ -424,7 +426,7 @@ function AdminCatalogPage() {
         <p className="ml-2 text-xs text-muted-foreground">
           Khu vực chỉ dùng để quản lý vận hành; Menu và Đặt trước vẫn hiển thị mọi sản phẩm đang bán.
         </p>
-      </div>
+      </div>)}
 
       {/* 3-TAB VIEW: SUB-CATEGORIES, PRODUCTS, OPTIONS */}
       <CatalogTabBlocksView

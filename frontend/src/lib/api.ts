@@ -305,11 +305,12 @@ export async function addAttributeValue(attrDefId: number | string, data: any) {
   });
 }
 
-export async function fetchCatalogProducts(params?: { category_id?: number | string; status?: string; search?: string }) {
+export async function fetchCatalogProducts(params?: { category_id?: number | string; status?: string; search?: string; lane?: 'kitchen' | 'packing' }) {
   const q = new URLSearchParams();
   if (params?.category_id) q.set('category_id', String(params.category_id));
   if (params?.status) q.set('status', params.status);
   if (params?.search) q.set('search', params.search);
+  if (params?.lane) q.set('lane', params.lane);
   const query = q.toString() ? `?${q.toString()}` : '';
   return apiFetch<any[]>(`/admin/catalog/products${query}`);
 }

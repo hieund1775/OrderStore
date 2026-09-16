@@ -80,6 +80,7 @@ router.get('/products', requireRole('super', 'manager'), asyncHandler(async (req
     categoryId: req.query.category_id,
     status: req.query.status,
     search: req.query.search,
+    lane: req.query.lane,
     limit: req.query.limit ? Number(req.query.limit) : 50,
     offset: req.query.offset ? Number(req.query.offset) : 0,
   });
