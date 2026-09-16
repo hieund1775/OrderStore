@@ -253,4 +253,24 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
     expect(html).not.toContain('Tạm ngưng danh mục con và tất cả món bên trong');
     expect(html).toContain('Tạm ẩn danh mục con khỏi Menu khách');
   });
+
+  it('does not render lane selection dropdown in subcategory dialog form', () => {
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId="1"
+        onSelectRootId={() => {}}
+        categories={allCategories}
+        products={sampleProducts}
+        activeSchema={sampleSchema}
+        activeLane="kitchen"
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenProductEditor={() => {}}
+      />,
+    );
+
+    expect(html).not.toContain('Khu vực xử lý đơn mặc định');
+    expect(html).not.toContain('Theo danh mục gốc');
+  });
 });

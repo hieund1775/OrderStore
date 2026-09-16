@@ -110,7 +110,6 @@ export function CatalogTabBlocksView({
   const [catDialogOpen, setCatDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryNode | null>(null);
   const [catName, setCatName] = useState('');
-  const [catLane, setCatLane] = useState<'kitchen' | 'packing' | 'inherit'>('inherit');
   const [catSaving, setCatSaving] = useState(false);
 
   // Tên Ngành gốc đang chọn
@@ -215,14 +214,12 @@ export function CatalogTabBlocksView({
   const handleOpenCreateCategory = () => {
     setEditingCategory(null);
     setCatName('');
-    setCatLane(activeLane || 'kitchen');
     setCatDialogOpen(true);
   };
 
   const handleOpenEditCategory = (cat: CategoryNode) => {
     setEditingCategory(cat);
     setCatName(cat.name);
-    setCatLane((cat.default_fulfillment_lane as any) || activeLane || 'kitchen');
     setCatDialogOpen(true);
   };
 
@@ -234,7 +231,6 @@ export function CatalogTabBlocksView({
         name: cat.name,
         slug: cat.slug,
         is_visible: nextVisible,
-        default_fulfillment_lane: cat.default_fulfillment_lane,
       });
 
       toast.success(`Đã ${nextVisible ? 'hiển thị' : 'tạm ẩn'} danh mục "${cat.name}"`);
@@ -261,14 +257,16 @@ export function CatalogTabBlocksView({
 
     try {
       setCatSaving(true);
-      const resolvedParentLane = (activeRootCategory?.default_fulfillment_lane || activeLane || 'kitchen') as 'kitchen' | 'packing';
-      const laneValue = catLane === 'inherit' ? (editingCategory?.default_fulfillment_lane || resolvedParentLane) : catLane;
+      const laneValue = activeLane || activeRootCategory?.default_fulfillment_lane;
+      if (!laneValue) {
+        toast.error('Không xác định được khu vực của ngành hàng');
+        return;
+      }
 
       if (editingCategory) {
         await updateCatalogCategory(editingCategory.id, {
           name: catName.trim(),
           slug: autoSlug,
-          default_fulfillment_lane: laneValue,
           is_visible: editingCategory.is_visible,
         });
         toast.success(`Đã cập nhật danh mục "${catName}"`);
@@ -774,23 +772,6 @@ export function CatalogTabBlocksView({
                   onChange={(e) => setCatName(e.target.value)}
                   required
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Khu vực xử lý đơn mặc định</Label>
-                <Select value={catLane} onValueChange={(v: any) => setCatLane(v)}>
-                  <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Chọn khu vực xử lý" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="inherit" className="text-xs">Theo danh mục gốc</SelectItem>
-                    <SelectItem value="kitchen" className="text-xs">🍳 Quầy Bếp / Pha chế (Kitchen)</SelectItem>
-                    <SelectItem value="packing" className="text-xs">📦 Soạn hàng / Đóng gói (Packing)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground">
-                  Các món trong danh mục này sẽ tự động chuyển về khu vực tương ứng khi khách đặt đơn.
-                </p>
               </div>
             </div>
 

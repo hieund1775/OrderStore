@@ -30,7 +30,7 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
       }
       if (lane) {
         params.push(lane);
-        where += ` AND COALESCE(p.fulfillment_lane, c.default_fulfillment_lane) = $${params.length}`;
+        where += ` AND COALESCE(p.fulfillment_lane, c.default_fulfillment_lane, category_pt.default_fulfillment_lane, parent_cat.default_fulfillment_lane, parent_cat_pt.default_fulfillment_lane, pt.default_fulfillment_lane) = $${params.length}`;
       }
 
       params.push(limit);
@@ -39,11 +39,16 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
       const offsetParam = `$${params.length}`;
 
       const [rows] = await database.query(
-        `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
+        `SELECT p.*,
+                COALESCE(p.fulfillment_lane, c.default_fulfillment_lane, category_pt.default_fulfillment_lane, parent_cat.default_fulfillment_lane, parent_cat_pt.default_fulfillment_lane, pt.default_fulfillment_lane) AS fulfillment_lane,
+                c.name AS category_name, c.slug AS category_slug,
                 pt.name AS product_type_name, pt.code AS product_type_code,
                 (SELECT COUNT(*)::int FROM product_variants pv WHERE pv.product_id = p.id AND pv.status <> 'archived') AS variants_count
          FROM products p
          JOIN categories c ON c.id = p.category_id
+         LEFT JOIN product_types category_pt ON category_pt.id = c.product_type_id
+         LEFT JOIN categories parent_cat ON parent_cat.id = c.parent_id
+         LEFT JOIN product_types parent_cat_pt ON parent_cat_pt.id = parent_cat.product_type_id
          LEFT JOIN product_type_schemas pts ON pts.id = p.product_type_schema_id
          LEFT JOIN product_types pt ON pt.id = pts.product_type_id
          ${where}
@@ -110,7 +115,18 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
     async createProduct(data, { createdBy = null } = {}) {
       return await database.transaction(async (tx) => {
         // Validate category exists and is a leaf category (no sub-categories)
-        const [cRows] = await tx.query('SELECT * FROM categories WHERE id = $1', [data.category_id]);
+        const [cRows] = await tx.query(
+          `SELECT c.*,
+                  pt.default_fulfillment_lane AS product_type_default_fulfillment_lane,
+                  parent_c.default_fulfillment_lane AS parent_default_fulfillment_lane,
+                  parent_pt.default_fulfillment_lane AS parent_pt_default_fulfillment_lane
+           FROM categories c
+           LEFT JOIN product_types pt ON pt.id = c.product_type_id
+           LEFT JOIN categories parent_c ON parent_c.id = c.parent_id
+           LEFT JOIN product_types parent_pt ON parent_pt.id = parent_c.product_type_id
+           WHERE c.id = $1`,
+          [data.category_id],
+        );
         const category = cRows[0];
         if (!category) {
           throw new CatalogV2Error('Danh mục không tồn tại', 404);
@@ -128,13 +144,17 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         }
 
         let schemaId = data.product_type_schema_id || null;
-        const fulfillmentLane = data.fulfillment_lane ?? category.default_fulfillment_lane;
+        const categoryLane = category.default_fulfillment_lane
+          || category.product_type_default_fulfillment_lane
+          || category.parent_default_fulfillment_lane
+          || category.parent_pt_default_fulfillment_lane;
+        const fulfillmentLane = data.fulfillment_lane ?? categoryLane;
         let stockMode;
 
         if (!['kitchen', 'packing'].includes(fulfillmentLane)) {
           throw new CatalogV2Error('Sản phẩm phải chọn khu vực Bếp hoặc Đóng gói', 400);
         }
-        if (!category.default_fulfillment_lane || category.default_fulfillment_lane !== fulfillmentLane) {
+        if (categoryLane && categoryLane !== fulfillmentLane) {
           throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
         }
 
@@ -277,11 +297,17 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         const targetCategoryId = data.category_id ?? current.category_id;
         const [categoryRows] = await tx.query(
           `SELECT c.*,
+                  pt.default_fulfillment_lane AS product_type_default_fulfillment_lane,
+                  parent_c.default_fulfillment_lane AS parent_default_fulfillment_lane,
+                  parent_pt.default_fulfillment_lane AS parent_pt_default_fulfillment_lane,
                   EXISTS(
                     SELECT 1 FROM categories child
                     WHERE child.parent_id = c.id AND child.archived_at IS NULL
                   ) AS has_children
            FROM categories c
+           LEFT JOIN product_types pt ON pt.id = c.product_type_id
+           LEFT JOIN categories parent_c ON parent_c.id = c.parent_id
+           LEFT JOIN product_types parent_pt ON parent_pt.id = parent_c.product_type_id
            WHERE c.id = $1`,
           [targetCategoryId],
         );
@@ -292,11 +318,15 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         if (category.has_children) {
           throw new CatalogV2Error('Không thể gắn sản phẩm trực tiếp vào danh mục cha', 400);
         }
-        const targetLane = data.fulfillment_lane ?? current.fulfillment_lane;
+        const categoryLane = category.default_fulfillment_lane
+          || category.product_type_default_fulfillment_lane
+          || category.parent_default_fulfillment_lane
+          || category.parent_pt_default_fulfillment_lane;
+        const targetLane = data.fulfillment_lane ?? categoryLane ?? current.fulfillment_lane;
         if (!['kitchen', 'packing'].includes(targetLane)) {
           throw new CatalogV2Error('Sản phẩm phải thuộc khu vực Bếp hoặc Đóng gói', 400);
         }
-        if (category.default_fulfillment_lane !== targetLane) {
+        if (categoryLane && categoryLane !== targetLane) {
           throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
         }
         if (

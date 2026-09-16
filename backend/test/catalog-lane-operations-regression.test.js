@@ -86,6 +86,39 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.equal(insertedParams[5], 'packing', 'Must insert packing as inherited lane');
   });
 
+  await t.test('child category creation in repository inherits parent product_type lane when parent category lane is null', async () => {
+    let insertedParams = null;
+    const mockDb = {
+      async query(sql, params) {
+        if (sql.includes('WHERE c.id = $1')) {
+          return [[{
+            id: 1,
+            depth: 0,
+            name: 'Ngành Bếp',
+            product_type_id: 10,
+            default_fulfillment_lane: null,
+            product_type_default_fulfillment_lane: 'kitchen',
+          }], 1];
+        }
+        if (sql.includes('INSERT INTO categories')) {
+          insertedParams = params;
+          return [[{ id: 2, name: params[0], slug: params[1], default_fulfillment_lane: params[5] }], 1];
+        }
+        return [[], 0];
+      },
+    };
+
+    const repo = createCatalogV2Repository(mockDb);
+    const created = await repo.createCategory({
+      name: 'Topping Bếp',
+      slug: 'topping-bep',
+      parent_id: 1,
+    });
+
+    assert.equal(created.default_fulfillment_lane, 'kitchen');
+    assert.equal(insertedParams[5], 'kitchen', 'Must insert kitchen as inherited from root product_type');
+  });
+
   // -------------------------------------------------------------
   // 2. ATOMIC CREATE INDUSTRY TRANSACTION
   // -------------------------------------------------------------
@@ -161,7 +194,7 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
       async transaction(fn) {
         const tx = {
           async query(sql, params) {
-            if (sql.includes('FROM categories WHERE id =')) {
+            if (sql.includes('FROM categories') && (sql.includes('WHERE id =') || sql.includes('WHERE c.id ='))) {
               const catId = params[0];
               if (catId === 10) return [[{ id: 10, default_fulfillment_lane: 'kitchen', archived_at: null }]];
               if (catId === 20) return [[{ id: 20, default_fulfillment_lane: 'packing', archived_at: null }]];
@@ -222,21 +255,23 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
   });
 
   // -------------------------------------------------------------
-  // 4. LIST PRODUCTS LANE FILTER & LEGACY NULL RESOLUTION
+  // 4. LIST PRODUCTS & CATEGORIES LANE FILTER & NO KITCHEN FALLBACK
   // -------------------------------------------------------------
-  await t.test('listProducts filters correctly and resolves legacy null lane from category', async () => {
+  await t.test('listProducts filters strictly by lane without kitchen fallback (p -> c -> pt)', async () => {
     const productsInDb = [
-      { id: 1, name: 'Trà Đào', fulfillment_lane: 'kitchen', category_lane: 'kitchen' },
-      { id: 2, name: 'Áo Thun', fulfillment_lane: 'packing', category_lane: 'packing' },
-      { id: 3, name: 'Món Cũ Kitchen (null)', fulfillment_lane: null, category_lane: 'kitchen' },
-      { id: 4, name: 'Món Cũ Packing (null)', fulfillment_lane: null, category_lane: 'packing' },
-      { id: 5, name: 'Món Cũ Không Gán (null/null)', fulfillment_lane: null, category_lane: null },
+      { id: 1, name: 'Trà Đào', fulfillment_lane: 'kitchen', category_lane: 'kitchen', product_type_lane: 'kitchen' },
+      { id: 2, name: 'Áo Thun', fulfillment_lane: 'packing', category_lane: 'packing', product_type_lane: 'packing' },
+      { id: 3, name: 'Món Cũ Kitchen (null p.lane)', fulfillment_lane: null, category_lane: 'kitchen', product_type_lane: 'kitchen' },
+      { id: 4, name: 'Món Cũ Packing (null p.lane)', fulfillment_lane: null, category_lane: 'packing', product_type_lane: 'packing' },
+      { id: 5, name: 'Món Cũ Từ Ngành Hàng Kitchen (null p, null c)', fulfillment_lane: null, category_lane: null, product_type_lane: 'kitchen' },
+      { id: 6, name: 'Món Cũ Từ Ngành Hàng Packing (null p, null c)', fulfillment_lane: null, category_lane: null, product_type_lane: 'packing' },
+      { id: 7, name: 'Món Không Rõ Lane (null all)', fulfillment_lane: null, category_lane: null, product_type_lane: null },
     ];
 
     const mockRepo = {
       async listProducts(filters) {
         return productsInDb.filter((p) => {
-          const effectiveLane = p.fulfillment_lane || p.category_lane || 'kitchen';
+          const effectiveLane = p.fulfillment_lane || p.category_lane || p.product_type_lane || null;
           if (filters.lane && effectiveLane !== filters.lane) return false;
           return true;
         });
@@ -250,11 +285,90 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.ok(kitchenProducts.some((p) => p.id === 1));
     assert.ok(kitchenProducts.some((p) => p.id === 3));
     assert.ok(kitchenProducts.some((p) => p.id === 5));
+    // id 7 without lane must NOT appear in kitchen
+    assert.ok(!kitchenProducts.some((p) => p.id === 7));
 
     const packingProducts = await service.listProducts({ lane: 'packing' });
-    assert.equal(packingProducts.length, 2); // id 2, 4
+    assert.equal(packingProducts.length, 3); // id 2, 4, 6
     assert.ok(packingProducts.some((p) => p.id === 2));
     assert.ok(packingProducts.some((p) => p.id === 4));
+    assert.ok(packingProducts.some((p) => p.id === 6));
+    // id 7 without lane must NOT appear in packing
+    assert.ok(!packingProducts.some((p) => p.id === 7));
+  });
+
+  await t.test('catalog repository SQL builds strict lane filters with COALESCE hierarchy', async () => {
+    let categorySql = '';
+    let categoryParams = [];
+    const mockCatDb = {
+      async query(sql, params) {
+        categorySql = sql;
+        categoryParams = params;
+        return [[], 0];
+      },
+    };
+    const catRepo = createCatalogV2Repository(mockCatDb);
+    await catRepo.listCategories({ lane: 'kitchen' });
+
+    assert.ok(
+      categorySql.includes('COALESCE(c.default_fulfillment_lane, pt.default_fulfillment_lane, parent.default_fulfillment_lane, parent_pt.default_fulfillment_lane) = $1'),
+      'listCategories must resolve lane across category, pt, and parent hierarchy',
+    );
+    assert.deepEqual(categoryParams, ['kitchen']);
+
+    let productSql = '';
+    let productParams = [];
+    const mockProdDb = {
+      async query(sql, params) {
+        productSql = sql;
+        productParams = params;
+        return [[], 0];
+      },
+    };
+    const prodRepo = createAdminCatalogV2Repository(mockProdDb);
+    await prodRepo.listProducts({ lane: 'packing' });
+
+    assert.ok(
+      productSql.includes('COALESCE(p.fulfillment_lane, c.default_fulfillment_lane, category_pt.default_fulfillment_lane, parent_cat.default_fulfillment_lane, parent_cat_pt.default_fulfillment_lane, pt.default_fulfillment_lane) = $1'),
+      'listProducts must resolve lane across product, category, parent, and schema pt',
+    );
+    assert.deepEqual(productParams, ['packing', 50, 0]);
+  });
+
+  await t.test('GET /categories and GET /products reject invalid lane with 400', async () => {
+    const categoriesLayer = catalogV2Router.stack.find(
+      (l) => l.route && l.route.path === '/categories' && l.route.methods.get,
+    );
+    assert.ok(categoriesLayer, 'GET /categories must exist');
+    const categoriesHandler = categoriesLayer.route.stack[categoriesLayer.route.stack.length - 1].handle;
+
+    let catError = null;
+    await new Promise((resolve) => {
+      categoriesHandler({ query: { lane: 'invalid_lane' } }, {}, (err) => {
+        catError = err;
+        resolve();
+      });
+    });
+    assert.ok(catError, 'Should error on invalid lane in categories');
+    assert.equal(catError.status, 400);
+    assert.equal(catError.message, 'Khu vực không hợp lệ');
+
+    const productsLayer = catalogV2Router.stack.find(
+      (l) => l.route && l.route.path === '/products' && l.route.methods.get,
+    );
+    assert.ok(productsLayer, 'GET /products must exist');
+    const productsHandler = productsLayer.route.stack[productsLayer.route.stack.length - 1].handle;
+
+    let prodError = null;
+    await new Promise((resolve) => {
+      productsHandler({ query: { lane: 'drone_delivery' } }, {}, (err) => {
+        prodError = err;
+        resolve();
+      });
+    });
+    assert.ok(prodError, 'Should error on invalid lane in products');
+    assert.equal(prodError.status, 400);
+    assert.equal(prodError.message, 'Khu vực không hợp lệ');
   });
 
   // -------------------------------------------------------------

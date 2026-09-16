@@ -12,27 +12,39 @@ export function createCatalogV2Repository(database = postgresDb) {
     // -------------------------------------------------------------
     // CATEGORIES TREE
     // -------------------------------------------------------------
-    async listCategories({ includeArchived = false } = {}) {
-      const where = includeArchived ? '' : 'WHERE c.archived_at IS NULL';
+    async listCategories({ includeArchived = false, lane = null } = {}) {
+      const filters = [];
+      const params = [];
+      if (!includeArchived) filters.push('c.archived_at IS NULL');
+      if (lane) {
+        params.push(lane);
+        filters.push(`COALESCE(c.default_fulfillment_lane, pt.default_fulfillment_lane, parent.default_fulfillment_lane, parent_pt.default_fulfillment_lane) = $${params.length}`);
+      }
+      const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
       const [rows] = await database.query(
         `SELECT c.id, c.name, c.slug, c.parent_id, c.depth, c.product_type_id,
-                c.default_fulfillment_lane,
+                COALESCE(c.default_fulfillment_lane, pt.default_fulfillment_lane, parent.default_fulfillment_lane, parent_pt.default_fulfillment_lane) AS default_fulfillment_lane,
                 c.sort_order, c.is_visible, c.archived_at, c.created_at,
-                pt.name AS product_type_name, pt.code AS product_type_code,
-                pt.default_fulfillment_lane AS product_type_default_fulfillment_lane,
+                COALESCE(pt.name, parent_pt.name) AS product_type_name,
+                COALESCE(pt.code, parent_pt.code) AS product_type_code,
+                COALESCE(pt.default_fulfillment_lane, parent_pt.default_fulfillment_lane) AS product_type_default_fulfillment_lane,
                 (SELECT COUNT(*)::int FROM categories sub WHERE sub.parent_id = c.id AND sub.archived_at IS NULL) AS children_count,
                 (SELECT COUNT(*)::int FROM products p WHERE p.category_id = c.id AND p.status <> 'archived') AS products_count
          FROM categories c
          LEFT JOIN product_types pt ON pt.id = c.product_type_id
+         LEFT JOIN categories parent ON parent.id = c.parent_id
+         LEFT JOIN product_types parent_pt ON parent_pt.id = parent.product_type_id
          ${where}
          ORDER BY c.depth ASC, c.sort_order ASC, c.name ASC`,
+        params,
       );
       return rows;
     },
 
     async getCategoryById(id) {
       const [rows] = await database.query(
-        `SELECT c.*, pt.name AS product_type_name, pt.code AS product_type_code
+        `SELECT c.*, pt.name AS product_type_name, pt.code AS product_type_code,
+                pt.default_fulfillment_lane AS product_type_default_fulfillment_lane
          FROM categories c
          LEFT JOIN product_types pt ON pt.id = c.product_type_id
          WHERE c.id = $1`,
@@ -57,8 +69,9 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (!parent.product_type_id) {
           throw new CatalogV2Error('Danh mục gốc phải thuộc một ngành hàng trước khi tạo danh mục con', 400);
         }
-        if (!defaultFulfillmentLane && parent.default_fulfillment_lane) {
-          defaultFulfillmentLane = parent.default_fulfillment_lane;
+        const parentLane = parent.default_fulfillment_lane || parent.product_type_default_fulfillment_lane;
+        if (!defaultFulfillmentLane && parentLane) {
+          defaultFulfillmentLane = parentLane;
         }
         if (!['kitchen', 'packing'].includes(defaultFulfillmentLane)) {
           throw new CatalogV2Error('Danh mục con phải chọn khu vực Bếp hoặc Đóng gói', 400);
@@ -66,7 +79,7 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (productTypeId && Number(productTypeId) !== Number(parent.product_type_id)) {
           throw new CatalogV2Error('Danh mục con phải kế thừa đúng ngành hàng của danh mục gốc', 400);
         }
-        if (parent.default_fulfillment_lane && parent.default_fulfillment_lane !== defaultFulfillmentLane) {
+        if (parentLane && parentLane !== defaultFulfillmentLane) {
           throw new CatalogV2Error('Danh mục con phải thuộc đúng khu vực của ngành hàng', 400);
         }
         productTypeId = parent.product_type_id;

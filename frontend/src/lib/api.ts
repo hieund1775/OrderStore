@@ -232,8 +232,11 @@ export function setCustomerUser(u: { id: number; fullname: string; phone: string
 
 // ═══════════ CATALOG V2 ADMIN APIS ═══════════
 
-export async function fetchCatalogCategories(options?: { includeArchived?: boolean }) {
-  const query = options?.includeArchived ? '?include_archived=true' : '';
+export async function fetchCatalogCategories(options?: { includeArchived?: boolean; lane?: 'kitchen' | 'packing' }) {
+  const params = new URLSearchParams();
+  if (options?.includeArchived) params.set('include_archived', 'true');
+  if (options?.lane) params.set('lane', options.lane);
+  const query = params.size > 0 ? `?${params.toString()}` : '';
   return apiFetch<any[]>(`/admin/catalog/categories${query}`);
 }
 

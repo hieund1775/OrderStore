@@ -12,7 +12,14 @@ const service = createAdminCatalogV2Service();
 // CATEGORIES TREE
 // =============================================================
 router.get('/categories', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
-  const categories = await service.listCategories({ includeArchived: req.query.include_archived === 'true' });
+  const lane = req.query.lane;
+  if (lane && !['kitchen', 'packing'].includes(lane)) {
+    throw new CatalogV2Error('Khu vực không hợp lệ', 400);
+  }
+  const categories = await service.listCategories({
+    includeArchived: req.query.include_archived === 'true',
+    lane: lane || null,
+  });
   res.json(categories);
 }));
 
@@ -82,11 +89,15 @@ router.post('/attributes/:id/values', requireRole('super'), asyncHandler(async (
 // PRODUCTS & VARIANTS
 // =============================================================
 router.get('/products', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+  const lane = req.query.lane;
+  if (lane && !['kitchen', 'packing'].includes(lane)) {
+    throw new CatalogV2Error('Khu vực không hợp lệ', 400);
+  }
   const products = await service.listProducts({
     categoryId: req.query.category_id,
     status: req.query.status,
     search: req.query.search,
-    lane: req.query.lane,
+    lane: lane || null,
     limit: req.query.limit ? Number(req.query.limit) : 50,
     offset: req.query.offset ? Number(req.query.offset) : 0,
   });
