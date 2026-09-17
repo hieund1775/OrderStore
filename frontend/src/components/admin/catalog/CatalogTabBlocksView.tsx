@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   FolderTree,
   ShoppingBag,
@@ -39,11 +39,13 @@ import {
   archiveCatalogCategory,
   updateCatalogProduct,
   archiveCatalogProduct,
+  fetchSchemaDetails,
 } from '@/lib/api';
 import { collectCategorySubtreeIds } from '@/lib/catalog-navigation';
 import type { CategoryNode } from './CategoryTreeEditor';
 import type { ProductV2 } from './ProductEditor';
 import type { SchemaDetails } from './SchemaAttributeEditor';
+import type { ProductType } from './ProductTypeEditor';
 import { CatalogOption3BlocksEditor } from './CatalogOption3BlocksEditor';
 
 interface CatalogTabBlocksViewProps {
@@ -52,6 +54,7 @@ interface CatalogTabBlocksViewProps {
   onSelectRootId: (rootId: string) => void;
   categories: CategoryNode[];
   products: ProductV2[];
+  productTypes?: ProductType[];
   activeSchema: SchemaDetails | null;
   activeLane?: 'kitchen' | 'packing';
   isSuperAdmin: boolean;
@@ -65,6 +68,7 @@ export function CatalogTabBlocksView({
   onSelectRootId,
   categories,
   products,
+  productTypes = [],
   activeSchema,
   activeLane,
   isSuperAdmin,
@@ -88,7 +92,7 @@ export function CatalogTabBlocksView({
       list = list.filter((c) => Number(c.parent_id) === rootIdNum);
     }
     if (activeLane) {
-      list = list.filter((c) => (c.default_fulfillment_lane || 'kitchen') === activeLane);
+      list = list.filter((c) => c.default_fulfillment_lane === activeLane);
     }
     return list;
   }, [categories, selectedRootId, activeLane]);
@@ -105,6 +109,7 @@ export function CatalogTabBlocksView({
 
   // Tab 3: Danh mục đang chọn để cấu hình tùy chọn
   const [optionTargetCatId, setOptionTargetCatId] = useState<number | null>(null);
+  const [optionSchema, setOptionSchema] = useState<SchemaDetails | null>(null);
 
   // Modal Thêm / Sửa Danh Mục Con
   const [catDialogOpen, setCatDialogOpen] = useState(false);
@@ -164,6 +169,30 @@ export function CatalogTabBlocksView({
     return optionEligibleCategories[0];
   }, [optionEligibleCategories, optionTargetCatId]);
 
+  const optionSchemaId = useMemo(() => {
+    if (!currentOptionCategory?.product_type_id) return null;
+    const type = productTypes.find((item) => Number(item.id) === Number(currentOptionCategory.product_type_id));
+    return type?.draft_schema_id || type?.published_schema_id || null;
+  }, [currentOptionCategory, productTypes]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOptionSchema(null);
+    if (!optionSchemaId) return undefined;
+    if (Number(activeSchema?.id) === Number(optionSchemaId)) {
+      setOptionSchema(activeSchema);
+      return undefined;
+    }
+    void fetchSchemaDetails(optionSchemaId)
+      .then((schema) => {
+        if (!cancelled) setOptionSchema(schema);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) toast.error(error instanceof Error ? error.message : 'Could not load option schema');
+      });
+    return () => { cancelled = true; };
+  }, [activeSchema, optionSchemaId]);
+
   // Danh sách sản phẩm của danh mục đang chọn ở Tab 3
   const currentCategoryProducts = useMemo(() => {
     if (!currentOptionCategory) return [];
@@ -195,7 +224,7 @@ export function CatalogTabBlocksView({
     if (activeLane) {
       list = list.filter((p) => {
         const cat = categories.find((c) => Number(c.id) === Number(p.category_id));
-        const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || 'kitchen';
+        const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || null;
         return effectiveLane === activeLane;
       });
     }
@@ -253,7 +282,7 @@ export function CatalogTabBlocksView({
       return;
     }
 
-    const autoSlug = editingCategory ? editingCategory.slug : generateSlugFromName(catName);
+    const autoSlug = generateSlugFromName(catName);
 
     try {
       setCatSaving(true);
@@ -736,7 +765,7 @@ export function CatalogTabBlocksView({
               <CatalogOption3BlocksEditor
                 categoryId={Number(currentOptionCategory.id)}
                 categoryName={currentOptionCategory.name}
-                schema={activeSchema}
+                schema={optionSchema}
                 categoryProducts={currentCategoryProducts}
                 onRefresh={onRefresh}
               />

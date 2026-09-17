@@ -157,9 +157,10 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
 
   // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn
   useEffect(() => {
+    if (selectedRootId === 'all') return;
     const selectedExists = rootCategories.some((root) => String(root.id) === selectedRootId);
-    if (rootCategories.length > 0 && !selectedExists) setSelectedRootId(String(rootCategories[0].id));
-  }, [rootCategories]);
+    if (!selectedExists) setSelectedRootId('all');
+  }, [rootCategories, selectedRootId]);
 
   // Tập hợp các category ID thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
@@ -245,7 +246,7 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
       return;
     }
 
-    const autoSlug = editingRootCategory ? editingRootCategory.slug : generateSlugFromName(newRootName);
+    const autoSlug = generateSlugFromName(newRootName);
 
     try {
       setRootError(null);
@@ -348,7 +349,7 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
       return;
     }
 
-    const autoSlug = editingProduct ? editingProduct.slug : generateSlugFromName(productFormData.name);
+    const autoSlug = generateSlugFromName(productFormData.name);
 
     try {
       setProductSaving(true);
@@ -418,6 +419,7 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
         onSelectRootId={setSelectedRootId}
         categories={filteredCategories}
         products={filteredProducts}
+        productTypes={productTypes}
         activeSchema={activeSchema}
         activeLane={activeLane}
         isSuperAdmin={isSuperAdmin}

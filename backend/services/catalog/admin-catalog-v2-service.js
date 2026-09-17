@@ -102,6 +102,34 @@ export function createAdminCatalogV2Service({
       return await schemaRepository.addAttributeValue(Number(attrDefId), validated);
     },
 
+    async createCategoryOptionGroup(categoryId, input) {
+      const schemaId = Number(input.schema_id);
+      if (!Number.isInteger(schemaId) || schemaId <= 0) {
+        throw new CatalogV2Error('Schema tùy chọn không hợp lệ', 400);
+      }
+      if (!Array.isArray(input.values) || input.values.length === 0) {
+        throw new CatalogV2Error('Nhóm tùy chọn cần có ít nhất một giá trị', 400);
+      }
+      const attribute = validateAttributeDefinitionInput(input);
+      const values = input.values.map(validateAttributeValueInput);
+      return await schemaRepository.createCategoryOptionGroup(
+        Number(categoryId),
+        schemaId,
+        attribute,
+        values,
+        {
+          isEnabled: input.is_enabled === undefined ? true : Boolean(input.is_enabled),
+          inheritToDescendants: input.inherit_to_descendants === undefined
+            ? true
+            : Boolean(input.inherit_to_descendants),
+          sortOrder: attribute.sort_order,
+          isRequired: attribute.is_required,
+          minSelected: attribute.min_selections,
+          maxSelected: attribute.max_selections,
+        },
+      );
+    },
+
     // -------------------------------------------------------------
     // PRODUCTS & VARIANTS
     // -------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
@@ -473,18 +473,22 @@ function PromotionsAdminPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="disabled:cursor-not-allowed"
+                    aria-label="Trang trước"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1 || loading}
                   >
-                    Trang trước
+                    <ChevronLeft className="mr-1 size-4" /> Trang trước
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
+                    className="disabled:cursor-not-allowed"
+                    aria-label="Trang sau"
                     onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
                     disabled={page >= totalPages || loading}
                   >
-                    Trang sau
+                    Trang sau <ChevronRight className="ml-1 size-4" />
                   </Button>
                 </div>
               </div>

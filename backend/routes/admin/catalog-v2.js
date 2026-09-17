@@ -85,6 +85,16 @@ router.post('/attributes/:id/values', requireRole('super'), asyncHandler(async (
   res.status(201).json(value);
 }));
 
+router.post('/categories/:id/option-groups', requireRole('super'), asyncHandler(async (req, res) => {
+  const categoryId = Number(req.params.id);
+  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+    throw new CatalogV2Error('category_id không hợp lệ', 400);
+  }
+  const result = await service.createCategoryOptionGroup(categoryId, req.body);
+  await logAudit(req.user.sub, 'Tạo và bật nhóm tùy chọn danh mục', result.attribute.name, req);
+  res.status(201).json(result);
+}));
+
 // =============================================================
 // PRODUCTS & VARIANTS
 // =============================================================

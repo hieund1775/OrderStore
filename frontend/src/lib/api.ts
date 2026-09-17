@@ -308,6 +308,13 @@ export async function addAttributeValue(attrDefId: number | string, data: any) {
   });
 }
 
+export async function createCategoryOptionGroup(categoryId: number | string, data: any) {
+  return apiFetch<any>(`/admin/catalog/categories/${categoryId}/option-groups`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function fetchCatalogProducts(params?: { category_id?: number | string; status?: string; search?: string; lane?: 'kitchen' | 'packing' }) {
   const q = new URLSearchParams();
   if (params?.category_id) q.set('category_id', String(params.category_id));

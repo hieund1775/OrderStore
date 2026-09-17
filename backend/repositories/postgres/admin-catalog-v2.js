@@ -371,7 +371,14 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
     async archiveProduct(id) {
       const [rows] = await database.query(
         `UPDATE products
-         SET status = 'archived', is_available = FALSE, updated_at = CURRENT_TIMESTAMP
+         SET status = 'archived',
+             is_available = FALSE,
+             -- Keep the display name for historic joins; release only the
+             -- globally-unique technical slug for create-after-delete.
+             -- 170 + the delimiter + the largest bigint decimal representation
+             -- stays within products.slug VARCHAR(200).
+             slug = LEFT(slug, 170) || '--archived-' || id::text,
+             updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
          RETURNING *`,
         [id],

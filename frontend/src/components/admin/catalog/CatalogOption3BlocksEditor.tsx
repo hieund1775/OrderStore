@@ -12,8 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
-  addAttributeToSchema,
-  addAttributeValue,
+  createCategoryOptionGroup,
   fetchCategoryOptionAssignments,
   updateCategoryOptionAssignment,
   deleteCategoryOptionAssignment,
@@ -78,15 +77,12 @@ export function CatalogOption3BlocksEditor({
   const rawAttributes = schema?.attributes || [];
 
   // Phân loại thuộc tính từ Schema thật
-  const freeAttributes = rawAttributes.filter((attr) => {
-    const hasPaidValues = attr.values?.some((v) => Number(v.price_adjustment || 0) > 0);
-    return !hasPaidValues;
-  });
-
-  const paidAttributes = rawAttributes.filter((attr) => {
-    const hasPaidValues = attr.values?.some((v) => Number(v.price_adjustment || 0) > 0);
-    return hasPaidValues || attr.role === 'variant';
-  });
+  // Preserve the administrator's intended block when all values temporarily
+  // cost 0. A Block 2 multi-select group must not move into Block 1 on reload.
+  const freeAttributes = rawAttributes.filter((attr) => (
+    attr.role === 'modifier' && attr.input_type === 'single_select'
+  ));
+  const paidAttributes = rawAttributes.filter((attr) => !freeAttributes.includes(attr));
 
   const isAttrAssigned = (attrId: number) => {
     if (assignments.length === 0) return false;
@@ -142,12 +138,28 @@ export function CatalogOption3BlocksEditor({
 
     try {
       setModalSaving(true);
-      const code = generateCode(groupName);
       const isFree = modalType === 'free';
+      const valuePairs = groupValuesStr.split(',').map((s) => s.trim()).filter(Boolean);
+      const values = valuePairs.map((valuePair, index) => {
+        let label = valuePair;
+        let price = 0;
+        if (valuePair.includes(':')) {
+          const parts = valuePair.split(':');
+          label = parts[0].trim();
+          price = Number(parts[1].replace(/[^0-9]/g, '')) || 0;
+        }
+        return {
+          code: generateCode(label || `opt_${index}`),
+          label: label || `Lựa chọn ${index + 1}`,
+          price_adjustment: isFree ? 0 : price,
+          sort_order: index + 1,
+          is_active: true,
+        };
+      });
 
-      // 1. Thêm thuộc tính vào Schema
-      const createdAttr = await addAttributeToSchema(schema.id, {
-        code,
+      await createCategoryOptionGroup(categoryId, {
+        schema_id: schema.id,
+        code: generateCode(groupName),
         name: groupName.trim(),
         role: 'modifier',
         input_type: isFree ? 'single_select' : 'multi_select',
@@ -155,37 +167,9 @@ export function CatalogOption3BlocksEditor({
         min_selections: isFree ? 1 : 0,
         max_selections: isFree ? 1 : null,
         sort_order: (rawAttributes.length || 0) + 1,
-      });
-
-      // 2. Thêm danh sách giá trị
-      const valuePairs = groupValuesStr.split(',').map((s) => s.trim()).filter(Boolean);
-      for (let i = 0; i < valuePairs.length; i++) {
-        let label = valuePairs[i];
-        let price = 0;
-        if (valuePairs[i].includes(':')) {
-          const parts = valuePairs[i].split(':');
-          label = parts[0].trim();
-          price = Number(parts[1].replace(/[^0-9]/g, '')) || 0;
-        }
-        const valCode = generateCode(label || `opt_${i}`);
-        await addAttributeValue(createdAttr.id, {
-          code: valCode,
-          label: label || `Lựa chọn ${i + 1}`,
-          price_adjustment: isFree ? 0 : price,
-          sort_order: i + 1,
-          is_active: true,
-        });
-      }
-
-      // 3. Tự động bật gán cho danh mục này
-      await updateCategoryOptionAssignment(categoryId, {
-        attribute_definition_id: createdAttr.id,
+        values,
         is_enabled: true,
         inherit_to_descendants: true,
-        is_required: isFree,
-        min_selected: isFree ? 1 : 0,
-        max_selected: isFree ? 1 : null,
-        sort_order: 1,
       });
 
       toast.success(`Đã tạo nhóm tùy chọn "${groupName}" thành công!`);

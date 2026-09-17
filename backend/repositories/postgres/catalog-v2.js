@@ -252,7 +252,13 @@ export function createCatalogV2Repository(database = postgresDb) {
         }
         const [rows] = await tx.query(
           `UPDATE categories
-           SET archived_at = CURRENT_TIMESTAMP, is_visible = FALSE
+           SET archived_at = CURRENT_TIMESTAMP,
+               is_visible = FALSE,
+               -- The legacy schema makes both identifiers globally unique.
+               -- Retiring them lets an administrator recreate a deleted test
+               -- category without an archived record blocking the new row.
+               name = LEFT(name, 120) || ' [archived-' || id::text || ']',
+               slug = LEFT(slug, 120) || '--archived-' || id::text
            WHERE id = $1
            RETURNING *`,
           [id],
@@ -579,6 +585,94 @@ export function createCatalogV2Repository(database = postgresDb) {
         ],
       );
       return rows[0];
+    },
+
+    async createCategoryOptionGroup(categoryId, schemaId, attributeData, values, assignmentData = {}) {
+      return await database.transaction(async (tx) => {
+        const [contextRows] = await tx.query(
+          `SELECT c.id AS category_id, c.product_type_id AS category_product_type_id,
+                  pts.id AS schema_id, pts.product_type_id AS schema_product_type_id, pts.status AS schema_status
+           FROM categories c
+           JOIN product_type_schemas pts ON pts.id = $2
+           WHERE c.id = $1 AND c.archived_at IS NULL
+           FOR UPDATE OF c, pts`,
+          [Number(categoryId), Number(schemaId)],
+        );
+        const context = contextRows[0];
+        if (!context) {
+          throw new CatalogV2Error('Danh mục hoặc schema không tồn tại', 404);
+        }
+        if (context.schema_status === 'retired') {
+          throw new CatalogV2Error('Không thể thêm tùy chọn vào schema đã ngừng sử dụng', 400);
+        }
+        if (Number(context.category_product_type_id) !== Number(context.schema_product_type_id)) {
+          throw new CatalogV2Error('Tùy chọn không thuộc loại sản phẩm của danh mục', 409);
+        }
+
+        // Attribute, values, and assignment are intentionally written in this
+        // one transaction so a failed assignment cannot leave hidden data that
+        // makes a retry fail with a duplicate-code error.
+        const [attributeRows] = await tx.query(
+          `INSERT INTO attribute_definitions (
+             schema_id, code, name, role, input_type, is_required, is_filterable,
+             sort_order, min_selections, max_selections, validation_rules
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            Number(schemaId),
+            attributeData.code,
+            attributeData.name,
+            attributeData.role,
+            attributeData.input_type,
+            attributeData.is_required,
+            attributeData.is_filterable,
+            attributeData.sort_order,
+            attributeData.min_selections,
+            attributeData.max_selections,
+            JSON.stringify(attributeData.validation_rules || {}),
+          ],
+        );
+        const attribute = attributeRows[0];
+
+        const createdValues = [];
+        for (const valueData of values) {
+          const [valueRows] = await tx.query(
+            `INSERT INTO attribute_values (
+               attribute_definition_id, code, label, sort_order, is_active, price_adjustment
+             ) VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [
+              attribute.id,
+              valueData.code,
+              valueData.label,
+              valueData.sort_order,
+              valueData.is_active,
+              valueData.price_adjustment,
+            ],
+          );
+          createdValues.push(valueRows[0]);
+        }
+
+        const [assignmentRows] = await tx.query(
+          `INSERT INTO category_attribute_assignments
+             (category_id, attribute_definition_id, is_enabled, inherit_to_descendants,
+              sort_order, is_required, min_selected, max_selected, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+           RETURNING *`,
+          [
+            Number(categoryId),
+            attribute.id,
+            assignmentData.isEnabled ?? true,
+            assignmentData.inheritToDescendants ?? true,
+            assignmentData.sortOrder ?? attributeData.sort_order,
+            assignmentData.isRequired ?? attributeData.is_required,
+            assignmentData.minSelected ?? attributeData.min_selections,
+            assignmentData.maxSelected ?? attributeData.max_selections,
+          ],
+        );
+
+        return { attribute, values: createdValues, assignment: assignmentRows[0] };
+      });
     },
   };
 }

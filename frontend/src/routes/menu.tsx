@@ -316,7 +316,7 @@ function MenuPage() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-md">
                   {deferredSearchQuery
-                    ? "Vui lòng thử tìm kiếm bằng từ khóa khác hoặc kiểm tra lại chính tả."
+                    ? `Không có kết quả cho “${deferredSearchQuery}”. Hãy thử từ khóa khác hoặc kiểm tra lại chính tả.`
                     : "Vui lòng chọn danh mục khác hoặc quay lại danh mục gốc."}
                 </p>
                 {deferredSearchQuery && (
