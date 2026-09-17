@@ -573,4 +573,15 @@ export async function updateBranchOfferAvailability(variantId: number | string, 
   return data;
 }
 
+/** Search customers by phone or name for POS lookup */
+export async function searchCustomers(search: string) {
+  try {
+    const { data } = await apiClient.get(`/admin/customers?search=${encodeURIComponent(search)}`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 export default apiClient;
+

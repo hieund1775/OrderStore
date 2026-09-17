@@ -79,79 +79,19 @@ export default function PackingScreen() {
           lane: 'packing',
           branch_id: user?.branch_id || null,
         });
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setTasks(data);
-        } else if (tasks.length === 0) {
-          setTasks([
-            {
-              id: 201,
-              order_id: 991,
-              order_code: 'TP-DG-102',
-              order_type: 'Delivery',
-              branch_id: user?.branch_id || 1,
-              lane: 'packing',
-              status: 'pending',
-              customer_name: 'Nguyễn Văn An',
-              customer_phone: '0912345678',
-              created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-              items: [
-                {
-                  id: 1,
-                  task_id: 201,
-                  product_name: 'Ly Giữ Nhiệt TeaPlus 500ml',
-                  quantity: 1,
-                  sku: 'LGN-01',
-                },
-                {
-                  id: 2,
-                  task_id: 201,
-                  product_name: 'Snack Khoai Tây Phô Mai Cay',
-                  quantity: 2,
-                  sku: 'SNK-02',
-                },
-              ],
-            },
-          ]);
+        } else {
+          setTasks([]);
         }
-      } catch {
-        if (tasks.length === 0) {
-          setTasks([
-            {
-              id: 201,
-              order_id: 991,
-              order_code: 'TP-DG-102',
-              order_type: 'Delivery',
-              branch_id: user?.branch_id || 1,
-              lane: 'packing',
-              status: 'pending',
-              customer_name: 'Nguyễn Văn An',
-              customer_phone: '0912345678',
-              created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-              items: [
-                {
-                  id: 1,
-                  task_id: 201,
-                  product_name: 'Ly Giữ Nhiệt TeaPlus 500ml',
-                  quantity: 1,
-                  sku: 'LGN-01',
-                },
-                {
-                  id: 2,
-                  task_id: 201,
-                  product_name: 'Snack Khoai Tây Phô Mai Cay',
-                  quantity: 2,
-                  sku: 'SNK-02',
-                },
-              ],
-            },
-          ]);
-        }
+      } catch (err) {
+        console.error('Failed to load packing tasks:', err);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [user?.branch_id, tasks.length],
+    [user?.branch_id],
   );
 
   useEffect(() => {
