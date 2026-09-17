@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useLocation } from '@tanstack/react-router';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FolderTree,
@@ -40,11 +40,9 @@ import {
   updateCatalogProduct,
   getUser,
 } from '@/lib/api';
-import { type ProductType } from '@/components/admin/catalog/ProductTypeEditor';
-import type { CategoryNode } from '@/components/admin/catalog/CategoryTreeEditor';
+import type { CategoryNode, ProductType, ProductV2 } from '@/types/catalog-v2';
 import { CatalogRootSelector } from '@/components/admin/catalog/CatalogRootSelector';
 import { CatalogTabBlocksView } from '@/components/admin/catalog/CatalogTabBlocksView';
-import type { ProductV2 } from '@/components/admin/catalog/ProductEditor';
 import {
   buildCategoryBreadcrumb,
   collectCategorySubtreeIds,
@@ -63,14 +61,16 @@ export const Route = createFileRoute('/admin/catalog')({
   }),
 });
 
-export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'packing' }) {
+export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
+  const location = useLocation();
+  const routeLane = location?.pathname?.includes('/packing') ? 'packing' : 'kitchen';
+  const activeLane = lane || routeLane;
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [products, setProducts] = useState<ProductV2[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
-  const activeLane = lane;
   const [loading, setLoading] = useState(true);
 
   // Modal tạo / sửa danh mục gốc
@@ -423,7 +423,7 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
       {/* TOPBAR: ROOT CATEGORY SELECTOR */}
       <CatalogRootSelector
         roots={rootCategories}
-        totalCategories={categories.length}
+        totalCategories={laneCategories.length}
         value={selectedRootId}
         onValueChange={setSelectedRootId}
         canCreateRoot={isSuperAdmin}
