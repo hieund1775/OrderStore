@@ -9,13 +9,13 @@ const router = Router();
 
 function customerOnly(req, res, next) {
   if (req.user?.role !== 'customer' || !Number(req.user?.sub || req.user?.id)) {
-    return res.status(401).json({ error: 'Vui lÃ²ng Ä‘Äƒng nháº­p tÃ i khoáº£n khÃ¡ch hÃ ng' });
+    return res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản khách hàng' });
   }
   return next();
 }
 
 function sendError(res, error) {
-  return res.status(error?.status || 500).json({ error: error?.message || 'KhÃ´ng thá»ƒ xá»­ lÃ½ preorder' });
+  return res.status(error?.status || 500).json({ error: error?.message || 'Không thể xử lý preorder' });
 }
 
 const SAFE_CHECKOUT_STAGES = new Set([
@@ -60,7 +60,7 @@ function sendCheckoutError(req, res, error) {
 }
 
 function invalidQuery(field, code) {
-  const error = new Error(`${field} khÃ´ng há»£p lá»‡`);
+  const error = new Error(`${field} không hợp lệ`);
   error.status = 400;
   error.code = code;
   return error;

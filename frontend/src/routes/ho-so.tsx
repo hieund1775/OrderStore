@@ -652,7 +652,7 @@ function Profile() {
                           <p className={`text-sm ${!n.is_read ? "font-bold text-foreground" : "font-medium text-foreground/80"}`}>
                             {n.title}
                           </p>
-                          <CustomerDateTime value={n.created_at} className="text-[11px] text-muted-foreground" />
+                          <CustomerDateTime value={n.created_at} showStoreTime={false} className="text-[11px] text-muted-foreground" />
                         </div>
                       </div>
                       {!n.is_read && (

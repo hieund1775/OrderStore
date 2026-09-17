@@ -470,7 +470,7 @@ export function createPreordersRepository(database = postgresDb) {
     async findByPaymentTarget({ orderId = null, checkoutGroupId = null }, { tx = null, forUpdate = false } = {}) {
       const executor = tx || database;
       if ((orderId == null) === (checkoutGroupId == null)) {
-        throw new PreorderRepositoryError('Payment target preorder khÃ´ng há»£p lá»‡', 400, 'PREORDER_TARGET_REQUIRED');
+        throw new PreorderRepositoryError('Payment target preorder không hợp lệ', 400, 'PREORDER_TARGET_REQUIRED');
       }
       const sql = checkoutGroupId != null
         ? `SELECT p.* FROM preorders p WHERE p.checkout_group_id = $1${forUpdate ? ' FOR UPDATE' : ''}`
@@ -492,13 +492,13 @@ export function createPreordersRepository(database = postgresDb) {
     },
 
     async transition(preorderId, { from, to, fields = {} }, { tx = null } = {}) {
-      if (!PREORDER_STATUSES.includes(to)) throw new PreorderRepositoryError('Tráº¡ng thÃ¡i preorder khÃ´ng há»£p lá»‡', 400, 'PREORDER_STATUS_INVALID');
+      if (!PREORDER_STATUSES.includes(to)) throw new PreorderRepositoryError('Trạng thái preorder không hợp lệ', 400, 'PREORDER_STATUS_INVALID');
       return inTransaction(database, tx, async (runner) => {
         const keys = Object.keys(fields);
         const values = [Number(preorderId), to];
         const setters = ['status = $2', 'updated_at = CURRENT_TIMESTAMP'];
         for (const key of keys) {
-          if (!/^[a-z_]+$/.test(key)) throw new PreorderRepositoryError('TrÆ°á»ng preorder khÃ´ng há»£p lá»‡', 400, 'PREORDER_FIELD_INVALID');
+          if (!/^[a-z_]+$/.test(key)) throw new PreorderRepositoryError('Trường preorder không hợp lệ', 400, 'PREORDER_FIELD_INVALID');
           values.push(fields[key]);
           setters.push(`${key} = $${values.length}`);
         }
@@ -661,7 +661,7 @@ export function createPreordersRepository(database = postgresDb) {
       if (!entries.length) return null;
       const values = [Number(incidentId)];
       const setters = entries.map(([key, value]) => {
-        if (!/^[a-z_]+$/.test(key)) throw new PreorderRepositoryError('TrÆ°á»ng incident khÃ´ng há»£p lá»‡', 400, 'PREORDER_INCIDENT_FIELD_INVALID');
+        if (!/^[a-z_]+$/.test(key)) throw new PreorderRepositoryError('Trường incident không hợp lệ', 400, 'PREORDER_INCIDENT_FIELD_INVALID');
         values.push(value);
         return `${key} = $${values.length}`;
       });

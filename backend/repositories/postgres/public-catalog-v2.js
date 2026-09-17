@@ -258,7 +258,25 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
 
       if (search) {
         params.push(`%${search}%`);
-        where += ` AND (p.name ILIKE $${params.length} OR p.slug ILIKE $${params.length} OR p.description ILIKE $${params.length})`;
+        const searchParam = `$${params.length}`;
+        where += ` AND (
+          p.name ILIKE ${searchParam}
+          OR p.slug ILIKE ${searchParam}
+          OR p.description ILIKE ${searchParam}
+          OR c.name ILIKE ${searchParam}
+          OR c.slug ILIKE ${searchParam}
+          OR EXISTS (
+            SELECT 1 FROM categories cat_anc
+            WHERE cat_anc.id = c.parent_id
+              AND (cat_anc.name ILIKE ${searchParam} OR cat_anc.slug ILIKE ${searchParam})
+          )
+          OR EXISTS (
+            SELECT 1 FROM product_variants pv_search
+            WHERE pv_search.product_id = p.id
+              AND pv_search.status = 'active'
+              AND (pv_search.sku ILIKE ${searchParam} OR pv_search.name ILIKE ${searchParam})
+          )
+        )`;
       }
 
       params.push(limit);

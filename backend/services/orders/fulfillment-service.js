@@ -187,7 +187,7 @@ export function createFulfillmentService({
         cancelled: new Set(),
       };
       if (!allowedTransitions[task.status]?.has(status)) {
-        const err = new Error(`KhÃ´ng thá»ƒ chuyá»ƒn nhiá»‡m vá»¥ tá»« ${task.status} sang ${status}`);
+        const err = new Error(`Không thể chuyển nhiệm vụ từ ${task.status} sang ${status}`);
         err.status = 409;
         err.code = 'FULFILLMENT_STATUS_TRANSITION_INVALID';
         throw err;
@@ -201,7 +201,7 @@ export function createFulfillmentService({
         expectedStatus: task.status,
       });
       if (!updatedTask) {
-        const err = new Error('Nhiá»‡m vá»¥ vá»«a Ä‘Æ°á»£c cáº­p nháº­t bá»Ÿi ngÆ°á»i khÃ¡c, vui lÃ²ng táº£i láº¡i');
+        const err = new Error('Nhiệm vụ vừa được cập nhật bởi người khác, vui lòng tải lại');
         err.status = 409;
         err.code = 'FULFILLMENT_STATUS_CONFLICT';
         throw err;

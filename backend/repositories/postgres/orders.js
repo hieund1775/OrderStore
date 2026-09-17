@@ -318,7 +318,7 @@ export function createOrdersRepository(
           await notifications.insertForUser({
             userId,
             type: 'order',
-            title: `Đặt hàng thành công — #${order.order_code}`,
+            title: `Đặt hàng thành công - #${order.order_code}`,
             body: waitsForOnlinePayment
               ? `Đơn hàng #${order.order_code} đang chờ thanh toán. Bếp sẽ bắt đầu chuẩn bị sau khi thanh toán được xác nhận.`
               : `Đơn hàng #${order.order_code} đã được tiếp nhận và chuyển đến quầy chuẩn bị.`,
@@ -327,7 +327,7 @@ export function createOrdersRepository(
         }
         if (!input.preorder_id && !waitsForOnlinePayment) await notifications.fanOutToOrderAdmins(input.store_id, {
           type: 'order',
-          title: `Đơn hàng mới — #${order.order_code}`,
+          title: `Đơn hàng mới - #${order.order_code}`,
           body: `Đơn #${order.order_code} (${input.order_type || 'Take-away'}) đã sẵn sàng cho bếp chuẩn bị.`,
           link: '/admin/bep',
         }, { tx });
@@ -410,14 +410,14 @@ export function createOrdersRepository(
             await notifications.insertForUser({
               userId: Number(paidOrder.user_id),
               type: 'order',
-              title: `Thanh toán thành công — #${paidOrder.order_code}`,
+              title: `Thanh toán thành công - #${paidOrder.order_code}`,
               body: `Đơn hàng #${paidOrder.order_code} đã được xác nhận thanh toán và đang được chuẩn bị.`,
               link: `/theo-doi-don?code=${paidOrder.order_code}`,
             }, { tx });
           }
           await notifications.fanOutToOrderAdmins(Number(paidOrder.store_id), {
             type: 'order',
-            title: `Đơn hàng đã thanh toán — #${paidOrder.order_code}`,
+            title: `Đơn hàng đã thanh toán - #${paidOrder.order_code}`,
             body: `Đơn #${paidOrder.order_code} (${paidOrder.order_type || 'Take-away'}) đã sẵn sàng cho bếp/đóng gói chuẩn bị.`,
             link: '/admin/bep',
           }, { tx });
