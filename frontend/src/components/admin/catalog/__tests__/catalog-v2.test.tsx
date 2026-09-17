@@ -120,4 +120,118 @@ describe('Admin Catalog V2 Component Suite', () => {
 
     expect(html).toContain('Bộ Sinh Biến Thể SKU Tự Động');
   });
+
+  it('renders CatalogTabBlocksView with strictly isolated packing lane and "Đóng gói / Shipper" badge', async () => {
+    const { CatalogTabBlocksView } = await import('../CatalogTabBlocksView');
+    const packingRoot: CategoryNode = {
+      id: 10,
+      name: 'Hàng Đóng Gói',
+      slug: 'hang-dong-goi',
+      parent_id: null,
+      depth: 0,
+      default_fulfillment_lane: 'packing',
+      sort_order: 1,
+      is_visible: true,
+      archived_at: null,
+      children_count: 1,
+      products_count: 0,
+    };
+    const packingSub: CategoryNode = {
+      id: 11,
+      name: 'Áo QA',
+      slug: 'ao-qa',
+      parent_id: 10,
+      depth: 1,
+      default_fulfillment_lane: 'packing',
+      sort_order: 1,
+      is_visible: true,
+      archived_at: null,
+      children_count: 0,
+      products_count: 0,
+    };
+    const kitchenSub: CategoryNode = {
+      id: 12,
+      name: 'Trà Lài',
+      slug: 'tra-lai',
+      parent_id: 1,
+      depth: 1,
+      default_fulfillment_lane: 'kitchen',
+      sort_order: 2,
+      is_visible: true,
+      archived_at: null,
+      children_count: 0,
+      products_count: 0,
+    };
+
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={[packingRoot]}
+        selectedRootId="all"
+        onSelectRootId={() => {}}
+        categories={[packingRoot, packingSub, kitchenSub]}
+        products={[]}
+        activeSchema={null}
+        activeLane="packing"
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenCreateProduct={() => {}}
+        onOpenEditProduct={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Áo QA');
+    expect(html).toContain('Đóng gói / Shipper');
+    expect(html).not.toContain('Trà Lài');
+    expect(html).not.toContain('Quầy Bếp / Pha chế');
+  });
+
+  it('renders CatalogTabBlocksView with kitchen lane and "Quầy Bếp / Pha chế" badge', async () => {
+    const { CatalogTabBlocksView } = await import('../CatalogTabBlocksView');
+    const kitchenRoot: CategoryNode = {
+      id: 1,
+      name: 'Đồ Uống Bếp',
+      slug: 'do-uong-bep',
+      parent_id: null,
+      depth: 0,
+      default_fulfillment_lane: 'kitchen',
+      sort_order: 1,
+      is_visible: true,
+      archived_at: null,
+      children_count: 1,
+      products_count: 0,
+    };
+    const kitchenSub: CategoryNode = {
+      id: 2,
+      name: 'Trà Bếp QA',
+      slug: 'tra-bep-qa',
+      parent_id: 1,
+      depth: 1,
+      default_fulfillment_lane: 'kitchen',
+      sort_order: 1,
+      is_visible: true,
+      archived_at: null,
+      children_count: 0,
+      products_count: 0,
+    };
+
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={[kitchenRoot]}
+        selectedRootId="all"
+        onSelectRootId={() => {}}
+        categories={[kitchenRoot, kitchenSub]}
+        products={[]}
+        activeSchema={null}
+        activeLane="kitchen"
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenCreateProduct={() => {}}
+        onOpenEditProduct={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Trà Bếp QA');
+    expect(html).toContain('Quầy Bếp / Pha chế');
+    expect(html).not.toContain('Đóng gói / Shipper');
+  });
 });

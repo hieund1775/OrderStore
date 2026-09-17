@@ -150,9 +150,10 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
 
   // Danh mục gốc (depth = 0)
   const rootCategories = useMemo(() => {
-    return getRootCategories(categories).filter((category) => (
-      (category.default_fulfillment_lane || category.product_type_default_fulfillment_lane) === activeLane
-    ));
+    return getRootCategories(categories).filter((category) => {
+      const lane = category.default_fulfillment_lane || category.product_type_default_fulfillment_lane || 'kitchen';
+      return lane === activeLane;
+    });
   }, [categories, activeLane]);
 
   // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn
@@ -162,46 +163,65 @@ export function AdminCatalogPage({ lane = 'kitchen' }: { lane?: 'kitchen' | 'pac
     if (!selectedExists) setSelectedRootId('all');
   }, [rootCategories, selectedRootId]);
 
+  // Danh mục thuộc khu vực activeLane (loại trừ tuyệt đối danh mục của lane khác)
+  const laneCategories = useMemo(() => {
+    const rootIdSet = new Set(rootCategories.map((r) => Number(r.id)));
+    return categories.filter((c) => {
+      if (c.parent_id == null) {
+        return rootIdSet.has(Number(c.id));
+      }
+      const directLane = c.default_fulfillment_lane || c.product_type_default_fulfillment_lane;
+      if (directLane) return directLane === activeLane;
+      return rootIdSet.has(Number(c.parent_id));
+    });
+  }, [categories, rootCategories, activeLane]);
+
   // Tập hợp các category ID thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
     if (selectedRootId === 'all') return null;
-    return collectCategorySubtreeIds(categories, Number(selectedRootId));
-  }, [selectedRootId, categories]);
+    return collectCategorySubtreeIds(laneCategories, Number(selectedRootId));
+  }, [selectedRootId, laneCategories]);
 
   // Danh mục hiển thị theo scope
   const filteredCategories = useMemo(() => {
-    if (!scopedCategoryIds) return categories;
-    return categories.filter((c) => scopedCategoryIds.has(Number(c.id)));
-  }, [scopedCategoryIds, categories]);
+    if (!scopedCategoryIds) return laneCategories;
+    return laneCategories.filter((c) => scopedCategoryIds.has(Number(c.id)));
+  }, [scopedCategoryIds, laneCategories]);
 
   // Sản phẩm hiển thị theo scope
   const filteredProducts = useMemo(() => {
+    const allowedCategoryIds = new Set(filteredCategories.map((c) => Number(c.id)));
     return products.filter((p) => {
-      if (scopedCategoryIds && !scopedCategoryIds.has(Number(p.category_id))) {
+      if (!allowedCategoryIds.has(Number(p.category_id))) {
         return false;
       }
       const cat = categories.find((c) => Number(c.id) === Number(p.category_id));
-      const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || cat?.product_type_default_fulfillment_lane;
+      const effectiveLane = p.fulfillment_lane || cat?.default_fulfillment_lane || cat?.product_type_default_fulfillment_lane || 'kitchen';
       return effectiveLane === activeLane;
     });
-  }, [scopedCategoryIds, products, categories, activeLane]);
+  }, [filteredCategories, products, categories, activeLane]);
 
   // Danh sách danh mục con khả dụng để gán sản phẩm
   const productCategoryOptions = useMemo(() => {
-    const list = getLeafCategories(filteredCategories).filter((category) => (
-      category.parent_id !== null && (category.default_fulfillment_lane || category.product_type_default_fulfillment_lane) === activeLane
-    ));
+    const rootIdSet = new Set(rootCategories.map((r) => Number(r.id)));
+    const list = getLeafCategories(filteredCategories).filter((category) => {
+      if (category.parent_id === null) return false;
+      const directLane = category.default_fulfillment_lane || category.product_type_default_fulfillment_lane;
+      return directLane ? directLane === activeLane : rootIdSet.has(Number(category.parent_id));
+    });
     if (list.length > 0) {
       return list.map((category) => ({
         ...category,
         breadcrumb: buildCategoryBreadcrumb(categories, category.id),
       }));
     }
-    return filteredCategories.map((category) => ({
-      ...category,
-      breadcrumb: category.name,
-    }));
-  }, [categories, filteredCategories, activeLane]);
+    return filteredCategories
+      .filter((c) => c.parent_id !== null)
+      .map((category) => ({
+        ...category,
+        breadcrumb: category.name,
+      }));
+  }, [categories, filteredCategories, activeLane, rootCategories]);
 
   // Tạo / Sửa ngành gốc
   const handleOpenCreateRoot = () => {

@@ -92,10 +92,14 @@ export function CatalogTabBlocksView({
       list = list.filter((c) => Number(c.parent_id) === rootIdNum);
     }
     if (activeLane) {
-      list = list.filter((c) => c.default_fulfillment_lane === activeLane);
+      const rootIdSet = new Set(rootCategories.map((r) => Number(r.id)));
+      list = list.filter((c) => {
+        const lane = c.default_fulfillment_lane || (rootIdSet.has(Number(c.parent_id)) ? activeLane : null);
+        return lane === activeLane;
+      });
     }
     return list;
-  }, [categories, selectedRootId, activeLane]);
+  }, [categories, selectedRootId, activeLane, rootCategories]);
 
   // Toàn bộ category IDs thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
@@ -465,7 +469,7 @@ export function CatalogTabBlocksView({
                 ) : (
                   subcategories.map((cat) => {
                     const count = products.filter((p) => Number(p.category_id) === Number(cat.id)).length;
-                    const lane = cat.default_fulfillment_lane;
+                    const lane = cat.default_fulfillment_lane || (rootCategories.some((r) => Number(r.id) === Number(cat.parent_id)) ? activeLane : null) || activeLane;
 
                     return (
                       <tr key={cat.id} className="hover:bg-muted/30 transition-colors">
@@ -479,12 +483,10 @@ export function CatalogTabBlocksView({
                             className={`text-[10px] font-semibold px-2 py-0.5 ${
                               lane === 'kitchen'
                                 ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
-                                : lane === 'packing'
-                                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20'
-                                : 'bg-muted text-muted-foreground'
+                                : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20'
                             }`}
                           >
-                            {lane === 'kitchen' ? '🍳 Quầy Bếp / Pha chế' : lane === 'packing' ? '📦 Soạn / Đóng gói' : 'Theo danh mục gốc'}
+                            {lane === 'kitchen' ? '🍳 Quầy Bếp / Pha chế' : '📦 Đóng gói / Shipper'}
                           </Badge>
                         </td>
                         <td className="p-3.5">
