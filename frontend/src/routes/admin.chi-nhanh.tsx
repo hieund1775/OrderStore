@@ -819,6 +819,11 @@ function StoreFormDialog({
     if (!openTime || !closeTime) {
       return toast.error("Vui lòng chọn giờ mở cửa và giờ đóng cửa");
     }
+    const [openH, openM] = openTime.split(":").map(Number);
+    const [closeH, closeM] = closeTime.split(":").map(Number);
+    if (closeH * 60 + closeM <= openH * 60 + openM) {
+      return toast.error("Giờ đóng cửa phải lớn hơn giờ mở cửa");
+    }
     setSaving(true);
     try {
       onSave({

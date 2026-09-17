@@ -18,9 +18,9 @@ export function createOrderReadRepository(database = postgresDb) {
   return {
     async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
       const params = [];
-      // Preorders have their own operational archive. They must not be mixed
-      // into the ordinary order-management list, even after check-in.
-      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS') AND o.preorder_id IS NULL";
+      // Preorders enter ordinary order-management once confirmed, checked-in, or cancelled.
+      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS')";
+      filters += " AND (o.preorder_id IS NULL OR p.status IN ('CONFIRMED', 'CHECKED_IN', 'CUSTOMER_CANCELLED', 'NO_SHOW', 'COMPLETED'))";
       if (status) {
         params.push(status);
         filters += ` AND latest.status = $${params.length}`;
@@ -50,8 +50,9 @@ export function createOrderReadRepository(database = postgresDb) {
                 o.discount_amount, o.subtotal, o.total, o.shipping_driver_name,
                 o.shipping_driver_phone, o.shipping_tracking_url, o.is_printed,
                 o.note, o.cancel_reason, o.created_at, o.updated_at, s.name AS store_name,
-                latest.status AS current_status
+                latest.status AS current_status, o.preorder_id
          FROM orders o JOIN stores s ON s.id = o.store_id
+         LEFT JOIN preorders p ON p.id = o.preorder_id
          LEFT JOIN LATERAL (SELECT status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1) latest ON TRUE
          ${filters} ORDER BY o.created_at DESC, o.id DESC LIMIT $${params.length}`,
         params,

@@ -50,6 +50,18 @@ export function validateBranchInput(body = {}, { isUpdate = false } = {}) {
   if (!isUpdate || address !== undefined) boundedText(address, 'Địa chỉ', 255, { required: !isUpdate });
   if (!isUpdate || phone !== undefined) boundedText(phone, 'Số điện thoại', 20, { required: !isUpdate });
 
+  if (hours !== undefined && hours !== null && String(hours).trim() !== '') {
+    const rawHours = String(hours).trim();
+    const match = rawHours.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})$/);
+    if (match) {
+      const openMinutes = Number(match[1]) * 60 + Number(match[2]);
+      const closeMinutes = Number(match[3]) * 60 + Number(match[4]);
+      if (closeMinutes <= openMinutes) {
+        throw new StoreValidationError('Giờ đóng cửa phải lớn hơn giờ mở cửa');
+      }
+    }
+  }
+
   return {
     name: name ? name.trim() : undefined,
     city: city ? city.trim() : undefined,

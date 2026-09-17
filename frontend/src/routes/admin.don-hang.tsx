@@ -468,8 +468,8 @@ function OrdersPage() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {["Chờ xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành"].map((col) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {["Chờ xác nhận", "Đang chuẩn bị", "Đang giao", "Hoàn thành", "Đã hủy"].map((col) => (
             <div key={col} className="bg-card rounded-2xl border p-3.5 shadow-sm">
               <p className="mb-3 flex items-center justify-between text-sm font-semibold">
                 {col}
