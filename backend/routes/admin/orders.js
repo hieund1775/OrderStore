@@ -14,7 +14,7 @@ import { toAdminOrderListItemDto, toAdminOrderDetailDto } from '../../dto/order-
 
 const router = Router();
 
-router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
+router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
     const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
     validateOrderFilters({ status, store_id, search });
@@ -53,7 +53,7 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHand
   }
 }));
 
-router.get('/:id', requireRole('super', 'manager', 'cashier', 'kitchen'), asyncHandler(async (req, res) => {
+router.get('/:id', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
     validateOrderId(req.params.id);
     const scopedStoreId = resolveStoreScope(req.user);
