@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { signToken, authenticate } from '../middleware/auth.js';
 import usersRepository from '../repositories/postgres/users.js';
+import postgresDb from '../config/db-postgres.js';
 
 const router = Router();
 
@@ -36,6 +37,17 @@ router.post('/login', async (req, res) => {
     if (!user || !isMatch) {
       return res.status(401).json({ error: 'Sai số điện thoại hoặc mật khẩu' });
     }
+
+    let branchName = null;
+    if (user.admin_branch_id) {
+      try {
+        const [storeRows] = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
+        branchName = storeRows[0]?.name || null;
+      } catch (e) {
+        console.warn('Could not resolve store name on login:', e.message);
+      }
+    }
+
     const token = signToken(user);
     res.json({
       token,
@@ -45,6 +57,7 @@ router.post('/login', async (req, res) => {
         phone: user.phone,
         role: user.admin_role,
         branch_id: user.admin_branch_id,
+        branch_name: branchName,
       },
     });
   } catch (err) {
@@ -66,6 +79,17 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   const user = await usersRepository.findActiveUserById(req.user.sub);
   if (!user || !user.is_admin) return res.status(404).json({ error: 'Không tìm thấy tài khoản' });
+
+  let branchName = null;
+  if (user.admin_branch_id) {
+    try {
+      const [storeRows] = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
+      branchName = storeRows[0]?.name || null;
+    } catch (e) {
+      console.warn('Could not resolve store name on /me:', e.message);
+    }
+  }
+
   res.json({
     id: user.id,
     fullname: user.fullname,
@@ -73,6 +97,7 @@ router.get('/me', authenticate, async (req, res) => {
     email: user.email,
     admin_role: user.admin_role,
     admin_branch_id: user.admin_branch_id,
+    branch_name: branchName,
     email_verified_at: user.email_verified_at || null,
   });
 });

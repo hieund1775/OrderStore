@@ -10,7 +10,7 @@ import { isPaginationRequested, validatePage, validateLimit, buildOffsetPaginati
 const router = Router();
 const service = createBranchOfferService();
 
-router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+router.get('/', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   const storeId = resolveStoreScope(req.user, req.query.store_id);
   const filters = {
     categoryId: req.query.category_id,
@@ -30,7 +30,7 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
   res.json(offers);
 }));
 
-router.put('/:variant_id', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+router.put('/:variant_id', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   const storeId = resolveStoreScope(req.user, req.body.store_id || req.query.store_id);
   const offer = await service.setBranchOffer(storeId, {
     variant_id: req.params.variant_id,
@@ -42,7 +42,7 @@ router.put('/:variant_id', requireRole('super', 'manager'), asyncHandler(async (
   res.json(offer);
 }));
 
-router.post('/batch-availability', requireRole('super', 'manager'), asyncHandler(async (req, res) => {
+router.post('/batch-availability', requireRole('super', 'manager', 'cashier'), asyncHandler(async (req, res) => {
   const storeId = resolveStoreScope(req.user, req.body.store_id || req.query.store_id);
   const { variant_ids, is_available } = req.body;
   const updated = await service.batchSetAvailability(storeId, variant_ids, is_available);
