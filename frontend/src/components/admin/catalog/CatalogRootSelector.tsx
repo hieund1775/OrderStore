@@ -13,6 +13,7 @@ type CatalogRootSelectorProps = {
   onCreateRoot: () => void;
   onEditRoot?: (root: CatalogCategoryLike) => void;
   onDeleteRoot?: (root: CatalogCategoryLike) => void;
+  activeLane?: 'kitchen' | 'packing';
 };
 
 export function CatalogRootSelector({
@@ -24,7 +25,9 @@ export function CatalogRootSelector({
   onCreateRoot,
   onEditRoot,
   onDeleteRoot,
+  activeLane = 'kitchen',
 }: CatalogRootSelectorProps) {
+  const laneLabel = activeLane === 'packing' ? 'Đóng gói' : 'Bếp';
   const currentSelectedRoot = value !== 'all' ? roots.find((r) => String(r.id) === value) : null;
 
   return (
@@ -79,7 +82,7 @@ export function CatalogRootSelector({
 
       {canCreateRoot && (
         <Button variant="hero" size="sm" onClick={onCreateRoot} className="h-9 font-semibold text-xs">
-          <Plus className="size-4 mr-1.5" /> Tạo ngành hàng gốc
+          <Plus className="size-4 mr-1.5" /> Tạo ngành hàng gốc {laneLabel}
         </Button>
       )}
     </div>

@@ -430,6 +430,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
         onCreateRoot={handleOpenCreateRoot}
         onEditRoot={handleOpenEditRoot}
         onDeleteRoot={handleDeleteRootCategory}
+        activeLane={activeLane}
       />
 
       {/* 3-TAB VIEW: SUB-CATEGORIES, PRODUCTS, OPTIONS */}
@@ -454,7 +455,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Plus className="size-5 text-primary" />
-                <span>{editingRootCategory ? 'Đổi Tên Ngành Hàng Gốc' : 'Tạo Ngành Hàng Cấp Gốc Mới'}</span>
+                <span>{editingRootCategory ? 'Đổi Tên Ngành Hàng Gốc' : `Tạo Ngành Hàng Gốc ${activeLane === 'packing' ? 'Đóng gói' : 'Bếp'}`}</span>
               </DialogTitle>
             </DialogHeader>
 
