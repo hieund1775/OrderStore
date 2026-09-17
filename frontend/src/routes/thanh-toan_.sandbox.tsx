@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { AlertCircle, ArrowLeft, CheckCircle2, Clock, CreditCard, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -217,10 +217,6 @@ export function SandboxCheckoutPage() {
               <h1 className="text-lg font-bold text-foreground">Cổng Thanh Toán Thử Nghiệm</h1>
               <p className="text-xs text-muted-foreground">Môi trường chuyển khoản Sandbox</p>
             </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full font-medium">
-            <ShieldCheck className="h-4 w-4" />
-            <span>Chính thức</span>
           </div>
         </div>
 

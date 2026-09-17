@@ -112,15 +112,15 @@ async function findAttemptForUpdate(tx, attemptId) {
   return rows[0] || null;
 }
 
-async function findCreatingAttemptForUpdate(tx, target) {
+async function findCreatingAttemptForUpdate(tx, target, provider) {
   const predicate = targetPredicate(target);
   const [rows] = await tx.query(
     `SELECT * FROM payment_attempts
-     WHERE ${predicate.sql} AND status = 'creating'
+     WHERE ${predicate.sql} AND provider = $2 AND status = 'creating'
      ORDER BY id DESC
      LIMIT 1
      FOR UPDATE`,
-    predicate.params,
+    [...predicate.params, provider],
   );
   return rows[0] || null;
 }
@@ -134,8 +134,8 @@ function assertTargetCanCreate(target) {
   if (target.target_type === 'order' && target.checkout_group_id != null) {
     throw new PaymentAttemptError('Grouped child orders cannot own direct payment attempts', 409, 'GROUP_CHILD_DIRECT_ATTEMPT_FORBIDDEN');
   }
-  if (target.payment_provider !== 'payos') {
-    throw new PaymentAttemptError('Payment attempt target must use PayOS', 409, 'PAYMENT_ATTEMPT_WRONG_PROVIDER');
+  if (!['payos', 'sandbox'].includes(target.payment_provider)) {
+    throw new PaymentAttemptError('Payment attempt target must use a supported provider', 409, 'PAYMENT_ATTEMPT_WRONG_PROVIDER');
   }
   if (target.payment_status === 'paid') {
     throw new PaymentAttemptError('Paid targets cannot create another payment attempt', 409, 'PAYMENT_ATTEMPT_TARGET_PAID');
@@ -387,12 +387,16 @@ export function createPaymentAttemptsRepository(database = postgresDb) {
         assertTargetAmount(lockedTarget, normalizedAmount);
         assertTargetProfile(lockedTarget, profileCode);
 
-        const creating = await findCreatingAttemptForUpdate(tx, target);
+        // A creating artifact belongs to its provider. Reusing it for a
+        // different provider would leak a PayOS URL into sandbox mode (or the
+        // reverse) and would make activation artifacts mutable by accident.
+        const creating = await findCreatingAttemptForUpdate(tx, target, normalizedProvider);
         if (creating) return { kind: 'creating', attempt: creating, recovered: true, target: lockedTarget };
 
         if (!forceRegenerate && lockedTarget.current_payment_attempt_id != null) {
           const current = await findAttemptForUpdate(tx, lockedTarget.current_payment_attempt_id);
-          if (current?.status === 'active'
+          if (current?.provider === normalizedProvider
+            && current.status === 'active'
             && current.provider_payment_link_id
             && (current.checkout_url || current.qr_code)) {
             return { kind: 'active', attempt: current, recovered: true, target: lockedTarget };

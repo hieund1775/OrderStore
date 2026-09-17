@@ -5,6 +5,7 @@ import { createSandboxPaymentAttemptService } from '../services/sandbox-payment-
 
 describe('Sandbox Payment Attempt Service', () => {
   const originalEnv = { ...process.env };
+  const immediateLock = async (_key, callback) => callback({ acquired: true });
 
   beforeEach(() => {
     process.env.PAYMENT_MODE = 'qa_sandbox';
@@ -69,6 +70,7 @@ describe('Sandbox Payment Attempt Service', () => {
 
     const service = createSandboxPaymentAttemptService({
       attemptsRepository: mockAttemptsRepo,
+      withCreationLock: immediateLock,
     });
 
     const result = await service.createForOrder({ order });
@@ -118,6 +120,155 @@ describe('Sandbox Payment Attempt Service', () => {
     const result = await service.createForOrder({ order });
     assert.equal(result.payment_checkout_url, originalUrl);
     assert.equal(result.payment_link_id, originalHash);
+  });
+
+  it('serializes concurrent direct sandbox creation and returns one canonical token', async () => {
+    const order = { id: 21, order_code: 'TP2609172100', total: 61000 };
+    let creating = null;
+    let active = null;
+    let activateCalls = 0;
+    let lockTail = Promise.resolve();
+
+    const serializedLock = async (_key, callback) => {
+      const previous = lockTail;
+      let release;
+      lockTail = new Promise((resolve) => { release = resolve; });
+      await previous;
+      try {
+        return await callback({ acquired: true });
+      } finally {
+        release();
+      }
+    };
+
+    const attemptsRepository = {
+      async reserveOrRecoverCreatingAttempt(params) {
+        if (active) return { kind: 'active', attempt: active };
+        if (creating) return { kind: 'creating', attempt: creating, recovered: true };
+        creating = {
+          id: 991,
+          provider: 'sandbox',
+          provider_order_code: params.providerOrderCode,
+          amount: params.amount,
+          status: 'creating',
+          expires_at: params.expiresAt,
+        };
+        return { kind: 'creating', attempt: creating, recovered: false };
+      },
+      async activateAttempt(params) {
+        activateCalls += 1;
+        active = {
+          ...creating,
+          status: 'active',
+          provider_payment_link_id: params.paymentLinkId,
+          checkout_url: params.checkoutUrl,
+          qr_code: null,
+        };
+        return active;
+      },
+      async findAttemptsByTarget() {
+        return active ? [active] : [];
+      },
+    };
+
+    const service = createSandboxPaymentAttemptService({ attemptsRepository, withCreationLock: serializedLock });
+    const [first, second] = await Promise.all([
+      service.createForOrder({ order }),
+      service.createForOrder({ order }),
+    ]);
+
+    assert.equal(activateCalls, 1);
+    assert.equal(first.payment_checkout_url, second.payment_checkout_url);
+    assert.match(first.payment_checkout_url, /^\/thanh-toan\/sandbox\?token=[a-f0-9]{64}$/);
+  });
+
+  it('serializes concurrent group sandbox creation and returns one canonical token', async () => {
+    const group = { id: 22, group_code: 'GRP2609172200', total_amount: 62000 };
+    let creating = null;
+    let active = null;
+    let activateCalls = 0;
+    let lockTail = Promise.resolve();
+    const serializedLock = async (_key, callback) => {
+      const previous = lockTail;
+      let release;
+      lockTail = new Promise((resolve) => { release = resolve; });
+      await previous;
+      try {
+        return await callback({ acquired: true });
+      } finally {
+        release();
+      }
+    };
+    const attemptsRepository = {
+      async reserveOrRecoverCreatingAttempt(params) {
+        if (active) return { kind: 'active', attempt: active };
+        if (creating) return { kind: 'creating', attempt: creating, recovered: true };
+        creating = {
+          id: 992,
+          provider: 'sandbox',
+          provider_order_code: params.providerOrderCode,
+          amount: params.amount,
+          status: 'creating',
+          expires_at: params.expiresAt,
+        };
+        return { kind: 'creating', attempt: creating, recovered: false };
+      },
+      async activateAttempt(params) {
+        activateCalls += 1;
+        active = {
+          ...creating,
+          status: 'active',
+          provider_payment_link_id: params.paymentLinkId,
+          checkout_url: params.checkoutUrl,
+          qr_code: null,
+        };
+        return active;
+      },
+      async findAttemptsByTarget() {
+        return active ? [active] : [];
+      },
+    };
+
+    const service = createSandboxPaymentAttemptService({ attemptsRepository, withCreationLock: serializedLock });
+    const [first, second] = await Promise.all([
+      service.createForGroup({ group }),
+      service.createForGroup({ group }),
+    ]);
+
+    assert.equal(activateCalls, 1);
+    assert.equal(first.payment_checkout_url, second.payment_checkout_url);
+  });
+
+  it('waits briefly for the canonical token when another instance holds the creation lock', async () => {
+    const order = { id: 23, order_code: 'TP2609172300', total: 63000 };
+    const active = {
+      id: 993,
+      provider: 'sandbox',
+      provider_order_code: 993001,
+      provider_payment_link_id: 'token-hash',
+      checkout_url: '/thanh-toan/sandbox?token=canonical',
+      status: 'active',
+      expires_at: new Date(Date.now() + 600_000),
+    };
+    let reads = 0;
+    const service = createSandboxPaymentAttemptService({
+      attemptsRepository: {
+        reserveOrRecoverCreatingAttempt: async () => ({
+          kind: 'creating',
+          attempt: { id: 994, provider: 'sandbox', provider_order_code: 994001, status: 'creating' },
+          recovered: true,
+        }),
+        findAttemptsByTarget: async () => {
+          reads += 1;
+          return reads >= 2 ? [active] : [];
+        },
+      },
+      withCreationLock: async () => ({ acquired: false }),
+    });
+
+    const result = await service.createForOrder({ order });
+    assert.equal(result.payment_checkout_url, active.checkout_url);
+    assert.ok(reads >= 2);
   });
 
   it('enforces exact amount matching without rounding', async () => {
@@ -189,6 +340,37 @@ describe('Sandbox Payment Attempt Service', () => {
     assert.equal(success.ok, true);
     assert.equal(success.kind, 'paid');
     assert.equal(settlementCalled, true);
+  });
+
+  it('does not expose a previous PayOS URL from sandbox status lookup', async () => {
+    const order = {
+      id: 31,
+      order_code: 'TP2609173100',
+      user_id: 5,
+      total: 50000,
+      payment_provider: 'payos',
+      payment_status: 'unpaid',
+      payment_checkout_url: 'https://payos.example/real-link',
+      current_payment_attempt_id: 313,
+      current_status: 'Chờ xác nhận',
+    };
+    const service = createSandboxPaymentAttemptService({
+      attemptsRepository: {
+        findDirectOrderForRegeneration: async () => order,
+        findAttemptById: async () => ({
+          id: 313,
+          provider: 'payos',
+          status: 'active',
+          checkout_url: 'https://payos.example/real-link',
+        }),
+      },
+    });
+
+    const status = await service.getStatus({ code: order.order_code, userId: 5 });
+    assert.equal(status.payment_provider, null);
+    assert.equal(status.payment_checkout_url, null);
+    assert.equal(status.payment_qr_code, null);
+    assert.equal(status.can_regenerate_qr, true);
   });
 
   it('enforces customer authentication and cross-user ownership', async () => {
@@ -368,5 +550,10 @@ describe('Sandbox Payment Attempt Service', () => {
     const result = await service.transferExactAmount({ rawToken, amount: 35000, userId: 25 });
     assert.equal(result.ok, true);
     assert.equal(result.kind, 'already_paid');
+
+    await assert.rejects(
+      () => service.transferExactAmount({ rawToken, amount: 1, userId: 25 }),
+      (err) => err.status === 400 && err.code === 'AMOUNT_MISMATCH',
+    );
   });
 });

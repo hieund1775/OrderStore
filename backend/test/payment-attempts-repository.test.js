@@ -78,6 +78,58 @@ describe('payment-attempt repository lifecycle contract', () => {
     assert.equal(pointer, undefined);
   });
 
+  it('never recovers an active attempt from a different provider', async () => {
+    const queries = [];
+    const repo = createPaymentAttemptsRepository({
+      transaction: async (runner) => runner({
+        query: async (sql, params = []) => {
+          queries.push({ sql, params });
+          if (/FROM orders(?: o)?/i.test(sql) && /FOR UPDATE/i.test(sql)) {
+            return [[{
+              id: 11,
+              total: 50000,
+              payment_provider: 'payos',
+              payment_status: 'unpaid',
+              checkout_group_id: null,
+              current_status: 'Chờ xác nhận',
+              current_payment_attempt_id: 101,
+            }], 1];
+          }
+          if (/status = 'creating'/i.test(sql)) return [[], 0];
+          if (/SELECT \* FROM payment_attempts WHERE id = \$1 FOR UPDATE/i.test(sql)) {
+            return [[{
+              id: 101,
+              provider: 'payos',
+              status: 'active',
+              provider_payment_link_id: 'payos-link',
+              checkout_url: 'https://payos.example/link',
+            }], 1];
+          }
+          if (/SELECT id FROM payment_attempts/i.test(sql)) return [[], 0];
+          if (/INSERT INTO payment_attempts/i.test(sql)) {
+            return [[{ id: 102, provider: 'sandbox', status: 'creating', provider_order_code: 990012 }], 1];
+          }
+          return [[], 1];
+        },
+      }),
+    });
+
+    const result = await repo.reserveOrRecoverCreatingAttempt({
+      orderId: 11,
+      provider: 'sandbox',
+      paymentProfileCode: 'DIRECT_A',
+      amount: 50000,
+      providerOrderCode: 990012,
+    });
+
+    assert.equal(result.kind, 'creating');
+    assert.equal(result.attempt.provider, 'sandbox');
+    const creatingLookup = queries.find((query) => /status = 'creating'/i.test(query.sql));
+    assert.match(creatingLookup.sql, /provider = \$2/i);
+    assert.equal(creatingLookup.params[1], 'sandbox');
+    assert.ok(queries.some((query) => /INSERT INTO payment_attempts/i.test(query.sql)));
+  });
+
   it('expireAttemptFromProviderTerminalState locks target first then attempt, updates pointer when current, and writes audit event', async () => {
     const queries = [];
     const repo = createPaymentAttemptsRepository({

@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
+import { withDedicatedAdvisoryLock } from '../config/db-postgres.js';
 import paymentAttemptsRepository, { PaymentAttemptError } from '../repositories/postgres/payment-attempts.js';
 import checkoutGroupsRepository, { verifyGroupOwnership } from '../repositories/postgres/checkout-groups.js';
 import { settleVerifiedAttemptEvent } from './payment-attempt-settlement-core.js';
 import preorderService from './preorders/preorder-service.js';
+import { assertDirectOrderPaymentOwnership } from './payment-attempt-ownership.js';
 
 function makeReservedSandboxOrderCode() {
   const timePart = String(Date.now()).slice(-8);
@@ -12,22 +14,6 @@ function makeReservedSandboxOrderCode() {
 
 function hashToken(rawToken) {
   return crypto.createHash('sha256').update(String(rawToken || '').trim()).digest('hex');
-}
-
-function assertRegenerationOwner(order, { userId = null, cancelToken = null } = {}) {
-  if (!order) {
-    throw new PaymentAttemptError('Không tìm thấy đơn hàng', 404, 'ORDER_NOT_FOUND');
-  }
-  const userMatches = userId != null && Number(order.user_id) === Number(userId);
-  const tokenMatches = (() => {
-    if (!cancelToken || typeof cancelToken !== 'string' || !order.cancel_token_hash) return false;
-    const provided = crypto.createHash('sha256').update(cancelToken).digest();
-    const stored = Buffer.from(String(order.cancel_token_hash).trim(), 'hex');
-    return provided.length === stored.length && crypto.timingSafeEqual(provided, stored);
-  })();
-  if (!userMatches && !tokenMatches) {
-    throw new PaymentAttemptError('Bạn không có quyền thao tác trên đơn hàng này', 403, 'PAYMENT_ATTEMPT_FORBIDDEN');
-  }
 }
 
 function artifactFromAttempt(target, attempt) {
@@ -53,6 +39,7 @@ export function createSandboxPaymentAttemptService({
   checkoutGroupsRepo = checkoutGroupsRepository,
   settleAttemptEvent = settleVerifiedAttemptEvent,
   preorderBridge = preorderService,
+  withCreationLock = withDedicatedAdvisoryLock,
   now = () => new Date(),
   makeProviderOrderCode = makeReservedSandboxOrderCode,
 } = {}) {
@@ -64,38 +51,38 @@ export function createSandboxPaymentAttemptService({
     );
   }
 
-  async function createForOrder({
-    order,
-    returnUrl = null,
-    cancelUrl = null,
-    forceRegenerate = false,
-  }) {
-    if (!order?.id || !order?.order_code) {
-      throw new PaymentAttemptError('Thiếu thông tin đơn hàng', 400, 'PAYMENT_ATTEMPT_ORDER_REQUIRED');
-    }
-
+  async function reserveForOrder(order, forceRegenerate) {
     const expiresAt = new Date(now().getTime() + getTimeoutMinutes() * 60_000);
-    const providerOrderCode = makeProviderOrderCode();
-
-    const reserve = await attemptsRepository.reserveOrRecoverCreatingAttempt({
+    return attemptsRepository.reserveOrRecoverCreatingAttempt({
       orderId: order.id,
       paymentProfileCode: order.payment_profile_code || 'DEFAULT',
       paymentProfileVersion: order.payment_profile_version ?? null,
       amount: Number(order.total),
-      providerOrderCode,
+      providerOrderCode: makeProviderOrderCode(),
       expiresAt,
       forceRegenerate,
       provider: 'sandbox',
     });
+  }
 
-    if (reserve.kind === 'active') {
-      return artifactFromAttempt(order, reserve.attempt);
-    }
+  async function reserveForGroup(group, forceRegenerate) {
+    const expiresAt = new Date(now().getTime() + getTimeoutMinutes() * 60_000);
+    return attemptsRepository.reserveOrRecoverCreatingAttempt({
+      checkoutGroupId: group.id,
+      paymentProfileCode: group.payment_profile_code || 'DEFAULT',
+      paymentProfileVersion: group.payment_profile_version ?? null,
+      amount: Number(group.total_amount),
+      providerOrderCode: makeProviderOrderCode(),
+      expiresAt,
+      forceRegenerate,
+      provider: 'sandbox',
+    });
+  }
 
+  async function activateReservedAttempt(target, reserve) {
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(rawToken);
     const checkoutUrl = `/thanh-toan/sandbox?token=${rawToken}`;
-
     const activated = await attemptsRepository.activateAttempt({
       attemptId: reserve.attempt.id,
       providerOrderCode: reserve.attempt.provider_order_code,
@@ -111,8 +98,51 @@ export function createSandboxPaymentAttemptService({
         : 'PAYMENT_ATTEMPT_TARGET_CANCELLED';
       throw new PaymentAttemptError('Đơn hàng đã thanh toán hoặc đã hủy', 409, code);
     }
+    return artifactFromAttempt(target, activated);
+  }
 
-    return artifactFromAttempt(order, activated);
+  async function recoverActiveSandboxAttempt(target, targetInput) {
+    // Another backend instance can hold the short advisory creation lock. Give
+    // its local token activation a small bounded window to commit, so a second
+    // customer request receives the canonical sandbox URL rather than a false
+    // conflict.
+    for (let attemptNumber = 0; attemptNumber < 6; attemptNumber += 1) {
+      const attempts = await attemptsRepository.findAttemptsByTarget(targetInput);
+      const active = attempts.find((attempt) => attempt.provider === 'sandbox'
+        && attempt.status === 'active'
+        && attempt.provider_payment_link_id
+        && attempt.checkout_url);
+      if (active) return artifactFromAttempt(target, active);
+      if (attemptNumber < 5) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    throw new PaymentAttemptError('Mã thanh toán đang được tạo, vui lòng thử lại', 409, 'PAYMENT_ATTEMPT_CREATING');
+  }
+
+  async function createForOrder({
+    order,
+    returnUrl = null,
+    cancelUrl = null,
+    forceRegenerate = false,
+  }) {
+    if (!order?.id || !order?.order_code) {
+      throw new PaymentAttemptError('Thiếu thông tin đơn hàng', 400, 'PAYMENT_ATTEMPT_ORDER_REQUIRED');
+    }
+
+    const initial = await reserveForOrder(order, forceRegenerate);
+    if (initial.kind === 'active') return artifactFromAttempt(order, initial.attempt);
+
+    const locked = await withCreationLock(`sandbox-direct-attempt:order:${order.id}`, async () => {
+      const current = await reserveForOrder(order, initial.recovered ? false : forceRegenerate);
+      if (current.kind === 'active') return artifactFromAttempt(order, current.attempt);
+      return activateReservedAttempt(order, current);
+    });
+
+    if (locked?.acquired === false) {
+      return recoverActiveSandboxAttempt(order, { orderId: order.id });
+    }
+    return locked;
   }
 
   async function createForGroup({
@@ -126,45 +156,19 @@ export function createSandboxPaymentAttemptService({
       throw new PaymentAttemptError('Thiếu thông tin đơn hàng gộp', 400, 'PAYMENT_ATTEMPT_GROUP_REQUIRED');
     }
 
-    const expiresAt = new Date(now().getTime() + getTimeoutMinutes() * 60_000);
-    const providerOrderCode = makeProviderOrderCode();
+    const initial = await reserveForGroup(group, forceRegenerate);
+    if (initial.kind === 'active') return artifactFromAttempt(group, initial.attempt);
 
-    const reserve = await attemptsRepository.reserveOrRecoverCreatingAttempt({
-      checkoutGroupId: group.id,
-      paymentProfileCode: group.payment_profile_code || 'DEFAULT',
-      paymentProfileVersion: group.payment_profile_version ?? null,
-      amount: Number(group.total_amount),
-      providerOrderCode,
-      expiresAt,
-      forceRegenerate,
-      provider: 'sandbox',
+    const locked = await withCreationLock(`sandbox-group-attempt:group:${group.id}`, async () => {
+      const current = await reserveForGroup(group, initial.recovered ? false : forceRegenerate);
+      if (current.kind === 'active') return artifactFromAttempt(group, current.attempt);
+      return activateReservedAttempt(group, current);
     });
 
-    if (reserve.kind === 'active') {
-      return artifactFromAttempt(group, reserve.attempt);
+    if (locked?.acquired === false) {
+      return recoverActiveSandboxAttempt(group, { checkoutGroupId: group.id });
     }
-
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = hashToken(rawToken);
-    const checkoutUrl = `/thanh-toan/sandbox?token=${rawToken}`;
-
-    const activated = await attemptsRepository.activateAttempt({
-      attemptId: reserve.attempt.id,
-      providerOrderCode: reserve.attempt.provider_order_code,
-      paymentLinkId: tokenHash,
-      checkoutUrl,
-      qrCode: null,
-      expiresAt: reserve.attempt.expires_at,
-    });
-
-    if (activated?.kind === 'target_closed') {
-      const code = activated.target?.payment_status === 'paid'
-        ? 'PAYMENT_ATTEMPT_TARGET_PAID'
-        : 'PAYMENT_ATTEMPT_TARGET_CANCELLED';
-      throw new PaymentAttemptError('Đơn hàng gộp đã thanh toán hoặc đã hủy', 409, code);
-    }
-
-    return artifactFromAttempt(group, activated);
+    return locked;
   }
 
   async function findSessionByToken(rawToken, { userId = null } = {}) {
@@ -207,7 +211,7 @@ export function createSandboxPaymentAttemptService({
         error.code = 'ORDER_NOT_FOUND';
         throw error;
       }
-      assertRegenerationOwner(target, { userId });
+      assertDirectOrderPaymentOwnership(target, { userId });
       targetCode = target.order_code;
     } else if (attempt.target_type === 'checkout_group') {
       target = await checkoutGroupsRepo.findGroupById(attempt.checkout_group_id);
@@ -299,7 +303,7 @@ export function createSandboxPaymentAttemptService({
         error.expose = true;
         throw error;
       }
-      assertRegenerationOwner(target, { userId });
+      assertDirectOrderPaymentOwnership(target, { userId });
       targetCode = target.order_code;
     } else if (attempt.target_type === 'checkout_group') {
       target = await checkoutGroupsRepo.findGroupById(attempt.checkout_group_id);
@@ -312,6 +316,16 @@ export function createSandboxPaymentAttemptService({
       }
       verifyGroupOwnership(target, { userId });
       targetCode = target.group_code;
+    }
+
+    // Exact amount remains a required invariant even for an idempotent
+    // re-submit of an already-paid attempt.
+    if (parsedAmount !== Number(attempt.amount)) {
+      const error = new Error('Số tiền chuyển khoản không khớp số tiền cần thanh toán');
+      error.status = 400;
+      error.code = 'AMOUNT_MISMATCH';
+      error.expose = true;
+      throw error;
     }
 
     // Check terminal statuses
@@ -356,15 +370,6 @@ export function createSandboxPaymentAttemptService({
       const error = new Error('Mã thanh toán đã hết hạn, vui lòng tạo lại mã');
       error.status = 409;
       error.code = 'SANDBOX_ATTEMPT_EXPIRED';
-      error.expose = true;
-      throw error;
-    }
-
-    // Exact amount matching
-    if (parsedAmount !== Number(attempt.amount)) {
-      const error = new Error('Số tiền chuyển khoản không khớp số tiền cần thanh toán');
-      error.status = 400;
-      error.code = 'AMOUNT_MISMATCH';
       error.expose = true;
       throw error;
     }
@@ -445,7 +450,7 @@ export function createSandboxPaymentAttemptService({
     if (!order) {
       throw new PaymentAttemptError('Không tìm thấy đơn hàng', 404, 'ORDER_NOT_FOUND');
     }
-    assertRegenerationOwner(order, { userId, cancelToken });
+    assertDirectOrderPaymentOwnership(order, { userId, cancelToken });
     return createForOrder({ order, forceRegenerate: true });
   }
 
@@ -465,14 +470,20 @@ export function createSandboxPaymentAttemptService({
         ? await attemptsRepository.findAttemptById(group.current_payment_attempt_id)
         : null;
 
+      const sandboxAttempt = currentAttempt?.provider === 'sandbox'
+        ? currentAttempt
+        : (group.payment_provider === 'sandbox' ? group : null);
+
       return {
         order_code: group.group_code,
         total: Number(group.total_amount),
         payment_status: group.payment_status,
-        payment_provider: 'sandbox',
-        payment_checkout_url: group.payment_checkout_url || currentAttempt?.checkout_url || null,
+        payment_provider: sandboxAttempt ? 'sandbox' : null,
+        // Never expose a previous PayOS artifact while the application is in
+        // sandbox mode. The customer can regenerate a sandbox attempt instead.
+        payment_checkout_url: sandboxAttempt?.checkout_url || sandboxAttempt?.payment_checkout_url || null,
         payment_qr_code: null,
-        payment_expires_at: group.payment_expires_at || currentAttempt?.expires_at || null,
+        payment_expires_at: sandboxAttempt?.expires_at || sandboxAttempt?.payment_expires_at || null,
         paid_at: group.paid_at || null,
         can_regenerate_qr: ['unpaid', 'expired'].includes(group.payment_status),
       };
@@ -482,7 +493,7 @@ export function createSandboxPaymentAttemptService({
     if (!order) {
       throw new PaymentAttemptError('Không tìm thấy đơn hàng', 404, 'ORDER_NOT_FOUND');
     }
-    assertRegenerationOwner(order, { userId, cancelToken });
+    assertDirectOrderPaymentOwnership(order, { userId, cancelToken });
     const currentAttempt = order.current_payment_attempt_id
       ? await attemptsRepository.findAttemptById(order.current_payment_attempt_id)
       : null;
@@ -493,14 +504,19 @@ export function createSandboxPaymentAttemptService({
       order.current_status !== 'Hoàn thành'
     );
 
+    const sandboxAttempt = currentAttempt?.provider === 'sandbox'
+      ? currentAttempt
+      : (order.payment_provider === 'sandbox' ? order : null);
+
     return {
       order_code: order.order_code,
       total: Number(order.total),
       payment_status: order.payment_status,
-      payment_provider: 'sandbox',
-      payment_checkout_url: order.payment_checkout_url || currentAttempt?.checkout_url || null,
+      payment_provider: sandboxAttempt ? 'sandbox' : null,
+      // PayOS checkout links must never be returned by sandbox status lookup.
+      payment_checkout_url: sandboxAttempt?.checkout_url || sandboxAttempt?.payment_checkout_url || null,
       payment_qr_code: null,
-      payment_expires_at: order.payment_expires_at || currentAttempt?.expires_at || null,
+      payment_expires_at: sandboxAttempt?.expires_at || sandboxAttempt?.payment_expires_at || null,
       paid_at: order.paid_at || null,
       can_regenerate_qr: canRegenerate,
     };

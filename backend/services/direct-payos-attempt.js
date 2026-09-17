@@ -4,6 +4,7 @@ import { withDedicatedAdvisoryLock } from '../config/db-postgres.js';
 import paymentAttemptsRepository, { PaymentAttemptError } from '../repositories/postgres/payment-attempts.js';
 import { createPaymentLinkForOrder, lookupPaymentLinkForRecovery } from './payos.js';
 import { reconcilePayOSOrder } from './payos-reconciliation.js';
+import { assertDirectOrderPaymentOwnership } from './payment-attempt-ownership.js';
 
 function makeReservedPayOSOrderCode() {
   // 14 digits stays inside JavaScript safe-integer range and is reserved once
@@ -15,19 +16,6 @@ function makeReservedPayOSOrderCode() {
 
 function isCancelled(target) {
   return target?.payment_status === 'cancelled' || target?.current_status === 'Đã hủy';
-}
-
-function assertRegenerationOwner(order, { userId = null, cancelToken = null }) {
-  const userMatches = userId != null && Number(order.user_id) === Number(userId);
-  const tokenMatches = (() => {
-    if (!cancelToken || typeof cancelToken !== 'string' || !order.cancel_token_hash) return false;
-    const provided = crypto.createHash('sha256').update(cancelToken).digest();
-    const stored = Buffer.from(String(order.cancel_token_hash).trim(), 'hex');
-    return provided.length === stored.length && crypto.timingSafeEqual(provided, stored);
-  })();
-  if (!userMatches && !tokenMatches) {
-    throw new PaymentAttemptError('Bạn không có quyền thao tác trên đơn hàng này', 403, 'PAYMENT_ATTEMPT_FORBIDDEN');
-  }
 }
 
 function artifactFromAttempt(order, attempt) {
@@ -197,7 +185,7 @@ export function createDirectPayOSAttemptService({
     async regenerateForCustomer({ orderCode, userId = null, cancelToken = null, returnUrl = null, cancelUrl = null }) {
       const order = await attemptsRepository.findDirectOrderForRegeneration(orderCode);
       if (!order) throw new PaymentAttemptError('Không tìm thấy đơn hàng', 404, 'PAYMENT_ATTEMPT_TARGET_NOT_FOUND');
-      assertRegenerationOwner(order, { userId, cancelToken });
+      assertDirectOrderPaymentOwnership(order, { userId, cancelToken });
 
       // Check barriers before any network or provider reconciliation
       if (order.checkout_group_id != null) {
