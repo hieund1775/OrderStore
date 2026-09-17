@@ -51,6 +51,83 @@ export interface DynamicProductConfiguratorProps {
   onUpdate?: (configuredItem: ConfiguredItemPayload) => void;
 }
 
+/**
+ * The public resolver is the pricing authority. This is only a resilient UI
+ * fallback for legacy/local menu data when that read-only resolver is briefly
+ * unavailable. Keep its shape identical to the canonical response so the
+ * Add, Buy now and preorder handlers never receive a partial configuration.
+ */
+export function buildLocalFallbackConfiguration(
+  product: PublicProductDetails,
+  selectedVariantValueIds: number[],
+  selectedModifierValueIds: number[],
+): ResolvedProductConfiguration {
+  const selectedVariant = product.variants?.[0] || {
+    id: product.id,
+    sku: `SKU-${product.slug}-DEFAULT`,
+    variant_signature: 'default',
+    name_suffix: 'Tiêu chuẩn',
+    price: product.price,
+    compare_at_price: null,
+    is_available: true,
+    available_stock: null,
+  };
+  const appliedModifiers: AppliedModifier[] = [];
+  let modifierExtra = 0;
+
+  for (const attribute of product.attributes || []) {
+    for (const value of attribute.values || []) {
+      const isSelected = attribute.role === 'variant'
+        ? selectedVariantValueIds.includes(value.id)
+        : selectedModifierValueIds.includes(value.id);
+      if (!isSelected) continue;
+      const priceAdjustment = Number(value.price_adjustment || 0);
+      modifierExtra += priceAdjustment;
+      appliedModifiers.push({
+        attribute_definition_id: attribute.id,
+        attribute_code: attribute.code,
+        attribute_name: attribute.name,
+        attribute_value_id: value.id,
+        value_code: value.code,
+        value_label: value.label,
+        attribute_label: value.label,
+        price_adjustment: priceAdjustment,
+      });
+    }
+  }
+
+  const basePrice = Number(selectedVariant.price ?? product.price ?? 0);
+  const finalPrice = basePrice + modifierExtra;
+  return {
+    product: {
+      id: product.id,
+      name: product.name,
+      slug: product.slug,
+      fulfillment_lane: product.fulfillment_lane,
+      stock_mode: product.stock_mode,
+    },
+    variant: {
+      id: selectedVariant.id,
+      sku: selectedVariant.sku,
+      variant_signature: selectedVariant.variant_signature,
+      name_suffix: selectedVariant.name_suffix || undefined,
+      base_price: basePrice,
+      compare_at_price: selectedVariant.compare_at_price ?? null,
+      is_available: selectedVariant.is_available !== false,
+      available_stock: selectedVariant.available_stock ?? null,
+    },
+    applied_modifiers: appliedModifiers,
+    pricing: {
+      variant_base_price: basePrice,
+      modifiers_extra_total: modifierExtra,
+      final_price: finalPrice,
+    },
+    base_price: basePrice,
+    modifier_extra: modifierExtra,
+    unit_price: finalPrice,
+  };
+}
+
 export function DynamicProductConfigurator({
   open,
   onOpenChange,
@@ -330,50 +407,9 @@ export function DynamicProductConfigurator({
       })
       .catch(() => {
         if (!isMounted) return;
-        // Compute price locally if resolve endpoint fails
-        const basePrice = product.price || 0;
-        let modifierTotal = 0;
-        const appliedModifiers: AppliedModifier[] = [];
-
-        (product.attributes || []).forEach((attr) => {
-          attr.values?.forEach((val) => {
-            if (
-              selectedModifierValueIds.includes(val.id) ||
-              selectedVariantValueIds.includes(val.id)
-            ) {
-              const adj = Number(val.price_adjustment || 0);
-              modifierTotal += adj;
-              appliedModifiers.push({
-                attribute_code: attr.code,
-                attribute_name: attr.name,
-                value_code: val.code,
-                value_label: val.label,
-                price_adjustment: adj,
-              });
-            }
-          });
-        });
-
-        const selectedVariant = product.variants?.find((v) =>
-          selectedVariantValueIds.some((id) => v.id === id)
-        ) || product.variants?.[0] || {
-          id: product.id,
-          sku: `SKU-${product.slug}-M`,
-          name_suffix: 'Size M',
-          price: basePrice,
-        };
-
-        const variantExtra = Number(selectedVariant.price || basePrice) - basePrice;
-
-        setResolvedConfig({
-          product_id: product.id,
-          product_slug: product.slug,
-          variant_id: selectedVariant.id,
-          sku: selectedVariant.sku,
-          variant_name: selectedVariant.name_suffix || null,
-          unit_price: basePrice + Math.max(0, variantExtra) + modifierTotal,
-          applied_modifiers: appliedModifiers,
-        });
+        setResolvedConfig(
+          buildLocalFallbackConfiguration(product, selectedVariantValueIds, selectedModifierValueIds),
+        );
       })
       .finally(() => {
         if (isMounted) setCalculating(false);

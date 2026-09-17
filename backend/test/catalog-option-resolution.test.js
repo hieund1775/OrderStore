@@ -268,6 +268,9 @@ test('Catalog Option Visibility & Lane Inheritance Contracts', async (t) => {
 
     assert.equal(result.applied_modifiers.length, 1);
     assert.equal(result.applied_modifiers[0].attribute_value_id, 101);
+    assert.equal(result.applied_modifiers[0].attribute_code, 'sugar');
+    assert.equal(result.applied_modifiers[0].value_code, '100_sugar');
+    assert.equal(result.applied_modifiers[0].value_label, result.applied_modifiers[0].attribute_label);
   });
 
   await t.test('resolveConfiguration multi-select locked preset [A, B] handles empty, partial, exact, and foreign selections', async () => {

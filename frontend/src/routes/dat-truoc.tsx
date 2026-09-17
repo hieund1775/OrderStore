@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { CalendarClock, CreditCard, Minus, Plus, ShoppingBag, Store, Ticket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { ProductCard } from '@/components/menu/ProductCard';
 import { PublicReviewHub } from '@/components/reviews/PublicReviewHub';
 import { mapApiProduct, type Product, vnd } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
+import { resolveCheckoutPaymentRedirect } from '@/lib/payment-redirect';
 import {
   fetchPreorderStoreAvailability,
   hasAvailablePreorderStore,
@@ -27,7 +28,14 @@ type PreorderSlot = { hour: number; available: boolean; reason?: string; schedul
 type Availability = { slots: PreorderSlot[] };
 type CheckoutProduct = { id: number; slug?: string };
 type Option = { id: number; label?: string; name?: string };
-type CheckoutResponse = { preorder?: { preorder_code?: string }; checkout_url?: string; qr_code?: string; group_code?: string; order_code?: string };
+type CheckoutResponse = {
+  preorder?: { preorder_code?: string };
+  checkout_url?: string;
+  qr_code?: string;
+  group_code?: string;
+  order_code?: string;
+  payment_provider?: string;
+};
 
 function vietnamToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -43,6 +51,7 @@ function hasAnyAvailableSlot(slots: PreorderSlot[] | undefined) {
 }
 
 function PreorderCheckoutPage() {
+  const navigate = useNavigate();
   const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty } = usePreorderCart();
   const { stores, selectedStoreId, selectStore } = useBranch();
   const [date, setDate] = useState(vietnamToday());
@@ -187,8 +196,27 @@ function PreorderCheckoutPage() {
       request.current = { signature, key };
       const result = await apiPost<CheckoutResponse>('/api/preorders/checkout', payload, { headers: { 'Idempotency-Key': key } });
       request.current = null;
+      if (result.checkout_url) {
+        const redirect = resolveCheckoutPaymentRedirect(
+          result.checkout_url,
+          result.payment_provider,
+          window.location.origin,
+        );
+        if (redirect.kind === 'sandbox') {
+          removeItems(selectedItems.map((item) => item.key));
+          toast.success('Đang mở cổng thanh toán sandbox...');
+          void navigate({ to: '/thanh-toan/sandbox', search: { token: redirect.token } });
+          return;
+        }
+        if (redirect.kind === 'external') {
+          removeItems(selectedItems.map((item) => item.key));
+          window.location.assign(redirect.url);
+          return;
+        }
+        toast.error('Liên kết thanh toán không hợp lệ. Vui lòng thử lại.');
+        return;
+      }
       removeItems(selectedItems.map((item) => item.key));
-      if (result.checkout_url) { window.location.assign(result.checkout_url); return; }
       toast.success(`Đã tạo preorder ${result.preorder?.preorder_code || result.group_code || result.order_code || ''}. Hãy thanh toán VietQR để chờ Manager xác nhận.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Không thể tạo preorder');

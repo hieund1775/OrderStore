@@ -291,8 +291,11 @@ export function createPublicCatalogV2Service(options = {}) {
           modifierExtraTotal += extra;
           appliedModifiers.push({
             attribute_definition_id: attr.id,
+            attribute_code: attr.code,
             attribute_name: attr.name,
             attribute_value_id: selectedVal.id,
+            value_code: selectedVal.code,
+            value_label: selectedVal.label,
             attribute_label: selectedVal.label,
             price_adjustment: extra,
           });

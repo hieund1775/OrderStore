@@ -8,6 +8,7 @@ describe("checkout payment redirect", () => {
     ["cart one-lane", "sandbox", "/thanh-toan/sandbox?token=cart-one"],
     ["cart grouped", "sandbox", "https://teaplus-order-frontend.onrender.com/thanh-toan/sandbox?token=cart-group"],
     ["buy now", "sandbox", "/thanh-toan/sandbox?token=buy-now"],
+    ["preorder", "sandbox", "/thanh-toan/sandbox?token=preorder"],
   ])("routes %s checkout internally in sandbox mode", (_flow, provider, checkoutUrl) => {
     expect(resolveCheckoutPaymentRedirect(checkoutUrl, provider, origin)).toEqual({
       kind: "sandbox",
@@ -15,7 +16,9 @@ describe("checkout payment redirect", () => {
         ? "buy-now"
         : checkoutUrl.includes("group")
           ? "cart-group"
-          : "cart-one",
+          : checkoutUrl.includes("preorder")
+            ? "preorder"
+            : "cart-one",
     });
   });
 
