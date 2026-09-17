@@ -466,6 +466,7 @@ export function createCustomerOrderService({
             ok: true,
             is_grouped: true,
             group_code: createdGroup.group_code,
+            payment_provider: createdGroup.payment_provider,
             total_amount: Number(createdGroup.total_amount),
             child_orders: createdChildOrders,
             status: 'Đang chuẩn bị',
@@ -495,6 +496,7 @@ export function createCustomerOrderService({
               const updatedReplay = {
                 ...replayResp,
                 replay: true,
+                payment_provider: refreshed.payment_provider || replayResp.payment_provider,
                 checkout_url: refreshed.payment_checkout_url,
                 qr_code: refreshed.payment_qr_code,
                 payment_link_id: refreshed.payment_link_id,
@@ -545,6 +547,7 @@ export function createCustomerOrderService({
 
             const finalResponse = {
               ...baseResponse,
+              payment_provider: payment.payment_provider || group.payment_provider,
               checkout_url: payment.payment_checkout_url,
               qr_code: payment.payment_qr_code,
               payment_link_id: payment.payment_link_id,

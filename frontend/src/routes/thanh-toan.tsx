@@ -37,6 +37,7 @@ import {
   parsePendingPaymentFromSession,
   canCancelPendingPayment,
 } from "@/lib/pending-payment";
+import { resolveCheckoutPaymentRedirect } from "@/lib/payment-redirect";
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
@@ -97,6 +98,7 @@ type CreateOrderResponse = {
   qr_code?: string;
   payment_expires_at?: string;
   payment_required?: boolean;
+  payment_provider?: string;
   payment_summary?: PaymentSummary;
 };
 
@@ -625,8 +627,8 @@ function Checkout() {
     if (hasMultipleCheckoutStores) {
       return toast.error("Checkout đa chi nhánh chưa được backend kích hoạt. Vui lòng chọn món của một chi nhánh.");
     }
-    if (checkoutItems.some((item) => item.stockMode === 'tracked' || item.fulfillmentLane === 'packing')) {
-      return toast.error("Thanh toán hàng SKU đang chờ hoàn thiện giữ kho và checkout group ở backend.");
+    if (checkoutItems.some((item) => item.stockMode === 'tracked')) {
+      return toast.error("Thanh toán hàng SKU đang chờ hoàn thiện giữ kho ở backend.");
     }
     const cleanName = name.trim().replace(/\s+/g, ' ');
     let cleanPhone = phone.trim().replace(/[\s\(\)\.-]/g, "");
@@ -736,12 +738,38 @@ function Checkout() {
       };
 
       if (res.checkout_url) {
-        handleOrderSuccessCleanup();
-        try {
-          sessionStorage.removeItem("teaplus_pending_payment");
-        } catch {}
-        toast.success("Đang chuyển hướng sang cổng thanh toán...");
-        window.location.href = res.checkout_url;
+        const redirect = resolveCheckoutPaymentRedirect(
+          res.checkout_url,
+          res.payment_provider,
+          window.location.origin,
+        );
+
+        if (redirect.kind === "sandbox") {
+          handleOrderSuccessCleanup();
+          const pending = normalizePendingPayment(res);
+          if (pending) {
+            setPendingOrder(pending);
+            sessionStorage.setItem("teaplus_pending_payment", JSON.stringify(pending));
+          }
+          toast.success("Đang mở cổng thanh toán sandbox...");
+          void navigate({
+            to: "/thanh-toan/sandbox",
+            search: { token: redirect.token },
+          });
+          return;
+        }
+
+        if (redirect.kind === "external") {
+          handleOrderSuccessCleanup();
+          try {
+            sessionStorage.removeItem("teaplus_pending_payment");
+          } catch {}
+          toast.success("Đang chuyển hướng sang cổng thanh toán...");
+          window.location.assign(redirect.url);
+          return;
+        }
+
+        toast.error("Liên kết thanh toán không hợp lệ. Vui lòng thử lại.");
         return;
       } else if (res.payment_required === false && createdPaymentCode) {
         handleOrderSuccessCleanup();
