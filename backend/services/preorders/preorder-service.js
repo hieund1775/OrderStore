@@ -463,6 +463,21 @@ export function createPreorderService({
         }, { tx });
 
         await repository.releaseReservation(preorder.id, 'cancelled', { tx });
+
+        const linkedOrders = await repository.listLinkedOrders(preorder.id, { tx });
+        for (const order of linkedOrders) {
+          const cancelNote = reason ? String(reason).slice(0, 500) : 'Khách hủy đơn đặt trước';
+          await tx.query(
+            "INSERT INTO order_status_history (order_id, status, note, changed_by) VALUES ($1, 'Đã hủy', $2, $3)",
+            [Number(order.id), cancelNote, Number(customerUserId)],
+          );
+          await tx.query(
+            "UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            [Number(order.id), cancelNote],
+          );
+          await fulfillment.cancelTasksForOrder(Number(order.id), tx);
+        }
+
         return updated;
       });
     },
