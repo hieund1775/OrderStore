@@ -60,11 +60,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       id: data.user.id,
       fullname: data.user.fullname,
       phone: data.user.phone,
-      email: null,
-      role: data.user.role as StaffRole,
-      branch_id: data.user.branch_id ?? null,
-      branch_name: null,
-      email_verified_at: null,
+      email: data.user.email || null,
+      role: (data.user.role || data.user.admin_role) as StaffRole,
+      branch_id: data.user.branch_id ?? data.user.admin_branch_id ?? null,
+      branch_name: data.user.branch_name || null,
+      email_verified_at: data.user.email_verified_at || null,
     };
     await SecureStore.setItemAsync('auth_token', data.token);
     set({ token: data.token, user, isAuthenticated: true });

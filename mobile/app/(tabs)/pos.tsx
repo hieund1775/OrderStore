@@ -28,6 +28,7 @@ import {
   fetchTables,
   createOrder,
   applyVoucher,
+  searchCustomers,
 } from '../../src/lib/api';
 import { Product, Category, Store } from '../../src/types';
 import { isVoucherContextCurrent, resolvePosStoreId } from '../../src/lib/pos-contract.js';
@@ -35,7 +36,9 @@ import { isVoucherContextCurrent, resolvePosStoreId } from '../../src/lib/pos-co
 interface SizeOption {
   id: number;
   label: string;
-  base_price_multiplier: number;
+  price_extra?: number;
+  price?: number;
+  base_price_multiplier?: number;
 }
 
 interface ToppingOption {
@@ -226,7 +229,14 @@ export default function StaffPosScreen() {
   // Calculate price of single item being customized
   const currentItemCalculatedPrice = useMemo(() => {
     if (!customizingProduct) return 0;
-    const base = customizingProduct.price * (selectedSize?.base_price_multiplier || 1);
+    const sizeExtra = selectedSize?.price_extra !== undefined
+      ? Number(selectedSize.price_extra)
+      : selectedSize?.price !== undefined
+      ? Number(selectedSize.price)
+      : selectedSize?.base_price_multiplier && selectedSize.base_price_multiplier > 1
+      ? customizingProduct.price * (selectedSize.base_price_multiplier - 1)
+      : 0;
+    const base = customizingProduct.price + sizeExtra;
     let topTotal = 0;
     Object.entries(selectedToppings).forEach(([idStr, qty]) => {
       const top = toppings.find((t) => t.id === Number(idStr));
@@ -238,7 +248,14 @@ export default function StaffPosScreen() {
   // Add customized item to Cart
   const handleAddToCart = () => {
     if (!customizingProduct) return;
-    const basePrice = customizingProduct.price * (selectedSize?.base_price_multiplier || 1);
+    const sizeExtra = selectedSize?.price_extra !== undefined
+      ? Number(selectedSize.price_extra)
+      : selectedSize?.price !== undefined
+      ? Number(selectedSize.price)
+      : selectedSize?.base_price_multiplier && selectedSize.base_price_multiplier > 1
+      ? customizingProduct.price * (selectedSize.base_price_multiplier - 1)
+      : 0;
+    const basePrice = customizingProduct.price + sizeExtra;
     const itemToppingsList: { topping_id: number; name: string; price: number; qty: number }[] = [];
 
     Object.entries(selectedToppings).forEach(([idStr, qty]) => {
@@ -444,12 +461,24 @@ export default function StaffPosScreen() {
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length < 9) return;
     setCustomerLookupState('searching');
+    setCustomerPhone(cleaned);
     try {
-      setCustomerLookupState('not_found');
-      setCustomerName('');
-      setCustomerPhone(cleaned);
+      const list = await searchCustomers(cleaned);
+      const found = list.find((c: any) => c.phone && c.phone.replace(/\D/g, '') === cleaned);
+      if (found) {
+        setCustomerName(found.fullname || 'Khách Quen');
+        setCustomerPhone(found.phone || cleaned);
+        const isVip = ['vip', 'gold', 'diamond', 'vàng', 'kim cương'].some((t) =>
+          String(found.tier || '').toLowerCase().includes(t)
+        );
+        setCustomerLookupState(isVip ? 'found_vip' : 'found_regular');
+      } else {
+        setCustomerLookupState('not_found');
+        setCustomerName('');
+      }
     } catch {
       setCustomerLookupState('not_found');
+      setCustomerName('');
     }
   };
 
@@ -1246,7 +1275,7 @@ export default function StaffPosScreen() {
                       <View style={styles.customerResultLeft}>
                         <Text style={styles.customerResultIcon}>⭐</Text>
                         <View>
-                          <Text style={[styles.customerResultName, { color: '#7e22ce' }]}>Khách Quen</Text>
+                          <Text style={[styles.customerResultName, { color: '#7e22ce' }]}>{customerName || 'Khách Quen'}</Text>
                           <Text style={styles.customerResultPhone}>📱 {customerPhone}</Text>
                         </View>
                       </View>
@@ -1262,7 +1291,7 @@ export default function StaffPosScreen() {
                       <View style={styles.customerResultLeft}>
                         <Text style={styles.customerResultIcon}>👑</Text>
                         <View>
-                          <Text style={[styles.customerResultName, { color: '#a16207' }]}>Khách VIP</Text>
+                          <Text style={[styles.customerResultName, { color: '#a16207' }]}>{customerName || 'Khách VIP'}</Text>
                           <Text style={styles.customerResultPhone}>📱 {customerPhone}</Text>
                         </View>
                       </View>

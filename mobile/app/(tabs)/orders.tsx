@@ -129,6 +129,18 @@ export default function StaffOrdersScreen() {
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedOrder) return;
+
+    if (newStatus === 'delivering' && selectedOrder.order_type === 'Delivery') {
+      if (!driverName.trim() || driverName.trim().length < 2) {
+        Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên tài xế (tối thiểu 2 ký tự).');
+        return;
+      }
+      if (!driverPhone.trim() || !/^(0|\+84)[3|5|7|8|9][0-9]{8}$/.test(driverPhone.trim())) {
+        Alert.alert('Số điện thoại không hợp lệ', 'Vui lòng nhập số điện thoại tài xế hợp lệ (10 số).');
+        return;
+      }
+    }
+
     setActionLoading(true);
 
     const targetStatus =
@@ -160,9 +172,32 @@ export default function StaffOrdersScreen() {
           o.id === selectedOrder.id ? { ...o, current_status: targetStatus, status: newStatus } : o,
         ),
       );
-      Alert.alert('Thành công', `Đơn hàng đã chuyển sang: ${getStatusLabel(targetStatus).label}`);
+      Alert.alert('Thành công', `Đơn hàng đã chuyển sang: ${targetStatus}`);
     } catch (error: any) {
       Alert.alert('Không thể cập nhật đơn', error?.message || 'Vui lòng kiểm tra kết nối và thử lại.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!selectedOrder) return;
+    setActionLoading(true);
+    try {
+      await cancelAdminOrder(selectedOrder.id, `Hủy bởi ${user?.fullname || user?.role || 'nhân viên'}`);
+      setSelectedOrder((prev: any) => ({
+        ...prev,
+        current_status: 'Đã hủy',
+        status: 'cancelled',
+      }));
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === selectedOrder.id ? { ...o, current_status: 'Đã hủy', status: 'cancelled' } : o,
+        ),
+      );
+      Alert.alert('Thành công', 'Đơn hàng đã được hủy thành công.');
+    } catch (error: any) {
+      Alert.alert('Không thể hủy đơn', error?.message || 'Vui lòng thử lại.');
     } finally {
       setActionLoading(false);
     }
@@ -508,62 +543,91 @@ export default function StaffOrdersScreen() {
                 )}
 
                 {/* Actions */}
-                <View style={styles.modalActions}>
-                  {selectedOrder.status !== 'completed' && selectedOrder.status !== 'cancelled' && (
-                    <>
-                      {selectedOrder.status === 'preparing' && (
+                {(() => {
+                  const userRole = user?.role || '';
+                  const canManageStatus = ['super', 'manager', 'kitchen'].includes(userRole);
+                  const canCancelOrPay = ['super', 'manager', 'cashier'].includes(userRole);
+
+                  const rawStatus = (selectedOrder.current_status || selectedOrder.status || '').toLowerCase();
+                  const isPending = rawStatus.includes('chờ') || rawStatus.includes('xác nhận') || rawStatus === 'pending' || rawStatus === 'confirmed';
+                  const isPreparing = rawStatus.includes('chuẩn bị') || rawStatus === 'preparing';
+                  const isDelivering = rawStatus.includes('giao') || rawStatus === 'delivering' || rawStatus === 'shipping';
+                  const isCompleted = rawStatus.includes('hoàn thành') || rawStatus === 'completed';
+                  const isCancelled = rawStatus.includes('hủy') || rawStatus === 'cancelled' || rawStatus === 'canceled';
+                  const isDeliveryType = selectedOrder.order_type === 'Delivery';
+
+                  return (
+                    <View style={styles.modalActions}>
+                      {!isCompleted && !isCancelled && canManageStatus && (
+                        <>
+                          {isPending && (
+                            <TouchableOpacity
+                              style={[styles.btnAction, styles.btnPreparing]}
+                              onPress={() => handleStatusChange('preparing')}
+                              disabled={actionLoading}
+                            >
+                              <Clock size={16} color="#ffffff" />
+                              <Text style={styles.btnActionText}>Bắt đầu chuẩn bị</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {isPreparing && isDeliveryType && (
+                            <TouchableOpacity
+                              style={[styles.btnAction, styles.btnDelivery]}
+                              onPress={() => handleStatusChange('delivering')}
+                              disabled={actionLoading}
+                            >
+                              <Bike size={16} color="#ffffff" />
+                              <Text style={styles.btnActionText}>Chuyển sang: Đang giao hàng</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {(isDelivering || (isPreparing && !isDeliveryType)) && (
+                            <TouchableOpacity
+                              style={[styles.btnAction, styles.btnComplete]}
+                              onPress={() => handleStatusChange('completed')}
+                              disabled={actionLoading}
+                            >
+                              <CheckCircle2 size={16} color="#ffffff" />
+                              <Text style={styles.btnActionText}>Chuyển sang: Hoàn thành</Text>
+                            </TouchableOpacity>
+                          )}
+                        </>
+                      )}
+
+                      {selectedOrder.payment_status !== 'paid' && !isCancelled && canCancelOrPay && (
                         <TouchableOpacity
-                          style={[styles.btnAction, styles.btnDelivery]}
-                          onPress={() => handleStatusChange('delivering')}
+                          style={[styles.btnAction, styles.btnPay]}
+                          onPress={handleConfirmPayment}
                           disabled={actionLoading}
                         >
-                          <Bike size={16} color="#ffffff" />
-                          <Text style={styles.btnActionText}>Chuyển sang: Đang giao hàng</Text>
+                          <CreditCard size={16} color="#ffffff" />
+                          <Text style={styles.btnActionText}>Đã thu tiền (Xác nhận thanh toán)</Text>
                         </TouchableOpacity>
                       )}
 
-                      <TouchableOpacity
-                        style={[styles.btnAction, styles.btnComplete]}
-                        onPress={() => handleStatusChange('completed')}
-                        disabled={actionLoading}
-                      >
-                        <CheckCircle2 size={16} color="#ffffff" />
-                        <Text style={styles.btnActionText}>Chuyển sang: Hoàn thành</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-
-                  {selectedOrder.payment_status !== 'paid' && selectedOrder.status !== 'cancelled' && (
-                    <TouchableOpacity
-                      style={[styles.btnAction, styles.btnPay]}
-                      onPress={handleConfirmPayment}
-                      disabled={actionLoading}
-                    >
-                      <CreditCard size={16} color="#ffffff" />
-                      <Text style={styles.btnActionText}>Đã thu tiền (Xác nhận thanh toán)</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {selectedOrder.status !== 'cancelled' && selectedOrder.status !== 'completed' && (
-                    <TouchableOpacity
-                      style={[styles.btnAction, styles.btnCancel]}
-                      onPress={() =>
-                        Alert.alert('Xác nhận hủy', 'Bạn có chắc chắn muốn hủy đơn hàng này?', [
-                          { text: 'Không' },
-                          {
-                            text: 'Hủy đơn',
-                            style: 'destructive',
-                            onPress: () => handleStatusChange('cancelled'),
-                          },
-                        ])
-                      }
-                      disabled={actionLoading}
-                    >
-                      <AlertTriangle size={16} color="#dc2626" />
-                      <Text style={[styles.btnActionText, { color: '#dc2626' }]}>Hủy đơn hàng</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                      {!isCancelled && !isCompleted && canCancelOrPay && (
+                        <TouchableOpacity
+                          style={[styles.btnAction, styles.btnCancel]}
+                          onPress={() =>
+                            Alert.alert('Xác nhận hủy', 'Bạn có chắc chắn muốn hủy đơn hàng này?', [
+                              { text: 'Không' },
+                              {
+                                text: 'Hủy đơn',
+                                style: 'destructive',
+                                onPress: handleCancelOrder,
+                              },
+                            ])
+                          }
+                          disabled={actionLoading}
+                        >
+                          <AlertTriangle size={16} color="#dc2626" />
+                          <Text style={[styles.btnActionText, { color: '#dc2626' }]}>Hủy đơn hàng</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })()}
               </ScrollView>
             ) : null}
           </View>
@@ -940,6 +1004,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     borderRadius: 12,
+  },
+  btnPreparing: {
+    backgroundColor: '#0284c7',
   },
   btnDelivery: {
     backgroundColor: '#2563eb',

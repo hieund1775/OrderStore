@@ -114,8 +114,14 @@ export default function StockScreen() {
 
     try {
       await updateBranchOfferAvailability(targetId, storeId, nextState);
-    } catch {
-      // optimistic update retained for instant mobile POS responsiveness
+    } catch (err: any) {
+      setItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, is_available: !nextState } : i)),
+      );
+      Alert.alert(
+        'Không thể cập nhật',
+        err?.message || 'Có lỗi xảy ra khi cập nhật trạng thái món. Vui lòng thử lại.',
+      );
     } finally {
       setUpdatingId(null);
     }

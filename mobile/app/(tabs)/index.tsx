@@ -17,6 +17,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -26,9 +28,14 @@ import {
   Bike,
   AlertCircle,
   PackageCheck,
+  X,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../src/store/authStore';
-import { fetchKitchenOrders, updateAdminOrderStatus } from '../../src/lib/api';
+import {
+  fetchKitchenOrders,
+  updateAdminOrderStatus,
+  updateFulfillmentTaskStatus,
+} from '../../src/lib/api';
 import { AdminHeader } from '../../src/components/AdminHeader';
 
 const DEMO_KITCHEN_ORDERS = [
@@ -126,6 +133,12 @@ export default function KdsScreen() {
   const [activeLane, setActiveLane] = useState<LaneType>('prep');
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
+  // Handover Shipper Modal state
+  const [handoverOrder, setHandoverOrder] = useState<any | null>(null);
+  const [handoverDriverName, setHandoverDriverName] = useState('');
+  const [handoverDriverPhone, setHandoverDriverPhone] = useState('');
+  const [handoverLoading, setHandoverLoading] = useState(false);
+
   useEffect(() => {
     if (user?.role === 'packing') {
       router.replace('/(tabs)/packing');
@@ -139,15 +152,13 @@ export default function KdsScreen() {
   const loadOrders = async () => {
     try {
       const data = await fetchKitchenOrders(user?.branch_id || null);
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setOrders(data);
-      } else if (orders.length === 0) {
+      } else {
         setOrders([]);
       }
     } catch {
-      if (orders.length === 0) {
-        setOrders([]);
-      }
+      // keep existing orders on network glitch
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -165,16 +176,95 @@ export default function KdsScreen() {
     loadOrders();
   };
 
-  const handleAction = async (order: any, nextStatus: string, actionDesc: string) => {
+  const markKitchenTaskReady = async (o: any) => {
+    if (!o?.fulfillment_task_id) return;
+    try {
+      if (o.fulfillment_task_status === 'pending') {
+        await updateFulfillmentTaskStatus(o.fulfillment_task_id, 'preparing');
+      }
+      await updateFulfillmentTaskStatus(o.fulfillment_task_id, 'ready');
+    } catch (e) {
+      console.warn('Could not update fulfillment task to ready:', e);
+    }
+  };
+
+  const completeKitchenTask = async (o: any) => {
+    if (!o?.fulfillment_task_id || o.fulfillment_task_status === 'completed') return;
+    try {
+      await updateFulfillmentTaskStatus(o.fulfillment_task_id, 'completed');
+    } catch (e) {
+      console.warn('Could not update fulfillment task to completed:', e);
+    }
+  };
+
+  const handlePreparationComplete = (order: any) => {
+    if (order.order_type === 'Delivery') {
+      setHandoverOrder(order);
+      setHandoverDriverName(order.shipping_driver_name || '');
+      setHandoverDriverPhone(order.shipping_driver_phone || '');
+    } else {
+      handleCompleteNonDelivery(order);
+    }
+  };
+
+  const submitHandover = async () => {
+    if (!handoverOrder) return;
+    const trimmedName = handoverDriverName.trim();
+    const trimmedPhone = handoverDriverPhone.trim();
+
+    if (trimmedName.length < 2) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên Shipper (tối thiểu 2 ký tự).');
+      return;
+    }
+    if (!/^(0|\+84)[3|5|7|8|9][0-9]{8}$/.test(trimmedPhone)) {
+      Alert.alert('Số điện thoại không hợp lệ', 'Vui lòng nhập đúng số điện thoại Shipper (10 số).');
+      return;
+    }
+
+    setHandoverLoading(true);
+    setUpdatingId(handoverOrder.id);
+    try {
+      await markKitchenTaskReady(handoverOrder);
+      await updateAdminOrderStatus(handoverOrder.id, 'delivering', {
+        note: `Bàn giao Shipper: ${trimmedName}`,
+        driver_name: trimmedName,
+        driver_phone: trimmedPhone,
+      });
+      await completeKitchenTask(handoverOrder);
+      setHandoverOrder(null);
+      await loadOrders();
+      Alert.alert('Thành công', `Đơn #${handoverOrder.order_code} đã bàn giao cho Shipper: ${trimmedName}`);
+    } catch (err: any) {
+      Alert.alert('Không thể bàn giao', err?.message || 'Có lỗi xảy ra khi bàn giao shipper.');
+    } finally {
+      setHandoverLoading(false);
+      setUpdatingId(null);
+    }
+  };
+
+  const handleCompleteNonDelivery = async (order: any) => {
     setUpdatingId(order.id);
     try {
-      await updateAdminOrderStatus(order.id, nextStatus, { note: actionDesc });
-      setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: nextStatus } : o)),
-      );
-      Alert.alert('Thành công', `Đơn ${order.order_code}: ${actionDesc}`);
-    } catch (error: any) {
-      Alert.alert('Không thể cập nhật', error?.message || 'Vui lòng kiểm tra kết nối và thử lại.');
+      await markKitchenTaskReady(order);
+      await updateAdminOrderStatus(order.id, 'completed', { note: 'Pha chế hoàn tất' });
+      await completeKitchenTask(order);
+      await loadOrders();
+      Alert.alert('Thành công', `Đơn #${order.order_code} đã hoàn thành!`);
+    } catch (err: any) {
+      Alert.alert('Không thể hoàn thành', err?.message || 'Có lỗi xảy ra.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleDeliveryComplete = async (order: any) => {
+    setUpdatingId(order.id);
+    try {
+      await updateAdminOrderStatus(order.id, 'completed', { note: 'Khách đã nhận món' });
+      await loadOrders();
+      Alert.alert('Thành công', `Đơn #${order.order_code} đã giao thành công!`);
+    } catch (err: any) {
+      Alert.alert('Không thể cập nhật', err?.message || 'Có lỗi xảy ra.');
     } finally {
       setUpdatingId(null);
     }
@@ -411,7 +501,7 @@ export default function KdsScreen() {
                       {isDelivery ? (
                         <TouchableOpacity
                           style={[styles.btnAmber, updatingId === order.id && styles.btnDisabled]}
-                          onPress={() => handleAction(order, 'delivering', 'Pha xong, chuyển Shipper')}
+                          onPress={() => handlePreparationComplete(order)}
                           disabled={updatingId === order.id}
                           activeOpacity={0.85}
                         >
@@ -427,7 +517,7 @@ export default function KdsScreen() {
                       ) : (
                         <TouchableOpacity
                           style={[styles.btnEmerald, updatingId === order.id && styles.btnDisabled]}
-                          onPress={() => handleAction(order, 'completed', 'Hoàn thành món')}
+                          onPress={() => handlePreparationComplete(order)}
                           disabled={updatingId === order.id}
                           activeOpacity={0.85}
                         >
@@ -447,7 +537,7 @@ export default function KdsScreen() {
                   {activeLane === 'delivering' && (
                     <TouchableOpacity
                       style={[styles.btnEmerald, updatingId === order.id && styles.btnDisabled]}
-                      onPress={() => handleAction(order, 'completed', 'Đã giao thành công')}
+                      onPress={() => handleDeliveryComplete(order)}
                       disabled={updatingId === order.id}
                       activeOpacity={0.85}
                     >
@@ -474,6 +564,79 @@ export default function KdsScreen() {
           })}
         </ScrollView>
       )}
+
+      {/* Modal Bàn Giao Shipper */}
+      <Modal
+        visible={!!handoverOrder}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHandoverOrder(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleCol}>
+                <Text style={styles.modalTitle}>Bàn giao cho Shipper</Text>
+                <Text style={styles.modalSubtitle}>
+                  Đơn {handoverOrder?.order_code} · {handoverOrder?.customer_name || 'Khách'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setHandoverOrder(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.inputLabel}>
+                Tên Shipper <Text style={styles.requiredStar}>*</Text>
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="VD: Nguyễn Văn Nam (Grab/AhaMove)"
+                placeholderTextColor="#94a3b8"
+                value={handoverDriverName}
+                onChangeText={setHandoverDriverName}
+              />
+
+              <Text style={styles.inputLabel}>
+                Số điện thoại Shipper <Text style={styles.requiredStar}>*</Text>
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="VD: 0912345678"
+                placeholderTextColor="#94a3b8"
+                keyboardType="phone-pad"
+                value={handoverDriverPhone}
+                onChangeText={setHandoverDriverPhone}
+              />
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.btnModalCancel}
+                onPress={() => setHandoverOrder(null)}
+                disabled={handoverLoading}
+              >
+                <Text style={styles.btnModalCancelText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnModalSubmit, handoverLoading && styles.btnDisabled]}
+                onPress={submitHandover}
+                disabled={handoverLoading}
+              >
+                {handoverLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.btnModalSubmitText}>Xác nhận giao Shipper</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -800,5 +963,98 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#ea580c',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 420,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 12,
+  },
+  modalTitleCol: {
+    flex: 1,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  modalBody: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  requiredStar: {
+    color: '#ef4444',
+  },
+  modalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  btnModalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+  },
+  btnModalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  btnModalSubmit: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: '#f97316',
+  },
+  btnModalSubmitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });
