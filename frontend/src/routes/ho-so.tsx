@@ -501,7 +501,7 @@ function Profile() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {o.payment_status === "unpaid" && o.payment_provider === "payos" && o.current_status !== "Đã hủy" ? (
+                      {o.payment_status === "unpaid" && ["payos", "sandbox"].includes(o.payment_provider || "") && o.current_status !== "Đã hủy" ? (
                         <>
                           <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold">
                             ⏳ Chờ thanh toán

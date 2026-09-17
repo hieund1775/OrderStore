@@ -288,7 +288,16 @@ export function createOrdersRepository(
             note: line.item.note || null,
           });
         }
-        if (!input.defer_fulfillment && typeof fulfillment?.createTasksForOrder === 'function') {
+        const waitsForOnlinePayment = !isPreorder
+          && input.defer_fulfillment === true
+          && effectivePaymentStatus !== 'paid';
+        // A 0 VND promotion settles atomically and can enter operations at
+        // once. Preorders remain deferred because manager confirmation owns
+        // their fulfillment activation independently of payment.
+        const deferOperationalWork = input.defer_fulfillment === true
+          && (effectivePaymentStatus !== 'paid' || isPreorder);
+
+        if (!deferOperationalWork && typeof fulfillment?.createTasksForOrder === 'function') {
           await fulfillment.createTasksForOrder({
             orderId: order.id,
             branchId: input.store_id,
@@ -298,7 +307,10 @@ export function createOrdersRepository(
             },
           }, tx);
         }
-        await tx.query("INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')", [order.id]);
+        await tx.query(
+          "INSERT INTO order_status_history (order_id, status) VALUES ($1, $2)",
+          [order.id, waitsForOnlinePayment ? 'Chờ xác nhận' : 'Đang chuẩn bị'],
+        );
 
         // A preorder becomes operational work only at Manager confirmation.
         // Its payment bridge owns the later customer/Manager notification.
@@ -307,11 +319,13 @@ export function createOrdersRepository(
             userId,
             type: 'order',
             title: `Đặt hàng thành công — #${order.order_code}`,
-            body: `Đơn hàng #${order.order_code} đã được tiếp nhận và chuyển đến quầy chuẩn bị.`,
+            body: waitsForOnlinePayment
+              ? `Đơn hàng #${order.order_code} đang chờ thanh toán. Bếp sẽ bắt đầu chuẩn bị sau khi thanh toán được xác nhận.`
+              : `Đơn hàng #${order.order_code} đã được tiếp nhận và chuyển đến quầy chuẩn bị.`,
             link: `/theo-doi-don?code=${order.order_code}`,
           }, { tx });
         }
-        if (!input.preorder_id) await notifications.fanOutToOrderAdmins(input.store_id, {
+        if (!input.preorder_id && !waitsForOnlinePayment) await notifications.fanOutToOrderAdmins(input.store_id, {
           type: 'order',
           title: `Đơn hàng mới — #${order.order_code}`,
           body: `Đơn #${order.order_code} (${input.order_type || 'Take-away'}) đã sẵn sàng cho bếp chuẩn bị.`,
@@ -327,6 +341,93 @@ export function createOrdersRepository(
       if (externalTx) {
         return runner(externalTx);
       }
+      return database.transaction(runner);
+    },
+
+    /**
+     * Turns a successfully-paid online order into operational work.  This is
+     * deliberately provider-neutral: PayOS and the QA sandbox both settle a
+     * payment attempt first, then enter the same kitchen/packing lifecycle.
+     * The operation is transactionally idempotent and also repairs a retry
+     * after a provider webhook or sandbox transfer is delivered twice.
+     */
+    async activateFulfillmentAfterPayment({ orderId = null, checkoutGroupId = null } = {}, { tx: externalTx } = {}) {
+      if ((orderId == null) === (checkoutGroupId == null)) {
+        throw new OrderError('Cần xác định chính xác đơn hàng hoặc nhóm thanh toán', 400, 'ORDER_PAYMENT_TARGET_REQUIRED');
+      }
+
+      const runner = async (tx) => {
+        const [orders] = await tx.query(
+          `SELECT o.id, o.order_code, o.store_id, o.user_id, o.order_type, o.payment_status, o.preorder_id,
+                  latest.status AS current_status
+           FROM orders o
+           LEFT JOIN LATERAL (
+             SELECT status
+             FROM order_status_history
+             WHERE order_id = o.id
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1
+           ) latest ON TRUE
+           WHERE ${orderId != null ? 'o.id = $1' : 'o.checkout_group_id = $1'}
+           FOR UPDATE OF o`,
+          [Number(orderId ?? checkoutGroupId)],
+        );
+
+        const activatedOrderIds = [];
+        for (const paidOrder of orders) {
+          // Preorders retain their established manager-confirmation bridge.
+          if (paidOrder.preorder_id != null
+            || paidOrder.payment_status !== 'paid'
+            || paidOrder.current_status !== 'Chờ xác nhận') {
+            continue;
+          }
+
+          const [itemRows] = await tx.query(
+            `SELECT oi.id, oi.product_id, oi.product_name, oi.qty, oi.fulfillment_lane,
+                    oi.size_label, oi.base_tea, oi.sugar_level, oi.ice_level, oi.note
+             FROM order_items oi
+             WHERE oi.order_id = $1
+             ORDER BY oi.id ASC`,
+            [Number(paidOrder.id)],
+          );
+          await fulfillment.createTasksForOrder({
+            orderId: Number(paidOrder.id),
+            branchId: Number(paidOrder.store_id),
+            laneItemsMap: {
+              kitchen: itemRows
+                .filter((item) => item.fulfillment_lane === 'kitchen')
+                .map((item) => ({ ...item, order_item_id: Number(item.id) })),
+              packing: itemRows
+                .filter((item) => item.fulfillment_lane === 'packing')
+                .map((item) => ({ ...item, order_item_id: Number(item.id) })),
+            },
+          }, tx);
+          await tx.query(
+            "INSERT INTO order_status_history (order_id, status) VALUES ($1, 'Đang chuẩn bị')",
+            [Number(paidOrder.id)],
+          );
+          if (paidOrder.user_id) {
+            await notifications.insertForUser({
+              userId: Number(paidOrder.user_id),
+              type: 'order',
+              title: `Thanh toán thành công — #${paidOrder.order_code}`,
+              body: `Đơn hàng #${paidOrder.order_code} đã được xác nhận thanh toán và đang được chuẩn bị.`,
+              link: `/theo-doi-don?code=${paidOrder.order_code}`,
+            }, { tx });
+          }
+          await notifications.fanOutToOrderAdmins(Number(paidOrder.store_id), {
+            type: 'order',
+            title: `Đơn hàng đã thanh toán — #${paidOrder.order_code}`,
+            body: `Đơn #${paidOrder.order_code} (${paidOrder.order_type || 'Take-away'}) đã sẵn sàng cho bếp/đóng gói chuẩn bị.`,
+            link: '/admin/bep',
+          }, { tx });
+          activatedOrderIds.push(Number(paidOrder.id));
+        }
+
+        return { activatedOrderIds, kind: activatedOrderIds.length ? 'activated' : 'already_activated' };
+      };
+
+      if (externalTx) return runner(externalTx);
       return database.transaction(runner);
     },
 

@@ -32,6 +32,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import { vnd } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
+import { resolveCheckoutPaymentRedirect } from "@/lib/payment-redirect";
 import { OrderReviewPanel, type ReviewableItem } from "@/components/reviews/OrderReviewPanel";
 import type { PaymentSummary } from "@/types/payment-summary";
 
@@ -192,6 +193,19 @@ function itemOptions(it: LookupItem) {
     .join(" · ");
 }
 
+function openPaymentGateway(checkoutUrl: string | null | undefined, paymentProvider: string | null | undefined) {
+  const redirect = resolveCheckoutPaymentRedirect(checkoutUrl, paymentProvider, window.location.origin);
+  if (redirect.kind === "sandbox") {
+    window.location.assign(`/thanh-toan/sandbox?token=${encodeURIComponent(redirect.token)}`);
+    return true;
+  }
+  if (redirect.kind === "external" && isSafePayOSCheckoutUrl(redirect.url)) {
+    window.location.assign(redirect.url);
+    return true;
+  }
+  return false;
+}
+
 function Tracking() {
   const { code: searchCode, order_code: returnOrderCode } = Route.useSearch();
   const resolvedSearchCode = returnOrderCode || searchCode;
@@ -206,25 +220,24 @@ function Tracking() {
   const [cancelling, setCancelling] = useState(false);
   const [repaying, setRepaying] = useState(false);
 
-  async function handleRepayPayOS() {
+  async function handleRepayPayment() {
     if (!order) return;
     if (
       order.payment_checkout_url
-      && isPayOSLinkActive(order)
-      && isSafePayOSCheckoutUrl(order.payment_checkout_url)
+      && order.payment_status === "unpaid"
+      && (order.payment_provider === "sandbox" || isPayOSLinkActive(order))
+      && openPaymentGateway(order.payment_checkout_url, order.payment_provider)
     ) {
-      window.location.assign(order.payment_checkout_url);
       return;
     }
     setRepaying(true);
     try {
       const res = await apiPost<{ ok: boolean; order: { checkout_url: string } }>(
-        "/api/payments/payos/regenerate-qr",
+        "/api/payments/regenerate",
         { order_code: order.order_code },
         { headers: getOrderRequestHeaders(order.order_code) }
       );
-      if (res.order?.checkout_url && isSafePayOSCheckoutUrl(res.order.checkout_url)) {
-        window.location.assign(res.order.checkout_url);
+      if (res.order?.checkout_url && openPaymentGateway(res.order.checkout_url, order.payment_provider)) {
       } else {
         toast.error("Không thể mở lại trang thanh toán lúc này");
       }
@@ -235,25 +248,24 @@ function Tracking() {
     }
   }
 
-  async function handleRepayGroupPayOS() {
+  async function handleRepayGroupPayment() {
     if (!group) return;
     if (
       group.payment_checkout_url
-      && isSafePayOSCheckoutUrl(group.payment_checkout_url)
+      && group.payment_status === "unpaid"
+      && openPaymentGateway(group.payment_checkout_url, group.payment_provider)
     ) {
-      window.location.assign(group.payment_checkout_url);
       return;
     }
     setRepaying(true);
     try {
       const res = await apiPost<{ ok: boolean; group?: { payment_checkout_url: string }; order?: { checkout_url: string } }>(
-        "/api/payments/payos/regenerate-qr",
+        "/api/payments/regenerate",
         { group_code: group.group_code, order_code: group.group_code },
         { headers: getOrderRequestHeaders(group.group_code) }
       );
       const targetUrl = res.group?.payment_checkout_url || res.order?.checkout_url;
-      if (targetUrl && isSafePayOSCheckoutUrl(targetUrl)) {
-        window.location.assign(targetUrl);
+      if (targetUrl && openPaymentGateway(targetUrl, group.payment_provider)) {
       } else {
         toast.error("Không thể mở lại trang thanh toán lúc này");
       }
@@ -541,12 +553,12 @@ function Tracking() {
                 </div>
                 <p className="mt-1 text-xs opacity-90">
                   {group.payment_status === "expired"
-                    ? "Mã thanh toán cũ đã hết hạn hoặc bị hủy tại cổng PayOS. Bạn có thể tạo phiên thanh toán mới."
-                    : "Thanh toán 1 lần duy nhất qua PayOS để kích hoạt toàn bộ các đơn con thuộc các ngành hàng."}
+                    ? "Phiên thanh toán cũ đã hết hạn hoặc bị hủy. Bạn có thể tạo phiên thanh toán mới."
+                    : "Thanh toán một lần để kích hoạt toàn bộ các đơn con thuộc các ngành hàng."}
                 </p>
-                <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayGroupPayOS}>
+                <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayGroupPayment}>
                   {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
-                  {group.payment_status === "expired" ? "Tạo mã thanh toán mới" : (group.payment_checkout_url ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới")}
+                  {group.payment_status === "expired" ? "Tạo mã thanh toán mới" : (group.payment_checkout_url ? "Mở trang thanh toán ↗" : "🔄 Tạo phiên thanh toán mới")}
                 </Button>
               </div>
             )}
@@ -679,7 +691,7 @@ function Tracking() {
                 <p className="font-display text-base font-bold">Thông tin giao dịch gộp</p>
                 <p className="text-muted-foreground flex gap-2">
                   <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
-                  Giao dịch thanh toán PayOS tập trung
+                  Giao dịch thanh toán trực tuyến tập trung
                 </p>
                 <p className="text-muted-foreground text-xs">
                   {group.group_code} · {group.payment_provider.toUpperCase()} ·{" "}
@@ -696,19 +708,19 @@ function Tracking() {
   const cancelled = order.current_status === "Đã hủy";
   const currentStep = getStepIndex(order.current_status);
   const completed = order.current_status === "Hoàn thành";
-  const canResumePayOS = Boolean(
+  const canResumePayment = Boolean(
     order.can_resume_payment
     && (order.payment_status === "unpaid" || order.payment_status === "expired")
-    && order.payment_provider === "payos"
+    && ["payos", "sandbox"].includes(order.payment_provider || "")
     && !cancelled
     && !completed
   );
-  const hasActivePayOSLink = Boolean(
-    canResumePayOS
+  const hasActivePaymentLink = Boolean(
+    canResumePayment
     && order.payment_status !== "expired"
     && order.payment_checkout_url
     && isPayOSLinkActive(order)
-    && isSafePayOSCheckoutUrl(order.payment_checkout_url)
+    && (order.payment_provider === "sandbox" || isSafePayOSCheckoutUrl(order.payment_checkout_url))
   );
 
   return (
@@ -733,9 +745,9 @@ function Tracking() {
             </div>
             {cancelled ? (
               <Badge className="bg-berry/15 text-berry">Đã hủy</Badge>
-            ) : order.payment_status === "expired" && order.payment_provider === "payos" ? (
+            ) : order.payment_status === "expired" && ["payos", "sandbox"].includes(order.payment_provider || "") ? (
               <Badge className="bg-slate-500/15 text-slate-700 dark:text-slate-300 font-semibold">Thanh toán đã hết hạn</Badge>
-            ) : order.payment_status === "unpaid" && order.payment_provider === "payos" ? (
+            ) : order.payment_status === "unpaid" && ["payos", "sandbox"].includes(order.payment_provider || "") ? (
               <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 font-semibold">Chờ chuyển khoản</Badge>
             ) : completed ? (
               <Badge className="bg-leaf/15 text-leaf">Hoàn thành</Badge>
@@ -745,25 +757,25 @@ function Tracking() {
           </div>
 
           {/* Payment Status Banner - Chỉ hiện khi đơn chưa thanh toán hoặc hết hạn */}
-          {canResumePayOS && (
+          {canResumePayment && (
             <div className={`${order.payment_status === "expired" ? "bg-slate-500/10 border-slate-500/30 text-slate-800 dark:text-slate-300" : "bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300"} mt-4 rounded-xl border p-4`}>
               <div className="flex items-center gap-2 font-bold text-sm">
                 <Timer className="size-5 text-amber-600 animate-spin" /> {order.payment_status === "expired" ? `Phiên thanh toán đã hết hạn (${vnd(order.total)})` : `⏳ Đang chờ xác nhận thanh toán (${vnd(order.total)})`}
               </div>
               <p className="mt-1 text-xs opacity-90">
                 {order.payment_status === "expired"
-                  ? "Mã thanh toán cũ đã hết hạn hoặc bị hủy tại cổng PayOS. Bạn có thể bấm để tạo lại mã thanh toán mới."
+                  ? "Phiên thanh toán cũ đã hết hạn hoặc bị hủy. Bạn có thể bấm để tạo lại phiên thanh toán mới."
                   : "Đơn hàng chuyển khoản sẽ tự động chuyển về bếp pha chế ngay khi nhận tiền thành công."}
               </p>
-              <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayPayOS}>
+              <Button variant="hero" size="sm" className="mt-3 font-semibold" disabled={repaying} onClick={handleRepayPayment}>
                 {repaying ? <Loader2 className="animate-spin size-4 mr-1.5" /> : null}
-                {order.payment_status === "expired" ? "Tạo mã thanh toán mới" : (hasActivePayOSLink ? "Mở trang thanh toán PayOS ↗" : "🔄 Tạo phiên thanh toán mới")}
+                {order.payment_status === "expired" ? "Tạo mã thanh toán mới" : (hasActivePaymentLink ? "Mở trang thanh toán ↗" : "🔄 Tạo phiên thanh toán mới")}
               </Button>
             </div>
           )}
 
           {/* Timeline 3 bước */}
-          {!canResumePayOS && (
+          {!canResumePayment && (
             <ol className="mt-8 space-y-0">
               {steps.map((s, i) => {
                 const done = !cancelled && (currentStep > i || completed);

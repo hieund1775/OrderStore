@@ -64,7 +64,9 @@ export async function createOnlinePayOSOrder({
     tokenHash = crypto.createHash('sha256').update(rawCancelToken).digest('hex');
   }
   const order = await repository.createPublicOrder({
-    input,
+    // An online-payment order is deliberately kept out of kitchen/packing
+    // until the provider-neutral settlement bridge confirms payment.
+    input: { ...input, defer_fulfillment: true },
     userId,
     cancelTokenHash: tokenHash,
     cancelToken: rawCancelToken,

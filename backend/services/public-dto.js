@@ -96,7 +96,7 @@ export function buildPublicLookupDto(order, decodedToken = null, items = [], his
 
   const canResumePayment = Boolean(
     isCustomerOwner
-    && order.payment_provider === 'payos'
+    && ['payos', 'sandbox'].includes(order.payment_provider)
     && (order.payment_status === 'unpaid' || order.payment_status === 'expired')
     && order.current_status !== 'Đã hủy'
     && order.current_status !== 'Hoàn thành'

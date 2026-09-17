@@ -108,5 +108,13 @@ describe('Public DTO & Input Validation Policy (Production Module)', () => {
     const completed = buildPublicLookupDto({ ...payosOrder, current_status: 'Hoàn thành' }, { sub: 15, role: 'customer' });
     assert.equal(completed.can_resume_payment, false);
     assert.equal(completed.payment_checkout_url, null);
+
+    const sandboxOwner = buildPublicLookupDto({
+      ...payosOrder,
+      payment_provider: 'sandbox',
+      payment_checkout_url: '/thanh-toan/sandbox?token=opaque-token',
+    }, { sub: 15, role: 'customer' });
+    assert.equal(sandboxOwner.can_resume_payment, true);
+    assert.equal(sandboxOwner.payment_checkout_url, '/thanh-toan/sandbox?token=opaque-token');
   });
 });

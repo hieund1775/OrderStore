@@ -359,6 +359,9 @@ export function createCustomerOrderService({
               voucher_code: input.voucher_code || null,
               allocatedDiscount: alloc.allocatedDiscount,
               skipVoucherConsume: true,
+              // A paid promotion remains operational immediately; all other
+              // VietQR attempts wait for PayOS/Sandbox settlement.
+              defer_fulfillment: isPayOSCheckout && !isPromotionSettled,
             };
             const childIdempotencyKey = `${idempotencyKey || crypto.randomUUID()}:group:${alloc.rootCategoryId}`;
             const childOrder = await repository.createPublicOrder({
@@ -449,7 +452,7 @@ export function createCustomerOrderService({
                 discount_amount: Number(co.discount_amount ?? alloc.allocatedDiscount),
                 shipping_fee: Number(alloc.allocatedShippingFee || 0),
                 total_amount: Number(co.total ?? alloc.allocatedTotal),
-                status: co.status || 'Đang chuẩn bị',
+                status: co.status || (createdGroup.payment_status === 'paid' ? 'Đang chuẩn bị' : 'Chờ xác nhận'),
                 payment_status: co.payment_status || 'unpaid',
                 items: (alloc.items || []).map((it) => ({
                   product_id: String(it.product_id || it.id || ''),
@@ -469,7 +472,7 @@ export function createCustomerOrderService({
             payment_provider: createdGroup.payment_provider,
             total_amount: Number(createdGroup.total_amount),
             child_orders: createdChildOrders,
-            status: 'Đang chuẩn bị',
+            status: createdGroup.payment_status === 'paid' ? 'Đang chuẩn bị' : 'Chờ xác nhận',
             payment_status: createdGroup.payment_status,
             payment_required: !isPromotionSettled,
             payment_summary: paymentSummary,
@@ -626,7 +629,11 @@ export function createCustomerOrderService({
           rootCategoryName: resolved.rootCategory?.rootCategoryName || 'Chưa phân loại',
           items: input.items,
         });
-        return { ...payosOrder, status: 'Đang chuẩn bị', payment_summary: paymentSummary };
+        return {
+          ...payosOrder,
+          status: payosOrder.payment_required ? 'Chờ xác nhận' : 'Đang chuẩn bị',
+          payment_summary: paymentSummary,
+        };
       }
 
       const order = await repository.createPublicOrder({

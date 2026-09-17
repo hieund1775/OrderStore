@@ -36,6 +36,12 @@ describe('Payment Attempt Settlement Core', () => {
         preorderBridgeCalls.push(params);
       },
     };
+    let fulfillmentBridgeCalls = [];
+    const mockOrderFulfillmentBridge = {
+      activateFulfillmentAfterPayment: async (params) => {
+        fulfillmentBridgeCalls.push(params);
+      },
+    };
 
     const result = await settleVerifiedAttemptEvent({
       attempt,
@@ -47,6 +53,7 @@ describe('Payment Attempt Settlement Core', () => {
       payload: { test: true },
       attemptsRepository: mockRepo,
       preorderBridge: mockPreorderBridge,
+      orderFulfillmentBridge: mockOrderFulfillmentBridge,
     });
 
     assert.equal(result.kind, 'paid');
@@ -66,6 +73,7 @@ describe('Payment Attempt Settlement Core', () => {
       checkoutGroupId: null,
       late: false,
     });
+    assert.deepEqual(fulfillmentBridgeCalls, [{ orderId: 501, checkoutGroupId: null }]);
   });
 
   it('settles checkout group and marks late if attempt was expired or superseded', async () => {
@@ -124,6 +132,10 @@ describe('Payment Attempt Settlement Core', () => {
       const mockPreorderBridge = {
         onPaymentSettled: async () => { bridgeCalled = true; },
       };
+      let fulfillmentBridgeCalled = false;
+      const mockOrderFulfillmentBridge = {
+        activateFulfillmentAfterPayment: async () => { fulfillmentBridgeCalled = true; },
+      };
 
       const result = await settleVerifiedAttemptEvent({
         attempt,
@@ -132,10 +144,12 @@ describe('Payment Attempt Settlement Core', () => {
         amount: 25000,
         attemptsRepository: mockRepo,
         preorderBridge: mockPreorderBridge,
+        orderFulfillmentBridge: mockOrderFulfillmentBridge,
       });
 
       assert.equal(result.kind, kind);
       assert.equal(bridgeCalled, true);
+      assert.equal(fulfillmentBridgeCalled, true);
     }
   });
 
@@ -157,6 +171,10 @@ describe('Payment Attempt Settlement Core', () => {
       const mockPreorderBridge = {
         onPaymentSettled: async () => { bridgeCalled = true; },
       };
+      let fulfillmentBridgeCalled = false;
+      const mockOrderFulfillmentBridge = {
+        activateFulfillmentAfterPayment: async () => { fulfillmentBridgeCalled = true; },
+      };
 
       const result = await settleVerifiedAttemptEvent({
         attempt,
@@ -165,10 +183,12 @@ describe('Payment Attempt Settlement Core', () => {
         amount: 25000,
         attemptsRepository: mockRepo,
         preorderBridge: mockPreorderBridge,
+        orderFulfillmentBridge: mockOrderFulfillmentBridge,
       });
 
       assert.equal(result.kind, kind);
       assert.equal(bridgeCalled, false);
+      assert.equal(fulfillmentBridgeCalled, false);
     }
   });
 

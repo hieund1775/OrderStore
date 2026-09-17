@@ -247,6 +247,44 @@ describe('Checkout Voucher Stability Suite', () => {
     assert.equal(payosCalls, 0);
   });
 
+  it('holds every non-zero VietQR order out of fulfillment until provider settlement', async () => {
+    let createInput = null;
+    const order = {
+      id: 45,
+      order_code: 'TP2609170045',
+      total: 45000,
+      payment_status: 'unpaid',
+      payment_provider: 'sandbox',
+    };
+
+    await createOnlinePayOSOrder({
+      input: {
+        store_id: 1,
+        source: 'online',
+        order_type: 'Take-away',
+        payment_method: 'VietQR',
+        customer_name: 'Nguyen Van A',
+        customer_phone: '0901234567',
+        items: [{ product_id: 1, qty: 1 }],
+      },
+      userId: 1,
+      idempotencyKey: 'test-online-deferred-fulfillment',
+      ordersRepository: {
+        async createPublicOrder({ input }) {
+          createInput = input;
+          return order;
+        },
+      },
+      directPayOSAttempts: {
+        async createForOrder() {
+          return { payment_provider: 'sandbox', payment_checkout_url: '/thanh-toan/sandbox?token=test' };
+        },
+      },
+    });
+
+    assert.equal(createInput.defer_fulfillment, true);
+  });
+
   it('checkout-time expired voucher fails with 400 PROMOTION_NOT_FOUND rather than 500', async () => {
     const expiredPromo = { ...basePromotionRow, end_date: '2026-01-01' };
     const mockDb = createMockDatabase({ promotion: expiredPromo });

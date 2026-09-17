@@ -1,4 +1,5 @@
 import paymentAttemptsRepository from '../repositories/postgres/payment-attempts.js';
+import ordersRepository from '../repositories/postgres/orders.js';
 import preorderService from './preorders/preorder-service.js';
 
 /**
@@ -18,6 +19,7 @@ export async function settleVerifiedAttemptEvent({
   payload = null,
   attemptsRepository = paymentAttemptsRepository,
   preorderBridge = attemptsRepository === paymentAttemptsRepository ? preorderService : null,
+  orderFulfillmentBridge = attemptsRepository === paymentAttemptsRepository ? ordersRepository : null,
 } = {}) {
   if (!attempt?.id || !provider || !providerPaymentIdentity || !Number.isFinite(amount)) {
     return { kind: 'invalid_payload' };
@@ -42,6 +44,17 @@ export async function settleVerifiedAttemptEvent({
       orderId: attempt.order_id,
       checkoutGroupId: attempt.checkout_group_id,
       late: ['expired', 'superseded'].includes(attempt.status),
+    });
+  }
+
+  if (
+    orderFulfillmentBridge
+    && typeof orderFulfillmentBridge.activateFulfillmentAfterPayment === 'function'
+    && ['paid', 'duplicate', 'already_paid'].includes(settled?.kind)
+  ) {
+    await orderFulfillmentBridge.activateFulfillmentAfterPayment({
+      orderId: attempt.order_id,
+      checkoutGroupId: attempt.checkout_group_id,
     });
   }
 

@@ -216,6 +216,7 @@ export async function handlePaymentRegenerate(req, res) {
           qr_code: updatedGroup.payment_qr_code,
           payment_expires_at: updatedGroup.payment_expires_at,
           payment_status: updatedGroup.payment_status,
+          payment_provider: updatedGroup.payment_provider || 'payos',
         },
       });
     }
@@ -235,6 +236,7 @@ export async function handlePaymentRegenerate(req, res) {
         qr_code: updatedOrder.payment_qr_code,
         payment_expires_at: updatedOrder.payment_expires_at,
         payment_status: updatedOrder.payment_status,
+        payment_provider: updatedOrder.payment_provider || 'payos',
       },
     });
   } catch (err) {

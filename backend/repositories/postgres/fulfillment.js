@@ -110,7 +110,10 @@ export function createFulfillmentRepository(database = postgresDb) {
       const values = [];
       let idx = 1;
 
-      conditions.push("(COALESCE(o.payment_provider, '') <> 'payos' OR o.payment_status = 'paid')");
+      // Payment gating is a business rule, not a provider-name check.  Both
+      // PayOS and the QA sandbox use VietQR and must stay out of operations
+      // until paid; COD/POS continue to appear immediately.
+      conditions.push("(o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS')");
 
       if (branchId) {
         conditions.push(`t.branch_id = $${idx++}`);
