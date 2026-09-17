@@ -31,7 +31,7 @@ export class PreorderError extends Error {
 
 function assertTransition(from, to) {
   if (!TRANSITIONS[from]?.has(to)) {
-    throw new PreorderError(`KhÃ´ng thá»ƒ chuyá»ƒn preorder tá»« ${from} sang ${to}`, 409, 'PREORDER_TRANSITION_INVALID');
+    throw new PreorderError(`Không thể chuyển preorder từ ${from} sang ${to}`, 409, 'PREORDER_TRANSITION_INVALID');
   }
 }
 
@@ -50,7 +50,7 @@ function preorderCode() {
 
 function asDate(value, field) {
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) throw new PreorderError(`${field} khÃ´ng há»£p lá»‡`, 400, 'PREORDER_DATE_INVALID');
+  if (!Number.isFinite(date.getTime())) throw new PreorderError(`${field} không hợp lệ`, 400, 'PREORDER_DATE_INVALID');
   return date;
 }
 
@@ -60,7 +60,7 @@ function isScopedManager(user, preorder) {
 }
 function assertManagerOrSuper(user, preorder) {
   if (!isSuper(user) && !isScopedManager(user, preorder)) {
-    throw new PreorderError('Báº¡n khÃ´ng cÃ³ quyá»n thao tÃ¡c preorder cá»§a chi nhÃ¡nh nÃ y', 403, 'PREORDER_BRANCH_FORBIDDEN');
+    throw new PreorderError('Bạn không có quyền thao tác preorder của chi nhánh này', 403, 'PREORDER_BRANCH_FORBIDDEN');
   }
 }
 
@@ -92,8 +92,8 @@ export function createPreorderService({
     await notifications.insertForUser({
       userId,
       type: 'order',
-      title: 'Cáº­p nháº­t Ä‘Æ¡n Ä‘áº·t trÆ°á»›c',
-      body: `Preorder ${preorder.preorder_code} cáº§n Ä‘Æ°á»£c theo dÃµi.`,
+      title: 'Cập nhật đơn đặt trước',
+      body: `Đơn đặt trước ${preorder.preorder_code} cần được theo dõi.`,
       link: `/don-dat-truoc?code=${encodeURIComponent(preorder.preorder_code)}`,
     }, { tx });
     await repository.queueDelivery({ preorderId: preorder.id, eventType, recipientUserId: userId, channel: 'email' }, { tx });
@@ -133,7 +133,7 @@ export function createPreorderService({
 
     async getForCustomer({ preorderCode, customerUserId }) {
       const preorder = await repository.findForCustomer(preorderCode, customerUserId);
-      if (!preorder) throw new PreorderError('KhÃ´ng tÃ¬m tháº¥y preorder', 404, 'PREORDER_NOT_FOUND');
+      if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
       return preorder;
     },
 
@@ -144,7 +144,7 @@ export function createPreorderService({
     async availability({ storeId, date, now: currentNow = now() }) {
       const setting = await repository.getActiveStoreSetting(storeId);
       if (!setting) {
-        throw new PreorderError('Chi nhÃ¡nh chÆ°a báº­t Ä‘áº·t trÆ°á»›c hoáº·c chÆ°a cÃ³ Quáº£n lÃ½ phÃ³ trÃ¡ch', 409, 'PREORDER_STORE_UNAVAILABLE');
+        throw new PreorderError('Chi nhánh chưa bật đặt trước hoặc chưa có Quản lý phó trách', 409, 'PREORDER_STORE_UNAVAILABLE');
       }
       const slots = [];
       for (let hour = 9; hour <= 22; hour += 1) {
@@ -164,7 +164,7 @@ export function createPreorderService({
 
     async availableTables({ storeId, date, hour, now: currentNow = now() }) {
       const setting = await repository.getActiveStoreSetting(storeId);
-      if (!setting) throw new PreorderError('Chi nhÃ¡nh chÆ°a sáºµn sÃ ng nháº­n Ä‘áº·t trÆ°á»›c', 409, 'PREORDER_STORE_UNAVAILABLE');
+      if (!setting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
       const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow });
       const rows = listRows(await database.query(
         `SELECT t.id, t.name
@@ -280,7 +280,7 @@ export function createPreorderService({
           idempotencyKey: String(idempotencyKey),
         });
         const groupId = checkout.group_code ? await findGroupId(checkout.group_code) : null;
-        if (checkout.group_code && !groupId) throw new PreorderError('KhÃ´ng thá»ƒ liÃªn káº¿t nhÃ³m thanh toÃ¡n preorder', 500, 'PREORDER_GROUP_LINK_FAILED');
+        if (checkout.group_code && !groupId) throw new PreorderError('Không thể liên kết nhóm thanh toán preorder', 500, 'PREORDER_GROUP_LINK_FAILED');
         const linked = await repository.attachCheckoutTarget({ preorderId: preorder.id, checkoutGroupId: groupId });
         return { ...checkout, preorder: linked };
       } catch (error) {
@@ -341,7 +341,7 @@ export function createPreorderService({
     async confirm({ preorderId, actor }) {
       return database.transaction(async (tx) => {
         const preorder = await repository.findById(preorderId, { tx, forUpdate: true });
-        if (!preorder) throw new PreorderError('KhÃ´ng tÃ¬m tháº¥y preorder', 404, 'PREORDER_NOT_FOUND');
+        if (!preorder) throw new PreorderError('Không tìm thấy preorder', 404, 'PREORDER_NOT_FOUND');
         assertManagerOrSuper(actor, preorder);
         assertTransition(preorder.status, 'CONFIRMED');
         const updated = await repository.transition(preorder.id, {

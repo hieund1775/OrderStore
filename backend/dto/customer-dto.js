@@ -45,14 +45,31 @@ export function toAuditLogDto(log) {
   };
 }
 
+function fixMojibake(text) {
+  if (typeof text !== 'string' || !text) return text;
+  // If text contains common UTF-8 mojibake patterns (e.g. Cáº­p, Ä‘, Æ°, Ã£, â€”)
+  if (/[\u00C2-\u00DF][\u0080-\u00BF]/.test(text) || text.includes('Ã') || text.includes('Ä') || text.includes('áº')) {
+    try {
+      const decoded = Buffer.from(text, 'latin1').toString('utf8');
+      if (decoded && !decoded.includes('\uFFFD')) {
+        text = decoded;
+      }
+    } catch {
+      // Keep original text on conversion failure
+    }
+  }
+  // Replace em-dash or corrupted dash variants if present
+  return text.replace(/\u2014/g, ' - ').replace(/â€”/g, ' - ');
+}
+
 export function toNotificationDto(notification) {
   if (!notification) return null;
   return {
     id: Number(notification.id),
     user_id: notification.user_id == null ? null : Number(notification.user_id),
     type: notification.type || 'system',
-    title: notification.title,
-    body: notification.body || null,
+    title: fixMojibake(notification.title),
+    body: fixMojibake(notification.body) || null,
     link: notification.link || null,
     is_read: notification.is_read === true,
     created_at: notification.created_at,

@@ -27,7 +27,7 @@ export function createCatalogRepository(database = postgresDb) {
       if (search) {
         params.push(`%${search}%`);
         const parameter = `$${params.length}`;
-        sql += ` AND (p.name ILIKE ${parameter} OR p.description ILIKE ${parameter})`;
+        sql += ` AND (p.name ILIKE ${parameter} OR p.description ILIKE ${parameter} OR c.name ILIKE ${parameter} OR c.slug ILIKE ${parameter} OR root.name ILIKE ${parameter} OR root.slug ILIKE ${parameter})`;
       }
       if (tag) {
         params.push(`%"${tag}"%`);

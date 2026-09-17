@@ -300,17 +300,35 @@ function MenuPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-xl font-bold tracking-tight">
-                Danh sách sản phẩm ({categoryProductsTotal})
+                {deferredSearchQuery
+                  ? `Kết quả tìm kiếm cho "${deferredSearchQuery}" (${categoryProductsTotal})`
+                  : `Danh sách sản phẩm (${categoryProductsTotal})`}
               </h2>
             </div>
 
             {categoryProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed rounded-2xl p-8">
                 <ShoppingBag className="size-12 text-muted-foreground/40 mb-3" />
-                <p className="text-base font-semibold text-foreground">Chưa có sản phẩm trong danh mục này</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Vui lòng chọn danh mục khác hoặc quay lại danh mục gốc.
+                <p className="text-base font-semibold text-foreground">
+                  {deferredSearchQuery
+                    ? `Không tìm thấy sản phẩm phù hợp với từ khóa "${deferredSearchQuery}"`
+                    : "Chưa có sản phẩm trong danh mục này"}
                 </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                  {deferredSearchQuery
+                    ? "Vui lòng thử tìm kiếm bằng từ khóa khác hoặc kiểm tra lại chính tả."
+                    : "Vui lòng chọn danh mục khác hoặc quay lại danh mục gốc."}
+                </p>
+                {deferredSearchQuery && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    Xóa từ khóa tìm kiếm
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

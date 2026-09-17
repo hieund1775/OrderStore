@@ -196,7 +196,7 @@ router.post('/managers/:id/preorder-strikes/reset', requireRole('super'), asyncH
        WHERE manager_id = $1 RETURNING *`, [Number(req.params.id), Number(req.user.sub)],
     );
     const rows = Array.isArray(result[0]) ? result[0] : result.rows || [];
-    if (!rows[0]) return res.status(404).json({ error: 'KhÃ´ng tÃ¬m tháº¥y strike cá»§a Manager' });
+    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy strike của Manager' });
     return res.json(rows[0]);
   } catch (error) { return errorResponse(res, error); }
 }));

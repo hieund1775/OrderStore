@@ -235,14 +235,14 @@ export function getTodayBoundaries(instant = new Date()) {
  */
 export function buildVietnamPreorderSlot(dateStr, hour) {
   if (!isValidDateString(dateStr)) {
-    const error = new Error('NgÃ y nháº­n Ä‘Æ¡n trÆ°á»›c khÃ´ng há»£p lá»‡');
+    const error = new Error('Ngày nhận đơn trước không hợp lệ');
     error.status = 400;
     error.code = 'PREORDER_DATE_INVALID';
     throw error;
   }
   const normalizedHour = Number(hour);
   if (!Number.isInteger(normalizedHour) || normalizedHour < 9 || normalizedHour > 22) {
-    const error = new Error('Khung giá» Ä‘áº·t trÆ°á»›c chá»‰ tá»« 09:00 Ä‘áº¿n 23:00');
+    const error = new Error('Khung giờ đặt trước chỉ từ 09:00 đến 23:00');
     error.status = 400;
     error.code = 'PREORDER_SLOT_HOUR_INVALID';
     throw error;
@@ -288,7 +288,7 @@ export function validateVietnamPreorderSlot({ date, hour, now = new Date(), mini
   const slotBoundary = parseVietnamSingleDateBoundary(slot.date).startDate;
   const calendarDays = Math.round((slotBoundary.getTime() - nowBoundary.getTime()) / (24 * 60 * 60 * 1000));
   if (calendarDays < 0 || calendarDays > 7) {
-    const error = new Error('Chá»‰ nháº­n Ä‘áº·t trÆ°á»›c trong vÃ²ng 7 ngÃ y');
+    const error = new Error('Chỉ nhận đặt trước trong vòng 7 ngày');
     error.status = 422;
     error.code = 'PREORDER_MAX_HORIZON';
     throw error;
