@@ -144,13 +144,24 @@ export function CatalogTabBlocksView({
         });
       }
     } else {
-      for (const root of rootCategories) {
+      const eligibleRoots = activeLane
+        ? rootCategories.filter((r) => {
+            const lane = r.default_fulfillment_lane || r.product_type_default_fulfillment_lane || activeLane;
+            return lane === activeLane;
+          })
+        : rootCategories;
+      for (const root of eligibleRoots) {
         list.push({
           ...root,
           isRootScope: true,
           scopeLabel: `👑 ${root.name} (Ngành Gốc — Dùng chung/Kế thừa)`,
         });
-        const children = categories.filter((c) => Number(c.parent_id) === Number(root.id));
+        const children = categories.filter((c) => {
+          if (Number(c.parent_id) !== Number(root.id)) return false;
+          if (!activeLane) return true;
+          const lane = c.default_fulfillment_lane || c.product_type_default_fulfillment_lane || activeLane;
+          return lane === activeLane;
+        });
         for (const child of children) {
           list.push({
             ...child,
@@ -161,7 +172,7 @@ export function CatalogTabBlocksView({
       }
     }
     return list;
-  }, [activeRootCategory, subcategories, rootCategories, categories]);
+  }, [activeRootCategory, subcategories, rootCategories, categories, activeLane]);
 
   // Danh mục đang được cấu hình tùy chọn ở Tab 3
   const currentOptionCategory = useMemo(() => {
@@ -344,8 +355,21 @@ export function CatalogTabBlocksView({
     }
   };
 
+  // Helper check xem món có cùng lane không
+  const checkProductLaneMatch = (prod: ProductV2): boolean => {
+    if (!activeLane) return true;
+    const cat = categories.find((c) => Number(c.id) === Number(prod.category_id));
+    const prodLane = prod.fulfillment_lane || cat?.default_fulfillment_lane || cat?.product_type_default_fulfillment_lane;
+    if (prodLane && prodLane !== activeLane) {
+      toast.warning(`Sản phẩm "${prod.name}" thuộc ngành ${prodLane === 'kitchen' ? 'Bếp' : 'Đóng gói'}, không thể thao tác ở khu vực ${activeLane === 'kitchen' ? 'Bếp' : 'Đóng gói'}.`);
+      return false;
+    }
+    return true;
+  };
+
   // Toggle trạng thái Tạm ngưng / Bán của Sản phẩm (độc lập với danh mục)
   const handleToggleProductAvailability = async (prod: ProductV2) => {
+    if (!checkProductLaneMatch(prod)) return;
     try {
       const nextAvailable = !prod.is_available;
       const nextStatus = nextAvailable ? 'active' : 'inactive';
@@ -367,6 +391,7 @@ export function CatalogTabBlocksView({
 
   // Xóa sản phẩm
   const handleDeleteProduct = async (prod: ProductV2) => {
+    if (!checkProductLaneMatch(prod)) return;
     if (!confirm(`Bạn có chắc chắn muốn xóa món "${prod.name}" khỏi danh mục?`)) return;
     try {
       await archiveCatalogProduct(prod.id);

@@ -334,7 +334,7 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           && current.product_type_id
           && Number(category.product_type_id) !== Number(current.product_type_id)
         ) {
-          throw new CatalogV2Error('Danh mục mới không cùng loại sản phẩm với schema hiện tại', 400);
+          throw new CatalogV2Error('Không thể chuyển sản phẩm sang danh mục thuộc loại sản phẩm khác', 400);
         }
 
         const [rows] = await tx.query(

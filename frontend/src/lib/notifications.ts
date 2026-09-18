@@ -43,6 +43,23 @@ export function isSafeInternalLink(link: string | null | undefined): boolean {
     && !hasControlCharacters(str);
 }
 
+export function sanitizeNotificationText(value: string | null | undefined): string {
+  if (!value) return '';
+  return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    .replace(/[\uFEFF\u200B-\u200F\u202A-\u202E\u2060]/g, '')
+    .trim();
+}
+
+export function sanitizeNotificationItem<T extends AppNotification>(item: T): T {
+  if (!item) return item;
+  return {
+    ...item,
+    title: sanitizeNotificationText(item.title),
+    body: item.body ? sanitizeNotificationText(item.body) : null,
+  };
+}
+
 const inFlightCustomerNotifications = new Map<string, Promise<NotificationResponse>>();
 const inFlightAdminNotifications = new Map<number, Promise<NotificationResponse>>();
 
@@ -90,7 +107,7 @@ export async function fetchCustomerNotifications(
       `/api/users/${userId}/notifications?page=${page}&limit=${limit}`
     );
     return {
-      items: Array.isArray(res?.items) ? res.items : [],
+      items: Array.isArray(res?.items) ? res.items.map(sanitizeNotificationItem) : [],
       pagination: res?.pagination || {
         page,
         limit,
@@ -115,9 +132,9 @@ export async function fetchCustomerNotifications(
       if (currentSession && currentSession.userId !== userId) {
         return { notifications: [], unread_count: 0 };
       }
-      if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
+      if (Array.isArray(res)) return { notifications: res.map(sanitizeNotificationItem), unread_count: res.filter((n) => !n.is_read).length };
       return {
-        notifications: Array.isArray(res?.notifications) ? res.notifications : [],
+        notifications: Array.isArray(res?.notifications) ? res.notifications.map(sanitizeNotificationItem) : [],
         unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
       };
     } finally {
@@ -165,7 +182,7 @@ export async function fetchAdminNotifications(limitOrOptions: number | AdminNoti
     const type = limitOrOptions.type && limitOrOptions.type !== 'all' ? `&type=${encodeURIComponent(limitOrOptions.type)}` : '';
     const res = await apiGet<PaginatedAdminNotificationResponse>(`/admin/notifications?page=${page}&limit=${limit}${type}`);
     return {
-      items: Array.isArray(res?.items) ? res.items : [],
+      items: Array.isArray(res?.items) ? res.items.map(sanitizeNotificationItem) : [],
       pagination: res?.pagination || { page, limit, total_items: 0, total_pages: 1, has_prev: false, has_next: false },
       unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
     };
@@ -178,9 +195,9 @@ export async function fetchAdminNotifications(limitOrOptions: number | AdminNoti
   const promise = (async () => {
     try {
       const res = await apiGet<NotificationResponse | AppNotification[]>(`/admin/notifications?limit=${limit}&envelope=true`);
-      if (Array.isArray(res)) return { notifications: res, unread_count: res.filter((n) => !n.is_read).length };
+      if (Array.isArray(res)) return { notifications: res.map(sanitizeNotificationItem), unread_count: res.filter((n) => !n.is_read).length };
       return {
-        notifications: Array.isArray(res?.notifications) ? res.notifications : [],
+        notifications: Array.isArray(res?.notifications) ? res.notifications.map(sanitizeNotificationItem) : [],
         unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
       };
     } finally {

@@ -33,6 +33,20 @@ function hasControlCharacters(value) {
   });
 }
 
+/**
+ * Strip control characters, BOM, and zero-width chars from notification text.
+ * Preserves all valid Vietnamese / Unicode display characters.
+ */
+export function sanitizeNotificationText(value) {
+  if (!value) return value;
+  return String(value)
+    // Remove C0/C1 control chars (U+0000–U+001F, U+007F–U+009F) except common whitespace (\n \r \t)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    // Remove BOM (U+FEFF) and zero-width chars (U+200B–U+200F, U+202A–U+202E, U+2060, U+FEFF)
+    .replace(/[\uFEFF\u200B-\u200F\u202A-\u202E\u2060]/g, '')
+    .trim();
+}
+
 function validateInternalLink(link) {
   if (!link) return null;
   const str = String(link).trim();
@@ -73,8 +87,8 @@ export function createNotificationService(repository = defaultNotificationsRepos
       if (!title || !String(title).trim()) {
         throw new NotificationServiceError('Tiêu đề thông báo không được để trống', 400);
       }
-      const normalizedTitle = String(title).trim();
-      const normalizedBody = body ? String(body).trim() : null;
+      const normalizedTitle = sanitizeNotificationText(String(title).trim());
+      const normalizedBody = body ? sanitizeNotificationText(String(body).trim()) : null;
       if (normalizedTitle.length > 300) {
         throw new NotificationServiceError('Tiêu đề thông báo không được vượt quá 300 ký tự', 400);
       }
