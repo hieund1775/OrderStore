@@ -80,16 +80,18 @@ export function CatalogTabBlocksView({
 
   // Danh mục gốc đang chọn
   const activeRootCategory = useMemo(() => {
-    if (selectedRootId === 'all') return null;
-    return rootCategories.find((r) => String(r.id) === String(selectedRootId)) || null;
+    if (!selectedRootId || selectedRootId === 'all') {
+      return rootCategories[0] || null;
+    }
+    return rootCategories.find((r) => String(r.id) === String(selectedRootId)) || rootCategories[0] || null;
   }, [rootCategories, selectedRootId]);
 
   // Lọc danh sách danh mục con trực thuộc Root đang chọn
   const subcategories = useMemo(() => {
     let list = categories.filter((c) => c.parent_id !== null);
-    if (selectedRootId !== 'all') {
-      const rootIdNum = Number(selectedRootId);
-      list = list.filter((c) => Number(c.parent_id) === rootIdNum);
+    const targetRootId = activeRootCategory ? Number(activeRootCategory.id) : (selectedRootId && selectedRootId !== 'all' ? Number(selectedRootId) : null);
+    if (targetRootId != null) {
+      list = list.filter((c) => Number(c.parent_id) === targetRootId);
     }
     if (activeLane) {
       const rootIdSet = new Set(rootCategories.map((r) => Number(r.id)));
@@ -99,13 +101,14 @@ export function CatalogTabBlocksView({
       });
     }
     return list;
-  }, [categories, selectedRootId, activeLane, rootCategories]);
+  }, [categories, selectedRootId, activeLane, rootCategories, activeRootCategory]);
 
   // Toàn bộ category IDs thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
-    if (selectedRootId === 'all') return null;
-    return collectCategorySubtreeIds(categories, Number(selectedRootId));
-  }, [categories, selectedRootId]);
+    const targetRootId = activeRootCategory ? Number(activeRootCategory.id) : null;
+    if (!targetRootId) return null;
+    return collectCategorySubtreeIds(categories, targetRootId);
+  }, [categories, activeRootCategory]);
 
   // Tab 2: Lọc sản phẩm theo danh mục con
   const [productFilterSubcat, setProductFilterSubcat] = useState<string>('all');
@@ -123,9 +126,8 @@ export function CatalogTabBlocksView({
 
   // Tên Ngành gốc đang chọn
   const activeRootName = useMemo(() => {
-    if (selectedRootId === 'all') return 'Tất cả danh mục';
     return activeRootCategory ? activeRootCategory.name : 'Danh mục';
-  }, [activeRootCategory, selectedRootId]);
+  }, [activeRootCategory]);
 
   // Danh mục khả dụng để cấu hình tùy chọn trong Tab 3 (Ngành gốc dùng chung + Danh mục con cục bộ)
   const optionEligibleCategories = useMemo(() => {
@@ -291,7 +293,7 @@ export function CatalogTabBlocksView({
       return;
     }
 
-    const parentId = selectedRootId !== 'all' ? Number(selectedRootId) : (editingCategory?.parent_id || null);
+    const parentId = activeRootCategory ? Number(activeRootCategory.id) : (editingCategory?.parent_id || null);
     if (!parentId && !editingCategory) {
       toast.error('Vui lòng chọn một ngành gốc trước khi tạo danh mục con');
       return;
@@ -459,8 +461,8 @@ export function CatalogTabBlocksView({
                 variant="hero"
                 className="text-xs"
                 onClick={handleOpenCreateCategory}
-                disabled={selectedRootId === 'all'}
-                title={selectedRootId === 'all' ? 'Vui lòng chọn danh mục gốc trước' : 'Thêm danh mục con'}
+                disabled={!activeRootCategory}
+                title={!activeRootCategory ? 'Vui lòng chọn hoặc tạo ngành gốc trước' : 'Thêm danh mục con'}
               >
                 <Plus className="size-3.5 mr-1" />
                 Thêm Danh Mục Con

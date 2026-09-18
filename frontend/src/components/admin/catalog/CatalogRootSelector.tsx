@@ -38,12 +38,9 @@ export function CatalogRootSelector({
         </Label>
         <Select value={value} onValueChange={onValueChange}>
           <SelectTrigger className="w-[240px] font-semibold h-9 text-sm bg-background">
-            <SelectValue placeholder="Chọn danh mục gốc" />
+            <SelectValue placeholder="Chọn ngành hàng gốc" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="font-semibold">
-              Tất cả ngành hàng ({totalCategories})
-            </SelectItem>
             {roots.map((root) => (
               <SelectItem key={root.id} value={String(root.id)}>
                 {root.name}

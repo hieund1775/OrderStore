@@ -128,10 +128,10 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <CartProvider>
         <PreorderCartProvider>
-          {isAdmin ? (
-            <Outlet />
-          ) : (
-            <BranchProvider>
+          <BranchProvider>
+            {isAdmin ? (
+              <Outlet />
+            ) : (
               <div className="flex min-h-screen flex-col">
                 <Header />
                 <main className="flex-1 pb-20 md:pb-0">
@@ -139,12 +139,12 @@ function RootComponent() {
                   <Outlet />
                 </main>
                 <Footer />
+                <FloatingWidgets />
+                <MobileCartBar />
               </div>
-              <FloatingWidgets />
-              <MobileCartBar />
-            </BranchProvider>
-          )}
-          <Toaster position="top-center" richColors />
+            )}
+            <Toaster position="top-center" richColors />
+          </BranchProvider>
         </PreorderCartProvider>
       </CartProvider>
     </QueryClientProvider>

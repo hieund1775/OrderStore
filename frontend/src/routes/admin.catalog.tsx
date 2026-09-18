@@ -70,7 +70,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
   const [products, setProducts] = useState<ProductV2[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
-  const [selectedRootId, setSelectedRootId] = useState<string>('all');
+  const [selectedRootId, setSelectedRootId] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   // Modal tạo / sửa danh mục gốc
@@ -156,11 +156,16 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
     });
   }, [categories, activeLane]);
 
-  // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn
+  // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn hoặc id không còn tồn tại
   useEffect(() => {
-    if (selectedRootId === 'all') return;
-    const selectedExists = rootCategories.some((root) => String(root.id) === selectedRootId);
-    if (!selectedExists) setSelectedRootId('all');
+    if (rootCategories.length > 0) {
+      const selectedExists = rootCategories.some((root) => String(root.id) === selectedRootId);
+      if (!selectedExists) {
+        setSelectedRootId(String(rootCategories[0].id));
+      }
+    } else {
+      setSelectedRootId('');
+    }
   }, [rootCategories, selectedRootId]);
 
   // Danh mục thuộc khu vực activeLane (loại trừ tuyệt đối danh mục của lane khác)
@@ -178,9 +183,10 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
 
   // Tập hợp các category ID thuộc subtree của root đang chọn
   const scopedCategoryIds = useMemo(() => {
-    if (selectedRootId === 'all') return null;
-    return collectCategorySubtreeIds(laneCategories, Number(selectedRootId));
-  }, [selectedRootId, laneCategories]);
+    const effectiveRootId = selectedRootId || (rootCategories[0] ? String(rootCategories[0].id) : null);
+    if (!effectiveRootId) return null;
+    return collectCategorySubtreeIds(laneCategories, Number(effectiveRootId));
+  }, [selectedRootId, laneCategories, rootCategories]);
 
   // Danh mục hiển thị theo scope
   const filteredCategories = useMemo(() => {
