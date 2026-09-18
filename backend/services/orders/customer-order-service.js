@@ -231,6 +231,13 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Thiếu thông tin đơn hàng bắt buộc (tên, SĐT, danh sách món)', { status: 400, code: 'ORDER_REQUIRED_FIELDS', expose: true });
       }
 
+      if (input.customer_phone) {
+        const trimmedPhone = String(input.customer_phone).trim();
+        if (trimmedPhone.length > 20) {
+          throw new OrderDomainError('Số điện thoại không được vượt quá 20 ký tự', { status: 400, code: 'PHONE_TOO_LONG', expose: true });
+        }
+      }
+
       if (normalizedOrderType === 'Delivery' && (!input.delivery_addr || !input.delivery_addr.trim())) {
         throw new OrderDomainError('Đơn hàng Giao tận nơi bắt buộc phải nhập địa chỉ giao hàng', { status: 400, code: 'DELIVERY_ADDRESS_REQUIRED', expose: true });
       }

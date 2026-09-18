@@ -152,7 +152,7 @@ function MenuPage() {
     try {
       if (!category && !deferredSearchQuery) {
         // Grouped sections view
-        const res = await fetchPublicCatalogSections(effectiveStoreId, 12);
+        const res = await fetchPublicCatalogSections(effectiveStoreId, 50);
         if (requestId !== catalogRequestId.current) return;
         setSections(res.sections || []);
         setCategoryProducts([]);

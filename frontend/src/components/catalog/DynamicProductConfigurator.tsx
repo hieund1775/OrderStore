@@ -289,13 +289,23 @@ export function DynamicProductConfigurator({
 
         // 1. Map past modifiers to attributes & values by attribute_code and value_code
         for (const pastMod of pastModifiers) {
-          const attr = (data.attributes || []).find((a) => a.code === pastMod.attribute_code);
+          const attr = (data.attributes || []).find(
+            (a) =>
+              a.code === pastMod.attribute_code ||
+              (pastMod.attribute_code === 'toppings' && a.code === 'topping') ||
+              (pastMod.attribute_code === 'topping' && a.code === 'toppings') ||
+              (pastMod.attribute_name && a.name.toLowerCase() === pastMod.attribute_name.toLowerCase())
+          );
           if (!attr) {
             hasInvalidOption = true;
             continue;
           }
           const val = (attr.values || []).find(
-            (v) => v.code === pastMod.value_code && v.is_active !== false
+            (v) =>
+              (v.code === pastMod.value_code ||
+                v.label === pastMod.value_label ||
+                (pastMod.value_code && v.code.toLowerCase() === pastMod.value_code.toLowerCase())) &&
+              v.is_active !== false
           );
           if (!val) {
             hasInvalidOption = true;
@@ -306,6 +316,50 @@ export function DynamicProductConfigurator({
           } else {
             if (!initialModValIds.includes(val.id)) initialModValIds.push(val.id);
           }
+        }
+
+        // Fallback: restore toppings from initialItem.toppings array if present
+        if (Array.isArray(initialItem.toppings) && initialItem.toppings.length > 0) {
+          const toppingAttr = (data.attributes || []).find(
+            (a) => a.code === 'topping' || a.code === 'toppings' || a.name?.toLowerCase().includes('topping')
+          );
+          if (toppingAttr) {
+            for (const top of initialItem.toppings) {
+              const matchedVal = toppingAttr.values?.find(
+                (v) =>
+                  (v.code === top ||
+                    v.label === top ||
+                    top.toLowerCase().includes(v.label.toLowerCase()) ||
+                    v.label.toLowerCase().includes(top.toLowerCase())) &&
+                  v.is_active !== false
+              );
+              if (matchedVal && !initialModValIds.includes(matchedVal.id)) {
+                initialModValIds.push(matchedVal.id);
+              }
+            }
+          }
+        }
+
+        // Fallback: restore sugar if not yet matched
+        const sugarAttr = (data.attributes || []).find(
+          (a) => a.code === 'sugar' || a.name?.toLowerCase().includes('đường')
+        );
+        if (sugarAttr && !sugarAttr.values.some((v) => initialModValIds.includes(v.id)) && initialItem.sugar) {
+          const matchedVal = sugarAttr.values.find(
+            (v) => (v.code === initialItem.sugar || v.label.includes(initialItem.sugar)) && v.is_active !== false
+          );
+          if (matchedVal) initialModValIds.push(matchedVal.id);
+        }
+
+        // Fallback: restore ice if not yet matched
+        const iceAttr = (data.attributes || []).find(
+          (a) => a.code === 'ice' || a.name?.toLowerCase().includes('đá')
+        );
+        if (iceAttr && !iceAttr.values.some((v) => initialModValIds.includes(v.id)) && initialItem.ice) {
+          const matchedVal = iceAttr.values.find(
+            (v) => (v.code === initialItem.ice || v.label.includes(initialItem.ice)) && v.is_active !== false
+          );
+          if (matchedVal) initialModValIds.push(matchedVal.id);
         }
 
         // 2. Check variant matching if variantId or sku present and no variant attr matched yet

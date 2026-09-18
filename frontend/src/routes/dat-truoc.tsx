@@ -46,8 +46,21 @@ function vietnamTomorrow() {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
 
+function vietnamMaxPreorderDate() {
+  const [year, month, day] = vietnamToday().split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 7)).toISOString().slice(0, 10);
+}
+
 function hasAnyAvailableSlot(slots: PreorderSlot[] | undefined) {
   return Boolean(slots?.some((slot) => slot.available));
+}
+
+function isValidPhone(phone: string): boolean {
+  if (!phone || typeof phone !== 'string') return false;
+  let str = phone.trim().replace(/[\s().-]/g, '');
+  if (str.startsWith('+84') && str.length === 12) str = '0' + str.slice(3);
+  else if (str.startsWith('84') && str.length === 11) str = '0' + str.slice(2);
+  return /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(str);
 }
 
 function PreorderCheckoutPage() {
@@ -143,9 +156,7 @@ function PreorderCheckoutPage() {
       .then((value) => { if (active) setAvailability(value); })
       .catch((error) => {
         if (!active) return;
-        setPreorderStores((current) => current?.map((store) => Number(store.store_id) === storeId
-          ? { ...store, is_available: false }
-          : store) ?? current);
+        setAvailability(null);
         toast.error(error instanceof Error ? error.message : 'Không thể tải khung giờ đặt trước');
       });
     return () => { active = false; };
@@ -159,7 +170,11 @@ function PreorderCheckoutPage() {
     }
     if (selectedStorePreorderAvailable !== true) { toast.error('Đặt trước hiện chưa áp dụng tại chi nhánh này.'); return; }
     if (!cartIsSingleStore) { toast.error('Đặt trước chỉ nhận món của đúng một chi nhánh.'); return; }
-    if (!name.trim() || !phone.trim() || !date || !hour) { toast.error('Vui lòng điền thông tin nhận món và khung giờ.'); return; }
+    if (!name.trim()) { toast.error('Vui lòng nhập tên người nhận.'); return; }
+    if (!phone.trim()) { toast.error('Vui lòng nhập số điện thoại nhận món.'); return; }
+    if (phone.trim().length > 15) { toast.error('Số điện thoại không được vượt quá 15 ký tự.'); return; }
+    if (!isValidPhone(phone.trim())) { toast.error('Số điện thoại không đúng định dạng (VD: 0901234567).'); return; }
+    if (!date || !hour) { toast.error('Vui lòng chọn ngày và khung giờ nhận món.'); return; }
     const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour && slot.available);
     if (!selectedSlot) { toast.error('Khung giờ không còn phù hợp. Với giờ gần hơn 3 tiếng, vui lòng đặt đơn thường.'); return; }
     setSubmitting(true);
@@ -232,12 +247,12 @@ function PreorderCheckoutPage() {
         const available = preorderStores == null ? true : isPreorderAvailableForStore(preorderStores, store.id);
         return <SelectItem key={store.id} value={String(store.id)} disabled={!available}>{store.name}{available ? '' : ' · Chưa áp dụng đặt trước'}</SelectItem>;
       })}</SelectContent></Select>{selectedStorePreorderAvailable === false && <p className="mt-1 text-xs text-amber-700">Đặt trước hiện chưa áp dụng tại {selectedStore?.name || 'chi nhánh này'}. Hãy chọn chi nhánh khác.</p>}</div>
-      <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} onChange={(event) => setDate(event.target.value)} /></div>
+      <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} max={vietnamMaxPreorderDate()} onChange={(event) => setDate(event.target.value)} /></div>
       {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
       <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
       <div><Label><Ticket className="mr-1 inline size-4" />Mã voucher (áp dụng đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value.toUpperCase())} placeholder="Ví dụ: PREORDER10" /></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
-      <div><Label>Số điện thoại</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
+      <div><Label>Số điện thoại</Label><Input type="tel" maxLength={15} value={phone} placeholder="Ví dụ: 0901234567" onChange={(event) => setPhone(event.target.value)} />{phone.trim() && (!isValidPhone(phone.trim()) || phone.trim().length > 15) && <p className="mt-1 text-xs text-destructive">Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 03, 05, 07, 08, 09).</p>}</div>
       <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 md:col-span-2">
         <p className="font-semibold">Lưu ý thời gian check-in tự phục vụ:</p>
         <p className="mt-0.5 text-blue-800">Khung giờ khách tự check-in tại cửa hàng mở từ <strong>08:00 đến 24:00</strong> trong ngày đã chọn. Giờ đặt trước là thời gian dự kiến để cửa hàng chuẩn bị món chu đáo nhất.</p>

@@ -140,18 +140,49 @@ export function parseStoredCart(raw: string | null): CartItem[] {
   }
 }
 
+let cartBroadcastChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+    cartBroadcastChannel = new BroadcastChannel('teaplus_cart_sync_channel');
+  }
+} catch {
+  cartBroadcastChannel = null;
+}
+
+export function broadcastCartSync(userId: number, cartType: 'normal' | 'preorder') {
+  try {
+    cartBroadcastChannel?.postMessage({ type: 'CART_SYNC', userId, cartType, timestamp: Date.now() });
+  } catch {}
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   // Always initialize empty for SSR hydration safety and guest default
   const [items, setItems] = useState<CartItem[]>([]);
   const [activeUserId, setActiveUserId] = useState<number | null>(null);
   const hydratedUserRef = useRef<number | null>(null);
 
-  // Synchronize cart with current customer session
+  // Synchronize cart with current customer session and other tabs
   useEffect(() => {
     // Safely remove legacy V2 storage key; never migrate or render it
     try {
       localStorage.removeItem(LEGACY_V2_STORAGE_KEY);
     } catch {}
+
+    const reloadFromStorage = (userId: number) => {
+      let loaded: CartItem[] = [];
+      try {
+        const raw = localStorage.getItem(getCartStorageKey(userId));
+        loaded = parseStoredCart(raw);
+      } catch {
+        loaded = [];
+      }
+      setItems((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(loaded)) {
+          return prev;
+        }
+        return loaded;
+      });
+    };
 
     const syncWithSession = () => {
       const currentSession = getCustomerSession();
@@ -169,28 +200,57 @@ export function CartProvider({ children }: { children: ReactNode }) {
         // Logged in as new/different user:
         // 1. Reset visible state synchronously before loading to avoid leaking prior user's items
         setItems([]);
-        // 2. Hydrate exact active user key only
-        let loaded: CartItem[] = [];
-        try {
-          const raw = localStorage.getItem(getCartStorageKey(currentId));
-          loaded = parseStoredCart(raw);
-        } catch {
-          loaded = [];
-        }
         hydratedUserRef.current = currentId;
         setActiveUserId(currentId);
-        setItems(loaded);
+        reloadFromStorage(currentId);
+      } else {
+        // Same user: ensure in-memory items match storage (e.g. cross-tab update)
+        reloadFromStorage(currentId);
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      const currentSession = getCustomerSession();
+      const currentId = currentSession?.userId ?? null;
+      if (currentId === null) return;
+      if (!e.key || e.key === getCartStorageKey(currentId)) {
+        reloadFromStorage(currentId);
+      }
+    };
+
+    const handleBroadcast = (e: MessageEvent) => {
+      if (e.data?.type === 'CART_SYNC' && e.data?.cartType === 'normal') {
+        const currentSession = getCustomerSession();
+        const currentId = currentSession?.userId ?? null;
+        if (currentId !== null && (!e.data.userId || e.data.userId === currentId)) {
+          reloadFromStorage(currentId);
+        }
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const currentSession = getCustomerSession();
+      const currentId = currentSession?.userId ?? null;
+      if (currentId !== null) {
+        reloadFromStorage(currentId);
       }
     };
 
     syncWithSession();
 
     window.addEventListener('teaplus:customer-auth-changed', syncWithSession);
-    window.addEventListener('storage', syncWithSession);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    cartBroadcastChannel?.addEventListener('message', handleBroadcast);
 
     return () => {
       window.removeEventListener('teaplus:customer-auth-changed', syncWithSession);
-      window.removeEventListener('storage', syncWithSession);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      cartBroadcastChannel?.removeEventListener('message', handleBroadcast);
     };
   }, []);
 
@@ -202,7 +262,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      localStorage.setItem(getCartStorageKey(currentSession.userId), JSON.stringify(items));
+      const key = getCartStorageKey(currentSession.userId);
+      const serialized = JSON.stringify(items);
+      const existing = localStorage.getItem(key);
+      if (existing !== serialized) {
+        localStorage.setItem(key, serialized);
+        broadcastCartSync(currentSession.userId, 'normal');
+      }
     } catch {
       // Storage quota or disabled: maintain private in-memory cart safely without shared fallback
     }
@@ -466,6 +532,22 @@ export function PreorderCartProvider({ children }: { children: ReactNode }) {
   const hydratedUserRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const reloadFromStorage = (userId: number) => {
+      let loaded: CartItem[] = [];
+      try {
+        const raw = localStorage.getItem(getPreorderCartStorageKey(userId));
+        loaded = parseStoredCart(raw);
+      } catch {
+        loaded = [];
+      }
+      setItems((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(loaded)) {
+          return prev;
+        }
+        return loaded;
+      });
+    };
+
     const syncWithSession = () => {
       const currentSession = getCustomerSession();
       const currentId = currentSession?.userId ?? null;
@@ -479,27 +561,56 @@ export function PreorderCartProvider({ children }: { children: ReactNode }) {
 
       if (hydratedUserRef.current !== currentId) {
         setItems([]);
-        let loaded: CartItem[] = [];
-        try {
-          const raw = localStorage.getItem(getPreorderCartStorageKey(currentId));
-          loaded = parseStoredCart(raw);
-        } catch {
-          loaded = [];
-        }
         hydratedUserRef.current = currentId;
         setActiveUserId(currentId);
-        setItems(loaded);
+        reloadFromStorage(currentId);
+      } else {
+        reloadFromStorage(currentId);
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      const currentSession = getCustomerSession();
+      const currentId = currentSession?.userId ?? null;
+      if (currentId === null) return;
+      if (!e.key || e.key === getPreorderCartStorageKey(currentId)) {
+        reloadFromStorage(currentId);
+      }
+    };
+
+    const handleBroadcast = (e: MessageEvent) => {
+      if (e.data?.type === 'CART_SYNC' && e.data?.cartType === 'preorder') {
+        const currentSession = getCustomerSession();
+        const currentId = currentSession?.userId ?? null;
+        if (currentId !== null && (!e.data.userId || e.data.userId === currentId)) {
+          reloadFromStorage(currentId);
+        }
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const currentSession = getCustomerSession();
+      const currentId = currentSession?.userId ?? null;
+      if (currentId !== null) {
+        reloadFromStorage(currentId);
       }
     };
 
     syncWithSession();
 
     window.addEventListener('teaplus:customer-auth-changed', syncWithSession);
-    window.addEventListener('storage', syncWithSession);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    cartBroadcastChannel?.addEventListener('message', handleBroadcast);
 
     return () => {
       window.removeEventListener('teaplus:customer-auth-changed', syncWithSession);
-      window.removeEventListener('storage', syncWithSession);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      cartBroadcastChannel?.removeEventListener('message', handleBroadcast);
     };
   }, []);
 
@@ -510,7 +621,13 @@ export function PreorderCartProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      localStorage.setItem(getPreorderCartStorageKey(currentSession.userId), JSON.stringify(items));
+      const key = getPreorderCartStorageKey(currentSession.userId);
+      const serialized = JSON.stringify(items);
+      const existing = localStorage.getItem(key);
+      if (existing !== serialized) {
+        localStorage.setItem(key, serialized);
+        broadcastCartSync(currentSession.userId, 'preorder');
+      }
     } catch {}
   }, [items, activeUserId]);
 

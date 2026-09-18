@@ -113,8 +113,8 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
       sugar: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'sugar')?.value_label || editingItem.sugar,
       ice: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'ice')?.value_label || editingItem.ice,
       toppings: configured.appliedModifiers
-        ?.filter((m: any) => m.attribute_code === 'toppings')
-        .map((m: any) => m.value_code) || editingItem.toppings,
+        ?.filter((m: any) => m.attribute_code === 'toppings' || m.attribute_code === 'topping' || m.attribute_name?.toLowerCase().includes('topping'))
+        .map((m: any) => m.value_label || m.value_code) || editingItem.toppings,
       appliedModifiers: configured.appliedModifiers || [],
       unitPrice: configured.unitPrice,
       qty: configured.quantity,
@@ -378,6 +378,9 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
           onOpenChange={(open) => !open && setEditingItem(null)}
           productSlug={editingItem.productSlug || editingItem.productId}
           storeId={editingItem.storeId}
+          mode="edit"
+          initialItem={editingItem}
+          onUpdate={handleSaveEdit}
           onAddToCart={handleSaveEdit}
         />
       )}
