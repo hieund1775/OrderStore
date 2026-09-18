@@ -67,9 +67,18 @@ export function AdminSidebar({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const user = getUser();
   const role = user?.role as AdminRole | undefined;
-  const [enabledLanes, setEnabledLanes] = useState<Set<string>>(() =>
-    role === 'super' ? new Set(['kitchen', 'packing']) : new Set(),
-  );
+  const [enabledLanes, setEnabledLanes] = useState<Set<string>>(() => {
+    const lanes = new Set<string>();
+    if (role === 'super') {
+      lanes.add('kitchen');
+      lanes.add('packing');
+    } else if (role === 'kitchen') {
+      lanes.add('kitchen');
+    } else if (role === 'packing') {
+      lanes.add('packing');
+    }
+    return lanes;
+  });
   const [catalogExpanded, setCatalogExpanded] = useState(() => pathname.startsWith('/admin/catalog'));
 
   useEffect(() => {
@@ -77,20 +86,27 @@ export function AdminSidebar({
       setEnabledLanes(new Set(['kitchen', 'packing']));
       return;
     }
+    const defaultLanes = new Set<string>();
+    if (role === 'kitchen') defaultLanes.add('kitchen');
+    if (role === 'packing') defaultLanes.add('packing');
+
     if (!user?.branch_id) {
-      setEnabledLanes(new Set());
+      setEnabledLanes(defaultLanes);
       return;
     }
     let active = true;
     fetchBranchCapabilities(user.branch_id)
       .then((response) => {
         if (!active) return;
-        setEnabledLanes(new Set(
+        const lanes = new Set(
           (response.data || []).filter((item) => item.is_enabled).map((item) => item.lane_code),
-        ));
+        );
+        if (role === 'kitchen') lanes.add('kitchen');
+        if (role === 'packing') lanes.add('packing');
+        setEnabledLanes(lanes);
       })
       .catch(() => {
-        if (active) setEnabledLanes(new Set());
+        if (active) setEnabledLanes(defaultLanes);
       });
     return () => {
       active = false;
@@ -99,7 +115,12 @@ export function AdminSidebar({
 
   const visibleNav = adminNav.filter((item) => {
     if (!role || !item.roles.includes(role)) return false;
-    return !('lane' in item) || enabledLanes.has(item.lane);
+    if ('lane' in item) {
+      if (role === 'kitchen' && item.lane === 'kitchen') return true;
+      if (role === 'packing' && item.lane === 'packing') return true;
+      return enabledLanes.has(item.lane);
+    }
+    return true;
   });
 
   return (

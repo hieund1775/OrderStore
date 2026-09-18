@@ -197,6 +197,9 @@ export function createPreorderService({
       if (!Array.isArray(input?.items) || input.items.some((item) => item?.store_id != null && Number(item.store_id) !== storeId)) {
         throw new PreorderError('Tất cả món preorder phải thuộc đúng một chi nhánh đã chọn', 400, 'PREORDER_SINGLE_STORE_REQUIRED');
       }
+      if (input?.customer_phone && String(input.customer_phone).trim().length > 20) {
+        throw new PreorderError('Số điện thoại không được vượt quá 20 ký tự', 400, 'PREORDER_PHONE_TOO_LONG');
+      }
       const slot = validateVietnamPreorderSlot({ date: input?.scheduled_date, hour: input?.scheduled_hour, now: now() });
 
       const { table_id: _ignoredTable, ...cleanInput } = input || {};

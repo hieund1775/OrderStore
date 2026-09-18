@@ -141,7 +141,7 @@ export function createFulfillmentRepository(database = postgresDb) {
            t.id, t.order_id, t.branch_id, t.lane, t.status,
            t.assigned_to, t.started_at, t.completed_at, t.notes,
            t.created_at, t.updated_at,
-           o.order_code, o.order_type, o.current_status, o.shipping_driver_name, o.shipping_driver_phone,
+           o.order_code, o.order_type, latest.status AS current_status, o.shipping_driver_name, o.shipping_driver_phone,
            o.table_id, o.location_name,
            NOT EXISTS (
              SELECT 1 FROM fulfillment_tasks other_task
@@ -153,6 +153,13 @@ export function createFulfillmentRepository(database = postgresDb) {
            s.name AS store_name
          FROM fulfillment_tasks t
          JOIN orders o ON o.id = t.order_id
+         LEFT JOIN LATERAL (
+           SELECT status
+           FROM order_status_history osh
+           WHERE osh.order_id = o.id
+           ORDER BY osh.created_at DESC, osh.id DESC
+           LIMIT 1
+         ) latest ON true
          LEFT JOIN preorders p ON p.id = o.preorder_id
          JOIN stores s ON s.id = t.branch_id
          LEFT JOIN users u ON u.id = o.user_id
@@ -203,12 +210,19 @@ export function createFulfillmentRepository(database = postgresDb) {
            t.id, t.order_id, t.branch_id, t.lane, t.status,
            t.assigned_to, t.started_at, t.completed_at, t.notes,
            t.created_at, t.updated_at,
-           o.order_code, o.order_type, o.table_id, o.location_name,
+           o.order_code, o.order_type, latest.status AS current_status, o.table_id, o.location_name,
            p.preorder_code, p.scheduled_start_at AS preorder_scheduled_start_at,
            o.user_id, u.fullname AS customer_name, u.phone AS customer_phone,
            s.name AS store_name
          FROM fulfillment_tasks t
          JOIN orders o ON o.id = t.order_id
+         LEFT JOIN LATERAL (
+           SELECT status
+           FROM order_status_history osh
+           WHERE osh.order_id = o.id
+           ORDER BY osh.created_at DESC, osh.id DESC
+           LIMIT 1
+         ) latest ON true
          LEFT JOIN preorders p ON p.id = o.preorder_id
          JOIN stores s ON s.id = t.branch_id
          LEFT JOIN users u ON u.id = o.user_id

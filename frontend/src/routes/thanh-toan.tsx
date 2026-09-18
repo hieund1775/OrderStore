@@ -618,6 +618,13 @@ function Checkout() {
     }
   }
 
+  function removeVoucher() {
+    setAppliedCode("");
+    setVoucherDiscount(0);
+    setVoucherCode("");
+    toast.info("Đã gỡ mã ưu đãi");
+  }
+
   async function submitOrder() {
     if (checkoutItems.length === 0) return;
     if (!isTableQrCheckout && !getCustomerSession()) {
@@ -1310,14 +1317,29 @@ function Checkout() {
                   onChange={(e) => setVoucherCode(e.target.value)}
                 />
               </div>
-              <Button variant="soft" onClick={applyVoucher} disabled={!!appliedCode}>
-                {appliedCode ? "Đã áp dụng" : "Áp dụng"}
+              <Button
+                variant="soft"
+                onClick={applyVoucher}
+                disabled={Boolean(appliedCode && voucherCode.trim().toUpperCase() === appliedCode.toUpperCase())}
+              >
+                {Boolean(appliedCode && voucherCode.trim().toUpperCase() === appliedCode.toUpperCase())
+                  ? "Đã áp dụng"
+                  : "Áp dụng"}
               </Button>
             </div>
             {appliedCode && (
-              <p className="text-leaf text-xs font-medium">
-                Mã {appliedCode}: giảm {vnd(discount)}
-              </p>
+              <div className="flex items-center justify-between text-xs">
+                <p className="text-leaf font-medium">
+                  Mã {appliedCode}: giảm {vnd(discount)}
+                </p>
+                <button
+                  type="button"
+                  onClick={removeVoucher}
+                  className="text-destructive hover:underline font-semibold text-[11px] cursor-pointer"
+                >
+                  Hủy / Gỡ bỏ
+                </button>
+              </div>
             )}
 
             <Separator />

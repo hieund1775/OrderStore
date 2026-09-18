@@ -79,13 +79,13 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       if (!storeId) return [];
 
       const normalizedStoreId = Number(storeId);
-      const limit = Math.min(Math.max(1, Number(limitPerRoot) || 12), 12);
+      const limit = Math.min(Math.max(1, Number(limitPerRoot) || 24), 50);
 
       const [rows] = await database.query(
         `WITH RECURSIVE category_tree AS (
            SELECT c.id AS category_id, c.id AS root_id
            FROM categories c
-           WHERE c.parent_id IS NULL AND c.depth = 0
+           WHERE c.parent_id IS NULL AND COALESCE(c.depth, 0) = 0
              AND c.is_visible = TRUE AND c.archived_at IS NULL
            UNION ALL
            SELECT child.id AS category_id, tree.root_id
@@ -96,7 +96,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
          roots AS (
            SELECT c.id, c.name, c.slug, c.sort_order
            FROM categories c
-           WHERE c.parent_id IS NULL AND c.depth = 0
+           WHERE c.parent_id IS NULL AND COALESCE(c.depth, 0) = 0
              AND c.is_visible = TRUE AND c.archived_at IS NULL
          ),
          direct_children AS (
@@ -274,7 +274,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
             SELECT 1 FROM product_variants pv_search
             WHERE pv_search.product_id = p.id
               AND pv_search.status = 'active'
-              AND (pv_search.sku ILIKE ${searchParam} OR pv_search.name ILIKE ${searchParam})
+              AND (pv_search.sku ILIKE ${searchParam} OR pv_search.name_suffix ILIKE ${searchParam})
           )
         )`;
       }
