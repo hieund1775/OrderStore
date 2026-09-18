@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet } from "@/lib/api";
 import { useBranch } from "@/lib/branch";
 import { formatFullAddress } from "@/lib/data";
+import { isStoreOpen } from "@/lib/store-hours";
 import cuahangBannerImg from "@/assets/cuahang.jpg";
 
 export const Route = createFileRoute("/cua-hang")({
@@ -338,7 +339,14 @@ function StoresPage() {
                         <Clock className="text-primary size-4 shrink-0" />
                         <span className="truncate">{s.hours}</span>
                       </div>
-                      {s.is_active ? (
+                      {!s.is_active ? (
+                        <Badge
+                          variant="destructive"
+                          className="rounded-full text-[11px] font-medium shrink-0"
+                        >
+                          🔴 Tạm ngưng
+                        </Badge>
+                      ) : isStoreOpen(s.hours) ? (
                         <Badge
                           variant="outline"
                           className="border-emerald-200 bg-emerald-50 text-emerald-700 rounded-full text-[11px] font-medium shrink-0"

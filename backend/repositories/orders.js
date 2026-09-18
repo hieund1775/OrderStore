@@ -19,8 +19,8 @@ export function createOrderReadRepository(database = postgresDb) {
     async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
       const params = [];
       // Preorders enter ordinary order-management once confirmed, checked-in, or cancelled.
-      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS')";
-      filters += " AND (o.preorder_id IS NULL OR p.status IN ('CONFIRMED', 'CHECKED_IN', 'CUSTOMER_CANCELLED', 'NO_SHOW', 'COMPLETED'))";
+      let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS' OR latest.status = 'Đã hủy' OR p.status = 'CUSTOMER_CANCELLED')";
+      filters += " AND (o.preorder_id IS NULL OR p.status IN ('CONFIRMED', 'CHECKED_IN', 'CUSTOMER_CANCELLED', 'NO_SHOW', 'COMPLETED') OR latest.status = 'Đã hủy')";
       if (status) {
         params.push(status);
         filters += ` AND latest.status = $${params.length}`;

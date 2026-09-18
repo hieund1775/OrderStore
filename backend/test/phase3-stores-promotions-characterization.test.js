@@ -10,8 +10,10 @@ import adminStoresRepository from '../repositories/postgres/admin-stores.js';
 import adminPromotionsRepository from '../repositories/postgres/admin-promotions.js';
 import adminInventoryRepository from '../repositories/postgres/admin-inventory.js';
 
-const superToken = jwt.sign({ sub: 1, role: 'super' }, JWT_SECRET);
-const cashierToken = jwt.sign({ sub: 2, role: 'cashier', branch_id: 1 }, JWT_SECRET);
+import usersRepository from '../repositories/postgres/users.js';
+
+const superToken = jwt.sign({ sub: 1, role: 'super', token_version: 0 }, JWT_SECRET);
+const cashierToken = jwt.sign({ sub: 2, role: 'cashier', branch_id: 1, token_version: 0 }, JWT_SECRET);
 
 describe('Phase 3 Slice 3 Stores, Promotions & Inventory HTTP Characterization', () => {
   let server;
@@ -29,7 +31,9 @@ describe('Phase 3 Slice 3 Stores, Promotions & Inventory HTTP Characterization',
       listTables: adminStoresRepository.listTables,
       listPromotions: adminPromotionsRepository.listPromotions,
       listInventory: adminInventoryRepository.listInventory,
+      findActiveUserById: usersRepository.findActiveUserById,
     };
+    usersRepository.findActiveUserById = async (id) => ({ id: Number(id), token_version: 0 });
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -56,6 +60,7 @@ describe('Phase 3 Slice 3 Stores, Promotions & Inventory HTTP Characterization',
     Object.assign(adminInventoryRepository, {
       listInventory: originals.listInventory,
     });
+    usersRepository.findActiveUserById = originals.findActiveUserById;
     await new Promise((resolve) => server.close(resolve));
   });
 

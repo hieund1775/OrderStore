@@ -329,8 +329,10 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         if (categoryLane && categoryLane !== targetLane) {
           throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
         }
+        const isCategoryChanging = data.category_id != null && Number(data.category_id) !== Number(current.category_id);
         if (
-          category.product_type_id
+          isCategoryChanging
+          && category.product_type_id
           && current.product_type_id
           && Number(category.product_type_id) !== Number(current.product_type_id)
         ) {

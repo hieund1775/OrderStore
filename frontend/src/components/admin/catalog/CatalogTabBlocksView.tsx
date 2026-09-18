@@ -75,8 +75,42 @@ export function CatalogTabBlocksView({
   onRefresh,
   onOpenProductEditor,
 }: CatalogTabBlocksViewProps) {
-  // Tab hiện tại: 'subcategories' | 'products' | 'options'
-  const [activeTab, setActiveTab] = useState<'subcategories' | 'products' | 'options'>('subcategories');
+  // Tab hiện tại: 'subcategories' | 'products' | 'options' (giữ nguyên khi F5 qua URL & localStorage)
+  type CatalogTab = 'subcategories' | 'products' | 'options';
+  const getInitialTab = (): CatalogTab => {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlTab = params.get('tab');
+        if (urlTab === 'subcategories' || urlTab === 'products' || urlTab === 'options') {
+          return urlTab;
+        }
+        const savedTab = localStorage.getItem(`admin_catalog_tab_${activeLane || 'all'}`);
+        if (savedTab === 'subcategories' || savedTab === 'products' || savedTab === 'options') {
+          return savedTab;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return 'subcategories';
+  };
+
+  const [activeTab, setActiveTabState] = useState<CatalogTab>(getInitialTab);
+
+  const switchTab = (tab: CatalogTab) => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`admin_catalog_tab_${activeLane || 'all'}`, tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tab);
+        window.history.replaceState({}, '', url.toString());
+      } catch {
+        // ignore storage/history error
+      }
+    }
+  };
 
   // Danh mục gốc đang chọn
   const activeRootCategory = useMemo(() => {
@@ -382,6 +416,7 @@ export function CatalogTabBlocksView({
         price: prod.price,
         is_available: nextAvailable,
         status: nextStatus,
+        fulfillment_lane: prod.fulfillment_lane,
       });
 
       toast.success(`Đã ${nextAvailable ? 'mở bán' : 'tạm ngưng'} món "${prod.name}"`);
@@ -409,7 +444,7 @@ export function CatalogTabBlocksView({
       {/* 3 TABS HEADER BAR */}
       <div className="flex items-center gap-2 border-b pb-2">
         <button
-          onClick={() => setActiveTab('subcategories')}
+          onClick={() => switchTab('subcategories')}
           className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'subcategories'
               ? 'bg-primary text-primary-foreground shadow-xs'
@@ -421,7 +456,7 @@ export function CatalogTabBlocksView({
         </button>
 
         <button
-          onClick={() => setActiveTab('products')}
+          onClick={() => switchTab('products')}
           className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'products'
               ? 'bg-primary text-primary-foreground shadow-xs'
@@ -433,7 +468,7 @@ export function CatalogTabBlocksView({
         </button>
 
         <button
-          onClick={() => setActiveTab('options')}
+          onClick={() => switchTab('options')}
           className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'options'
               ? 'bg-primary text-primary-foreground shadow-xs'

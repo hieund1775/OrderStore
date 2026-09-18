@@ -10,10 +10,12 @@ import adminCatalogRepository from '../repositories/postgres/admin-catalog.js';
 import engagementRepository from '../repositories/postgres/engagement.js';
 import notificationService from '../services/notifications/notification-service.js';
 
-const superToken = jwt.sign({ sub: 1, role: 'super' }, JWT_SECRET);
-const managerToken = jwt.sign({ sub: 2, role: 'manager', branch_id: 1 }, JWT_SECRET);
-const user1Token = jwt.sign({ sub: 10, id: 10, role: 'customer' }, JWT_SECRET);
-const user2Token = jwt.sign({ sub: 11, id: 11, role: 'customer' }, JWT_SECRET);
+import usersRepository from '../repositories/postgres/users.js';
+
+const superToken = jwt.sign({ sub: 1, role: 'super', token_version: 0 }, JWT_SECRET);
+const managerToken = jwt.sign({ sub: 2, role: 'manager', branch_id: 1, token_version: 0 }, JWT_SECRET);
+const user1Token = jwt.sign({ sub: 10, id: 10, role: 'customer', token_version: 0 }, JWT_SECRET);
+const user2Token = jwt.sign({ sub: 11, id: 11, role: 'customer', token_version: 0 }, JWT_SECRET);
 
 describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests', () => {
   let server;
@@ -37,7 +39,9 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
       ensureUserWishlistItem: engagementRepository.ensureUserWishlistItem,
       removeUserWishlistItem: engagementRepository.removeUserWishlistItem,
       listNotificationsForUser: notificationService.listForUser,
+      findActiveUserById: usersRepository.findActiveUserById,
     };
+    usersRepository.findActiveUserById = async (id) => ({ id: Number(id), token_version: 0 });
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -66,6 +70,7 @@ describe('Phase 3 Slice 4 Reports, Customers & Engagement Characterization Tests
     });
     adminCatalogRepository.setProductAvailability = originals.setProductAvailability;
     notificationService.listForUser = originals.listNotificationsForUser;
+    usersRepository.findActiveUserById = originals.findActiveUserById;
     await new Promise((resolve) => server.close(resolve));
   });
 

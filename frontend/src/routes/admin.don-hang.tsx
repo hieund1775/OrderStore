@@ -114,6 +114,8 @@ type AdminOrderFull = AdminOrderRow & {
 
 const statuses: ("Tất cả" | OrderStatus)[] = [
   "Tất cả",
+  "Chờ xác nhận",
+  "Đã xác nhận",
   "Đang chuẩn bị",
   "Đang giao",
   "Hoàn thành",

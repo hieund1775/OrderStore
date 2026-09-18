@@ -1,5 +1,12 @@
 import postgresDb from '../../config/db-postgres.js';
 
+function extractRows(result) {
+  if (!result) return [];
+  if (Array.isArray(result)) return Array.isArray(result[0]) ? result[0] : result;
+  if (Array.isArray(result.rows)) return result.rows;
+  return [];
+}
+
 export function createFulfillmentRepository(database = postgresDb) {
   return {
     async isLaneActive(lane, client = database) {
@@ -274,14 +281,14 @@ export function createFulfillmentRepository(database = postgresDb) {
     },
 
     async cancelTasksForOrder(orderId, client = database) {
-      const [rows] = await client.query(
+      const result = await client.query(
         `UPDATE fulfillment_tasks
          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
          WHERE order_id = $1 AND status NOT IN ('completed', 'cancelled')
          RETURNING id, order_id, status`,
         [Number(orderId)],
       );
-      return rows;
+      return extractRows(result);
     },
 
     async areAllTasksCompletedForOrder(orderId, client = database) {

@@ -52,7 +52,7 @@ import {
 } from "@/lib/api";
 import { formatFullAddress } from "@/lib/data";
 import { canDeleteBranch } from "@/lib/branch-permissions";
-import { parseHours } from "@/lib/store-hours";
+import { parseHours, isStoreOpen } from "@/lib/store-hours";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
   head: () => ({
@@ -558,17 +558,19 @@ function StoresAdminPage() {
                     <li className="flex gap-2">
                       <MapPin className="text-primary mt-0.5 size-4 shrink-0" /> {formatFullAddress(s.address, s.district, s.city)}
                     </li>
-                    <li className="flex items-center gap-2">
-                      <Clock className="text-primary mt-0.5 size-4 shrink-0" />
-                      <span className="min-w-0 flex-1">{s.hours}</span>
-                      {s.is_active ? (
-                        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                          🟢 Đang mở cửa
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive">🔴 Đã đóng cửa</Badge>
-                      )}
-                    </li>
+                      <li className="flex items-center gap-2">
+                        <Clock className="text-primary mt-0.5 size-4 shrink-0" />
+                        <span className="min-w-0 flex-1">{s.hours}</span>
+                        {!s.is_active ? (
+                          <Badge variant="destructive">🔴 Tạm ngưng</Badge>
+                        ) : isStoreOpen(s.hours) ? (
+                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                            🟢 Đang mở cửa
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">🔴 Đã đóng cửa</Badge>
+                        )}
+                      </li>
                     <li className="flex gap-2">
                       <Phone className="text-primary mt-0.5 size-4 shrink-0" /> {s.phone}
                     </li>

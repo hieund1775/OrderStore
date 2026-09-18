@@ -69,7 +69,7 @@ export function AdminPreordersPage() {
   const isSuper = user?.role === 'super';
   const [rows, setRows] = useState<Preorder[]>([]);
   const [view, setView] = useState<'pending' | 'check-in' | 'today' | 'upcoming' | 'archive'>('pending');
-  const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'COMPLETED' | 'CUSTOMER_CANCELLED' | 'NO_SHOW'>('COMPLETED');
+  const [archiveStatusFilter, setArchiveStatusFilter] = useState<'all' | 'COMPLETED' | 'CUSTOMER_CANCELLED' | 'NO_SHOW'>('all');
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [storeFilter, setStoreFilter] = useState('all');
   const [loading, setLoading] = useState(true);

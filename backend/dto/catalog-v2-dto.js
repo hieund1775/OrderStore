@@ -96,6 +96,9 @@ export function toProductV2Dto(row) {
     rating: Number(row.rating || 0),
     review_count: Number(row.review_count || 0),
     status: row.status,
+    is_available: row.is_available !== undefined && row.is_available !== null
+      ? Boolean(row.is_available)
+      : (row.status !== 'inactive'),
     fulfillment_lane: row.fulfillment_lane,
     stock_mode: row.stock_mode,
     variants_count: Number(row.variants_count || 0),
