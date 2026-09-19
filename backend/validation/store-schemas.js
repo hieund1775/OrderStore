@@ -52,12 +52,15 @@ export function validateBranchInput(body = {}, { isUpdate = false } = {}) {
 
   if (hours !== undefined && hours !== null && String(hours).trim() !== '') {
     const rawHours = String(hours).trim();
-    const match = rawHours.match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})$/);
+    const match = rawHours.match(/^(\d{1,2}):(\d{2})\s*[-–—~]\s*(\d{1,2}):(\d{2})$/);
     if (match) {
       const openMinutes = Number(match[1]) * 60 + Number(match[2]);
       const closeMinutes = Number(match[3]) * 60 + Number(match[4]);
       if (closeMinutes <= openMinutes) {
         throw new StoreValidationError('Giờ đóng cửa phải lớn hơn giờ mở cửa');
+      }
+      if (closeMinutes - openMinutes < 240) {
+        throw new StoreValidationError('Thời gian mở cửa và đóng cửa phải cách nhau ít nhất 4 tiếng');
       }
     }
   }

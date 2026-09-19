@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, MapPin, Search, AlertCircle, RefreshCw, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,11 @@ function MenuPage() {
   const categoryTreeQuery = usePublicCategoryTree(effectiveStoreId);
   const categoryTree = categoryTreeQuery.data || [];
 
+  const visibleSections = useMemo(
+    () => sections.filter((s) => Array.isArray(s.products) && s.products.length > 0),
+    [sections]
+  );
+
   // 2. Resolve table if present in URL
   useEffect(() => {
     if (!table_id && !table_token && store_id && branchStatus === "ready") selectStore(store_id);
@@ -158,10 +163,10 @@ function MenuPage() {
         setCategoryProducts([]);
         setCategoryProductsTotal(0);
       } else {
-        // Subtree products view
+        // Subtree products view - search globally when search term is entered
         const res = await fetchPublicProducts({
           store_id: effectiveStoreId,
-          category: category,
+          category: deferredSearchQuery ? undefined : category,
           search: deferredSearchQuery || undefined,
           limit: pageSize,
           offset: (currentPage - 1) * pageSize,
@@ -174,8 +179,13 @@ function MenuPage() {
     } catch (err: unknown) {
       if (requestId !== catalogRequestId.current) return;
       const apiError = err as { status?: number; message?: string };
-      if (category && (apiError.status === 404 || apiError.message?.includes("404") || apiError.message?.includes("Không tìm thấy"))) {
+      if (!deferredSearchQuery && category && (apiError.status === 404 || apiError.message?.includes("404") || apiError.message?.includes("Không tìm thấy"))) {
         setNotFoundError(true);
+      } else if (deferredSearchQuery) {
+        // Safe fallback for search failure: show empty search results rather than full error screen
+        setCategoryProducts([]);
+        setCategoryProductsTotal(0);
+        setCatalogError(null);
       } else {
         const rawMsg = apiError.message || '';
         const safeMsg = rawMsg && !rawMsg.includes('Route ') && !rawMsg.includes('not found') && !rawMsg.includes('HTML')
@@ -184,8 +194,10 @@ function MenuPage() {
         setCatalogError(safeMsg);
       }
       setSections([]);
-      setCategoryProducts([]);
-      setCategoryProductsTotal(0);
+      if (!deferredSearchQuery) {
+        setCategoryProducts([]);
+        setCategoryProductsTotal(0);
+      }
     } finally {
       if (requestId === catalogRequestId.current) setLoading(false);
     }
@@ -276,7 +288,7 @@ function MenuPage() {
           </div>
         ) : !showProductList ? (
           /* Default Grouped Sections View */
-          sections.length === 0 ? (
+          visibleSections.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed rounded-2xl p-8">
               <ShoppingBag className="size-12 text-muted-foreground/40 mb-3" />
               <p className="text-base font-semibold text-foreground">Chưa có sản phẩm nào khả dụng</p>
@@ -286,7 +298,7 @@ function MenuPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {sections.map((section) => (
+              {visibleSections.map((section) => (
                 <CatalogSection
                   key={section.root_id}
                   section={section}

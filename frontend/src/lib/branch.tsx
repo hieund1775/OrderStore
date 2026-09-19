@@ -19,6 +19,8 @@ export type PublicStore = {
   address?: string;
   district?: string;
   city?: string;
+  hours?: string;
+  phone?: string;
   is_active?: boolean;
 };
 

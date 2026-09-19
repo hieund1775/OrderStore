@@ -19,10 +19,8 @@ import { createFulfillmentCapabilitiesRoutes } from './admin/fulfillment-capabil
 import adminPaymentProfilesRouter from './admin/payment-profiles.js';
 import adminPreordersRouter from './admin/preorders.js';
 import adminPosRouter from './admin/pos.js';
-
 const router = Router();
 router.use(authenticate, requireRole('super', 'manager', 'kitchen', 'cashier', 'packing'));
-
 // ═══════════ DOMAIN ROUTERS ═══════════
 router.use('/dashboard', dashboardRouter);
 router.use('/reports', reportsRouter);

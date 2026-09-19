@@ -262,7 +262,7 @@ export function DynamicProductConfigurator({
                   { id: 1032, code: 'nha_dam', label: 'Thạch nha đam', price_adjustment: 8000, sort_order: 2, is_active: true },
                   { id: 1033, code: 'thach_trai_cay', label: 'Thạch trái cây', price_adjustment: 8000, sort_order: 3, is_active: true },
                   { id: 1034, code: 'tran_chau_trang', label: 'Trân châu trắng', price_adjustment: 7000, sort_order: 4, is_active: true },
-                  { id: 1035, code: 'macchiato', label: 'Macchiato kem cheese', price_adjustment: 12000, sort_order: 5, is_active: true },
+                  { id: 1035, code: 'macchiato', label: 'Kem Macchiato Phô Mai', price_adjustment: 12000, sort_order: 5, is_active: true },
                 ],
               },
             ],
@@ -287,54 +287,86 @@ export function DynamicProductConfigurator({
         const initialVarValIds: number[] = [];
         const initialModValIds: number[] = [];
 
-        // 1. Map past modifiers to attributes & values by attribute_code and value_code
+        // Helper to normalize string for forgiving matching
+        const normalizeStr = (s?: string) =>
+          (s || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
+
+        const matchValue = (val: any, target: any) => {
+          if (!val || !target || val.is_active === false) return false;
+          if (target.id && Number(val.id) === Number(target.id)) return true;
+
+          const targetCode = String(target.value_code || target.code || '').toLowerCase();
+          const targetLabel = String(
+            target.value_label || target.label || target.name || (typeof target === 'string' ? target : '')
+          ).toLowerCase();
+
+          const vCode = String(val.code || '').toLowerCase();
+          const vLabel = String(val.label || val.name || '').toLowerCase();
+
+          if (targetCode && vCode && targetCode === vCode) return true;
+          if (targetLabel && vLabel && targetLabel === vLabel) return true;
+
+          const normTarget = normalizeStr(targetLabel || targetCode);
+          const normV = normalizeStr(vLabel || vCode);
+
+          if (normTarget && normV) {
+            if (normTarget === normV) return true;
+            if (normTarget.includes(normV) || normV.includes(normTarget)) return true;
+            if (normTarget.includes('macchiato') && (normV.includes('macchiato') || vCode.includes('macchiato'))) return true;
+          }
+          return false;
+        };
+
+        // 1. Map past modifiers to attributes & values
         for (const pastMod of pastModifiers) {
-          const attr = (data.attributes || []).find(
+          let targetAttr = (data.attributes || []).find(
             (a) =>
               a.code === pastMod.attribute_code ||
               (pastMod.attribute_code === 'toppings' && a.code === 'topping') ||
               (pastMod.attribute_code === 'topping' && a.code === 'toppings') ||
               (pastMod.attribute_name && a.name.toLowerCase() === pastMod.attribute_name.toLowerCase())
           );
-          if (!attr) {
-            hasInvalidOption = true;
+
+          let matchedVal = targetAttr
+            ? (targetAttr.values || []).find((v) => matchValue(v, pastMod))
+            : null;
+
+          if (!matchedVal) {
+            // Search across all attributes in data.attributes
+            for (const a of data.attributes || []) {
+              const v = (a.values || []).find((val) => matchValue(val, pastMod));
+              if (v) {
+                targetAttr = a;
+                matchedVal = v;
+                break;
+              }
+            }
+          }
+
+          if (!matchedVal || !targetAttr) {
             continue;
           }
-          const val = (attr.values || []).find(
-            (v) =>
-              (v.code === pastMod.value_code ||
-                v.label === pastMod.value_label ||
-                (pastMod.value_code && v.code.toLowerCase() === pastMod.value_code.toLowerCase())) &&
-              v.is_active !== false
-          );
-          if (!val) {
-            hasInvalidOption = true;
-            continue;
-          }
-          if (attr.role === 'variant') {
-            if (!initialVarValIds.includes(val.id)) initialVarValIds.push(val.id);
+
+          if (targetAttr.role === 'variant') {
+            if (!initialVarValIds.includes(matchedVal.id)) initialVarValIds.push(matchedVal.id);
           } else {
-            if (!initialModValIds.includes(val.id)) initialModValIds.push(val.id);
+            if (!initialModValIds.includes(matchedVal.id)) initialModValIds.push(matchedVal.id);
           }
         }
 
         // Fallback: restore toppings from initialItem.toppings array if present
         if (Array.isArray(initialItem.toppings) && initialItem.toppings.length > 0) {
-          const toppingAttr = (data.attributes || []).find(
-            (a) => a.code === 'topping' || a.code === 'toppings' || a.name?.toLowerCase().includes('topping')
-          );
-          if (toppingAttr) {
-            for (const top of initialItem.toppings) {
-              const matchedVal = toppingAttr.values?.find(
-                (v) =>
-                  (v.code === top ||
-                    v.label === top ||
-                    top.toLowerCase().includes(v.label.toLowerCase()) ||
-                    v.label.toLowerCase().includes(top.toLowerCase())) &&
-                  v.is_active !== false
-              );
+          for (const top of initialItem.toppings) {
+            for (const a of data.attributes || []) {
+              if (a.role === 'variant') continue;
+              const matchedVal = (a.values || []).find((v) => matchValue(v, top));
               if (matchedVal && !initialModValIds.includes(matchedVal.id)) {
                 initialModValIds.push(matchedVal.id);
+                break;
               }
             }
           }
@@ -345,9 +377,7 @@ export function DynamicProductConfigurator({
           (a) => a.code === 'sugar' || a.name?.toLowerCase().includes('đường')
         );
         if (sugarAttr && !sugarAttr.values.some((v) => initialModValIds.includes(v.id)) && initialItem.sugar) {
-          const matchedVal = sugarAttr.values.find(
-            (v) => (v.code === initialItem.sugar || v.label.includes(initialItem.sugar)) && v.is_active !== false
-          );
+          const matchedVal = sugarAttr.values.find((v) => matchValue(v, initialItem.sugar));
           if (matchedVal) initialModValIds.push(matchedVal.id);
         }
 
@@ -356,14 +386,12 @@ export function DynamicProductConfigurator({
           (a) => a.code === 'ice' || a.name?.toLowerCase().includes('đá')
         );
         if (iceAttr && !iceAttr.values.some((v) => initialModValIds.includes(v.id)) && initialItem.ice) {
-          const matchedVal = iceAttr.values.find(
-            (v) => (v.code === initialItem.ice || v.label.includes(initialItem.ice)) && v.is_active !== false
-          );
+          const matchedVal = iceAttr.values.find((v) => matchValue(v, initialItem.ice));
           if (matchedVal) initialModValIds.push(matchedVal.id);
         }
 
-        // 2. Check variant matching if variantId or sku present and no variant attr matched yet
-        if (initialVarValIds.length === 0 && (initialItem.variantId || initialItem.sku)) {
+        // 2. Check variant matching if variantId, sku or size present and no variant attr matched yet
+        if (initialVarValIds.length === 0 && (initialItem.variantId || initialItem.sku || initialItem.size)) {
           const matchedVariant = (data.variants || []).find(
             (v) =>
               (initialItem.variantId && v.id === initialItem.variantId) ||
@@ -383,8 +411,18 @@ export function DynamicProductConfigurator({
                 initialVarValIds.push(matchedVal.id);
               }
             }
-          } else {
-            hasInvalidOption = true;
+          }
+          if (initialVarValIds.length === 0 && initialItem.size) {
+            const varAttr = (data.attributes || []).find((a) => a.role === 'variant');
+            if (varAttr) {
+              const matchedVal = varAttr.values?.find(
+                (v) =>
+                  v.code.toLowerCase() === `size_${initialItem.size?.toLowerCase()}` ||
+                  v.code.toLowerCase() === initialItem.size?.toLowerCase() ||
+                  v.label.toLowerCase().includes(initialItem.size?.toLowerCase() || '')
+              );
+              if (matchedVal) initialVarValIds.push(matchedVal.id);
+            }
           }
         }
 

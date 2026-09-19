@@ -10,6 +10,8 @@ import {
   buildVietnamPreorderSlot,
   getPreorderMinLeadHours,
   validateVietnamPreorderSlot,
+  parseStoreOperatingHours,
+  evaluatePreorderCheckinWindow,
 } from '../services/business-time.js';
 
 describe('Vietnam Business Time Service', () => {
@@ -155,5 +157,84 @@ describe('Vietnam Business Time Service', () => {
       () => validateVietnamPreorderSlot({ date: '2026-09-11', hour: 9, now, minimumLeadHours: 3 }),
       (error) => error.code === 'PREORDER_MIN_LEAD_TIME',
     );
+  });
+
+  it('parses store operating hours correctly with fallbacks', () => {
+    const standard = parseStoreOperatingHours('08:00 – 22:00');
+    assert.equal(standard.openHour, 8);
+    assert.equal(standard.openMinute, 0);
+    assert.equal(standard.closeHour, 22);
+    assert.equal(standard.closeMinute, 0);
+    assert.equal(standard.totalOpenMinutes, 480);
+    assert.equal(standard.totalCloseMinutes, 1320);
+
+    const halfHour = parseStoreOperatingHours('07:30 - 22:30');
+    assert.equal(halfHour.openHour, 7);
+    assert.equal(halfHour.openMinute, 30);
+    assert.equal(halfHour.closeHour, 22);
+    assert.equal(halfHour.closeMinute, 30);
+    assert.equal(halfHour.totalOpenMinutes, 450);
+    assert.equal(halfHour.totalCloseMinutes, 1350);
+
+    const fallback = parseStoreOperatingHours('invalid string');
+    assert.equal(fallback.openHour, 8);
+    assert.equal(fallback.closeHour, 22);
+
+    const tooShort = parseStoreOperatingHours('08:00 - 11:00'); // only 3 hours
+    assert.equal(tooShort.openHour, 8);
+    assert.equal(tooShort.closeHour, 22);
+  });
+
+  it('bounds preorder slots to store operating hours (ending >= 1h before store close)', () => {
+    // Store 08:00 - 22:00: slots 08:00 to 20:00 (last slot 20:00 - 21:00 ends at 21:00)
+    const slot8 = buildVietnamPreorderSlot('2026-09-12', 8, { storeHours: '08:00 – 22:00' });
+    assert.equal(slot8.hour, 8);
+    const slot20 = buildVietnamPreorderSlot('2026-09-12', 20, { storeHours: '08:00 – 22:00' });
+    assert.equal(slot20.hour, 20);
+
+    // Slot 21 (21:00 - 22:00) ends at 22:00, which does NOT end at least 1h before store close, so it is invalid
+    assert.throws(
+      () => buildVietnamPreorderSlot('2026-09-12', 21, { storeHours: '08:00 – 22:00' }),
+      /08:00 đến 21:00/,
+    );
+    // Slot 7 starts before store opens at 08:00
+    assert.throws(
+      () => buildVietnamPreorderSlot('2026-09-12', 7, { storeHours: '08:00 – 22:00' }),
+      /08:00 đến 21:00/,
+    );
+  });
+
+  it('evaluates preorder checkin window against store operating hours', () => {
+    const scheduledStartAt = '2026-09-15T03:00:00.000Z'; // 10:00 Vietnam on 2026-09-15
+
+    // 07:15 VN (before store opens at 08:00)
+    const earlyNow = new Date('2026-09-15T00:15:00.000Z');
+    const earlyCheck = evaluatePreorderCheckinWindow({
+      scheduledStartAt,
+      now: earlyNow,
+      storeHours: '08:00 – 22:00',
+    });
+    assert.equal(earlyCheck.isOpen, false);
+    assert.equal(earlyCheck.reason, 'BEFORE_OPERATING_HOURS');
+    assert.equal(earlyCheck.openTimeStr, '08:00');
+
+    // 14:00 VN (during operating hours)
+    const openNow = new Date('2026-09-15T07:00:00.000Z');
+    const openCheck = evaluatePreorderCheckinWindow({
+      scheduledStartAt,
+      now: openNow,
+      storeHours: '08:00 – 22:00',
+    });
+    assert.equal(openCheck.isOpen, true);
+
+    // 22:15 VN (after store closes at 22:00)
+    const lateNow = new Date('2026-09-15T15:15:00.000Z');
+    const lateCheck = evaluatePreorderCheckinWindow({
+      scheduledStartAt,
+      now: lateNow,
+      storeHours: '08:00 – 22:00',
+    });
+    assert.equal(lateCheck.isOpen, false);
+    assert.equal(lateCheck.reason, 'AFTER_OPERATING_HOURS');
   });
 });

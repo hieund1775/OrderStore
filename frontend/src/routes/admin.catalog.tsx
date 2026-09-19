@@ -117,10 +117,10 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
         fetchProductTypes(),
         fetchCatalogProducts({ lane: activeLane }),
       ]);
-      setCategories(cats);
-      const laneProductTypes = types.filter((type) => type.default_fulfillment_lane === activeLane);
+      setCategories(Array.isArray(cats) ? cats : []);
+      const laneProductTypes = (Array.isArray(types) ? types : []).filter((type) => type.default_fulfillment_lane === activeLane);
       setProductTypes(laneProductTypes);
-      setProducts(prods);
+      setProducts(Array.isArray(prods) ? prods : []);
 
       if (laneProductTypes.length > 0) {
         const currentSelected = selectedProductType
@@ -150,7 +150,8 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
 
   // Danh mục gốc (depth = 0)
   const rootCategories = useMemo(() => {
-    return getRootCategories(categories).filter((category) => {
+    const safeCategories = Array.isArray(categories) ? categories : [];
+    return getRootCategories(safeCategories).filter((category) => {
       const lane = category.default_fulfillment_lane || category.product_type_default_fulfillment_lane || 'kitchen';
       return lane === activeLane;
     });

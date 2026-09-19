@@ -229,11 +229,71 @@ export function getTodayBoundaries(instant = new Date()) {
 }
 
 /**
+ * Parses store operating hours string (e.g. "08:00 - 22:00", "07:00 – 22:30").
+ * Returns parsed integers and string representations, falling back to 08:00 - 22:00 if invalid or omitted.
+ */
+export function parseStoreOperatingHours(hoursStr) {
+  const defaultHours = {
+    openHour: 8,
+    openMinute: 0,
+    closeHour: 22,
+    closeMinute: 0,
+    totalOpenMinutes: 8 * 60,
+    totalCloseMinutes: 22 * 60,
+    openTimeStr: '08:00',
+    closeTimeStr: '22:00',
+    raw: hoursStr || '08:00 - 22:00',
+  };
+
+  if (!hoursStr || typeof hoursStr !== 'string') {
+    return defaultHours;
+  }
+
+  const match = hoursStr.trim().match(/^(\d{1,2}):(\d{2})\s*[-–—~]\s*(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return defaultHours;
+  }
+
+  const openHour = parseInt(match[1], 10);
+  const openMinute = parseInt(match[2], 10);
+  const closeHour = parseInt(match[3], 10);
+  const closeMinute = parseInt(match[4], 10);
+
+  if (
+    openHour < 0 || openHour > 23 ||
+    closeHour < 0 || closeHour > 24 ||
+    openMinute < 0 || openMinute > 59 ||
+    closeMinute < 0 || closeMinute > 59
+  ) {
+    return defaultHours;
+  }
+
+  const totalOpenMinutes = openHour * 60 + openMinute;
+  const totalCloseMinutes = closeHour * 60 + closeMinute;
+
+  if (totalCloseMinutes <= totalOpenMinutes || totalCloseMinutes - totalOpenMinutes < 240) {
+    return defaultHours;
+  }
+
+  return {
+    openHour,
+    openMinute,
+    closeHour,
+    closeMinute,
+    totalOpenMinutes,
+    totalCloseMinutes,
+    openTimeStr: `${String(openHour).padStart(2, '0')}:${String(openMinute).padStart(2, '0')}`,
+    closeTimeStr: `${String(closeHour).padStart(2, '0')}:${String(closeMinute).padStart(2, '0')}`,
+    raw: hoursStr,
+  };
+}
+
+/**
  * Builds a one-hour preorder slot from a Vietnam calendar date and hour.
  * This deliberately derives the instant from the IANA-aware Vietnam midnight
  * helper above; callers must not add a manual UTC+7 offset.
  */
-export function buildVietnamPreorderSlot(dateStr, hour) {
+export function buildVietnamPreorderSlot(dateStr, hour, { storeHours } = {}) {
   if (!isValidDateString(dateStr)) {
     const error = new Error('Ngày nhận đơn trước không hợp lệ');
     error.status = 400;
@@ -241,8 +301,19 @@ export function buildVietnamPreorderSlot(dateStr, hour) {
     throw error;
   }
   const normalizedHour = Number(hour);
-  if (!Number.isInteger(normalizedHour) || normalizedHour < 9 || normalizedHour > 22) {
-    const error = new Error('Khung giờ đặt trước chỉ từ 09:00 đến 23:00');
+  let minHour = 9;
+  let maxHour = 22;
+
+  if (storeHours) {
+    const operating = parseStoreOperatingHours(storeHours);
+    minHour = operating.openMinute === 0 ? operating.openHour : operating.openHour + 1;
+    maxHour = Math.floor((operating.totalCloseMinutes - 120) / 60);
+  }
+
+  if (!Number.isInteger(normalizedHour) || normalizedHour < minHour || normalizedHour > maxHour) {
+    const startStr = `${String(minHour).padStart(2, '0')}:00`;
+    const endStr = `${String(maxHour + 1).padStart(2, '0')}:00`;
+    const error = new Error(`Khung giờ đặt trước chỉ từ ${startStr} đến ${endStr}`);
     error.status = 400;
     error.code = 'PREORDER_SLOT_HOUR_INVALID';
     throw error;
@@ -269,8 +340,8 @@ export function getPreorderMinLeadHours(env = process.env) {
 }
 
 /** Validates preorder lead/horizon rules against a real instant. */
-export function validateVietnamPreorderSlot({ date, hour, now = new Date(), minimumLeadHours = getPreorderMinLeadHours() } = {}) {
-  const slot = buildVietnamPreorderSlot(date, hour);
+export function validateVietnamPreorderSlot({ date, hour, now = new Date(), minimumLeadHours = getPreorderMinLeadHours(), storeHours } = {}) {
+  const slot = buildVietnamPreorderSlot(date, hour, { storeHours });
   const nowDate = coerceDate(now);
   if (!nowDate) throw new TypeError('Invalid now instant for preorder validation');
   const leadMs = slot.start.getTime() - nowDate.getTime();
@@ -298,9 +369,9 @@ export function validateVietnamPreorderSlot({ date, hour, now = new Date(), mini
 
 /**
  * Evaluates whether customer self check-in is open for a preorder scheduled instant.
- * Rule: same local calendar date in Asia/Ho_Chi_Minh, wall-clock time between 08:00 inclusive and 24:00 exclusive.
+ * Rule: same local calendar date in Asia/Ho_Chi_Minh, wall-clock time within store operating hours.
  */
-export function evaluatePreorderCheckinWindow({ scheduledStartAt, now = new Date() } = {}) {
+export function evaluatePreorderCheckinWindow({ scheduledStartAt, now = new Date(), storeHours } = {}) {
   const scheduledDate = coerceDate(scheduledStartAt);
   if (!scheduledDate) {
     throw new TypeError('Invalid scheduledStartAt provided to evaluatePreorderCheckinWindow');
@@ -338,6 +409,46 @@ export function evaluatePreorderCheckinWindow({ scheduledStartAt, now = new Date
   }
 
   const parts = getVietnamCalendarParts(nowDate);
+
+  if (storeHours) {
+    const operating = parseStoreOperatingHours(storeHours);
+    const nowMinutes = parts.hour * 60 + parts.minute;
+
+    if (nowMinutes < operating.totalOpenMinutes) {
+      return {
+        isOpen: false,
+        reason: 'BEFORE_OPERATING_HOURS',
+        scheduledDate: scheduledDayStr,
+        currentDate: nowDayStr,
+        opensAtHour: operating.openHour,
+        opensAtMinute: operating.openMinute,
+        openTimeStr: operating.openTimeStr,
+        closeTimeStr: operating.closeTimeStr,
+      };
+    }
+
+    if (nowMinutes >= operating.totalCloseMinutes) {
+      return {
+        isOpen: false,
+        reason: 'AFTER_OPERATING_HOURS',
+        scheduledDate: scheduledDayStr,
+        currentDate: nowDayStr,
+        opensAtHour: operating.openHour,
+        opensAtMinute: operating.openMinute,
+        openTimeStr: operating.openTimeStr,
+        closeTimeStr: operating.closeTimeStr,
+      };
+    }
+
+    return {
+      isOpen: true,
+      scheduledDate: scheduledDayStr,
+      currentDate: nowDayStr,
+      openTimeStr: operating.openTimeStr,
+      closeTimeStr: operating.closeTimeStr,
+    };
+  }
+
   if (parts.hour < 8) {
     return {
       isOpen: false,

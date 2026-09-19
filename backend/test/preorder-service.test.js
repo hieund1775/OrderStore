@@ -262,4 +262,29 @@ describe('Preorder service lifecycle and authorization', () => {
     assert.equal(result.breached, 1);
     assert.equal(calls.disabledManagers, 1);
   });
+
+  it('generates preorder availability slots dynamically bounded by store operating hours', async () => {
+    const { service } = harness({
+      async getActiveStoreSetting() {
+        return {
+          store_id: 1,
+          is_enabled: true,
+          responsible_manager_id: 9,
+          admin_role: 'manager',
+          admin_branch_id: 1,
+          store_hours: '08:00 – 21:00',
+        };
+      },
+    });
+    // With store hours 08:00 - 21:00:
+    // Slots run from 08:00 to 19:00 (last slot 19:00 - 20:00 ends at 20:00, which is 1h before 21:00)
+    const result = await service.availability({
+      storeId: 1,
+      date: '2026-09-15',
+      now: new Date('2026-09-12T02:00:00.000Z'),
+    });
+    assert.equal(result.slots[0].hour, 8);
+    assert.equal(result.slots[result.slots.length - 1].hour, 19);
+    assert.equal(result.slots.some((s) => s.hour === 20), false);
+  });
 });

@@ -12,8 +12,9 @@ import {
   Sparkles,
   Edit2,
   Trash2,
-  Power,
+  Loader2,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -157,6 +158,13 @@ export function CatalogTabBlocksView({
   const [editingCategory, setEditingCategory] = useState<CategoryNode | null>(null);
   const [catName, setCatName] = useState('');
   const [catSaving, setCatSaving] = useState(false);
+
+  // Chống spam & loading state cho cần gạt trạng thái (cooldown 3 giây)
+  const [pendingCategoryIds, setPendingCategoryIds] = useState<Set<number | string>>(new Set());
+  const [cooldownCategoryIds, setCooldownCategoryIds] = useState<Set<number | string>>(new Set());
+
+  const [pendingProductIds, setPendingProductIds] = useState<Set<number | string>>(new Set());
+  const [cooldownProductIds, setCooldownProductIds] = useState<Set<number | string>>(new Set());
 
   // Tên Ngành gốc đang chọn
   const activeRootName = useMemo(() => {
@@ -305,7 +313,22 @@ export function CatalogTabBlocksView({
 
   // Toggle trạng thái Tạm ẩn / Hiển thị của Danh Mục Con (độc lập với trạng thái từng sản phẩm)
   const handleToggleCategoryVisibility = async (cat: CategoryNode) => {
+    if (pendingCategoryIds.has(cat.id) || cooldownCategoryIds.has(cat.id)) {
+      return;
+    }
     const nextVisible = !cat.is_visible;
+
+    // Khóa nút ngay lập tức và kích hoạt cooldown 3 giây chống spam
+    setPendingCategoryIds((prev) => new Set(prev).add(cat.id));
+    setCooldownCategoryIds((prev) => new Set(prev).add(cat.id));
+    setTimeout(() => {
+      setCooldownCategoryIds((prev) => {
+        const next = new Set(prev);
+        next.delete(cat.id);
+        return next;
+      });
+    }, 3000);
+
     try {
       await updateCatalogCategory(cat.id, {
         name: cat.name,
@@ -317,6 +340,12 @@ export function CatalogTabBlocksView({
       await onRefresh();
     } catch (err: any) {
       toast.error(err.message || 'Lỗi cập nhật trạng thái danh mục');
+    } finally {
+      setPendingCategoryIds((prev) => {
+        const next = new Set(prev);
+        next.delete(cat.id);
+        return next;
+      });
     }
   };
 
@@ -405,10 +434,26 @@ export function CatalogTabBlocksView({
 
   // Toggle trạng thái Tạm ngưng / Bán của Sản phẩm (độc lập với danh mục)
   const handleToggleProductAvailability = async (prod: ProductV2) => {
+    if (pendingProductIds.has(prod.id) || cooldownProductIds.has(prod.id)) {
+      return;
+    }
     if (!checkProductLaneMatch(prod)) return;
+
+    const nextAvailable = !prod.is_available;
+    const nextStatus = nextAvailable ? 'active' : 'inactive';
+
+    // Khóa nút ngay lập tức và kích hoạt cooldown 3 giây chống spam
+    setPendingProductIds((prev) => new Set(prev).add(prod.id));
+    setCooldownProductIds((prev) => new Set(prev).add(prod.id));
+    setTimeout(() => {
+      setCooldownProductIds((prev) => {
+        const next = new Set(prev);
+        next.delete(prod.id);
+        return next;
+      });
+    }, 3000);
+
     try {
-      const nextAvailable = !prod.is_available;
-      const nextStatus = nextAvailable ? 'active' : 'inactive';
       await updateCatalogProduct(prod.id, {
         name: prod.name,
         slug: prod.slug,
@@ -423,6 +468,12 @@ export function CatalogTabBlocksView({
       await onRefresh();
     } catch (err: any) {
       toast.error(err.message || 'Lỗi cập nhật trạng thái món');
+    } finally {
+      setPendingProductIds((prev) => {
+        const next = new Set(prev);
+        next.delete(prod.id);
+        return next;
+      });
     }
   };
 
@@ -552,23 +603,30 @@ export function CatalogTabBlocksView({
                           </Badge>
                         </td>
                         <td className="p-3.5">
-                          <span className={cat.is_visible ? 'text-emerald-600 font-bold' : 'text-destructive font-bold'}>
-                            {cat.is_visible ? '🟢 Đang hiển thị' : '🔴 Tạm ẩn'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={Boolean(cat.is_visible)}
+                              disabled={!isSuperAdmin || pendingCategoryIds.has(cat.id) || cooldownCategoryIds.has(cat.id)}
+                              onCheckedChange={() => handleToggleCategoryVisibility(cat)}
+                              title={
+                                cat.is_visible
+                                  ? 'Tạm ẩn danh mục con khỏi Menu khách'
+                                  : 'Hiển thị lại danh mục con trên Menu khách'
+                              }
+                              aria-label={
+                                cat.is_visible
+                                  ? 'Tạm ẩn danh mục con khỏi Menu khách'
+                                  : 'Hiển thị lại danh mục con trên Menu khách'
+                              }
+                            />
+                            {pendingCategoryIds.has(cat.id) && (
+                              <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                            )}
+                          </div>
                         </td>
                         <td className="p-3.5 text-right space-x-1.5">
                           {isSuperAdmin && (
                             <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className={`h-7 text-xs px-2 ${cat.is_visible ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
-                                onClick={() => handleToggleCategoryVisibility(cat)}
-                                title={cat.is_visible ? 'Tạm ẩn danh mục con khỏi Menu khách' : 'Hiển thị lại danh mục con trên Menu khách'}
-                              >
-                                <Power className="size-3 mr-1" />
-                                {cat.is_visible ? 'Tạm ẩn' : 'Hiển thị'}
-                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -721,23 +779,30 @@ export function CatalogTabBlocksView({
                           </Badge>
                         </td>
                         <td className="p-3.5">
-                          <span className={prod.is_available ? 'text-emerald-600 font-bold' : 'text-destructive font-bold'}>
-                            {prod.is_available ? '🟢 Đang bán' : '🔴 Tạm ngưng'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={Boolean(prod.is_available)}
+                              disabled={!isSuperAdmin || pendingProductIds.has(prod.id) || cooldownProductIds.has(prod.id)}
+                              onCheckedChange={() => handleToggleProductAvailability(prod)}
+                              title={
+                                prod.is_available
+                                  ? 'Tạm ngưng bán món này'
+                                  : 'Mở bán món này'
+                              }
+                              aria-label={
+                                prod.is_available
+                                  ? 'Tạm ngưng bán món này'
+                                  : 'Mở bán món này'
+                              }
+                            />
+                            {pendingProductIds.has(prod.id) && (
+                              <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                            )}
+                          </div>
                         </td>
                         <td className="p-3.5 text-right space-x-1.5">
                           {isSuperAdmin && (
                             <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className={`h-7 text-xs px-2 ${prod.is_available ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'}`}
-                                onClick={() => handleToggleProductAvailability(prod)}
-                                title={prod.is_available ? 'Tạm ngưng bán món này' : 'Mở bán món này'}
-                              >
-                                <Power className="size-3 mr-1" />
-                                {prod.is_available ? 'Tạm ngưng' : 'Mở bán'}
-                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"

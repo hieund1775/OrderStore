@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import postgresDb from '../../config/db-postgres.js';
+import { parseStoreOperatingHours, getVietnamCalendarParts } from '../../services/business-time.js';
 
 export class AdminStoreError extends Error {
   constructor(message, status = 400) {
@@ -81,6 +82,38 @@ export function createAdminStoresRepository(database = postgresDb) {
     },
 
     async updateBranch(id, fields) {
+      if (fields.hours !== undefined) {
+        const newOperating = parseStoreOperatingHours(fields.hours);
+        const queryResult = await database.query(
+          `SELECT id, preorder_code, scheduled_start_at, scheduled_end_at
+           FROM preorders
+           WHERE store_id = $1
+             AND status IN ('AWAITING_PAYMENT', 'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED')
+             AND scheduled_end_at >= CURRENT_TIMESTAMP`,
+          [id],
+        );
+        const rows = Array.isArray(queryResult) ? (Array.isArray(queryResult[0]) ? queryResult[0] : queryResult) : (queryResult?.rows || []);
+        for (const order of rows) {
+          const startParts = getVietnamCalendarParts(order.scheduled_start_at);
+          const endParts = getVietnamCalendarParts(order.scheduled_end_at);
+          const startMinute = startParts.hour * 60 + startParts.minute;
+          let endMinute = endParts.hour * 60 + endParts.minute;
+          if (endMinute === 0 && (endParts.day !== startParts.day || endParts.hour === 0)) {
+            endMinute = 1440;
+          }
+
+          const minAllowedStart = newOperating.totalOpenMinutes;
+          const maxAllowedEnd = newOperating.totalCloseMinutes - 60;
+
+          if (startMinute < minAllowedStart || endMinute > maxAllowedEnd) {
+            throw new AdminStoreError(
+              `Không thể đổi giờ hoạt động: Đang có đơn đặt trước của khách (${order.preorder_code}) trong khoảng thời gian bị cắt. Vui lòng xử lý đơn này trong ngày rồi mới cập nhật lại.`,
+              409,
+            );
+          }
+        }
+      }
+
       const sets = [];
       const params = [];
       const allowed = ['name', 'city', 'district', 'address', 'lat', 'lng', 'hours', 'phone', 'amenities', 'is_active'];

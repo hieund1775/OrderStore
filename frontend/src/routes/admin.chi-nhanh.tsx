@@ -823,8 +823,13 @@ function StoreFormDialog({
     }
     const [openH, openM] = openTime.split(":").map(Number);
     const [closeH, closeM] = closeTime.split(":").map(Number);
-    if (closeH * 60 + closeM <= openH * 60 + openM) {
+    const openMinutes = openH * 60 + openM;
+    const closeMinutes = closeH * 60 + closeM;
+    if (closeMinutes <= openMinutes) {
       return toast.error("Giờ đóng cửa phải lớn hơn giờ mở cửa");
+    }
+    if (closeMinutes - openMinutes < 240) {
+      return toast.error("Thời gian mở cửa và đóng cửa phải cách nhau ít nhất 4 tiếng");
     }
     setSaving(true);
     try {

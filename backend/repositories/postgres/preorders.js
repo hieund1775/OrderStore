@@ -216,7 +216,7 @@ export function createPreordersRepository(database = postgresDb) {
       const rows = rowsOf(await executor.query(
         `SELECT pss.store_id, pss.is_enabled, pss.responsible_manager_id,
                 u.is_active AS manager_is_active, u.admin_role, u.admin_branch_id,
-                s.is_active AS store_is_active
+                s.is_active AS store_is_active, s.hours AS store_hours
          FROM preorder_store_settings pss
          JOIN stores s ON s.id = pss.store_id
          LEFT JOIN users u ON u.id = pss.responsible_manager_id
@@ -345,10 +345,12 @@ export function createPreordersRepository(database = postgresDb) {
       const checkin = await checkinProjection(executor);
       const rows = rowsOf(await executor.query(
         `SELECT p.*, pss.is_enabled AS preorder_enabled,
+                s.hours AS store_hours,
                 r.id AS reservation_id, r.table_id, r.status AS reservation_status,
                 r.reserved_from, r.reserved_until,
                 ${checkin.columns}
          FROM preorders p
+         LEFT JOIN stores s ON s.id = p.store_id
          LEFT JOIN preorder_store_settings pss ON pss.store_id = p.store_id
          LEFT JOIN preorder_table_reservations r ON r.preorder_id = p.id
          ${checkin.join}

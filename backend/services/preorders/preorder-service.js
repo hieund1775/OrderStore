@@ -9,6 +9,7 @@ import {
   evaluatePreorderCheckinWindow,
   formatVietnamBusinessDate,
   isWithinPreorderCancellationWindow,
+  parseStoreOperatingHours,
   parseVietnamSingleDateBoundary,
   validateVietnamPreorderSlot,
 } from '../business-time.js';
@@ -146,10 +147,17 @@ export function createPreorderService({
       if (!setting) {
         throw new PreorderError('Chi nhánh chưa bật đặt trước hoặc chưa có Quản lý phó trách', 409, 'PREORDER_STORE_UNAVAILABLE');
       }
+      let startHour = 9;
+      let lastSlotHour = 22;
+      if (setting.store_hours) {
+        const operating = parseStoreOperatingHours(setting.store_hours);
+        startHour = operating.openMinute === 0 ? operating.openHour : operating.openHour + 1;
+        lastSlotHour = Math.floor((operating.totalCloseMinutes - 120) / 60);
+      }
       const slots = [];
-      for (let hour = 9; hour <= 22; hour += 1) {
+      for (let hour = startHour; hour <= lastSlotHour; hour += 1) {
         try {
-          const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow });
+          const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow, storeHours: setting.store_hours });
           slots.push({ hour, scheduled_start_at: slot.start.toISOString(), scheduled_end_at: slot.end.toISOString(), available: true });
         } catch (error) {
           if (error.code === 'PREORDER_MIN_LEAD_TIME') {
@@ -165,7 +173,7 @@ export function createPreorderService({
     async availableTables({ storeId, date, hour, now: currentNow = now() }) {
       const setting = await repository.getActiveStoreSetting(storeId);
       if (!setting) throw new PreorderError('Chi nhánh chưa sẵn sàng nhận đặt trước', 409, 'PREORDER_STORE_UNAVAILABLE');
-      const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow });
+      const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow, storeHours: setting.store_hours });
       const rows = listRows(await database.query(
         `SELECT t.id, t.name
          FROM tables t
@@ -200,7 +208,7 @@ export function createPreorderService({
       if (input?.customer_phone && String(input.customer_phone).trim().length > 20) {
         throw new PreorderError('Số điện thoại không được vượt quá 20 ký tự', 400, 'PREORDER_PHONE_TOO_LONG');
       }
-      const slot = validateVietnamPreorderSlot({ date: input?.scheduled_date, hour: input?.scheduled_hour, now: now() });
+      const slot = validateVietnamPreorderSlot({ date: input?.scheduled_date, hour: input?.scheduled_hour, now: now(), storeHours: setting?.store_hours });
 
       const { table_id: _ignoredTable, ...cleanInput } = input || {};
 
@@ -391,9 +399,19 @@ export function createPreorderService({
           throw new PreorderError('Chỉ có thể check-in khi đơn đã được xác nhận', 409, 'PREORDER_CHECKIN_STATUS_INVALID');
         }
 
+        let storeHours = preorder.store_hours;
+        if (!storeHours && preorder.store_id) {
+          const storeRows = listRows(await tx.query(
+            'SELECT hours FROM stores WHERE id = $1',
+            [Number(preorder.store_id)],
+          ));
+          storeHours = storeRows[0]?.hours || null;
+        }
+
         const windowCheck = evaluatePreorderCheckinWindow({
           scheduledStartAt: preorder.scheduled_start_at,
           now: effectiveNow,
+          storeHours,
         });
 
         if (!windowCheck.isOpen) {
@@ -404,7 +422,12 @@ export function createPreorderService({
             throw new PreorderError('Đã quá ngày nhận của đơn đặt trước', 409, 'PREORDER_CHECKIN_WINDOW_EXPIRED');
           }
           if (windowCheck.reason === 'BEFORE_OPERATING_HOURS') {
-            throw new PreorderError('Khung giờ check-in chỉ mở từ 08:00 đến 24:00 trong ngày nhận', 409, 'PREORDER_CHECKIN_WINDOW_EARLY');
+            const timeStr = windowCheck.openTimeStr ? `${windowCheck.openTimeStr} đến ${windowCheck.closeTimeStr}` : '08:00 đến 24:00';
+            throw new PreorderError(`Khung giờ check-in chỉ mở từ ${timeStr} trong ngày nhận`, 409, 'PREORDER_CHECKIN_WINDOW_EARLY');
+          }
+          if (windowCheck.reason === 'AFTER_OPERATING_HOURS') {
+            const timeStr = windowCheck.openTimeStr ? `${windowCheck.openTimeStr} đến ${windowCheck.closeTimeStr}` : '08:00 đến 24:00';
+            throw new PreorderError(`Cửa hàng đã đóng cửa. Khung giờ check-in chỉ mở từ ${timeStr} trong ngày nhận`, 409, 'PREORDER_CHECKIN_WINDOW_CLOSED');
           }
           throw new PreorderError('Thời điểm hiện tại không thuộc khung giờ check-in hợp lệ', 409, 'PREORDER_CHECKIN_WINDOW_INVALID');
         }
@@ -475,7 +498,7 @@ export function createPreorderService({
             [Number(order.id), cancelNote, Number(customerUserId)],
           );
           await tx.query(
-            "UPDATE orders SET cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            "UPDATE orders SET status = 'Đã hủy', cancel_reason = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
             [Number(order.id), cancelNote],
           );
           await fulfillment.cancelTasksForOrder(Number(order.id), tx);

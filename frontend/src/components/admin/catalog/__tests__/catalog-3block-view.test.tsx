@@ -266,11 +266,34 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
         activeLane="kitchen"
         isSuperAdmin={true}
         onRefresh={async () => {}}
-        onOpenProductEditor={() => {}}
       />,
     );
 
     expect(html).not.toContain('Khu vực xử lý đơn mặc định');
     expect(html).not.toContain('Theo danh mục gốc');
   });
+
+  it('renders Switch toggle for subcategory visibility and product availability without redundant status text', () => {
+    const html = renderToString(
+      <CatalogTabBlocksView
+        rootCategories={rootCategories}
+        selectedRootId="1"
+        onSelectRootId={() => {}}
+        categories={allCategories}
+        products={sampleProducts}
+        activeSchema={sampleSchema}
+        isSuperAdmin={true}
+        onRefresh={async () => {}}
+        onOpenProductEditor={() => {}}
+      />,
+    );
+
+    // Không còn dòng chữ thô "🟢 Đang hiển thị" hay "🔴 Tạm ẩn"
+    expect(html).not.toContain('🟢 Đang hiển thị');
+    expect(html).not.toContain('🔴 Tạm ẩn');
+    // Thay bằng Switch toggle có role / aria-label chuẩn
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('aria-label="Tạm ẩn danh mục con khỏi Menu khách"');
+  });
 });
+

@@ -99,6 +99,15 @@ function PreorderCheckoutPage() {
     [selectedItems, storeId],
   );
 
+  const slotRangeText = useMemo(() => {
+    if (!availability?.slots || availability.slots.length === 0) return '09:00–23:00';
+    const startHour = availability.slots[0].hour;
+    const lastHour = availability.slots[availability.slots.length - 1].hour;
+    return `${String(startHour).padStart(2, '0')}:00–${String(lastHour + 1).padStart(2, '0')}:00`;
+  }, [availability?.slots]);
+
+  const storeOperatingHoursText = selectedStore?.hours || '08:00 – 22:00';
+
   useEffect(() => {
     const user = getCustomerUser();
     if (user) { setName(user.fullname || ''); setPhone(user.phone || ''); }
@@ -249,13 +258,13 @@ function PreorderCheckoutPage() {
       })}</SelectContent></Select>{selectedStorePreorderAvailable === false && <p className="mt-1 text-xs text-amber-700">Đặt trước hiện chưa áp dụng tại {selectedStore?.name || 'chi nhánh này'}. Hãy chọn chi nhánh khác.</p>}</div>
       <div><Label>Ngày nhận</Label><Input type="date" value={date} min={vietnamToday()} max={vietnamMaxPreorderDate()} onChange={(event) => setDate(event.target.value)} /></div>
       {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
-      <div><Label>Khung giờ nhận (09:00–23:00)</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Khung giờ nhận ({slotRangeText})</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
       <div><Label><Ticket className="mr-1 inline size-4" />Mã voucher (áp dụng đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value.toUpperCase())} placeholder="Ví dụ: PREORDER10" /></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input type="tel" maxLength={15} value={phone} placeholder="Ví dụ: 0901234567" onChange={(event) => setPhone(event.target.value)} />{phone.trim() && (!isValidPhone(phone.trim()) || phone.trim().length > 15) && <p className="mt-1 text-xs text-destructive">Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 03, 05, 07, 08, 09).</p>}</div>
       <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 md:col-span-2">
         <p className="font-semibold">Lưu ý thời gian check-in tự phục vụ:</p>
-        <p className="mt-0.5 text-blue-800">Khung giờ khách tự check-in tại cửa hàng mở từ <strong>08:00 đến 24:00</strong> trong ngày đã chọn. Giờ đặt trước là thời gian dự kiến để cửa hàng chuẩn bị món chu đáo nhất.</p>
+        <p className="mt-0.5 text-blue-800">Khung giờ khách tự check-in tại cửa hàng mở trong giờ hoạt động (<strong>{storeOperatingHoursText}</strong>) trong ngày đã chọn. Giờ đặt trước là thời gian dự kiến để cửa hàng chuẩn bị món chu đáo nhất.</p>
       </div>
     </section>
     <section className="rounded-xl border bg-card p-5">
