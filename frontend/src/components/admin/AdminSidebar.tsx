@@ -31,10 +31,10 @@ export const adminNav = [
   // Nhóm 1: Vận hành
   { to: '/admin/pos', label: 'Gọi món (POS)', icon: ShoppingCart, section: 'operations', roles: ['super', 'manager', 'cashier'] as AdminRole[] },
   { to: '/admin/bep', label: 'Màn hình bếp (KDS)', icon: ChefHat, section: 'operations', roles: ['super', 'manager', 'kitchen'] as AdminRole[], lane: 'kitchen' },
+  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'operations', roles: ['super', 'manager', 'packing'] as AdminRole[], lane: 'packing' },
   { to: '/admin/dat-truoc', label: 'Đơn đặt trước', icon: CalendarClock, section: 'operations', roles: MANAGEMENT_ROLES },
   // Nhóm 2: Hàng hóa
   { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList, section: 'catalog', roles: ALL_ROLES },
-  { to: '/admin/dong-goi', label: 'Khu vực đóng gói', icon: Package, section: 'catalog', roles: ['super', 'manager', 'packing'] as AdminRole[], lane: 'packing' },
   { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog', roles: MANAGEMENT_ROLES },
   { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck, section: 'catalog', roles: MANAGEMENT_ROLES },
   // Nhóm 3: Quản lý cửa hàng

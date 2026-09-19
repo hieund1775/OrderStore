@@ -26,14 +26,14 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
     expect(catalogItem?.label).toContain('Sản phẩm & Danh mục');
   });
 
-  it('Admin sidebar categorizes orders and packing into catalog, and branch/qr into store_management', () => {
+  it('Admin sidebar categorizes orders into catalog, packing into operations, and branch/qr into store_management', () => {
     const donHang = adminNav.find((item) => item.to === '/admin/don-hang');
     const dongGoi = adminNav.find((item) => item.to === '/admin/dong-goi');
     const chiNhanh = adminNav.find((item) => item.to === '/admin/chi-nhanh');
     const viTri = adminNav.find((item) => item.to === '/admin/vi-tri');
 
     expect(donHang?.section).toBe('catalog');
-    expect(dongGoi?.section).toBe('catalog');
+    expect(dongGoi?.section).toBe('operations');
     expect(chiNhanh?.section).toBe('store_management');
     expect(viTri?.section).toBe('store_management');
   });
