@@ -54,6 +54,16 @@ export function createApp() {
     res.status(200).json({ status: 'ok', uptime: Math.floor(process.uptime()) });
   });
 
+  // /health: Root health check endpoint (compatible with direct /health and /api/health)
+  app.get('/health', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      message: 'TeaPlus API (PostgreSQL)',
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.get('/api/runtime-build', (req, res) => {
     res.json({
       reviewsContract: 'v1-object',
