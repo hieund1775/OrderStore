@@ -214,11 +214,18 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
 
         if (!stockMode) stockMode = data.stock_mode || 'made_to_order';
 
+        let productStatus = data.status || 'active';
+        let productAvailable = data.is_available !== undefined ? Boolean(data.is_available) : true;
+        if (productStatus === 'inactive') {
+          productStatus = 'active';
+          productAvailable = false;
+        }
+
         const [pRows] = await tx.query(
           `INSERT INTO products (
              category_id, name, slug, base_tea, description, price, image_url,
-             product_type_schema_id, status, fulfillment_lane, stock_mode
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             product_type_schema_id, status, fulfillment_lane, stock_mode, is_available
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING *`,
           [
             data.category_id,
@@ -229,9 +236,10 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
             data.price || 0,
             data.image_url || null,
             schemaId,
-            data.status || 'active',
+            productStatus,
             fulfillmentLane,
             stockMode,
+            productAvailable,
           ],
         );
         const product = pRows[0];
@@ -255,11 +263,11 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           if (pvRows[0]) {
             await tx.query(
               `INSERT INTO branch_variant_offers (store_id, variant_id, price, compare_at_price, is_available)
-               SELECT s.id, $1, $2, NULL, TRUE
+               SELECT s.id, $1, $2, NULL, $3
                FROM stores s
                WHERE s.is_active = TRUE
                ON CONFLICT (store_id, variant_id) DO UPDATE SET price = EXCLUDED.price, is_available = EXCLUDED.is_available`,
-              [pvRows[0].id, Number(product.price) || 0],
+              [pvRows[0].id, Number(product.price) || 0, productAvailable],
             );
           }
         }
@@ -339,31 +347,40 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           throw new CatalogV2Error('Không thể chuyển sản phẩm sang danh mục thuộc loại sản phẩm khác', 400);
         }
 
+        let targetStatus = data.status;
+        let targetAvailable = data.is_available;
+        if (targetStatus === 'inactive') {
+          targetStatus = 'active';
+          if (targetAvailable === undefined) {
+            targetAvailable = false;
+          }
+        }
+
         const [rows] = await tx.query(
-        `UPDATE products
-         SET name = COALESCE($1, name),
-             slug = COALESCE($2, slug),
-             category_id = COALESCE($3, category_id),
-             description = COALESCE($4, description),
-             price = COALESCE($5, price),
-              image_url = COALESCE($6, image_url),
-              status = COALESCE($7, status),
-              is_available = COALESCE($8, is_available),
-              fulfillment_lane = $9,
-              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $10
-         RETURNING *`,
+          `UPDATE products
+           SET name = COALESCE($1, name),
+               slug = COALESCE($2, slug),
+               category_id = COALESCE($3, category_id),
+               description = COALESCE($4, description),
+               price = COALESCE($5, price),
+               image_url = COALESCE($6, image_url),
+               status = COALESCE($7, status),
+               is_available = COALESCE($8, is_available),
+               fulfillment_lane = $9,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $10
+           RETURNING *`,
           [
-          data.name,
-          data.slug,
-          data.category_id,
-          data.description,
-          data.price,
-           data.image_url,
-           data.status,
-           data.is_available,
-           targetLane,
-           id,
+            data.name ?? null,
+            data.slug ?? null,
+            data.category_id ?? null,
+            data.description ?? null,
+            data.price ?? null,
+            data.image_url ?? null,
+            targetStatus ?? null,
+            targetAvailable !== undefined ? targetAvailable : null,
+            targetLane,
+            id,
           ],
         );
         return rows[0];

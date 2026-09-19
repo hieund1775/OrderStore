@@ -439,8 +439,11 @@ export function CatalogTabBlocksView({
     }
     if (!checkProductLaneMatch(prod)) return;
 
-    const nextAvailable = !prod.is_available;
-    const nextStatus = nextAvailable ? 'active' : 'inactive';
+    const currentAvailable = prod.is_available !== undefined && prod.is_available !== null
+      ? Boolean(prod.is_available)
+      : (prod.status !== 'inactive');
+    const nextAvailable = !currentAvailable;
+    const nextStatus = prod.status === 'draft' ? 'draft' : 'active';
 
     // Khóa nút ngay lập tức và kích hoạt cooldown 3 giây chống spam
     setPendingProductIds((prev) => new Set(prev).add(prod.id));

@@ -175,8 +175,14 @@ export function createAdminCatalogV2Service({
       if (!Number.isInteger(price) || price < 0) {
         throw new CatalogV2Error('Giá sản phẩm phải là số nguyên không âm', 400);
       }
-      if (input.status !== undefined && !['draft', 'active'].includes(input.status)) {
+      if (input.status !== undefined && !['draft', 'active', 'archived', 'inactive'].includes(input.status)) {
         throw new CatalogV2Error('Trạng thái sản phẩm không hợp lệ', 400);
+      }
+      let status = input.status || 'active';
+      let isAvailable = input.is_available !== undefined ? Boolean(input.is_available) : true;
+      if (status === 'inactive') {
+        status = 'active';
+        isAvailable = false;
       }
 
       const created = await catalogRepository.createProduct(
@@ -188,7 +194,8 @@ export function createAdminCatalogV2Service({
           description: input.description || null,
           price,
           image_url: input.image_url || null,
-          status: input.status || 'active',
+          status,
+          is_available: isAvailable,
           fulfillment_lane: input.fulfillment_lane || null,
           stock_mode: input.stock_mode || 'made_to_order',
           media: input.media || [],
@@ -239,10 +246,17 @@ export function createAdminCatalogV2Service({
         normalized.price = price;
       }
       if (input.status !== undefined) {
-        if (!['draft', 'active', 'inactive'].includes(input.status)) {
+        if (!['draft', 'active', 'archived', 'inactive'].includes(input.status)) {
           throw new CatalogV2Error('Trạng thái sản phẩm không hợp lệ', 400);
         }
-        normalized.status = input.status;
+        if (input.status === 'inactive') {
+          normalized.status = 'active';
+          if (normalized.is_available === undefined) {
+            normalized.is_available = false;
+          }
+        } else {
+          normalized.status = input.status;
+        }
       }
       if (input.fulfillment_lane !== undefined) {
         if (!['kitchen', 'packing'].includes(input.fulfillment_lane)) {

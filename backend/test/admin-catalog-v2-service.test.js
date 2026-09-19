@@ -121,3 +121,72 @@ test('Admin Catalog V2 Service: creates the next schema version and rejects inva
     (error) => error.status === 400,
   );
 });
+
+test('Admin Catalog V2 Service: updateProduct normalizes inactive status to active and is_available false', async () => {
+  let capturedData = null;
+  const service = createAdminCatalogV2Service({
+    catalogRepository: {
+      async updateProduct(id, data) {
+        capturedData = data;
+        return {
+          id,
+          name: data.name || 'Trà Ô Long',
+          status: data.status || 'active',
+          is_available: data.is_available,
+          category_id: 1,
+          fulfillment_lane: 'kitchen',
+        };
+      },
+    },
+    schemaRepository: {
+      async getCategoryById(id) {
+        return { id, parent_id: 10, depth: 1 };
+      },
+    },
+  });
+
+  const updated = await service.updateProduct(47, {
+    name: 'Trà Ô Long Rang',
+    status: 'inactive',
+    fulfillment_lane: 'kitchen',
+  });
+
+  assert.equal(updated.id, 47);
+  assert.equal(capturedData.status, 'active', 'Database status must be active, never inactive');
+  assert.equal(capturedData.is_available, false, 'is_available must be normalized to false when status is inactive');
+  assert.equal(updated.is_available, false);
+});
+
+test('Admin Catalog V2 Service: createProduct normalizes inactive status to active and is_available false', async () => {
+  let capturedData = null;
+  const service = createAdminCatalogV2Service({
+    catalogRepository: {
+      async createProduct(data) {
+        capturedData = data;
+        return {
+          id: 100,
+          ...data,
+        };
+      },
+    },
+    schemaRepository: {
+      async getCategoryById(id) {
+        return { id, parent_id: 10, depth: 1 };
+      },
+    },
+  });
+
+  const created = await service.createProduct({
+    name: 'Trà Sữa Khoai Môn',
+    slug: 'tra-sua-khoai-mon',
+    category_id: 2,
+    status: 'inactive',
+    fulfillment_lane: 'kitchen',
+  });
+
+  assert.equal(created.id, 100);
+  assert.equal(capturedData.status, 'active', 'Must normalize inactive to active');
+  assert.equal(capturedData.is_available, false, 'Must set is_available false');
+  assert.equal(created.is_available, false);
+});
+

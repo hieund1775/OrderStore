@@ -252,6 +252,40 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     });
     assert.equal(created.name, 'Trà Đào Cam Sả');
     assert.equal(created.fulfillment_lane, 'kitchen');
+
+    // 3d. Safely handles status inactive in updateProduct
+    let executedSql = '';
+    let executedParams = [];
+    const mockUpdateDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql, params) {
+            if (sql.includes('SELECT p.*')) {
+              return [[{ id: 47, name: 'Món 47', category_id: 10, fulfillment_lane: 'kitchen', status: 'active', is_available: true }]];
+            }
+            if (sql.includes('SELECT c.*')) {
+              return [[{ id: 10, default_fulfillment_lane: 'kitchen', archived_at: null }]];
+            }
+            if (sql.includes('UPDATE products')) {
+              executedSql = sql;
+              executedParams = params;
+              return [[{ id: 47, name: params[0], status: params[6], is_available: params[7], fulfillment_lane: params[8] }]];
+            }
+            return [[]];
+          },
+        };
+        return fn(tx);
+      },
+    };
+    const updateRepo = createAdminCatalogV2Repository(mockUpdateDb);
+    const updated = await updateRepo.updateProduct(47, {
+      name: 'Món 47',
+      is_available: false,
+      status: 'inactive',
+    });
+    assert.equal(updated.id, 47);
+    assert.equal(executedParams[6], 'active', 'SQL parameter for status must be active, never inactive');
+    assert.equal(executedParams[7], false, 'SQL parameter for is_available must be false');
   });
 
   // -------------------------------------------------------------
