@@ -27,7 +27,7 @@ export function createFulfillmentCapabilitiesRepository(database = postgresDb) {
     async listCapabilities(storeId) {
       const [rows] = await database.query(
         `SELECT flr.code AS lane_code, flr.display_name, flr.handler_type, flr.is_active,
-                COALESCE(bfc.is_enabled, FALSE) AS is_enabled,
+                COALESCE(bfc.is_enabled, TRUE) AS is_enabled,
                 bfc.updated_by, bfc.updated_at
          FROM fulfillment_lane_registry flr
          LEFT JOIN branch_fulfillment_capabilities bfc
@@ -41,9 +41,13 @@ export function createFulfillmentCapabilitiesRepository(database = postgresDb) {
 
     async getStoreCapabilities(storeId) {
       const [rows] = await database.query(
-        `SELECT lane_code
-         FROM branch_fulfillment_capabilities
-         WHERE store_id = $1 AND is_enabled = TRUE`,
+        `SELECT flr.code AS lane_code
+         FROM fulfillment_lane_registry flr
+         LEFT JOIN branch_fulfillment_capabilities bfc
+           ON bfc.lane_code = flr.code AND bfc.store_id = $1
+         WHERE flr.is_active = TRUE
+           AND COALESCE(bfc.is_enabled, TRUE) = TRUE
+         ORDER BY flr.code ASC`,
         [Number(storeId)],
       );
       return rows.map((r) => r.lane_code);

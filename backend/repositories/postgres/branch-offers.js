@@ -35,10 +35,12 @@ export function createBranchOffersRepository(database = postgresDb) {
     async hasFulfillmentCapability(storeId, lane, client = database) {
       const [rows] = await client.query(
         `SELECT 1
-         FROM branch_fulfillment_capabilities bfc
-         JOIN fulfillment_lane_registry flr ON flr.code = bfc.lane_code
-         WHERE bfc.store_id = $1 AND bfc.lane_code = $2
-           AND bfc.is_enabled = TRUE AND flr.is_active = TRUE`,
+         FROM fulfillment_lane_registry flr
+         LEFT JOIN branch_fulfillment_capabilities bfc
+           ON bfc.lane_code = flr.code AND bfc.store_id = $1
+         WHERE flr.code = $2
+           AND flr.is_active = TRUE
+           AND COALESCE(bfc.is_enabled, TRUE) = TRUE`,
         [Number(storeId), lane],
       );
       return Boolean(rows[0]);
