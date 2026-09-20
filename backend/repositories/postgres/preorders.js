@@ -109,10 +109,12 @@ export function createPreordersRepository(database = postgresDb) {
     }
     if (!itemIds.length) return preorders;
     const reviews = rowsOf(await database.query(
-      `SELECT r.id, r.order_item_id, r.user_id, r.reply_comment, r.reply_at,
+      `SELECT r.id, r.order_item_id, r.user_id,
+              rr.body AS reply_comment, rr.created_at AS reply_at,
               rev.rating, rev.comment, rev.created_at
        FROM reviews r
        LEFT JOIN review_revisions rev ON rev.id = r.current_revision_id
+       LEFT JOIN review_replies rr ON rr.review_id = r.id
        WHERE r.order_item_id = ANY($1::bigint[])`,
       [itemIds],
     ));
