@@ -10,7 +10,7 @@ const OPTION_QUERIES = Object.freeze({
 
 export function createCatalogRepository(database = postgresDb) {
   return {
-    async listProducts({ category, search, tag } = {}) {
+    async listProducts({ category, search, tag, lane } = {}) {
       let sql = `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
                         COALESCE(root.id, c.id) AS root_category_id,
                         COALESCE(root.name, c.name) AS root_category_name,
@@ -20,6 +20,10 @@ export function createCatalogRepository(database = postgresDb) {
         LEFT JOIN categories root ON root.id = c.parent_id
         WHERE p.is_available = TRUE AND c.is_visible = TRUE`;
       const params = [];
+      if (lane) {
+        params.push(lane);
+        sql += ` AND COALESCE(p.fulfillment_lane, c.default_fulfillment_lane, 'kitchen') = $${params.length}`;
+      }
       if (category) {
         params.push(category);
         sql += ` AND c.slug = $${params.length}`;

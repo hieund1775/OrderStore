@@ -194,9 +194,10 @@ function PosPage() {
     inFlightSourcesRef.current.add("products");
     setLoadingSources((s) => ({ ...s, products: true }));
     try {
-      const catalog = await apiGet<ApiCatalogProduct[]>("/api/products");
-      // Never fall back to mock catalog in production runtime.
-      setProducts(Array.isArray(catalog) ? catalog.map(mapApiProduct) : []);
+      const catalog = await apiGet<ApiCatalogProduct[]>("/api/products?lane=kitchen");
+      // POS only serves kitchen lane items; packaging items are strictly excluded.
+      const mapped = Array.isArray(catalog) ? catalog.map(mapApiProduct) : [];
+      setProducts(mapped.filter((p) => !p.fulfillment_lane || p.fulfillment_lane === 'kitchen'));
       setBootstrapErrors((prev) => ({ ...prev, products: null }));
     } catch (err: unknown) {
       setBootstrapErrors((prev) => ({

@@ -75,14 +75,7 @@ export function createFulfillmentService({
     },
 
     async listTasks({ user, branchId = null, lane = null, statuses = null, limit = 50 }) {
-      if (user?.role === 'super' && !branchId) {
-        const err = new Error('Vui lòng chọn chi nhánh cụ thể để xem danh sách vận hành');
-        err.status = 400;
-        err.code = 'FULFILLMENT_BRANCH_REQUIRED';
-        throw err;
-      }
-
-      const requestedBranchId = branchId == null ? null : Number(branchId);
+      const requestedBranchId = (branchId == null || branchId === 'all') ? null : Number(branchId);
       const assignedBranchId = user?.branch_id == null ? null : Number(user.branch_id);
       if (user?.role !== 'super') {
         if (!assignedBranchId) {

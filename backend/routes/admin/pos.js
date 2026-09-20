@@ -5,6 +5,7 @@ import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus, isOrderBusinessError } from '../../services/orders/order-errors.js';
 import { validateCreateOrderInput } from '../../validation/order-schemas.js';
 import customerOrderService from '../../services/orders/customer-order-service.js';
+import defaultPostgresDb from '../../config/db-postgres.js';
 import { logAudit } from '../../services/audit.js';
 
 /**
@@ -15,6 +16,7 @@ import { logAudit } from '../../services/audit.js';
 export function createAdminPosRouter({
   orderService = customerOrderService,
   auditLogger = logAudit,
+  database = defaultPostgresDb,
 } = {}) {
   const router = Router();
 
@@ -23,6 +25,27 @@ export function createAdminPosRouter({
       // Super may select a branch. Manager/Cashier must match the branch in
       // their authenticated identity; a spoofed store_id is rejected here.
       const storeId = resolveStoreScope(req.user, req.body?.store_id);
+
+      // POS only serves kitchen lane items
+      if (Array.isArray(req.body?.items) && req.body.items.length > 0) {
+        const productIds = req.body.items.map((it) => Number(it.product_id || it.id)).filter(Boolean);
+        if (productIds.length > 0) {
+          const [forbiddenRows] = await database.query(
+            `SELECT p.id, p.name
+             FROM products p
+             JOIN categories c ON c.id = p.category_id
+             WHERE p.id = ANY($1) AND COALESCE(p.fulfillment_lane, c.default_fulfillment_lane, 'kitchen') = 'packing'`,
+            [productIds],
+          );
+          if (forbiddenRows && forbiddenRows.length > 0) {
+            const forbiddenNames = forbiddenRows.map((r) => r.name).join(', ');
+            return res.status(400).json({
+              error: `Màn hình POS chỉ phục vụ các món thuộc khu vực Bếp pha chế. Không thể gọi món đóng gói: ${forbiddenNames}`,
+              code: 'POS_ONLY_KITCHEN_ALLOWED',
+            });
+          }
+        }
+      }
 
       // POS is counter COD only. Do not let an internal client turn this
       // endpoint into customer Delivery/online checkout by changing fields.

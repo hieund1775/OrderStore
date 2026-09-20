@@ -132,14 +132,19 @@ export function validateBaseOptionInput(body = {}, { isUpdate = false } = {}) {
   };
 }
 
-export function validateCatalogFilters({ category, search, tag, category_id } = {}) {
+export function validateCatalogFilters({ category, search, tag, category_id, lane } = {}) {
   if (search !== undefined && (typeof search !== 'string' || search.length > 200)) {
     throw new CatalogValidationError('Từ khóa tìm kiếm không hợp lệ');
+  }
+  let normalizedLane = lane ? String(lane).trim().toLowerCase() : undefined;
+  if (normalizedLane && !['kitchen', 'packing'].includes(normalizedLane)) {
+    throw new CatalogValidationError('Luồng xử lý không hợp lệ');
   }
   return {
     category: category ? String(category).trim() : undefined,
     search: search ? String(search).trim() : undefined,
     tag: tag ? String(tag).trim() : undefined,
     category_id: category_id ? positiveInteger(category_id, 'category_id', { required: false }) : undefined,
+    lane: normalizedLane,
   };
 }

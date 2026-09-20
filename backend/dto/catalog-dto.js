@@ -30,6 +30,7 @@ export function toProductDto(product) {
     rating: product.rating == null ? 5 : Number(product.rating),
     review_count: product.review_count == null ? 0 : Number(product.review_count),
     is_available: product.is_available !== false,
+    fulfillment_lane: product.fulfillment_lane || 'kitchen',
     category_name: product.category_name || undefined,
     category_slug: product.category_slug || undefined,
     root_category_id: product.root_category_id != null ? Number(product.root_category_id) : (product.category_id != null ? Number(product.category_id) : undefined),

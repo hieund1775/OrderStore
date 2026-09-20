@@ -67,7 +67,7 @@ export function PackingStationPage() {
   const [activeTab, setActiveTab] = useState<'packing' | 'shipper' | 'completed'>('packing');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string>(() =>
-    user?.role === 'super' ? '' : user?.branch_id ? String(user.branch_id) : '',
+    user?.role === 'super' ? 'all' : user?.branch_id ? String(user.branch_id) : 'all',
   );
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
@@ -77,15 +77,11 @@ export function PackingStationPage() {
   const [handoverLoading, setHandoverLoading] = useState(false);
 
   const fetchTasks = async () => {
-    if (isSuperAdmin && !selectedBranch) {
-      setTasks([]);
-      return;
-    }
     try {
       setLoading(true);
       const query = new URLSearchParams();
       query.set('lane', 'packing');
-      if (selectedBranch) {
+      if (selectedBranch && selectedBranch !== 'all') {
         query.set('branch_id', selectedBranch);
       }
 
@@ -217,6 +213,7 @@ export function PackingStationPage() {
                 <SelectValue placeholder="Chọn chi nhánh" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">Tất cả chi nhánh</SelectItem>
                 {branches.map((branch) => (
                   <SelectItem key={branch.id} value={String(branch.id)}>
                     {branch.name}

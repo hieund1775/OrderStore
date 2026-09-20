@@ -25,24 +25,22 @@ test('Fulfillment Access & Multi-Branch RBAC Contract Suite', async (t) => {
     );
   });
 
-  await t.test('Super Admin must specify a branch explicitly before loading board tasks', async () => {
-    let repositoryCalled = false;
+  await t.test('Super Admin can query fulfillment tasks across all branches without specifying a branch', async () => {
+    let capturedBranchId = undefined;
     const mockRepo = {
-      async listTasks() {
-        repositoryCalled = true;
-        return [];
+      async listTasks({ branchId }) {
+        capturedBranchId = branchId;
+        return [{ id: 1, lane: 'packing' }];
       },
     };
 
     const service = createFulfillmentService({ repository: mockRepo });
     const superAdmin = { sub: 1, role: 'super', branch_id: null };
 
-    // Super Admin calling listTasksByLane without branchId must fail with 400
-    await assert.rejects(
-      async () => service.listTasks({ lane: 'kitchen', user: superAdmin }),
-      (err) => err?.status === 400 && err?.code === 'FULFILLMENT_BRANCH_REQUIRED',
-    );
-    assert.equal(repositoryCalled, false, 'Invalid board scope must be rejected before querying tasks');
+    // Super Admin calling listTasks without branchId queries across all branches (branchId: null)
+    const tasks = await service.listTasks({ lane: 'packing', user: superAdmin });
+    assert.equal(capturedBranchId, null, 'Super Admin without branchId must query all branches');
+    assert.equal(tasks.length, 1);
   });
 
   await t.test('Red Behavior: Kitchen user cannot update packing task status', async () => {

@@ -3,13 +3,14 @@ import test from 'node:test';
 import express from 'express';
 import { createAdminPosRouter } from '../routes/admin/pos.js';
 
-async function start(user, orderService) {
+async function start(user, orderService, database) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => { req.user = user; next(); });
   app.use('/admin/pos', createAdminPosRouter({
     orderService,
     auditLogger: async () => {},
+    database,
   }));
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
@@ -92,5 +93,39 @@ test('POS denies kitchen and packing roles', async () => {
       });
       assert.equal(response.status, 403);
     } finally { await fixture.close(); }
+  }
+});
+
+test('POS rejects packing lane items with 400 POS_ONLY_KITCHEN_ALLOWED', async () => {
+  let orderCreated = false;
+  const mockDb = {
+    async query(sql, params) {
+      if (sql.includes('COALESCE(p.fulfillment_lane') && sql.includes("'packing'")) {
+        return [[{ id: 47, name: 'Áo khoác QA' }]];
+      }
+      return [[]];
+    },
+  };
+  const fixture = await start(
+    { role: 'cashier', sub: 15, branch_id: 1 },
+    { create: async () => { orderCreated = true; return {}; } },
+    mockDb,
+  );
+  try {
+    const response = await fetch(`${fixture.baseUrl}/admin/pos/orders`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...basePayload,
+        items: [{ product_id: 47, qty: 1 }],
+      }),
+    });
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.code, 'POS_ONLY_KITCHEN_ALLOWED');
+    assert.match(body.error, /Màn hình POS chỉ phục vụ các món thuộc khu vực Bếp pha chế/);
+    assert.equal(orderCreated, false);
+  } finally {
+    await fixture.close();
   }
 });

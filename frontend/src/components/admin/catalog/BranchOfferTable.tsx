@@ -4,12 +4,10 @@ import {
   Store,
   Layers,
   Edit2,
-  PackagePlus,
-  History,
+  Check,
+  Search,
   CheckCircle2,
   XCircle,
-  Search,
-  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,8 +16,6 @@ import {
   updateBranchOffer,
   batchSetBranchAvailability,
 } from '@/lib/api';
-import { StockAdjustmentDialog } from '../inventory/StockAdjustmentDialog';
-import { InventoryLedgerDrawer } from '../inventory/InventoryLedgerDrawer';
 import { toast } from 'sonner';
 
 export type BranchOfferRow = {
@@ -64,12 +60,6 @@ export function BranchOfferTable({
   const [editingPriceVariantId, setEditingPriceVariantId] = useState<number | null>(null);
   const [editPriceValue, setEditPriceValue] = useState<string>('');
   const [savingPrice, setSavingPrice] = useState(false);
-
-  // Stock adjustment modal & ledger drawer state
-  const [stockModalOpen, setStockModalOpen] = useState(false);
-  const [selectedVariantForStock, setSelectedVariantForStock] = useState<any | null>(null);
-  const [ledgerDrawerOpen, setLedgerDrawerOpen] = useState(false);
-  const [selectedVariantForLedger, setSelectedVariantForLedger] = useState<{ id: number; sku: string } | null>(null);
 
   const filtered = offers.filter((o) => {
     if (visibleCategoryIds && !visibleCategoryIds.includes(Number(o.category_id))) return false;
@@ -127,23 +117,6 @@ export function BranchOfferTable({
     }
   };
 
-  const handleOpenStockAdjustment = (offer: BranchOfferRow) => {
-    setSelectedVariantForStock({
-      variant_id: offer.variant_id,
-      sku: offer.sku,
-      product_name: offer.product_name,
-      name_suffix: offer.name_suffix,
-      on_hand: offer.on_hand,
-      reserved: offer.reserved,
-    });
-    setStockModalOpen(true);
-  };
-
-  const handleOpenLedger = (offer: BranchOfferRow) => {
-    setSelectedVariantForLedger({ id: offer.variant_id, sku: offer.sku });
-    setLedgerDrawerOpen(true);
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -166,15 +139,14 @@ export function BranchOfferTable({
                 <th className="py-3 px-4">Sản phẩm & Biến thể SKU</th>
                 <th className="py-3 px-3">Danh mục</th>
                 <th className="py-3 px-3">Giá bán chi nhánh</th>
-                <th className="py-3 px-3">Tồn kho SKU</th>
+                <th className="py-3 px-3">Khu vực & Tồn kho</th>
                 <th className="py-3 px-3 text-center">Bật bán</th>
-                <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
                     Không tìm thấy SKU phù hợp.
                   </td>
                 </tr>
@@ -250,25 +222,38 @@ export function BranchOfferTable({
                       </td>
 
                       <td className="py-3 px-3">
-                        {isTracked ? (
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-2">
-                              <span>Tồn: <b>{offer.on_hand}</b></span>
-                              <span className="text-emerald-600 font-semibold">
-                                (Bán: {offer.available_quantity})
+                        <div className="flex flex-col gap-1">
+                          <div>
+                            {offer.fulfillment_lane === 'packing' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                Đóng gói
                               </span>
-                            </div>
-                            {offer.reserved > 0 && (
-                              <span className="text-amber-600 text-[10px]">
-                                Đang giữ {offer.reserved} đơn
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                Bếp pha chế
                               </span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground text-xs italic">
-                            Pha chế theo order
-                          </span>
-                        )}
+                          {isTracked ? (
+                            <div className="flex flex-col gap-0.5 text-[11px]">
+                              <div className="flex items-center gap-2">
+                                <span>Tồn: <b>{offer.on_hand}</b></span>
+                                <span className="text-emerald-600 font-semibold">
+                                  (Bán: {offer.available_quantity})
+                                </span>
+                              </div>
+                              {offer.reserved > 0 && (
+                                <span className="text-amber-600 text-[10px]">
+                                  Đang giữ {offer.reserved} đơn
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs italic">
+                              Pha chế theo order
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-3 text-center">
@@ -278,33 +263,6 @@ export function BranchOfferTable({
                           aria-label={`Bật bán SKU ${offer.sku}`}
                         />
                       </td>
-
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {isTracked && (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenStockAdjustment(offer)}
-                                className="h-7 px-2 text-xs"
-                              >
-                                <PackagePlus className="size-3.5 mr-1 text-emerald-600" />
-                                Nhập / Điều chỉnh
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenLedger(offer)}
-                                className="h-7 w-7 p-0"
-                                title="Xem sổ cái biến động"
-                              >
-                                <History className="size-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   );
                 })
@@ -313,22 +271,6 @@ export function BranchOfferTable({
           </table>
         </div>
       </div>
-
-      <StockAdjustmentDialog
-        open={stockModalOpen}
-        onOpenChange={setStockModalOpen}
-        variant={selectedVariantForStock}
-        storeId={storeId}
-        onSuccess={onRefresh}
-      />
-
-      <InventoryLedgerDrawer
-        open={ledgerDrawerOpen}
-        onOpenChange={setLedgerDrawerOpen}
-        variantId={selectedVariantForLedger?.id}
-        sku={selectedVariantForLedger?.sku}
-        storeId={storeId}
-      />
     </div>
   );
 }

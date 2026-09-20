@@ -32,14 +32,8 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
               JOIN product_variants pv ON pv.product_id = p.id AND pv.status = 'active'
               JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
                 AND bvo.is_available = TRUE AND bvo.price IS NOT NULL
-              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
               WHERE (p.category_id = c.id OR p.category_id IN (SELECT id FROM categories WHERE parent_id = c.id))
                 AND p.status = 'active' AND p.is_available = TRUE
-                AND (
-                  p.stock_mode <> 'tracked'
-                  OR bvi.on_hand IS NULL
-                  OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
-                )
             )
           )
         `;
@@ -133,21 +127,13 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
            JOIN LATERAL (
              SELECT MIN(bvo.price) AS price,
                     MIN(bvo.compare_at_price) AS compare_at_price,
-                    BOOL_OR(
-                      bvo.is_available = TRUE
-                      AND (p.stock_mode <> 'tracked' OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0)
-                    ) AS is_available,
+                    BOOL_OR(bvo.is_available = TRUE) AS is_available,
                     MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
              FROM product_variants pv
              LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1
              LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $1
              WHERE pv.product_id = p.id
                AND pv.status = 'active'
-               AND (
-                 p.stock_mode <> 'tracked'
-                 OR bvi.on_hand IS NULL
-                 OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
-               )
            ) branch_offer ON branch_offer.price IS NOT NULL AND branch_offer.is_available = TRUE
            WHERE p.status = 'active' AND p.is_available = TRUE
          ),
@@ -201,21 +187,13 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
           JOIN LATERAL (
             SELECT MIN(bvo.price) AS price,
                    MIN(bvo.compare_at_price) AS compare_at_price,
-                   BOOL_OR(
-                     bvo.is_available = TRUE
-                     AND (p.stock_mode <> 'tracked' OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0)
-                   ) AS is_available,
+                   BOOL_OR(bvo.is_available = TRUE) AS is_available,
                    MAX(COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0)) AS available_stock
             FROM product_variants pv
             JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $${params.length} AND bvo.is_available = TRUE
             LEFT JOIN branch_variant_inventory bvi ON bvi.variant_id = pv.id AND bvi.store_id = $${params.length}
             WHERE pv.product_id = p.id
               AND pv.status = 'active'
-              AND (
-                p.stock_mode <> 'tracked'
-                OR bvi.on_hand IS NULL
-                OR COALESCE(bvi.on_hand, 0) - COALESCE(bvi.reserved, 0) > 0
-              )
           ) branch_offer ON branch_offer.price IS NOT NULL AND branch_offer.is_available = TRUE
         `;
         priceSelect = `

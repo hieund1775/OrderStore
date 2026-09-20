@@ -74,6 +74,7 @@ export type Product = {
   calories: number;
   line: string;
   fruit: string;
+  fulfillment_lane?: string;
   tags: ProductTag[];
 };
 
@@ -89,6 +90,8 @@ export type ApiCatalogProduct = {
   review_count?: number | string;
   calories?: number | string;
   category_name?: string | null;
+  fulfillment_lane?: string | null;
+  tags?: string | string[] | null;
   is_bestseller?: boolean;
   is_seasonal?: boolean;
 };
@@ -137,7 +140,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
         }
       }
     } catch {
-      const parts = product.tags.split(',').map((s) => s.trim());
+      const parts = product.tags.split(',').map((s: string) => s.trim());
       for (const t of parts) {
         if ((t === 'best-seller' || t === 'new' || t === 'seasonal') && !tags.includes(t)) {
           tags.push(t);
@@ -186,6 +189,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     calories: Number(product.calories || 180),
     line: category,
     fruit: category,
+    fulfillment_lane: product.fulfillment_lane || undefined,
     tags,
   };
 }

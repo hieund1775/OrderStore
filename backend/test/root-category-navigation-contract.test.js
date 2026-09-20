@@ -36,8 +36,7 @@ test('Grouped sections repository keeps empty roots and filters unavailable cata
   assert.match(productSql, /p\.is_available = TRUE/);
   assert.match(productSql, /bvo\.is_available = TRUE/);
   assert.match(productSql, /JOIN LATERAL \(/);
-  assert.doesNotMatch(productSql, /LEFT JOIN LATERAL \(/);
-  assert.match(productSql, /COALESCE\(bvi\.on_hand, 0\) - COALESCE\(bvi\.reserved, 0\) > 0/);
+  assert.match(productSql, /BOOL_OR\(bvo\.is_available = TRUE\)/);
 });
 
 test('Branch-aware category tree requires an available offer with a branch price', async () => {
