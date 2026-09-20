@@ -40,6 +40,8 @@ function AdminHangDangBanPage() {
   const [selectedStoreId, setSelectedStoreId] = useState<string>('1');
   const [selectedRootId, setSelectedRootId] = useState<string>('all');
   const [selectedChildId, setSelectedChildId] = useState<string>('all');
+  const [search, setSearch] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -59,13 +61,38 @@ function AdminHangDangBanPage() {
       : categories.filter((category) => Number(category.parent_id) === Number(selectedRootId)),
     [categories, selectedRootId],
   );
-  const visibleCategoryIds = useMemo(() => {
-    if (selectedChildId !== 'all') return [Number(selectedChildId)];
-    if (selectedRootId === 'all') return undefined;
-    return [Number(selectedRootId), ...childCategories.map((category) => Number(category.id))];
-  }, [childCategories, selectedChildId, selectedRootId]);
 
-  const loadData = async () => {
+  const effectiveCategoryId = useMemo(() => {
+    if (selectedChildId !== 'all') return Number(selectedChildId);
+    if (selectedRootId !== 'all') return Number(selectedRootId);
+    return undefined;
+  }, [selectedChildId, selectedRootId]);
+
+  const handleRootChange = (newRootId: string) => {
+    setSelectedRootId(newRootId);
+    setSelectedChildId('all');
+    setPage(1);
+  };
+
+  const handleChildChange = (newChildId: string) => {
+    setSelectedChildId(newChildId);
+    setPage(1);
+  };
+
+  const handleStoreChange = (newStoreId: string) => {
+    setSelectedStoreId(newStoreId);
+    setPage(1);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       if (isSuperAdmin && stores.length === 0) {
@@ -74,7 +101,13 @@ function AdminHangDangBanPage() {
       }
 
       const [offersRes, categoryList] = await Promise.all([
-        fetchBranchOffers({ store_id: effectiveStoreId, page, limit: 5 }),
+        fetchBranchOffers({
+          store_id: effectiveStoreId,
+          category_id: effectiveCategoryId,
+          search: debouncedSearch.trim() || undefined,
+          page,
+          limit: 5,
+        }),
         fetchCatalogCategories(),
       ]);
       let list: BranchOfferRow[] = [];
@@ -97,15 +130,11 @@ function AdminHangDangBanPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [effectiveStoreId, effectiveCategoryId, debouncedSearch, page, isSuperAdmin, stores.length]);
 
   useEffect(() => {
     loadData();
-  }, [effectiveStoreId, page]);
-
-  useEffect(() => {
-    setSelectedChildId('all');
-  }, [selectedRootId]);
+  }, [loadData]);
 
   return (
     <div className="space-y-6">
@@ -134,7 +163,7 @@ function AdminHangDangBanPage() {
               <select
                 className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-semibold"
                 value={selectedStoreId}
-                onChange={(e) => setSelectedStoreId(e.target.value)}
+                onChange={(e) => handleStoreChange(e.target.value)}
               >
                 {stores.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -162,7 +191,7 @@ function AdminHangDangBanPage() {
           <select
             className="h-9 min-w-48 rounded-md border border-input bg-background px-3 text-xs font-semibold text-foreground"
             value={selectedRootId}
-            onChange={(event) => setSelectedRootId(event.target.value)}
+            onChange={(event) => handleRootChange(event.target.value)}
           >
             <option value="all">Tất cả ngành hàng</option>
             {rootCategories.map((category) => (
@@ -176,7 +205,7 @@ function AdminHangDangBanPage() {
             <select
               className="h-9 min-w-48 rounded-md border border-input bg-background px-3 text-xs font-semibold text-foreground"
               value={selectedChildId}
-              onChange={(event) => setSelectedChildId(event.target.value)}
+              onChange={(event) => handleChildChange(event.target.value)}
             >
               <option value="all">Tất cả trong ngành</option>
               {childCategories.map((category) => (
@@ -196,7 +225,8 @@ function AdminHangDangBanPage() {
           <BranchOfferTable
             offers={offers}
             storeId={effectiveStoreId}
-            visibleCategoryIds={visibleCategoryIds}
+            search={search}
+            onSearchChange={setSearch}
             onRefresh={loadData}
           />
           {offers.length > 0 && (

@@ -167,6 +167,14 @@ describe('Canonical Repository SQL-Level Pagination & Deterministic Sorting', ()
     const all = await repo.listBranchOffers(1, {});
     assert.ok(!capturedSql.includes('LIMIT'));
     assert.ok(Array.isArray(all));
+
+    // Category tree filter check
+    capturedSql = '';
+    capturedParams = [];
+    await repo.listBranchOffers(1, { categoryId: 87, page: 1, limit: 5 });
+    assert.ok(capturedSql.includes('WITH RECURSIVE cat_tree AS'));
+    assert.ok(capturedSql.includes('p.category_id IN ('));
+    assert.deepEqual(capturedParams, [1, 87, 5, 0]);
   });
 
   it('notifications listForUser applies COUNT(*) OVER(), LIMIT/OFFSET, and ORDER BY created_at DESC, id DESC', async () => {

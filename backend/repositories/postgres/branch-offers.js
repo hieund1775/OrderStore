@@ -73,7 +73,14 @@ export function createBranchOffersRepository(database = postgresDb) {
 
       if (categoryId) {
         params.push(Number(categoryId));
-        where += ` AND p.category_id = $${params.length}`;
+        where += ` AND p.category_id IN (
+          WITH RECURSIVE cat_tree AS (
+            SELECT id FROM categories WHERE id = $${params.length}
+            UNION ALL
+            SELECT c.id FROM categories c JOIN cat_tree ct ON ct.id = c.parent_id
+          )
+          SELECT id FROM cat_tree
+        )`;
       }
       if (isAvailable !== undefined) {
         params.push(Boolean(isAvailable));
@@ -128,7 +135,14 @@ export function createBranchOffersRepository(database = postgresDb) {
         let countWhere = "WHERE p.status <> 'archived' AND pv.status <> 'archived'";
         if (categoryId) {
           countParams.push(Number(categoryId));
-          countWhere += ` AND p.category_id = $${countParams.length}`;
+          countWhere += ` AND p.category_id IN (
+            WITH RECURSIVE cat_tree AS (
+              SELECT id FROM categories WHERE id = $${countParams.length}
+              UNION ALL
+              SELECT c.id FROM categories c JOIN cat_tree ct ON ct.id = c.parent_id
+            )
+            SELECT id FROM cat_tree
+          )`;
         }
         if (isAvailable !== undefined) {
           countParams.push(Boolean(isAvailable));

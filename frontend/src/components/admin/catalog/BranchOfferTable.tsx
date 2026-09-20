@@ -47,6 +47,8 @@ interface BranchOfferTableProps {
   offers: BranchOfferRow[];
   storeId?: number | string;
   visibleCategoryIds?: number[];
+  search?: string;
+  onSearchChange?: (term: string) => void;
   onRefresh: () => void;
 }
 
@@ -54,15 +56,28 @@ export function BranchOfferTable({
   offers,
   storeId,
   visibleCategoryIds,
+  search: externalSearch,
+  onSearchChange: externalOnSearchChange,
   onRefresh,
 }: BranchOfferTableProps) {
-  const [search, setSearch] = useState('');
+  const [internalSearch, setInternalSearch] = useState('');
+  const isControlledSearch = typeof externalOnSearchChange === 'function';
+  const search = isControlledSearch ? (externalSearch ?? '') : internalSearch;
   const [editingPriceVariantId, setEditingPriceVariantId] = useState<number | null>(null);
   const [editPriceValue, setEditPriceValue] = useState<string>('');
   const [savingPrice, setSavingPrice] = useState(false);
 
+  const handleSearchChange = (val: string) => {
+    if (isControlledSearch) {
+      externalOnSearchChange(val);
+    } else {
+      setInternalSearch(val);
+    }
+  };
+
   const filtered = offers.filter((o) => {
     if (visibleCategoryIds && !visibleCategoryIds.includes(Number(o.category_id))) return false;
+    if (isControlledSearch) return true;
     const term = search.toLowerCase();
     return (
       o.product_name.toLowerCase().includes(term) ||
@@ -124,7 +139,7 @@ export function BranchOfferTable({
           <Search className="text-muted-foreground absolute left-3 top-2.5 size-4" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Tìm theo tên sản phẩm, mã SKU, danh mục..."
             className="pl-9"
           />
