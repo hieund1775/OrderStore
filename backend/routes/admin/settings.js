@@ -29,7 +29,12 @@ router.get('/accounts', requireRole('super', 'manager'), asyncHandler(async (req
       active: r.is_active,
       email_verified_at: r.email_verified_at,
       created_at: r.created_at,
-})));
+    })));
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
 
 router.patch('/accounts/:id', requireRole('super'), asyncHandler(async (req, res) => {
   try {
@@ -63,11 +68,6 @@ router.post('/accounts/:id/password-reset', requireRole('super'), asyncHandler(a
     return res.json({ success: true, message: 'Email đặt lại mật khẩu đã được gửi' });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
-  }
-}));
-  } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
   }
 }));
 

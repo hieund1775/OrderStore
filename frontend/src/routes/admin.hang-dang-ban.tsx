@@ -27,7 +27,7 @@ export const Route = createFileRoute('/admin/hang-dang-ban')({
   component: AdminHangDangBanPage,
   head: () => ({
     meta: [
-      { title: 'Hàng đang bán & Tồn kho SKU Chi Nhánh | Trà Trái Cây Tô Admin' },
+      { title: 'Hàng Bán Chi Nhánh | Trà Trái Cây Tô Admin' },
       { name: 'robots', content: 'noindex' },
     ],
   }),
@@ -147,10 +147,10 @@ function AdminHangDangBanPage() {
             </span>
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight">
-                Hàng Đang Bán & Tồn Kho SKU Chi Nhánh
+                Hàng Bán Chi Nhánh
               </h1>
               <p className="text-muted-foreground text-xs sm:text-sm">
-                Quản lý bảng giá chi nhánh, bật/tắt bán SKU và theo dõi sổ cái xuất nhập tồn thành phẩm.
+                Quản lý bảng giá chi nhánh và trạng thái bật/tắt bán SKU.
               </p>
             </div>
           </div>

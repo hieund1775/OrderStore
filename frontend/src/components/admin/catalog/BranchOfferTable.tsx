@@ -1,20 +1,16 @@
 import React, { useState } from 'react';
 import {
   Barcode,
-  Store,
-  Layers,
-  Edit2,
+  Pencil,
   Check,
+  X,
   Search,
-  CheckCircle2,
-  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   updateBranchOffer,
-  batchSetBranchAvailability,
 } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -154,7 +150,7 @@ export function BranchOfferTable({
                 <th className="py-3 px-4">Sản phẩm & Biến thể SKU</th>
                 <th className="py-3 px-3">Danh mục</th>
                 <th className="py-3 px-3">Giá bán chi nhánh</th>
-                <th className="py-3 px-3">Khu vực & Tồn kho</th>
+                <th className="py-3 px-3">Khu vực thực hiện</th>
                 <th className="py-3 px-3 text-center">Bật bán</th>
               </tr>
             </thead>
@@ -170,7 +166,6 @@ export function BranchOfferTable({
                   const isEditingPrice = editingPriceVariantId === offer.variant_id;
                   const displayPrice =
                     offer.price !== null ? offer.price : offer.base_price;
-                  const isTracked = offer.stock_mode === 'tracked';
 
                   return (
                     <tr key={offer.variant_id} className="hover:bg-muted/20 transition-colors">
@@ -210,7 +205,11 @@ export function BranchOfferTable({
                               step="1000"
                               value={editPriceValue}
                               onChange={(e) => setEditPriceValue(e.target.value)}
-                              className="h-7 w-24 text-xs"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSavePrice(offer);
+                                if (e.key === 'Escape') setEditingPriceVariantId(null);
+                              }}
+                              className="h-7 w-24 text-xs font-mono"
                               autoFocus
                             />
                             <Button
@@ -218,57 +217,51 @@ export function BranchOfferTable({
                               className="h-7 w-7 p-0"
                               onClick={() => handleSavePrice(offer)}
                               disabled={savingPrice}
+                              title="Lưu giá"
                             >
                               <Check className="size-3.5" />
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditingPriceVariantId(null)}
+                              disabled={savingPrice}
+                              title="Hủy"
+                            >
+                              <X className="size-3.5" />
+                            </Button>
                           </div>
                         ) : (
-                          <div
-                            onClick={() => handleStartEditPrice(offer)}
-                            className="group flex items-center gap-1 cursor-pointer"
-                            title="Click để đổi giá chi nhánh"
-                          >
-                            <span className="font-bold text-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-foreground font-mono">
                               {displayPrice.toLocaleString('vi-VN')}₫
                             </span>
-                            <Edit2 className="size-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                              onClick={() => handleStartEditPrice(offer)}
+                              title="Sửa giá bán chi nhánh"
+                              aria-label={`Sửa giá bán SKU ${offer.sku}`}
+                            >
+                              <Pencil className="size-3" />
+                            </Button>
                           </div>
                         )}
                       </td>
 
                       <td className="py-3 px-3">
-                        <div className="flex flex-col gap-1">
-                          <div>
-                            {offer.fulfillment_lane === 'packing' ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                                Đóng gói
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                Bếp pha chế
-                              </span>
-                            )}
-                          </div>
-                          {isTracked ? (
-                            <div className="flex flex-col gap-0.5 text-[11px]">
-                              <div className="flex items-center gap-2">
-                                <span>Tồn: <b>{offer.on_hand}</b></span>
-                                <span className="text-emerald-600 font-semibold">
-                                  (Bán: {offer.available_quantity})
-                                </span>
-                              </div>
-                              {offer.reserved > 0 && (
-                                <span className="text-amber-600 text-[10px]">
-                                  Đang giữ {offer.reserved} đơn
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs italic">
-                              Pha chế theo order
-                            </span>
-                          )}
-                        </div>
+                        {offer.fulfillment_lane === 'packing' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                            Đóng gói
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            Bếp pha chế
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 text-center">

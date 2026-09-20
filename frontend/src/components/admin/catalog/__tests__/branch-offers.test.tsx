@@ -55,7 +55,7 @@ describe('Branch Offers & Inventory UI Suite', () => {
     },
   ];
 
-  it('renders BranchOfferTable with SKU list, product names, and stock indicators', () => {
+  it('renders BranchOfferTable with SKU list, product names, and fulfillment lane badges', () => {
     const html = renderToString(
       <BranchOfferTable
         offers={sampleOffers}
@@ -67,10 +67,12 @@ describe('Branch Offers & Inventory UI Suite', () => {
     expect(html).toContain('Áo Thun Cotton');
     expect(html).toContain('AO-THUN-COTTON-L');
     expect(html).toContain('Trà Đào Cam Sả');
-    expect(html).toContain('Pha chế theo order');
+    expect(html).toContain('Khu vực thực hiện');
+    expect(html).toContain('Bếp pha chế');
+    expect(html).toContain('Đóng gói');
   });
 
-  it('verifies tracked SKU renders on_hand and reserved stock quantities', () => {
+  it('verifies visible price edit action and category name', () => {
     const html = renderToString(
       <BranchOfferTable
         offers={sampleOffers}
@@ -79,8 +81,8 @@ describe('Branch Offers & Inventory UI Suite', () => {
       />,
     );
 
-    expect(html).toContain('50');
-    expect(html).toContain('45');
+    expect(html).toContain((145000).toLocaleString('vi-VN'));
+    expect(html).toContain('Sửa giá bán chi nhánh');
     expect(html).toContain('Thời Trang Nam');
   });
 });

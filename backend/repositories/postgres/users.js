@@ -313,11 +313,11 @@ export function createUsersRepository(database = postgresDb) {
       const [rows] = await executor.query(
         `UPDATE users
          SET fullname = $2,
-             email = $3,
+             email = $3::varchar,
              admin_role = $4,
              admin_branch_id = $5,
              email_verified_at = CASE
-               WHEN LOWER(email) IS DISTINCT FROM LOWER($3) THEN NULL
+               WHEN LOWER(email) IS DISTINCT FROM LOWER($3::varchar) THEN NULL
                ELSE email_verified_at
              END,
              token_version = token_version + 1,
