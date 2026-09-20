@@ -186,6 +186,125 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.ok(layer.route.methods.post, 'Route must handle POST');
   });
 
+  await t.test('re-creating industry when orphaned product_type exists retires old code and succeeds', async () => {
+    let retiredCode = null;
+    let createdCode = null;
+
+    const mockDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql, params) {
+            // Existing product_types check
+            if (sql.includes('SELECT id, code, name, archived_at FROM product_types')) {
+              return [[{ id: 99, code: 'nuoc_hoa', name: 'Nước Hoa', archived_at: null }]];
+            }
+            // Usage check: has_active_categories and has_active_products
+            if (sql.includes('has_active_categories')) {
+              return [[{ has_active_categories: false, has_active_products: false }]];
+            }
+            // Retiring old product_types
+            if (sql.includes('UPDATE product_types')) {
+              retiredCode = params[0];
+              return [[]];
+            }
+            // Categories cleanup
+            if (sql.includes('UPDATE categories SET slug')) {
+              return [[]];
+            }
+            // Insert product_types
+            if (sql.includes('INSERT INTO product_types')) {
+              createdCode = params[0];
+              return [[{ id: 100, name: params[1], code: params[0] }]];
+            }
+            if (sql.includes('INSERT INTO product_type_schemas')) {
+              return [[{ id: 10, version: 1, status: 'draft' }]];
+            }
+            if (sql.includes('INSERT INTO categories')) {
+              return [[{ id: 100, name: params[0], slug: params[1] }]];
+            }
+            return [[]];
+          },
+        };
+        return await fn(tx);
+      },
+    };
+
+    const repo = createCatalogV2Repository(mockDb);
+    const result = await repo.createIndustry({
+      name: 'Nước Hoa',
+      code: 'nuoc_hoa',
+    });
+
+    assert.equal(retiredCode, 99);
+    assert.equal(createdCode, 'nuoc_hoa');
+    assert.equal(result.productType.code, 'nuoc_hoa');
+  });
+
+  await t.test('createIndustry rejects when code is in active use with 409', async () => {
+    const mockDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql) {
+            if (sql.includes('SELECT id, code, name, archived_at FROM product_types')) {
+              return [[{ id: 99, code: 'nuoc_hoa', name: 'Nước Hoa', archived_at: null }]];
+            }
+            if (sql.includes('has_active_categories')) {
+              return [[{ has_active_categories: true, has_active_products: false }]];
+            }
+            return [[]];
+          },
+        };
+        return await fn(tx);
+      },
+    };
+
+    const repo = createCatalogV2Repository(mockDb);
+    await assert.rejects(
+      () => repo.createIndustry({ name: 'Nước Hoa', code: 'nuoc_hoa' }),
+      (err) => {
+        assert.equal(err.status, 409);
+        assert.match(err.message, /tồn tại/);
+        return true;
+      },
+    );
+  });
+
+  await t.test('archiveCategory on root category retires orphaned product_type', async () => {
+    let retiredPtId = null;
+
+    const mockDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql, params) {
+            if (sql.includes('SELECT * FROM categories WHERE id = $1 AND archived_at IS NULL')) {
+              return [[{ id: 10, name: 'Nước Hoa', slug: 'nuoc-hoa', product_type_id: 5, parent_id: null }]];
+            }
+            if (sql.includes('has_children')) {
+              return [[{ has_children: false, has_products: false }]];
+            }
+            if (sql.includes('UPDATE categories') && sql.includes('archived_at')) {
+              return [[{ id: 10, name: 'Nước Hoa [archived-10]', slug: 'nuoc-hoa--archived-10' }]];
+            }
+            if (sql.includes('has_categories')) {
+              return [[{ has_categories: false, has_products: false }]];
+            }
+            if (sql.includes('UPDATE product_types')) {
+              retiredPtId = params[0];
+              return [[]];
+            }
+            return [[]];
+          },
+        };
+        return await fn(tx);
+      },
+    };
+
+    const repo = createCatalogV2Repository(mockDb);
+    const archived = await repo.archiveCategory(10);
+    assert.equal(archived.id, 10);
+    assert.equal(retiredPtId, 5);
+  });
+
   // -------------------------------------------------------------
   // 3. PRODUCT LANE VALIDATION MATCHING LEAF CATEGORY
   // -------------------------------------------------------------

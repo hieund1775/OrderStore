@@ -57,7 +57,12 @@ import {
   getDistrictsByProvinceName,
   findProvinceByName,
   findDistrictByName,
+  getWardsByNames,
+  findWardByName,
+  parseBranchAddress,
+  isValidStreetAddress,
 } from "@/lib/vietnam-addresses";
+import { StreetAutocompleteInput } from "@/components/checkout/StreetAutocompleteInput";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
   head: () => ({
@@ -184,11 +189,17 @@ function fillFromPlace(place: NominatimPlace) {
   const matchedDistrict = city ? findDistrictByName(city, rawDistrict) : undefined;
   const district = matchedDistrict ? matchedDistrict.name : rawDistrict;
 
-  const address =
-    [a.house_number, a.road, a.suburb || a.quarter, district, city].filter(Boolean).join(", ") ||
-    place.display_name ||
-    "";
-  return { city, district, address };
+  // Chuẩn hóa tên Phường/Xã
+  const rawWard = a.suburb || a.quarter || a.neighbourhood || a.village || "";
+  const matchedWard = city && district ? findWardByName(city, district, rawWard) : undefined;
+  const ward = matchedWard ? matchedWard.name : rawWard;
+
+  // Trích xuất số nhà và tên đường
+  const streetParts = [a.house_number, a.road].filter(Boolean);
+  const street = streetParts.length > 0 ? streetParts.join(" ") : (a.road || "");
+
+  const address = [street, ward].filter(Boolean).join(", ") || place.display_name || "";
+  return { city, district, ward, street, address };
 }
 
 const PIN_HTML =
@@ -644,12 +655,22 @@ function StoreFormDialog({
   const [closeTime, setCloseTime] = useState(initialHours.close);
   const [city, setCity] = useState(store?.city ?? "");
   const [district, setDistrict] = useState(store?.district ?? "");
-  const [address, setAddress] = useState(store?.address ?? "");
+
+  // Tự động phân tách Phường/Xã và Số nhà/Tên đường từ chi nhánh cũ
+  const initialParsed = useMemo(() => {
+    if (!store?.address) return { ward: "", street: "" };
+    const initialWards = store.city && store.district ? getWardsByNames(store.city, store.district) : [];
+    return parseBranchAddress(store.address, initialWards);
+  }, [store]);
+
+  const [ward, setWard] = useState(initialParsed.ward);
+  const [street, setStreet] = useState(initialParsed.street);
   const [lat, setLat] = useState<number | null>(store?.lat ?? null);
   const [lng, setLng] = useState<number | null>(store?.lng ?? null);
 
   const allProvinces = useMemo(() => getProvinces(), []);
   const availableDistricts = useMemo(() => (city ? getDistrictsByProvinceName(city) : []), [city]);
+  const availableWards = useMemo(() => (city && district ? getWardsByNames(city, district) : []), [city, district]);
   const [amenities, setAmenities] = useState(parseAmenities(store?.amenities ?? null).join(", "));
   const [isActive, setIsActive] = useState(store ? Boolean(store.is_active) : true);
   const [saving, setSaving] = useState(false);
@@ -714,7 +735,8 @@ function StoreFormDialog({
     const filled = fillFromPlace(r);
     setCity(filled.city);
     setDistrict(filled.district);
-    setAddress(filled.address);
+    setWard(filled.ward);
+    setStreet(filled.street);
     setQuery(r.display_name ?? filled.address);
     setShowResults(false);
     mapHandle.current?.setMarker(la, lo);
@@ -732,7 +754,8 @@ function StoreFormDialog({
       const filled = fillFromPlace(place);
       setCity(filled.city);
       setDistrict(filled.district);
-      setAddress(filled.address);
+      setWard(filled.ward);
+      setStreet(filled.street);
       setQuery(filled.address);
     } catch {
       /* không reverse được — người dùng tự nhập */
@@ -740,8 +763,12 @@ function StoreFormDialog({
   }
 
   async function handleSave() {
-    if (!name.trim() || !phone.trim() || !city.trim() || !district.trim() || !address.trim()) {
-      return toast.error("Vui lòng nhập đầy đủ tên, SĐT, thành phố, quận/huyện và địa chỉ");
+    const finalAddress = [street.trim(), ward.trim()].filter(Boolean).join(", ");
+    if (!name.trim() || !phone.trim() || !city.trim() || !district.trim() || !ward.trim() || !street.trim()) {
+      return toast.error("Vui lòng nhập đầy đủ tên, SĐT, Tỉnh/TP, Quận/Huyện, Phường/Xã và Tên đường");
+    }
+    if (!isValidStreetAddress(street)) {
+      return toast.error("Số nhà, tên đường không hợp lệ hoặc vượt quá 30 ký tự");
     }
     if (!openTime || !closeTime) {
       return toast.error("Vui lòng chọn giờ mở cửa và giờ đóng cửa");
@@ -762,7 +789,7 @@ function StoreFormDialog({
         name: name.trim(),
         city: city.trim(),
         district: district.trim(),
-        address: address.trim(),
+        address: finalAddress,
         lat,
         lng,
         hours: `${openTime} – ${closeTime}`,
@@ -823,7 +850,7 @@ function StoreFormDialog({
             <Field label="Hotline" value={phone} onChange={setPhone} />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
             <div>
               <Label>Tỉnh / Thành phố</Label>
               <Select
@@ -831,6 +858,7 @@ function StoreFormDialog({
                 onValueChange={async (val) => {
                   setCity(val);
                   setDistrict("");
+                  setWard("");
                   // Tự động xoay bản đồ về trung tâm Tỉnh/Thành phố
                   try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&q=${encodeURIComponent(val)}`);
@@ -866,6 +894,7 @@ function StoreFormDialog({
                 disabled={!city || availableDistricts.length === 0}
                 onValueChange={async (val) => {
                   setDistrict(val);
+                  setWard("");
                   // Tự động xoay bản đồ về Quận/Huyện
                   try {
                     const queryStr = `${val}, ${city || "Việt Nam"}`;
@@ -896,11 +925,63 @@ function StoreFormDialog({
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Phường / Xã</Label>
+              <Select
+                value={ward}
+                disabled={!district || availableWards.length === 0}
+                onValueChange={async (val) => {
+                  setWard(val);
+                  // Tự động xoay bản đồ về Phường/Xã
+                  try {
+                    const queryStr = `${val}, ${district}, ${city || "Việt Nam"}`;
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&q=${encodeURIComponent(queryStr)}`);
+                    const data = await res.json();
+                    if (data[0]) {
+                      const la = Number(data[0].lat);
+                      const lo = Number(data[0].lon);
+                      setLat(la); setLng(lo);
+                      mapHandle.current?.setMarker(la, lo);
+                    }
+                  } catch {}
+                }}
+              >
+                <SelectTrigger className="mt-1.5 w-full">
+                  <SelectValue placeholder={!district ? "Chọn Quận/Huyện trước" : "Chọn Phường / Xã"} />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {availableWards.map((w) => (
+                    <SelectItem key={w.code} value={w.name}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                  {ward &&
+                    !availableWards.some((w) => w.name === ward) && (
+                      <SelectItem value={ward}>{ward}</SelectItem>
+                    )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div>
-            <Label>Địa chỉ</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1.5" />
+            <Label>Số nhà, tên đường <span className="text-xs font-normal text-muted-foreground">(tối đa 30 ký tự)</span></Label>
+            <div className="mt-1.5">
+              <StreetAutocompleteInput
+                value={street}
+                onChange={setStreet}
+                placeholder="VD: 123 Lê Lợi (gợi ý tự động khi gõ tên đường)..."
+                province={city}
+                district={district}
+                ward={ward}
+                maxLength={30}
+              />
+            </div>
+            {city && district && (street || ward) && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Địa chỉ đầy đủ: <span className="font-medium text-foreground">{formatFullAddress([street, ward].filter(Boolean).join(", "), district, city)}</span>
+              </p>
+            )}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">

@@ -110,4 +110,29 @@ describe('Admin Stores Hours Conflict Unit Suite', () => {
     const valid4h = validateBranchInput({ hours: '08:00 – 12:00' }, { isUpdate: true });
     assert.equal(valid4h.hours, '08:00 – 12:00');
   });
+
+  it('validates branch address within 100 chars and rejects overlength or empty', async () => {
+    const { validateBranchInput, StoreValidationError } = await import('../validation/store-schemas.js');
+
+    // Valid address within 100 chars
+    const valid = validateBranchInput({ address: '123 Lê Lợi, Phường Bến Nghé' }, { isUpdate: true });
+    assert.equal(valid.address, '123 Lê Lợi, Phường Bến Nghé');
+
+    // Exactly 100 chars
+    const exact100 = 'A'.repeat(100);
+    const valid100 = validateBranchInput({ address: exact100 }, { isUpdate: true });
+    assert.equal(valid100.address, exact100);
+
+    // Over 100 chars (101 chars)
+    const over100 = 'A'.repeat(101);
+    assert.throws(
+      () => validateBranchInput({ address: over100 }, { isUpdate: true }),
+      (err) => {
+        assert.equal(err instanceof StoreValidationError, true);
+        assert.match(err.message, /vượt quá 100 ký tự/);
+        return true;
+      },
+    );
+  });
 });
+

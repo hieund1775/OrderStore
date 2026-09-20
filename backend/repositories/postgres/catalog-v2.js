@@ -241,6 +241,7 @@ export function createCatalogV2Repository(database = postgresDb) {
         if (!categoryRows[0]) {
           throw new CatalogV2Error('Danh mục không tồn tại hoặc đã được lưu trữ', 404);
         }
+        const category = categoryRows[0];
         const [dependencyRows] = await tx.query(
           `SELECT
              EXISTS(SELECT 1 FROM categories WHERE parent_id = $1 AND archived_at IS NULL) AS has_children,
@@ -263,6 +264,33 @@ export function createCatalogV2Repository(database = postgresDb) {
            RETURNING *`,
           [id],
         );
+
+        // Nếu danh mục lưu trữ là ngành hàng gốc có liên kết product_type_id,
+        // và không còn danh mục đang hoạt động nào khác hay sản phẩm đang hoạt động nào dùng nó,
+        // ta cũng lưu trữ và retire mã product_type để giải phóng code cho phép tạo lại sau này.
+        if (category.product_type_id) {
+          const [activeTypeUsage] = await tx.query(
+            `SELECT
+               EXISTS(SELECT 1 FROM categories WHERE product_type_id = $1 AND id <> $2 AND archived_at IS NULL) AS has_categories,
+               EXISTS(
+                 SELECT 1 FROM products p
+                 JOIN product_type_schemas s ON s.id = p.product_type_schema_id
+                 WHERE s.product_type_id = $1 AND p.status <> 'archived'
+               ) AS has_products`,
+            [category.product_type_id, id],
+          );
+          if (!activeTypeUsage[0]?.has_categories && !activeTypeUsage[0]?.has_products) {
+            await tx.query(
+              `UPDATE product_types
+               SET archived_at = CURRENT_TIMESTAMP,
+                   code = LEFT(code, 60) || '_archived_' || id::text || '_' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                   name = LEFT(name, 160) || ' [archived-' || id::text || ']'
+               WHERE id = $1 AND archived_at IS NULL`,
+              [category.product_type_id],
+            );
+          }
+        }
+
         return rows[0];
       });
     },
@@ -415,6 +443,50 @@ export function createCatalogV2Repository(database = postgresDb) {
 
     async createIndustry(data, { createdBy = null } = {}) {
       return await database.transaction(async (tx) => {
+        // Kiểm tra xem mã code loại sản phẩm / ngành hàng này đã từng tồn tại chưa
+        const [existingTypes] = await tx.query(
+          'SELECT id, code, name, archived_at FROM product_types WHERE code = $1 FOR UPDATE',
+          [data.code],
+        );
+        if (existingTypes[0]) {
+          const existing = existingTypes[0];
+          // Kiểm tra xem có danh mục hoặc sản phẩm nào đang hoạt động sử dụng product_type này không
+          const [usageRows] = await tx.query(
+            `SELECT
+               EXISTS(SELECT 1 FROM categories WHERE product_type_id = $1 AND archived_at IS NULL) AS has_active_categories,
+               EXISTS(
+                 SELECT 1 FROM products p
+                 JOIN product_type_schemas s ON s.id = p.product_type_schema_id
+                 WHERE s.product_type_id = $1 AND p.status <> 'archived'
+               ) AS has_active_products`,
+            [existing.id],
+          );
+          if (usageRows[0]?.has_active_categories || usageRows[0]?.has_active_products) {
+            throw new CatalogV2Error('Mã, slug, SKU hoặc tổ hợp biến thể đã tồn tại', 409);
+          }
+          // Nếu không còn danh mục hoặc sản phẩm nào đang hoạt động (đã bị xóa/mồ côi trước đó),
+          // retire bản ghi cũ để giải phóng mã code cho ngành hàng mới tạo
+          await tx.query(
+            `UPDATE product_types
+             SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
+                 code = LEFT(code, 60) || '_archived_' || id::text || '_' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                 name = LEFT(name, 160) || ' [archived-' || id::text || ']'
+             WHERE id = $1`,
+            [existing.id],
+          );
+        }
+
+        // Tương tự, nếu trong categories có bản ghi cũ cùng slug/name nhưng đã archived_at IS NOT NULL
+        // mà chưa được đổi slug (phòng trường hợp legacy), ta retire slug cũ
+        const targetSlug = data.code.replace(/_/g, '-');
+        await tx.query(
+          `UPDATE categories
+           SET slug = LEFT(slug, 110) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+               name = LEFT(name, 110) || ' [archived-' || id::text || ']'
+           WHERE (slug = $1 OR name = $2) AND archived_at IS NOT NULL`,
+          [targetSlug, data.name],
+        );
+
         const [typeRows] = await tx.query(
           `INSERT INTO product_types (code, name, description, default_stock_mode, default_fulfillment_lane)
            VALUES ($1, $2, $3, $4, $5)
@@ -439,7 +511,7 @@ export function createCatalogV2Repository(database = postgresDb) {
              name, slug, parent_id, depth, product_type_id, default_fulfillment_lane, sort_order, is_visible
            ) VALUES ($1, $2, NULL, 0, $3, $4, 0, TRUE)
            RETURNING *`,
-          [data.name, data.code.replace(/_/g, '-'), productType.id, data.default_fulfillment_lane || 'kitchen'],
+          [data.name, targetSlug, productType.id, data.default_fulfillment_lane || 'kitchen'],
         );
         return { productType, schema: schemaRows[0], rootCategory: rootRows[0] };
       });

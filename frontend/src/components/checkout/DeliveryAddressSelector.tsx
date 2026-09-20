@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { MapPin, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { StreetAutocompleteInput } from './StreetAutocompleteInput';
 import {
   Select,
   SelectContent,
@@ -16,6 +16,7 @@ import {
   formatDeliveryAddress,
   saveLastDeliveryLocation,
   getLastDeliveryLocation,
+  isValidStreetAddress,
 } from '@/lib/vietnam-addresses';
 
 export interface DeliveryAddressSelectorProps {
@@ -76,11 +77,13 @@ export function DeliveryAddressSelector({
     });
   }, [street, selectedWardName, selectedDistrictName, selectedProvinceName]);
 
+  const isStreetValid = useMemo(() => isValidStreetAddress(street), [street]);
+
   const isComplete = Boolean(
     provinceCode != null &&
     districtCode != null &&
     wardCode != null &&
-    street.trim().length >= 3,
+    isStreetValid,
   );
 
   // Notify parent on change
@@ -213,14 +216,18 @@ export function DeliveryAddressSelector({
       {/* SỐ NHÀ, TÊN ĐƯỜNG, KHU PHỐ / TÒA NHÀ */}
       <div className="space-y-1">
         <Label htmlFor="delivery-street" className="text-[11px] font-medium text-muted-foreground">
-          Số nhà, tên đường, khu phố / tòa nhà <span className="text-destructive">*</span>
+          Số nhà, tên đường <span className="text-[10px] text-muted-foreground/70 font-normal">(tối đa 30 ký tự)</span> <span className="text-destructive">*</span>
         </Label>
-        <Input
+        <StreetAutocompleteInput
           id="delivery-street"
-          placeholder="VD: 123 Lê Lợi, Căn hộ A12-04 Tòa nhà Landmark..."
+          placeholder="VD: 123 Lê Lợi, Căn hộ A12-04..."
           value={street}
-          onChange={(e) => setStreet(e.target.value)}
+          onChange={setStreet}
+          province={selectedProvinceName}
+          district={selectedDistrictName}
+          ward={selectedWardName}
           disabled={disabled}
+          maxLength={30}
           className="h-9 text-xs bg-background"
         />
       </div>
@@ -245,7 +252,9 @@ export function DeliveryAddressSelector({
             </p>
             {!isComplete && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
-                Vui lòng chọn đầy đủ Tỉnh/Thành, Quận/Huyện, Phường/Xã và nhập số nhà/tên đường.
+                {street.trim().length > 0 && !isStreetValid
+                  ? 'Số nhà, tên đường không hợp lệ (vui lòng không nhập ký tự lặp hoặc ký tự đặc biệt vô nghĩa, tối đa 30 ký tự).'
+                  : 'Vui lòng chọn đầy đủ Tỉnh/Thành, Quận/Huyện, Phường/Xã và nhập số nhà/tên đường.'}
               </p>
             )}
           </div>

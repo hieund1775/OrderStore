@@ -47,7 +47,7 @@ export function validateBranchInput(body = {}, { isUpdate = false } = {}) {
   if (!isUpdate || name !== undefined) boundedText(name, 'Tên chi nhánh', 100, { required: !isUpdate });
   if (!isUpdate || city !== undefined) boundedText(city, 'Thành phố', 100, { required: !isUpdate });
   if (!isUpdate || district !== undefined) boundedText(district, 'Quận/Huyện', 100, { required: !isUpdate });
-  if (!isUpdate || address !== undefined) boundedText(address, 'Địa chỉ', 255, { required: !isUpdate });
+  if (!isUpdate || address !== undefined) boundedText(address, 'Địa chỉ', 100, { required: !isUpdate });
   if (!isUpdate || phone !== undefined) boundedText(phone, 'Số điện thoại', 20, { required: !isUpdate });
 
   if (hours !== undefined && hours !== null && String(hours).trim() !== '') {

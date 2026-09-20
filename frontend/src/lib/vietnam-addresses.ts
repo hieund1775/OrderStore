@@ -163,6 +163,101 @@ export function getWardsByNames(provinceName: string, districtName: string): Add
   return getWards(p.code, d.code);
 }
 
+function cleanWardName(s: string): string {
+  return (s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(phường|xã|thị trấn|tt\.?|p\.?)\s+/i, '');
+}
+
+/**
+ * Tìm Phường/Xã theo tên
+ */
+export function findWardByName(
+  provinceName: string,
+  districtName: string,
+  wardName: string,
+): AddressUnit | undefined {
+  const list = getWardsByNames(provinceName, districtName);
+  if (!wardName || list.length === 0) return undefined;
+  const target = cleanWardName(wardName);
+  return list.find((w) => {
+    return cleanWardName(w.name) === target || w.name.toLowerCase() === wardName.trim().toLowerCase();
+  });
+}
+
+/**
+ * Trích xuất Phường/Xã và Số nhà/Tên đường từ chuỗi địa chỉ chi nhánh cũ
+ */
+export function parseBranchAddress(
+  rawAddress: string,
+  availableWards: AddressUnit[] = [],
+): { ward: string; street: string } {
+  if (!rawAddress) return { ward: '', street: '' };
+  const trimmed = rawAddress.trim();
+  if (!availableWards || availableWards.length === 0) {
+    return { ward: '', street: trimmed };
+  }
+
+  // Sắp xếp phường theo độ dài tên giảm dần để tránh so khớp nhầm tên ngắn hơn
+  const sortedWards = [...availableWards].sort((a, b) => b.name.length - a.name.length);
+
+  for (const w of sortedWards) {
+    const escaped = w.name.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(?:,\\s*)?${escaped}(?:\\s*,)?`, 'i');
+    if (regex.test(trimmed)) {
+      const street = trimmed
+        .replace(regex, '')
+        .replace(/^,\s*/, '')
+        .replace(/,\s*$/, '')
+        .trim();
+      return { ward: w.name, street };
+    }
+  }
+
+  return { ward: '', street: trimmed };
+}
+
+/**
+ * Gợi ý tên đường thời gian thực qua Nominatim OpenStreetMap dựa trên bối cảnh địa giới đã chọn
+ */
+export async function searchStreetSuggestions(
+  query: string,
+  context: { province?: string; district?: string; ward?: string } = {},
+): Promise<string[]> {
+  const q = (query || '').trim();
+  if (q.length < 2) return [];
+
+  // Bóc tách nếu query có sẵn số nhà phía trước (ví dụ "123 Lê Lợi" -> tìm "Lê Lợi")
+  const cleanedQuery = q.replace(/^(\d+[\w/.-]*\s+)/, '').trim() || q;
+
+  const parts = [cleanedQuery];
+  if (context.ward) parts.push(context.ward);
+  if (context.district) parts.push(context.district);
+  if (context.province) parts.push(context.province);
+  parts.push('Việt Nam');
+
+  const queryString = parts.join(', ');
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&countrycodes=vn&q=${encodeURIComponent(queryString)}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'OrderStoreApp/1.0' } });
+    if (!res.ok) return [];
+    const list = (await res.json()) as any[];
+    if (!Array.isArray(list)) return [];
+
+    const streets = new Set<string>();
+    for (const item of list) {
+      const road = item.address?.road;
+      if (road && typeof road === 'string' && road.trim()) {
+        streets.add(road.trim());
+      }
+    }
+    return Array.from(streets);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Ghép các thành phần thành chuỗi địa chỉ hoàn chỉnh chuẩn Việt Nam
  */
@@ -232,4 +327,20 @@ export function getLastDeliveryLocation(): SavedDeliveryLocation | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Kiểm tra tính hợp lệ của địa chỉ / số nhà / tên đường (chống spam phím, chuỗi vô nghĩa, giới hạn 30 ký tự)
+ */
+export function isValidStreetAddress(street: string): boolean {
+  const trimmed = (street || '').trim();
+  if (trimmed.length < 1 || trimmed.length > 30) return false;
+
+  // Chặn nếu toàn ký tự đặc biệt / không chứa ít nhất 1 chữ cái hoặc chữ số
+  if (!/[\p{L}\d]/u.test(trimmed)) return false;
+
+  // Chặn nếu có 1 ký tự lặp liên tiếp từ 4 lần trở lên (đè phím spam: aaaaa, 11111)
+  if (/(.)\1{3,}/.test(trimmed)) return false;
+
+  return true;
 }

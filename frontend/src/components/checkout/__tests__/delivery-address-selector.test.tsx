@@ -21,11 +21,12 @@ describe('DeliveryAddressSelector Component Suite', () => {
     expect(html).toContain('Tỉnh / Thành phố');
     expect(html).toContain('Quận / Huyện');
     expect(html).toContain('Phường / Xã / Thị trấn');
-    expect(html).toContain('Số nhà, tên đường, khu phố / tòa nhà');
+    expect(html).toContain('Số nhà, tên đường');
+    expect(html).toContain('(tối đa 30 ký tự)');
 
     // Placeholders
     expect(html).toContain('Chọn Tỉnh/Thành...');
     expect(html).toContain('Chọn Tỉnh/Thành trước');
-    expect(html).toContain('VD: 123 Lê Lợi, Căn hộ A12-04 Tòa nhà Landmark...');
+    expect(html).toContain('VD: 123 Lê Lợi, Căn hộ A12-04...');
   });
 });

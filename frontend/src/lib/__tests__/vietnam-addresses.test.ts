@@ -9,6 +9,11 @@ import {
   findProvinceByName,
   getDistrictsByProvinceName,
   findDistrictByName,
+  getWardsByNames,
+  findWardByName,
+  parseBranchAddress,
+  searchStreetSuggestions,
+  isValidStreetAddress,
 } from '../vietnam-addresses';
 
 describe('Vietnam Administrative Addresses Suite', () => {
@@ -121,5 +126,94 @@ describe('Vietnam Administrative Addresses Suite', () => {
       const dGovap = findDistrictByName('Hồ Chí Minh', 'Gò Vấp');
       expect(dGovap?.name).toBe('Quận Gò Vấp');
     });
+
+    it('finds wards by names and cleans prefix', () => {
+      const wards = getWardsByNames('Hồ Chí Minh', 'Quận 1');
+      expect(wards.length).toBeGreaterThan(5);
+
+      const wBenNghe = findWardByName('TP. Hồ Chí Minh', 'Quận 1', 'Bến Nghé');
+      expect(wBenNghe?.name).toBe('Phường Bến Nghé');
+
+      const wBenThanh = findWardByName('Hồ Chí Minh', 'Quận 1', 'Phường Bến Thành');
+      expect(wBenThanh?.name).toBe('Phường Bến Thành');
+    });
+
+    it('parses branch address extracting ward and street correctly', () => {
+      const wards = getWardsByNames('Hồ Chí Minh', 'Quận 1');
+
+      // Address has ward at the end
+      const p1 = parseBranchAddress('123 Lê Lợi, Phường Bến Nghé', wards);
+      expect(p1.ward).toBe('Phường Bến Nghé');
+      expect(p1.street).toBe('123 Lê Lợi');
+
+      // Address has no matching ward
+      const p2 = parseBranchAddress('456 Nguyễn Trãi', wards);
+      expect(p2.ward).toBe('');
+      expect(p2.street).toBe('456 Nguyễn Trãi');
+
+      // Empty address
+      const p3 = parseBranchAddress('', wards);
+      expect(p3.ward).toBe('');
+      expect(p3.street).toBe('');
+    });
+
+    it('handles searchStreetSuggestions gracefully on network failure or empty query', async () => {
+      expect(await searchStreetSuggestions('')).toEqual([]);
+      expect(await searchStreetSuggestions('a')).toEqual([]);
+
+      // Test with mock fetch
+      const origFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => [
+            { address: { road: 'Đường Lê Lợi' } },
+            { address: { road: 'Đường Nguyễn Huệ' } },
+            { address: { road: 'Đường Lê Lợi' } }, // duplicate
+          ],
+        } as any);
+
+        const results = await searchStreetSuggestions('Lê', {
+          province: 'Thành phố Hồ Chí Minh',
+          district: 'Quận 1',
+        });
+        expect(results).toEqual(['Đường Lê Lợi', 'Đường Nguyễn Huệ']);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
+
+    describe('isValidStreetAddress Anti-Spam & Validation', () => {
+      it('accepts valid normal street addresses within 30 chars', () => {
+        expect(isValidStreetAddress('123 Lê Lợi')).toBe(true);
+        expect(isValidStreetAddress('Hẻm 45/6 Huỳnh Thúc Kháng')).toBe(true);
+        expect(isValidStreetAddress('1')).toBe(true);
+        expect(isValidStreetAddress('A1-02 Toà S1')).toBe(true);
+      });
+
+      it('rejects empty or whitespace-only inputs', () => {
+        expect(isValidStreetAddress('')).toBe(false);
+        expect(isValidStreetAddress('   ')).toBe(false);
+      });
+
+      it('rejects strings exceeding 30 characters', () => {
+        expect(isValidStreetAddress('123456789012345678901234567890')).toBe(true); // 30 chars
+        expect(isValidStreetAddress('1234567890123456789012345678901')).toBe(false); // 31 chars
+        expect(isValidStreetAddress('Căn hộ chung cư cao cấp Landmark 81 Tầng 45 Phòng 4502')).toBe(false);
+      });
+
+      it('rejects inputs without any alphanumeric character (pure punctuation/symbols)', () => {
+        expect(isValidStreetAddress('...')).toBe(false);
+        expect(isValidStreetAddress('----')).toBe(false);
+        expect(isValidStreetAddress('!@#$%^&*')).toBe(false);
+      });
+
+      it('rejects keyboard smash spam with repeated characters (4+ times in a row)', () => {
+        expect(isValidStreetAddress('aaaaa')).toBe(false);
+        expect(isValidStreetAddress('11111')).toBe(false);
+        expect(isValidStreetAddress('123 Đường aaaa')).toBe(false);
+      });
+    });
   });
 });
+
