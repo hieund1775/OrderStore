@@ -405,6 +405,79 @@ test('Catalog Lane Operations Regression Suite', async (t) => {
     assert.equal(updated.id, 47);
     assert.equal(executedParams[6], 'active', 'SQL parameter for status must be active, never inactive');
     assert.equal(executedParams[7], false, 'SQL parameter for is_available must be false');
+
+    // 3e. Allows transferring standard product (no custom variants) to a category of another product_type
+    let updatedSchemaId = null;
+    let updatedCategoryId = null;
+    const mockTransferDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql, params) {
+            if (sql.includes('SELECT p.*')) {
+              // Current product in category 10, product_type_id 1
+              return [[{ id: 69, name: 'Món 69', category_id: 10, product_type_id: 1, product_type_schema_id: 1, fulfillment_lane: 'kitchen', status: 'active', is_available: true }]];
+            }
+            if (sql.includes('SELECT c.*')) {
+              // Target category 25 belongs to product_type_id 2
+              return [[{ id: 25, default_fulfillment_lane: 'kitchen', product_type_id: 2, archived_at: null }]];
+            }
+            if (sql.includes('SELECT COUNT(*)::int AS count')) {
+              // Zero custom variants
+              return [[{ count: 0 }]];
+            }
+            if (sql.includes('SELECT id FROM product_type_schemas')) {
+              // Target product_type 2 has schema 20
+              return [[{ id: 20 }]];
+            }
+            if (sql.includes('UPDATE products')) {
+              updatedCategoryId = params[2];
+              updatedSchemaId = params[9];
+              return [[{ id: 69, category_id: params[2], product_type_schema_id: params[9] }]];
+            }
+            return [[]];
+          },
+        };
+        return fn(tx);
+      },
+    };
+    const transferRepo = createAdminCatalogV2Repository(mockTransferDb);
+    const transferred = await transferRepo.updateProduct(69, {
+      category_id: 25,
+    });
+    assert.equal(transferred.id, 69);
+    assert.equal(updatedCategoryId, 25);
+    assert.equal(updatedSchemaId, 20);
+
+    // 3f. Blocks transferring product with active custom variants to another product_type
+    const mockBlockedDb = {
+      async transaction(fn) {
+        const tx = {
+          async query(sql) {
+            if (sql.includes('SELECT p.*')) {
+              return [[{ id: 70, name: 'Món 70', category_id: 10, product_type_id: 1, product_type_schema_id: 1, fulfillment_lane: 'kitchen', status: 'active', is_available: true }]];
+            }
+            if (sql.includes('SELECT c.*')) {
+              return [[{ id: 25, default_fulfillment_lane: 'kitchen', product_type_id: 2, archived_at: null }]];
+            }
+            if (sql.includes('SELECT COUNT(*)::int AS count')) {
+              // Has 2 custom variants!
+              return [[{ count: 2 }]];
+            }
+            return [[]];
+          },
+        };
+        return fn(tx);
+      },
+    };
+    const blockedRepo = createAdminCatalogV2Repository(mockBlockedDb);
+    await assert.rejects(
+      () => blockedRepo.updateProduct(70, { category_id: 25 }),
+      (err) => {
+        assert.equal(err.status, 400);
+        assert.match(err.message, /biến thể tùy chỉnh/);
+        return true;
+      },
+    );
   });
 
   // -------------------------------------------------------------

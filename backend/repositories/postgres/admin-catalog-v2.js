@@ -308,6 +308,7 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
                   pt.default_fulfillment_lane AS product_type_default_fulfillment_lane,
                   parent_c.default_fulfillment_lane AS parent_default_fulfillment_lane,
                   parent_pt.default_fulfillment_lane AS parent_pt_default_fulfillment_lane,
+                  COALESCE(c.product_type_id, parent_c.product_type_id) AS effective_product_type_id,
                   EXISTS(
                     SELECT 1 FROM categories child
                     WHERE child.parent_id = c.id AND child.archived_at IS NULL
@@ -337,14 +338,37 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         if (categoryLane && categoryLane !== targetLane) {
           throw new CatalogV2Error('Khu vực sản phẩm phải trùng với khu vực của danh mục con', 400);
         }
+
+        const categoryProductTypeId = category.product_type_id || category.effective_product_type_id;
+        let targetSchemaId = null;
+
         const isCategoryChanging = data.category_id != null && Number(data.category_id) !== Number(current.category_id);
-        if (
-          isCategoryChanging
-          && category.product_type_id
-          && current.product_type_id
-          && Number(category.product_type_id) !== Number(current.product_type_id)
-        ) {
-          throw new CatalogV2Error('Không thể chuyển sản phẩm sang danh mục thuộc loại sản phẩm khác', 400);
+        if (isCategoryChanging && categoryProductTypeId) {
+          if (current.product_type_id && Number(categoryProductTypeId) !== Number(current.product_type_id)) {
+            const [customVarRows] = await tx.query(
+              `SELECT COUNT(*)::int AS count
+               FROM product_variants
+               WHERE product_id = $1 AND status <> 'archived' AND variant_signature <> 'default'`,
+              [id],
+            );
+            const customCount = Number(customVarRows[0]?.count || 0);
+            if (customCount > 0) {
+              throw new CatalogV2Error('Không thể chuyển sản phẩm đang có biến thể tùy chỉnh sang ngành hàng khác. Vui lòng lưu trữ các biến thể trước.', 400);
+            }
+          }
+
+          if (!current.product_type_id || Number(categoryProductTypeId) !== Number(current.product_type_id)) {
+            const [targetSchemaRows] = await tx.query(
+              `SELECT id FROM product_type_schemas
+               WHERE product_type_id = $1
+               ORDER BY CASE WHEN status = 'published' THEN 0 ELSE 1 END, version DESC
+               LIMIT 1`,
+              [categoryProductTypeId],
+            );
+            if (targetSchemaRows[0]) {
+              targetSchemaId = targetSchemaRows[0].id;
+            }
+          }
         }
 
         let targetStatus = data.status;
@@ -367,8 +391,9 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
                status = COALESCE($7, status),
                is_available = COALESCE($8, is_available),
                fulfillment_lane = $9,
+               product_type_schema_id = COALESCE($10, product_type_schema_id),
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $10
+           WHERE id = $11
            RETURNING *`,
           [
             data.name ?? null,
@@ -380,6 +405,7 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
             targetStatus ?? null,
             targetAvailable !== undefined ? targetAvailable : null,
             targetLane,
+            targetSchemaId,
             id,
           ],
         );
