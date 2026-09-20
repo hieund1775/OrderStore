@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,8 @@ import {
 import { toast } from 'sonner';
 import {
   createCategoryOptionGroup,
+  updateCategoryOptionGroup,
+  deleteCategoryOptionGroup,
   fetchCategoryOptionAssignments,
   updateCategoryOptionAssignment,
   deleteCategoryOptionAssignment,
@@ -29,22 +31,36 @@ interface CatalogOption3BlocksEditorProps {
   onRefresh: () => Promise<void>;
 }
 
+interface OptionRowItem {
+  id?: number;
+  code?: string;
+  label: string;
+  price: number;
+}
+
 export function CatalogOption3BlocksEditor({
   categoryId,
   categoryName,
   schema,
-  categoryProducts,
+  categoryProducts: _categoryProducts,
   onRefresh,
 }: CatalogOption3BlocksEditorProps) {
   const [assignments, setAssignments] = useState<CategoryOptionAssignment[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
 
-  // Dialog Tạo Nhóm Tùy Chọn (Block 1 hoặc Block 2)
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  // Dialog Tạo / Sửa Nhóm Tùy Chọn
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [modalType, setModalType] = useState<'free' | 'paid'>('free');
+  const [editingAttribute, setEditingAttribute] = useState<AttributeDefinition | null>(null);
   const [groupName, setGroupName] = useState('');
-  const [groupValuesStr, setGroupValuesStr] = useState('');
+  const [optionsList, setOptionsList] = useState<OptionRowItem[]>([]);
   const [modalSaving, setModalSaving] = useState(false);
+
+  // Dialog Xác Nhận Xóa
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingAttribute, setDeletingAttribute] = useState<AttributeDefinition | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const generateCode = (name: string) => {
     return name
@@ -76,13 +92,13 @@ export function CatalogOption3BlocksEditor({
 
   const rawAttributes = schema?.attributes || [];
 
-  // Phân loại thuộc tính từ Schema thật
-  // Preserve the administrator's intended block when all values temporarily
-  // cost 0. A Block 2 multi-select group must not move into Block 1 on reload.
+  // Phân loại thuộc tính từ Schema
   const freeAttributes = rawAttributes.filter((attr) => (
     attr.role === 'modifier' && attr.input_type === 'single_select'
   ));
-  const paidAttributes = rawAttributes.filter((attr) => !freeAttributes.includes(attr));
+  const paidAttributes = rawAttributes.filter((attr) => (
+    attr.role === 'modifier' && !freeAttributes.includes(attr)
+  ));
 
   const isAttrAssigned = (attrId: number) => {
     if (assignments.length === 0) return false;
@@ -115,14 +131,86 @@ export function CatalogOption3BlocksEditor({
   };
 
   const handleOpenCreateModal = (type: 'free' | 'paid') => {
+    setModalMode('create');
     setModalType(type);
+    setEditingAttribute(null);
     setGroupName('');
     if (type === 'free') {
-      setGroupValuesStr('100% Đá, 70% Đá, 50% Đá, Không Đá');
+      setOptionsList([
+        { label: '100% Đá', price: 0 },
+        { label: '70% Đá', price: 0 },
+        { label: '50% Đá', price: 0 },
+        { label: 'Không Đá', price: 0 },
+      ]);
     } else {
-      setGroupValuesStr('Trân châu đen: 5000, Thạch củ năng: 3000, Pudding trứng: 8000');
+      setOptionsList([
+        { label: 'Trân châu đen', price: 5000 },
+        { label: 'Thạch củ năng', price: 3000 },
+        { label: 'Pudding trứng', price: 8000 },
+      ]);
     }
-    setCreateModalOpen(true);
+    setModalOpen(true);
+  };
+
+  const handleOpenEditModal = (attr: AttributeDefinition, type: 'free' | 'paid') => {
+    setModalMode('edit');
+    setModalType(type);
+    setEditingAttribute(attr);
+    setGroupName(attr.name);
+    const existingValues: OptionRowItem[] = (attr.values || []).map((v) => ({
+      id: v.id,
+      code: v.code,
+      label: v.label || (v as any).value_label || '',
+      price: Number(v.price_adjustment) || 0,
+    }));
+    setOptionsList(existingValues.length > 0 ? existingValues : [{ label: '', price: 0 }]);
+    setModalOpen(true);
+  };
+
+  const handleOpenDeleteDialog = (attr: AttributeDefinition) => {
+    setDeletingAttribute(attr);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingAttribute) return;
+    try {
+      setIsDeleting(true);
+      await deleteCategoryOptionGroup(categoryId, deletingAttribute.id);
+      toast.success(`Đã xóa nhóm tùy chọn "${deletingAttribute.name}"`);
+      setDeleteDialogOpen(false);
+      setDeletingAttribute(null);
+      await onRefresh();
+      await loadAssignments();
+    } catch (err: any) {
+      toast.error(err.message || `Lỗi khi xóa nhóm "${deletingAttribute.name}"`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleAddOptionRow = () => {
+    setOptionsList((prev) => [...prev, { label: '', price: 0 }]);
+  };
+
+  const handleRemoveOptionRow = (index: number) => {
+    setOptionsList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleOptionLabelChange = (index: number, val: string) => {
+    setOptionsList((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], label: val };
+      return next;
+    });
+  };
+
+  const handleOptionPriceChange = (index: number, val: number) => {
+    setOptionsList((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], price: Math.max(0, val) };
+      return next;
+    });
   };
 
   const handleSaveOptionGroup = async (e: React.FormEvent) => {
@@ -131,49 +219,56 @@ export function CatalogOption3BlocksEditor({
       toast.error('Vui lòng nhập tên nhóm tùy chọn');
       return;
     }
+    const cleanOptions = optionsList.filter((o) => o.label.trim().length > 0);
+    if (cleanOptions.length === 0) {
+      toast.error('Vui lòng thêm ít nhất một lựa chọn có tên');
+      return;
+    }
     if (!schema?.id) {
-      toast.error('Chưa có thông tin schema ngành để thêm nhóm tùy chọn');
+      toast.error('Chưa có thông tin schema ngành để lưu nhóm tùy chọn');
       return;
     }
 
     try {
       setModalSaving(true);
       const isFree = modalType === 'free';
-      const valuePairs = groupValuesStr.split(',').map((s) => s.trim()).filter(Boolean);
-      const values = valuePairs.map((valuePair, index) => {
-        let label = valuePair;
-        let price = 0;
-        if (valuePair.includes(':')) {
-          const parts = valuePair.split(':');
-          label = parts[0].trim();
-          price = Number(parts[1].replace(/[^0-9]/g, '')) || 0;
-        }
+      const values = cleanOptions.map((opt, index) => {
+        const code = opt.code || generateCode(opt.label || `opt_${index}`);
         return {
-          code: generateCode(label || `opt_${index}`),
-          label: label || `Lựa chọn ${index + 1}`,
-          price_adjustment: isFree ? 0 : price,
+          id: opt.id,
+          code,
+          label: opt.label.trim(),
+          price_adjustment: isFree ? 0 : Number(opt.price) || 0,
           sort_order: index + 1,
           is_active: true,
         };
       });
 
-      await createCategoryOptionGroup(categoryId, {
-        schema_id: schema.id,
-        code: generateCode(groupName),
-        name: groupName.trim(),
-        role: 'modifier',
-        input_type: isFree ? 'single_select' : 'multi_select',
-        is_required: isFree,
-        min_selections: isFree ? 1 : 0,
-        max_selections: isFree ? 1 : null,
-        sort_order: (rawAttributes.length || 0) + 1,
-        values,
-        is_enabled: true,
-        inherit_to_descendants: true,
-      });
+      if (modalMode === 'edit' && editingAttribute) {
+        await updateCategoryOptionGroup(categoryId, editingAttribute.id, {
+          name: groupName.trim(),
+          values,
+        });
+        toast.success(`Đã cập nhật nhóm tùy chọn "${groupName}" thành công!`);
+      } else {
+        await createCategoryOptionGroup(categoryId, {
+          schema_id: schema.id,
+          code: generateCode(groupName),
+          name: groupName.trim(),
+          role: 'modifier',
+          input_type: isFree ? 'single_select' : 'multi_select',
+          is_required: isFree,
+          min_selections: isFree ? 1 : 0,
+          max_selections: isFree ? 1 : null,
+          sort_order: (rawAttributes.length || 0) + 1,
+          values,
+          is_enabled: true,
+          inherit_to_descendants: true,
+        });
+        toast.success(`Đã tạo nhóm tùy chọn "${groupName}" thành công!`);
+      }
 
-      toast.success(`Đã tạo nhóm tùy chọn "${groupName}" thành công!`);
-      setCreateModalOpen(false);
+      setModalOpen(false);
       await onRefresh();
       await loadAssignments();
     } catch (err: any) {
@@ -222,9 +317,9 @@ export function CatalogOption3BlocksEditor({
                         assigned ? 'bg-background border-primary/40 shadow-xs' : 'bg-muted/30 border-dashed opacity-75'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 truncate">
                             {attr.name}
                             <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
                           </p>
@@ -240,16 +335,36 @@ export function CatalogOption3BlocksEditor({
                           </div>
                         </div>
 
-                        <Button
-                          size="sm"
-                          variant={assigned ? 'default' : 'outline'}
-                          className={`h-7 text-[11px] font-semibold px-2.5 ${
-                            assigned ? 'bg-primary text-primary-foreground' : ''
-                          }`}
-                          onClick={() => void handleToggleAssignment(attr)}
-                        >
-                          {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
-                        </Button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Chỉnh sửa nhóm"
+                            onClick={() => handleOpenEditModal(attr, 'free')}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                            title="Xóa nhóm"
+                            onClick={() => handleOpenDeleteDialog(attr)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={assigned ? 'default' : 'outline'}
+                            className={`h-7 text-[11px] font-semibold px-2.5 ${
+                              assigned ? 'bg-primary text-primary-foreground' : ''
+                            }`}
+                            onClick={() => void handleToggleAssignment(attr)}
+                          >
+                            {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -303,9 +418,9 @@ export function CatalogOption3BlocksEditor({
                         assigned ? 'bg-background border-primary/40 shadow-xs' : 'bg-muted/30 border-dashed opacity-75'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 truncate">
                             {attr.name}
                             <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
                           </p>
@@ -324,16 +439,36 @@ export function CatalogOption3BlocksEditor({
                           </div>
                         </div>
 
-                        <Button
-                          size="sm"
-                          variant={assigned ? 'default' : 'outline'}
-                          className={`h-7 text-[11px] font-semibold px-2.5 ${
-                            assigned ? 'bg-primary text-primary-foreground' : ''
-                          }`}
-                          onClick={() => void handleToggleAssignment(attr)}
-                        >
-                          {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
-                        </Button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Chỉnh sửa nhóm"
+                            onClick={() => handleOpenEditModal(attr, 'paid')}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                            title="Xóa nhóm"
+                            onClick={() => handleOpenDeleteDialog(attr)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={assigned ? 'default' : 'outline'}
+                            className={`h-7 text-[11px] font-semibold px-2.5 ${
+                              assigned ? 'bg-primary text-primary-foreground' : ''
+                            }`}
+                            onClick={() => void handleToggleAssignment(attr)}
+                          >
+                            {assigned ? '✓ Đang bật' : '+ Bật áp dụng'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -353,64 +488,171 @@ export function CatalogOption3BlocksEditor({
         </div>
       </div>
 
-      {/* MODAL TẠO NHÓM TÙY CHỌN (BLOCK 1 HOẶC BLOCK 2) */}
-      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleSaveOptionGroup}>
+      {/* MODAL TẠO / SỬA NHÓM TÙY CHỌN (BLOCK 1 HOẶC BLOCK 2) */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+          <form onSubmit={handleSaveOptionGroup} className="flex flex-col h-full overflow-hidden">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
-                <span>{modalType === 'free' ? '🧊 Tạo Nhóm Tùy Chọn Không Tiền' : '💰 Tạo Nhóm Tùy Chọn Có Tiền'}</span>
+                <span>
+                  {modalType === 'free'
+                    ? modalMode === 'edit'
+                      ? '✏️ Sửa Nhóm Tùy Chọn Không Tiền'
+                      : '🧊 Tạo Nhóm Tùy Chọn Không Tiền'
+                    : modalMode === 'edit'
+                    ? '✏️ Sửa Nhóm Tùy Chọn Có Tiền'
+                    : '💰 Tạo Nhóm Tùy Chọn Có Tiền'}
+                </span>
               </DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto pr-1 flex-1">
               <div className="p-2.5 rounded-lg bg-muted text-xs text-muted-foreground">
                 Áp dụng cho danh mục: <b className="text-foreground">{categoryName}</b>
               </div>
 
-              <div className="space-y-2">
+              {/* Tên nhóm */}
+              <div className="space-y-1.5">
                 <Label htmlFor="modal-group-name" className="text-xs font-semibold">
                   Tên nhóm tùy chọn <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="modal-group-name"
-                  placeholder={modalType === 'free' ? 'Ví dụ: Mức Đá, Mức Đường, Nhiệt Độ...' : 'Ví dụ: Topping Thêm, Size Nâng Cấp...'}
+                  placeholder={
+                    modalType === 'free'
+                      ? 'Ví dụ: Mức Đá, Mức Đường, Nhiệt Độ...'
+                      : 'Ví dụ: Topping Thêm, Size Nâng Cấp...'
+                  }
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
+                  className="h-9 text-xs"
                   required
                 />
               </div>
 
+              {/* Danh sách các lựa chọn động (Repeater) */}
               <div className="space-y-2">
-                <Label htmlFor="modal-group-values" className="text-xs font-semibold">
-                  {modalType === 'free'
-                    ? 'Danh sách các mức lựa chọn (cách nhau bằng dấu phẩy)'
-                    : 'Danh sách món & giá (Tên:Giá, cách nhau bằng dấu phẩy)'}
-                </Label>
-                <Input
-                  id="modal-group-values"
-                  placeholder={modalType === 'free' ? '100% Đá, 70% Đá, 50% Đá, Không Đá' : 'Trân châu: 5000, Thạch: 3000, Pudding: 8000'}
-                  value={groupValuesStr}
-                  onChange={(e) => setGroupValuesStr(e.target.value)}
-                  required
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {modalType === 'free'
-                    ? 'Khách chỉ được chọn 1 mức duy nhất trong nhóm này (VD: 100% Đá).'
-                    : 'Khách có thể chọn nhiều món cùng lúc, mỗi món có giá phụ thu riêng.'}
-                </p>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold">
+                    Danh sách lựa chọn <span className="text-destructive">*</span>
+                  </Label>
+                  <span className="text-[11px] text-muted-foreground">
+                    {modalType === 'free'
+                      ? 'Chọn 1 trong nhóm (+0đ)'
+                      : 'Chọn nhiều, mỗi món có giá riêng'}
+                  </span>
+                </div>
+
+                <div className="border rounded-lg p-2.5 bg-muted/20 space-y-2">
+                  {/* Table Header */}
+                  <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <span className="flex-1">Tên lựa chọn</span>
+                    {modalType === 'paid' && <span className="w-28 text-right pr-2">Giá tiền (đ)</span>}
+                    <span className="w-7 text-center">Xóa</span>
+                  </div>
+
+                  {/* Rows */}
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
+                    {optionsList.map((opt, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Input
+                          placeholder={modalType === 'free' ? 'VD: 100% Đá, 50% Đá...' : 'VD: Trân châu đen, Thạch...'}
+                          value={opt.label}
+                          onChange={(e) => handleOptionLabelChange(index, e.target.value)}
+                          className="h-8 text-xs flex-1 bg-background"
+                          required={index === 0}
+                        />
+                        {modalType === 'paid' && (
+                          <Input
+                            type="number"
+                            min="0"
+                            step="500"
+                            placeholder="0"
+                            value={opt.price}
+                            onChange={(e) => handleOptionPriceChange(index, Number(e.target.value))}
+                            className="h-8 text-xs w-28 text-right bg-background"
+                          />
+                        )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10 shrink-0"
+                          onClick={() => handleRemoveOptionRow(index)}
+                          disabled={optionsList.length <= 1}
+                          title="Xóa lựa chọn này"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Nút + Thêm Lựa Chọn */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs font-semibold h-8 border-dashed mt-2"
+                    onClick={handleAddOptionRow}
+                  >
+                    <Plus className="size-3.5 mr-1" /> Thêm lựa chọn
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)} disabled={modalSaving}>
+            <DialogFooter className="pt-2 border-t">
+              <Button type="button" variant="outline" onClick={() => setModalOpen(false)} disabled={modalSaving}>
                 Hủy
               </Button>
               <Button type="submit" variant="hero" disabled={modalSaving}>
-                {modalSaving ? 'Đang tạo...' : 'Tạo và bật áp dụng'}
+                {modalSaving
+                  ? 'Đang lưu...'
+                  : modalMode === 'edit'
+                  ? 'Lưu thay đổi'
+                  : 'Tạo và bật áp dụng'}
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG XÁC NHẬN XÓA */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base text-destructive flex items-center gap-2">
+              <Trash2 className="size-4" /> Xác nhận xóa nhóm tùy chọn
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3 text-xs text-muted-foreground space-y-2">
+            <p>
+              Bạn có chắc chắn muốn xóa nhóm tùy chọn{' '}
+              <b className="text-foreground">{deletingAttribute?.name}</b> không?
+            </p>
+            <p className="text-destructive/80">
+              Hành động này sẽ gỡ bỏ nhóm tùy chọn cùng toàn bộ các giá trị của nhóm khỏi hệ thống và danh mục.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleConfirmDelete()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

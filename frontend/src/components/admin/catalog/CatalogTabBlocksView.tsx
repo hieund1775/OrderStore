@@ -61,6 +61,7 @@ interface CatalogTabBlocksViewProps {
   isSuperAdmin: boolean;
   onRefresh: () => Promise<void>;
   onOpenProductEditor: (product?: ProductV2, defaultCategoryId?: number) => void;
+  defaultTab?: 'subcategories' | 'products' | 'options';
 }
 
 export function CatalogTabBlocksView({
@@ -75,10 +76,12 @@ export function CatalogTabBlocksView({
   isSuperAdmin,
   onRefresh,
   onOpenProductEditor,
+  defaultTab,
 }: CatalogTabBlocksViewProps) {
   // Tab hiện tại: 'subcategories' | 'products' | 'options' (giữ nguyên khi F5 qua URL & localStorage)
   type CatalogTab = 'subcategories' | 'products' | 'options';
   const getInitialTab = (): CatalogTab => {
+    if (defaultTab) return defaultTab;
     if (typeof window !== 'undefined') {
       try {
         const params = new URLSearchParams(window.location.search);
@@ -178,13 +181,13 @@ export function CatalogTabBlocksView({
       list.push({
         ...activeRootCategory,
         isRootScope: true,
-        scopeLabel: `👑 ${activeRootCategory.name} (Ngành Gốc — Dùng chung/Kế thừa)`,
+        scopeLabel: `Ngành gốc: ${activeRootCategory.name}`,
       });
       for (const sub of subcategories) {
         list.push({
           ...sub,
           isRootScope: false,
-          scopeLabel: `📁 ${sub.name} (Danh mục con)`,
+          scopeLabel: `Danh mục: ${sub.name}`,
         });
       }
     } else {
@@ -198,7 +201,7 @@ export function CatalogTabBlocksView({
         list.push({
           ...root,
           isRootScope: true,
-          scopeLabel: `👑 ${root.name} (Ngành Gốc — Dùng chung/Kế thừa)`,
+          scopeLabel: `Ngành gốc: ${root.name}`,
         });
         const children = categories.filter((c) => {
           if (Number(c.parent_id) !== Number(root.id)) return false;
@@ -210,7 +213,7 @@ export function CatalogTabBlocksView({
           list.push({
             ...child,
             isRootScope: false,
-            scopeLabel: `  ↳ 📁 ${child.name} (Danh mục con)`,
+            scopeLabel: `Danh mục: ${child.name}`,
           });
         }
       }
@@ -850,9 +853,6 @@ export function CatalogTabBlocksView({
                 <h2 className="text-sm font-bold text-foreground">
                   Cấu Hình Tùy Chọn Theo Danh Mục
                 </h2>
-                <p className="text-xs text-muted-foreground">
-                  Thiết lập 3 Block: Tùy chọn không tiền &bull; Tùy chọn có tiền &bull; Cấu hình riêng cho sản phẩm.
-                </p>
               </div>
             </div>
 

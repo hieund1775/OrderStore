@@ -315,6 +315,26 @@ export async function createCategoryOptionGroup(categoryId: number | string, dat
   });
 }
 
+export async function updateCategoryOptionGroup(
+  categoryId: number | string,
+  attributeId: number | string,
+  data: any,
+) {
+  return apiFetch<any>(`/admin/catalog/categories/${categoryId}/option-groups/${attributeId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCategoryOptionGroup(
+  categoryId: number | string,
+  attributeId: number | string,
+) {
+  return apiFetch<any>(`/admin/catalog/categories/${categoryId}/option-groups/${attributeId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchCatalogProducts(params?: { category_id?: number | string; status?: string; search?: string; lane?: 'kitchen' | 'packing' }) {
   const q = new URLSearchParams();
   if (params?.category_id) q.set('category_id', String(params.category_id));

@@ -95,6 +95,34 @@ router.post('/categories/:id/option-groups', requireRole('super'), asyncHandler(
   res.status(201).json(result);
 }));
 
+router.put('/categories/:id/option-groups/:attributeId', requireRole('super'), asyncHandler(async (req, res) => {
+  const categoryId = Number(req.params.id);
+  const attributeId = Number(req.params.attributeId);
+  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+    throw new CatalogV2Error('category_id không hợp lệ', 400);
+  }
+  if (!Number.isInteger(attributeId) || attributeId <= 0) {
+    throw new CatalogV2Error('attribute_id không hợp lệ', 400);
+  }
+  const result = await service.updateCategoryOptionGroup(categoryId, attributeId, req.body);
+  await logAudit(req.user.sub, 'Cập nhật nhóm tùy chọn danh mục', result.attribute?.name || String(attributeId), req);
+  res.json(result);
+}));
+
+router.delete('/categories/:id/option-groups/:attributeId', requireRole('super'), asyncHandler(async (req, res) => {
+  const categoryId = Number(req.params.id);
+  const attributeId = Number(req.params.attributeId);
+  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+    throw new CatalogV2Error('category_id không hợp lệ', 400);
+  }
+  if (!Number.isInteger(attributeId) || attributeId <= 0) {
+    throw new CatalogV2Error('attribute_id không hợp lệ', 400);
+  }
+  const result = await service.deleteCategoryOptionGroup(categoryId, attributeId);
+  await logAudit(req.user.sub, 'Xóa nhóm tùy chọn danh mục', result.name || String(attributeId), req);
+  res.json(result);
+}));
+
 // =============================================================
 // PRODUCTS & VARIANTS
 // =============================================================

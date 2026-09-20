@@ -1,0 +1,94 @@
+import { describe, it, expect } from 'vitest';
+import { renderToString } from 'react-dom/server';
+import React from 'react';
+import { CatalogOption3BlocksEditor } from '../CatalogOption3BlocksEditor';
+import type { SchemaDetails } from '../SchemaAttributeEditor';
+
+describe('CatalogOption3BlocksEditor Component Suite', () => {
+  const sampleSchema: SchemaDetails = {
+    id: 1,
+    product_type_id: 1,
+    product_type_code: 'beverage',
+    product_type_name: 'Nước uống',
+    version: 1,
+    status: 'published',
+    attributes: [
+      {
+        id: 11,
+        name: 'Mức Đá',
+        code: 'ice_level',
+        role: 'modifier',
+        input_type: 'single_select',
+        is_required: false,
+        sort_order: 1,
+        min_selections: 0,
+        max_selections: 1,
+        values: [
+          { id: 1, code: '100_ice', label: '100% Đá', price_adjustment: 0, sort_order: 1, is_active: true },
+          { id: 2, code: '50_ice', label: '50% Đá', price_adjustment: 0, sort_order: 2, is_active: true },
+        ],
+      },
+      {
+        id: 12,
+        name: 'Topping Thêm',
+        code: 'toppings',
+        role: 'modifier',
+        input_type: 'multi_select',
+        is_required: false,
+        sort_order: 2,
+        min_selections: 0,
+        max_selections: 5,
+        values: [
+          { id: 3, code: 'tran_chau', label: 'Trân châu đen', price_adjustment: 5000, sort_order: 1, is_active: true },
+          { id: 4, code: 'thach_dua', label: 'Thạch dừa', price_adjustment: 7000, sort_order: 2, is_active: true },
+        ],
+      },
+    ],
+  };
+
+  it('renders Block 1 (Không tiền) and Block 2 (Có tiền) with Edit and Delete action buttons', () => {
+    const html = renderToString(
+      <CatalogOption3BlocksEditor
+        categoryId={2}
+        categoryName="Trà sữa"
+        schema={sampleSchema}
+        categoryProducts={[]}
+        onRefresh={async () => {}}
+      />,
+    );
+
+    // Block 1
+    expect(html).toContain('Block 1: Tùy Chọn Không Tiền');
+    expect(html).toContain('Mức Đá');
+    expect(html).toContain('100% Đá');
+    expect(html).toContain('50% Đá');
+
+    // Block 2
+    expect(html).toContain('Block 2: Tùy Chọn Có Tiền');
+    expect(html).toContain('Topping Thêm');
+    expect(html).toContain('Trân châu đen');
+    expect(html).toContain('+5.000đ');
+    expect(html).toContain('Thạch dừa');
+    expect(html).toContain('+7.000đ');
+
+    // Edit and Delete buttons on cards
+    expect(html).toContain('title="Chỉnh sửa nhóm"');
+    expect(html).toContain('title="Xóa nhóm"');
+    expect(html).toContain('+ Bật áp dụng');
+  });
+
+  it('renders button to add option group for both blocks', () => {
+    const html = renderToString(
+      <CatalogOption3BlocksEditor
+        categoryId={2}
+        categoryName="Trà sữa"
+        schema={sampleSchema}
+        categoryProducts={[]}
+        onRefresh={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('Thêm Nhóm Không Tiền (Đá, Đường...)');
+    expect(html).toContain('Thêm Nhóm Có Tiền (Topping, Size...)');
+  });
+});

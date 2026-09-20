@@ -410,40 +410,21 @@ export function ProductEditor({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Line xử lý</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={formData.fulfillment_lane}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      fulfillment_lane: e.target.value as any,
-                    }))
-                  }
-                >
-                  <option value="kitchen">Bếp pha chế</option>
-                  <option value="packing">Soạn hàng đóng gói</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Kiểu quản lý tồn</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={formData.stock_mode}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      stock_mode: e.target.value as any,
-                    }))
-                  }
-                >
-                  <option value="made_to_order">Pha chế theo order</option>
-                  <option value="tracked">Theo dõi tồn kho SKU</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <Label>Line xử lý</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={formData.fulfillment_lane}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    fulfillment_lane: e.target.value as any,
+                  }))
+                }
+              >
+                <option value="kitchen">Bếp pha chế</option>
+                <option value="packing">Soạn hàng đóng gói</option>
+              </select>
             </div>
 
             <DialogFooter>

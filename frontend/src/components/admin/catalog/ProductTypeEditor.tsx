@@ -245,37 +245,21 @@ export function ProductTypeEditor({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Chế độ tồn kho</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={formData.default_stock_mode}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, default_stock_mode: e.target.value as any }))
-                  }
-                >
-                  <option value="made_to_order">Pha chế theo order</option>
-                  <option value="tracked">Kiểm đếm tồn kho SKU</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Line xử lý đơn</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={formData.default_fulfillment_lane}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      default_fulfillment_lane: e.target.value as any,
-                    }))
-                  }
-                >
-                  <option value="kitchen">Màn hình Bếp (KDS)</option>
-                  <option value="packing">Soạn kho / Đóng gói</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <Label>Line xử lý đơn</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={formData.default_fulfillment_lane}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    default_fulfillment_lane: e.target.value as any,
+                  }))
+                }
+              >
+                <option value="kitchen">Màn hình Bếp (KDS)</option>
+                <option value="packing">Soạn hàng / Đóng gói</option>
+              </select>
             </div>
 
             <DialogFooter>

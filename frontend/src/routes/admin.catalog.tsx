@@ -634,22 +634,6 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
                 </div>
               </div>
 
-              {/* HÌNH THỨC KHO */}
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Hình thức quản lý kho</Label>
-                <Select
-                  value={productFormData.stock_mode}
-                  onValueChange={(val: any) => setProductFormData((prev) => ({ ...prev, stock_mode: val }))}
-                >
-                  <SelectTrigger className="text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="made_to_order" className="text-xs">Pha chế / Làm khi có đơn</SelectItem>
-                    <SelectItem value="tracked" className="text-xs">Theo dõi tồn kho SKU</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
             <DialogFooter>

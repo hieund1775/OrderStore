@@ -674,5 +674,125 @@ export function createCatalogV2Repository(database = postgresDb) {
         return { attribute, values: createdValues, assignment: assignmentRows[0] };
       });
     },
+
+    async updateCategoryOptionGroup(categoryId, attributeId, attributeData, values = []) {
+      return await database.transaction(async (tx) => {
+        const [attrRows] = await tx.query(
+          `SELECT ad.*
+           FROM attribute_definitions ad
+           WHERE ad.id = $1 AND ad.role = 'modifier'
+           FOR UPDATE OF ad`,
+          [Number(attributeId)],
+        );
+        const attribute = attrRows[0];
+        if (!attribute) {
+          throw new CatalogV2Error('Nhóm tùy chọn không tồn tại hoặc không thể chỉnh sửa', 404);
+        }
+
+        let updatedAttr = attribute;
+        if (attributeData.name) {
+          const [updatedRows] = await tx.query(
+            `UPDATE attribute_definitions
+             SET name = $1
+             WHERE id = $2
+             RETURNING *`,
+            [attributeData.name.trim(), Number(attributeId)],
+          );
+          updatedAttr = updatedRows[0] || attribute;
+        }
+
+        const updatedValues = [];
+        if (Array.isArray(values)) {
+          const [currentValRows] = await tx.query(
+            `SELECT * FROM attribute_values WHERE attribute_definition_id = $1`,
+            [Number(attributeId)],
+          );
+          const currentValIds = new Set(currentValRows.map((v) => Number(v.id)));
+          const incomingValIds = new Set(
+            values
+              .filter((v) => v.id != null)
+              .map((v) => Number(v.id))
+          );
+
+          // Delete values that were removed
+          const toDeleteIds = [...currentValIds].filter((id) => !incomingValIds.has(id));
+          if (toDeleteIds.length > 0) {
+            await tx.query(
+              `DELETE FROM product_modifier_values WHERE attribute_value_id = ANY($1::bigint[])`,
+              [toDeleteIds],
+            );
+            await tx.query(
+              `DELETE FROM attribute_values WHERE id = ANY($1::bigint[]) AND attribute_definition_id = $2`,
+              [toDeleteIds, Number(attributeId)],
+            );
+          }
+
+          // Update existing or insert new
+          for (let i = 0; i < values.length; i++) {
+            const val = values[i];
+            const sortOrder = val.sort_order ?? (i + 1);
+            const priceAdj = Number(val.price_adjustment) || 0;
+            const isActive = val.is_active !== false;
+
+            if (val.id && currentValIds.has(Number(val.id))) {
+              const [valUpdateRows] = await tx.query(
+                `UPDATE attribute_values
+                 SET label = $1, price_adjustment = $2, sort_order = $3, is_active = $4
+                 WHERE id = $5 AND attribute_definition_id = $6
+                 RETURNING *`,
+                [val.label.trim(), priceAdj, sortOrder, isActive, Number(val.id), Number(attributeId)],
+              );
+              updatedValues.push(valUpdateRows[0]);
+            } else {
+              const [valInsertRows] = await tx.query(
+                `INSERT INTO attribute_values (
+                   attribute_definition_id, code, label, sort_order, is_active, price_adjustment
+                 ) VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING *`,
+                [
+                  Number(attributeId),
+                  val.code || `opt_${Date.now()}_${i}`,
+                  val.label.trim(),
+                  sortOrder,
+                  isActive,
+                  priceAdj,
+                ],
+              );
+              updatedValues.push(valInsertRows[0]);
+            }
+          }
+        }
+
+        return { attribute: updatedAttr, values: updatedValues };
+      });
+    },
+
+    async deleteCategoryOptionGroup(categoryId, attributeId) {
+      return await database.transaction(async (tx) => {
+        const [attrRows] = await tx.query(
+          `SELECT id, name, role FROM attribute_definitions WHERE id = $1`,
+          [Number(attributeId)],
+        );
+        const attribute = attrRows[0];
+        if (!attribute) {
+          throw new CatalogV2Error('Nhóm tùy chọn không tồn tại', 404);
+        }
+        if (attribute.role !== 'modifier') {
+          throw new CatalogV2Error('Chỉ có thể xóa nhóm tùy chọn, không thể xóa biến thể', 400);
+        }
+
+        await tx.query(
+          `DELETE FROM product_modifier_values WHERE attribute_definition_id = $1`,
+          [Number(attributeId)],
+        );
+
+        await tx.query(
+          `DELETE FROM attribute_definitions WHERE id = $1`,
+          [Number(attributeId)],
+        );
+
+        return { success: true, id: Number(attributeId), name: attribute.name };
+      });
+    },
   };
 }

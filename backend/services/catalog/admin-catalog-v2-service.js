@@ -130,6 +130,63 @@ export function createAdminCatalogV2Service({
       );
     },
 
+    async updateCategoryOptionGroup(categoryId, attributeId, input) {
+      const normalizedAttrId = Number(attributeId);
+      if (!Number.isInteger(normalizedAttrId) || normalizedAttrId <= 0) {
+        throw new CatalogV2Error('Mã nhóm tùy chọn không hợp lệ', 400);
+      }
+      const name = input.name ? String(input.name).trim() : undefined;
+      if (name !== undefined && (!name || name.length < 1 || name.length > 200)) {
+        throw new CatalogV2Error('Tên nhóm tùy chọn phải từ 1 đến 200 ký tự', 400);
+      }
+
+      let values = undefined;
+      if (Array.isArray(input.values)) {
+        if (input.values.length === 0) {
+          throw new CatalogV2Error('Nhóm tùy chọn cần có ít nhất một giá trị', 400);
+        }
+        values = input.values.map((v, idx) => {
+          const label = String(v.label || '').trim();
+          if (!label || label.length < 1 || label.length > 200) {
+            throw new CatalogV2Error('Tên lựa chọn phải từ 1 đến 200 ký tự', 400);
+          }
+          const rawCode = v.code
+            ? String(v.code).trim().toLowerCase()
+            : String(label)
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[đĐ]/g, 'd')
+                .replace(/[^a-z0-9_-]/g, '_')
+                .trim();
+          const code = (rawCode && /^[a-z0-9_-]+$/.test(rawCode)) ? rawCode : `opt_${idx}_${Date.now()}`;
+          return {
+            id: v.id ? Number(v.id) : undefined,
+            code,
+            label,
+            price_adjustment: Math.max(0, Number(v.price_adjustment) || 0),
+            sort_order: Number.isInteger(Number(v.sort_order)) ? Number(v.sort_order) : (idx + 1),
+            is_active: v.is_active !== false,
+          };
+        });
+      }
+
+      return await schemaRepository.updateCategoryOptionGroup(
+        Number(categoryId),
+        normalizedAttrId,
+        { name },
+        values,
+      );
+    },
+
+    async deleteCategoryOptionGroup(categoryId, attributeId) {
+      const normalizedAttrId = Number(attributeId);
+      if (!Number.isInteger(normalizedAttrId) || normalizedAttrId <= 0) {
+        throw new CatalogV2Error('Mã nhóm tùy chọn không hợp lệ', 400);
+      }
+      return await schemaRepository.deleteCategoryOptionGroup(Number(categoryId), normalizedAttrId);
+    },
+
     // -------------------------------------------------------------
     // PRODUCTS & VARIANTS
     // -------------------------------------------------------------
