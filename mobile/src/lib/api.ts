@@ -2,9 +2,9 @@ import axios, { AxiosError } from 'axios';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-// Default development API host (10.0.2.2 for Android emulator, localhost for iOS)
-const DEFAULT_HOST = Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000';
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || `${DEFAULT_HOST}`;
+// Default API host: Cloud Render backend connected to Supabase (fallback to local if specified)
+const CLOUD_API_URL = 'https://teaplus-order-backend.onrender.com';
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || CLOUD_API_URL).replace(/\/+$/, '');
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,

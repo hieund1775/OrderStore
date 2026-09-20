@@ -333,6 +333,15 @@ function Tracking() {
             setOrder(null);
             setHasTrackedResource(true);
             setError("");
+            try {
+              const rawPending = sessionStorage.getItem("teaplus_pending_payment");
+              if (rawPending) {
+                const p = JSON.parse(rawPending);
+                if (p?.payment_code === codeKey || p?.order_code === codeKey) {
+                  sessionStorage.removeItem("teaplus_pending_payment");
+                }
+              }
+            } catch {}
             return { ok: true };
           }
           if (res.order) {
@@ -340,6 +349,15 @@ function Tracking() {
             setGroup(null);
             setHasTrackedResource(true);
             setError("");
+            try {
+              const rawPending = sessionStorage.getItem("teaplus_pending_payment");
+              if (rawPending) {
+                const p = JSON.parse(rawPending);
+                if (p?.payment_code === codeKey || p?.payment_code === res.order.order_code || p?.order_code === res.order.order_code) {
+                  sessionStorage.removeItem("teaplus_pending_payment");
+                }
+              }
+            } catch {}
             return { ok: true };
           }
           throw new Error("Không tìm thấy đơn hàng");

@@ -561,15 +561,6 @@ export function DynamicProductConfigurator({
       toast.error('Biến thể món này hiện đang tạm hết tại chi nhánh');
       return;
     }
-    if (
-      resolvedProduct.stock_mode === 'tracked' &&
-      resolvedVariant.available_stock !== null &&
-      resolvedVariant.available_stock !== undefined &&
-      resolvedVariant.available_stock < quantity
-    ) {
-      toast.error(`Chỉ còn ${resolvedVariant.available_stock} sản phẩm khả dụng trong kho`);
-      return;
-    }
 
     const payload: ConfiguredItemPayload = {
       productId: resolvedProduct.id,

@@ -245,14 +245,6 @@ function Checkout() {
     }
   }, []);
 
-  // Khôi phục đơn PayOS đang chờ thanh toán độc lập với các món chưa chọn còn lại trong giỏ.
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("teaplus_pending_payment");
-      const stored = parsePendingPaymentFromSession(raw);
-      if (stored?.payment_code) setPendingOrder(stored);
-    } catch {}
-  }, []);
   const [countdownSec, setCountdownSec] = useState<number>(900);
   const tableId = searchTableId || activeTableId;
   const tableToken = searchTableToken || activeTableToken;
@@ -307,6 +299,35 @@ function Checkout() {
     inFlightPaymentStatusRef.current.set(key, promise);
     return promise;
   }, []);
+
+  // Khôi phục đơn PayOS đang chờ thanh toán với kiểm tra hết hạn & tự động dọn sạch đơn đã hoàn tất.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("teaplus_pending_payment");
+      const stored = parsePendingPaymentFromSession(raw);
+      if (stored?.payment_code) {
+        if (stored.payment_expires_at) {
+          const expiresMs = new Date(stored.payment_expires_at).getTime();
+          if (Number.isFinite(expiresMs) && expiresMs <= Date.now()) {
+            sessionStorage.removeItem("teaplus_pending_payment");
+            setPendingOrder(null);
+            return;
+          }
+        }
+        setPendingOrder(stored);
+
+        fetchPaymentStatus(stored.payment_code)
+          .then((res) => {
+            const paymentStatus = res.order?.payment_status || res.group?.payment_status;
+            if (paymentStatus === "paid" || paymentStatus === "expired" || paymentStatus === "cancelled") {
+              sessionStorage.removeItem("teaplus_pending_payment");
+              setPendingOrder(null);
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {}
+  }, [fetchPaymentStatus]);
 
   // Smart Chained Timeout Polling when PayOS pending order is active
   useEffect(() => {
@@ -924,6 +945,9 @@ function Checkout() {
                         variant="outline"
                         className="flex-1"
                         onClick={() => {
+                          try {
+                            sessionStorage.removeItem("teaplus_pending_payment");
+                          } catch {}
                           navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
                         }}
                       >
@@ -931,6 +955,18 @@ function Checkout() {
                       </Button>
                     )}
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      sessionStorage.removeItem("teaplus_pending_payment");
+                      setPendingOrder(null);
+                      toast.info("Đã chuyển sang đặt đơn hàng mới.");
+                    }}
+                  >
+                    Bỏ qua và đặt đơn hàng mới ↗
+                  </Button>
                   {pendingOrder.is_grouped && (
                     <p className="text-muted-foreground text-xs text-center">
                       Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.
@@ -944,6 +980,9 @@ function Checkout() {
                       variant="outline"
                       className="flex-1"
                       onClick={() => {
+                        try {
+                          sessionStorage.removeItem("teaplus_pending_payment");
+                        } catch {}
                         navigate({ to: "/theo-doi-don", search: { code: pendingOrder.payment_code } });
                       }}
                     >
@@ -960,6 +999,18 @@ function Checkout() {
                       </Button>
                     )}
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      sessionStorage.removeItem("teaplus_pending_payment");
+                      setPendingOrder(null);
+                      toast.info("Đã chuyển sang đặt đơn hàng mới.");
+                    }}
+                  >
+                    Bỏ qua và đặt đơn hàng mới
+                  </Button>
                   {pendingOrder.is_grouped && (
                     <p className="text-muted-foreground text-xs text-center">
                       Đơn gộp được quản lý và hủy theo từng đơn ngành hàng.

@@ -58,6 +58,8 @@ build/
 .output/
 **/.output/
 .tanstack/
+.expo/
+**/.expo/
 .lovable/
 .wrangler/
 multi-agent.js
