@@ -17,7 +17,8 @@ PLAN_ADMIN_RESTRUCTURE.md
 PLAN_PAYOS.md
 plan_architecture/
 plan/
-docs/
+docs/*
+!docs/openapi.yaml
 teaplusdb.sql
 *.sql
 !backend/database/*.sql
