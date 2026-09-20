@@ -38,6 +38,7 @@ import {
   canCancelPendingPayment,
 } from "@/lib/pending-payment";
 import { resolveCheckoutPaymentRedirect } from "@/lib/payment-redirect";
+import { DeliveryAddressSelector } from "@/components/checkout/DeliveryAddressSelector";
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
@@ -202,6 +203,7 @@ function Checkout() {
   const [phone, setPhone] = useState("");
   const orderRequestRef = useRef<{ signature: string; key: string } | null>(null);
   const [addr, setAddr] = useState("");
+  const [isAddrComplete, setIsAddrComplete] = useState(false);
   const [note, setNote] = useState("");
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherDiscount, setVoucherDiscount] = useState(0);
@@ -673,6 +675,14 @@ function Checkout() {
     }
     if (!isTableQrCheckout && (!cleanPhone || (!isVnPhone && !isIntlPhone))) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
+    }
+    if (!isTableQrCheckout && method === "delivery") {
+      if (!addr.trim()) {
+        return toast.error("Vui lòng chọn và nhập địa chỉ giao hàng");
+      }
+      if (!isAddrComplete && addr.split(',').length < 3) {
+        return toast.error("Vui lòng chọn đầy đủ Tỉnh/Thành, Quận/Huyện, Phường/Xã và nhập số nhà/tên đường");
+      }
     }
     if (checkoutStoreId == null) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");
@@ -1274,15 +1284,14 @@ function Checkout() {
                 />
               </div>
               {method === "delivery" ? (
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="addr">Địa chỉ giao hàng</Label>
-                  <Input
-                    id="addr"
-                    placeholder="Số nhà, đường, phường, quận"
-                    value={addr}
-                    onChange={(e) => setAddr(e.target.value)}
-                  />
-                </div>
+                <DeliveryAddressSelector
+                  value={addr}
+                  onChange={(fullAddress, isComplete) => {
+                    setAddr(fullAddress);
+                    setIsAddrComplete(isComplete);
+                  }}
+                  disabled={submitting}
+                />
               ) : (
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Chi nhánh nhận hàng</Label>

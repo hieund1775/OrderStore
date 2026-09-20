@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -51,6 +52,12 @@ import {
 import { formatFullAddress } from "@/lib/data";
 import { canDeleteBranch } from "@/lib/branch-permissions";
 import { parseHours, isStoreOpen } from "@/lib/store-hours";
+import {
+  getProvinces,
+  getDistrictsByProvinceName,
+  findProvinceByName,
+  findDistrictByName,
+} from "@/lib/vietnam-addresses";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
   head: () => ({
@@ -122,31 +129,19 @@ type NominatimPlace = {
 };
 
 const ISO_CITY: Record<string, string> = {
-  "VN-SG": "TP. Hồ Chí Minh",
-  "VN-HN": "Hà Nội",
-  "VN-DN": "Đà Nẵng",
-  "VN-CT": "Cần Thơ",
-  "VN-HP": "Hải Phòng",
-  "VN-26": "Huế",
-  "VN-34": "Nha Trang",
-  "VN-58": "Bình Dương",
-  "VN-39": "Đồng Nai",
-  "VN-43": "Vũng Tàu",
-  "VN-35": "Đà Lạt",
-  "VN-13": "Quảng Ninh",
+  "VN-SG": "Thành phố Hồ Chí Minh",
+  "VN-HN": "Thành phố Hà Nội",
+  "VN-DN": "Thành phố Đà Nẵng",
+  "VN-CT": "Thành phố Cần Thơ",
+  "VN-HP": "Thành phố Hải Phòng",
+  "VN-26": "Tỉnh Thừa Thiên Huế",
+  "VN-34": "Tỉnh Khánh Hòa",
+  "VN-58": "Tỉnh Bình Dương",
+  "VN-39": "Tỉnh Đồng Nai",
+  "VN-43": "Tỉnh Bà Rịa - Vũng Tàu",
+  "VN-35": "Tỉnh Lâm Đồng",
+  "VN-13": "Tỉnh Quảng Ninh",
 };
-
-const CITY_DISTRICTS: Record<string, string[]> = {
-  "TP. Hồ Chí Minh": ["Quận 1", "Quận 3", "Quận 7", "Quận Bình Thạnh", "TP. Thủ Đức", "Quận Tân Bình", "Quận Phú Nhuận", "Quận 10"],
-  "Hà Nội": ["Hoàn Kiếm", "Ba Đình", "Đống Đa", "Cầu Giấy", "Hai Bà Trưng", "Thanh Xuân", "Tây Hồ"],
-  "Đà Nẵng": ["Hải Châu", "Thanh Khê", "Sơn Trà", "Ngũ Hành Sơn", "Liên Chiểu"],
-  "Huế": ["Thuận Hóa", "Phú Xuân", "Hương Thủy", "Hương Trà", "Phong Điền", "Quảng Điền", "A Lưới"],
-  "Nha Trang": ["Vĩnh Hòa", "Lộc Thọ", "Phước Hải", "Ngọc Hiệp", "Phước Long", "Vĩnh Thọ", "Xương Huân"],
-  "Đà Lạt": ["Phường 1", "Phường 2", "Phường 3", "Phường 4", "Phường 5", "Phường 6", "Phường 7"],
-};
-const DEFAULT_DISTRICTS = ["Quận Trung Tâm", "Quận 1"];
-
-const CANONICAL_CITIES = Object.keys(ISO_CITY).map((k) => ISO_CITY[k]);
 
 function parseAmenities(s: string | null): string[] {
   if (!s) return [];
@@ -173,16 +168,22 @@ function fillFromPlace(place: NominatimPlace) {
   const iso = a["ISO3166-2-lvl4"];
   const cleanLevel = (s: string) => s.replace(/^(Phường|Xã|Thị trấn)\s+/i, "");
   const rawCity = (iso && ISO_CITY[iso]) || a.state_district || a.state || a.city || "";
-  // Nominatim VN trả "Tỉnh/Thành phố" prefix → bỏ để tên gọn, khớp dropdown
-  const city = rawCity.replace(/^(Tỉnh|Thành phố|TP)\s+/i, "");
-  // Nominatim VN thường không trả county/district mà trả suburb (Phường/Xã) hoặc town (huyện)
-  const district =
+  const rawDistrict =
     a.county ||
     a.district ||
     a.city_district ||
     a.town ||
     (a.suburb ? cleanLevel(a.suburb) : "") ||
     "";
+
+  // Chuẩn hóa tên Tỉnh/Thành theo bộ dữ liệu 63 tỉnh thành chuẩn
+  const matchedProvince = findProvinceByName(rawCity);
+  const city = matchedProvince ? matchedProvince.name : rawCity.replace(/^(Tỉnh|Thành phố|TP)\s+/i, "");
+
+  // Chuẩn hóa tên Quận/Huyện theo danh sách quận của Tỉnh/Thành
+  const matchedDistrict = city ? findDistrictByName(city, rawDistrict) : undefined;
+  const district = matchedDistrict ? matchedDistrict.name : rawDistrict;
+
   const address =
     [a.house_number, a.road, a.suburb || a.quarter, district, city].filter(Boolean).join(", ") ||
     place.display_name ||
@@ -646,6 +647,9 @@ function StoreFormDialog({
   const [address, setAddress] = useState(store?.address ?? "");
   const [lat, setLat] = useState<number | null>(store?.lat ?? null);
   const [lng, setLng] = useState<number | null>(store?.lng ?? null);
+
+  const allProvinces = useMemo(() => getProvinces(), []);
+  const availableDistricts = useMemo(() => (city ? getDistrictsByProvinceName(city) : []), [city]);
   const [amenities, setAmenities] = useState(parseAmenities(store?.amenities ?? null).join(", "));
   const [isActive, setIsActive] = useState(store ? Boolean(store.is_active) : true);
   const [saving, setSaving] = useState(false);
@@ -821,13 +825,13 @@ function StoreFormDialog({
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <Label>Thành phố</Label>
+              <Label>Tỉnh / Thành phố</Label>
               <Select
                 value={city}
                 onValueChange={async (val) => {
                   setCity(val);
                   setDistrict("");
-                  // Tự động xoay bản đồ về trung tâm Thành phố
+                  // Tự động xoay bản đồ về trung tâm Tỉnh/Thành phố
                   try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&q=${encodeURIComponent(val)}`);
                     const data = await res.json();
@@ -841,15 +845,15 @@ function StoreFormDialog({
                 }}
               >
                 <SelectTrigger className="mt-1.5 w-full">
-                  <SelectValue placeholder="Chọn Thành phố" />
+                  <SelectValue placeholder="Chọn Tỉnh / Thành phố" />
                 </SelectTrigger>
-                <SelectContent>
-                  {CANONICAL_CITIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                <SelectContent className="max-h-60">
+                  {allProvinces.map((p) => (
+                    <SelectItem key={p.code} value={p.name}>
+                      {p.name}
                     </SelectItem>
                   ))}
-                  {city && !CANONICAL_CITIES.includes(city) && (
+                  {city && !allProvinces.some((p) => p.name === city) && (
                     <SelectItem value={city}>{city}</SelectItem>
                   )}
                 </SelectContent>
@@ -859,6 +863,7 @@ function StoreFormDialog({
               <Label>Quận / Huyện</Label>
               <Select
                 value={district}
+                disabled={!city || availableDistricts.length === 0}
                 onValueChange={async (val) => {
                   setDistrict(val);
                   // Tự động xoay bản đồ về Quận/Huyện
@@ -876,16 +881,16 @@ function StoreFormDialog({
                 }}
               >
                 <SelectTrigger className="mt-1.5 w-full">
-                  <SelectValue placeholder="Chọn Quận / Huyện" />
+                  <SelectValue placeholder={!city ? "Chọn Tỉnh / TP trước" : "Chọn Quận / Huyện"} />
                 </SelectTrigger>
-                <SelectContent>
-                  {(CITY_DISTRICTS[city] ?? DEFAULT_DISTRICTS).map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
+                <SelectContent className="max-h-60">
+                  {availableDistricts.map((d) => (
+                    <SelectItem key={d.code} value={d.name}>
+                      {d.name}
                     </SelectItem>
                   ))}
                   {district &&
-                    !(CITY_DISTRICTS[city] ?? DEFAULT_DISTRICTS).includes(district) && (
+                    !availableDistricts.some((d) => d.name === district) && (
                       <SelectItem value={district}>{district}</SelectItem>
                     )}
                 </SelectContent>
