@@ -60,6 +60,10 @@ export const PRODUCTION_MIGRATION_REGISTRY = Object.freeze({
     preflight: '0035_branch_fulfillment_capabilities_default_preflight_readonly.sql',
     prerequisites: Object.freeze(['0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034']),
   }),
+  '0036': Object.freeze({
+    preflight: '0036_scoped_category_uniqueness_preflight_readonly.sql',
+    prerequisites: Object.freeze(['0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0035']),
+  }),
 });
 export const PRODUCTION_MIGRATION_TARGETS = Object.freeze(Object.keys(PRODUCTION_MIGRATION_REGISTRY));
 

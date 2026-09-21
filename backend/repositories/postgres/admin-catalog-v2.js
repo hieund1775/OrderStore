@@ -221,6 +221,30 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           productAvailable = false;
         }
 
+        const targetSlug = (data.slug || '').trim().toLowerCase();
+
+        // Retire any dormant archived product holding the same slug
+        await tx.query(
+          `UPDATE products
+           SET slug = LEFT(slug, 150) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE slug = $1 AND status = 'archived'`,
+          [targetSlug],
+        );
+
+        // Auto-resolve unique slug if targetSlug is already taken by an active product
+        let candidateSlug = targetSlug;
+        let counter = 1;
+        while (true) {
+          const [exists] = await tx.query(
+            "SELECT 1 FROM products WHERE slug = $1 AND status <> 'archived' LIMIT 1",
+            [candidateSlug],
+          );
+          if (!exists[0]) break;
+          candidateSlug = `${targetSlug}-${counter}`;
+          counter++;
+        }
+
         const [pRows] = await tx.query(
           `INSERT INTO products (
              category_id, name, slug, base_tea, description, price, image_url,
@@ -230,7 +254,7 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
           [
             data.category_id,
             data.name,
-            data.slug,
+            candidateSlug,
             data.base_tea || 'Mặc định',
             data.description || null,
             data.price || 0,
@@ -414,24 +438,41 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
     },
 
     async archiveProduct(id) {
-      const [rows] = await database.query(
-        `UPDATE products
-         SET status = 'archived',
-             is_available = FALSE,
-             -- Keep the display name for historic joins; release only the
-             -- globally-unique technical slug for create-after-delete.
-             -- 170 + the delimiter + the largest bigint decimal representation
-             -- stays within products.slug VARCHAR(200).
-             slug = LEFT(slug, 170) || '--archived-' || id::text,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING *`,
-        [id],
-      );
-      if (!rows[0]) {
-        throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
-      }
-      return rows[0];
+      const executor = typeof database.transaction === 'function'
+        ? (cb) => database.transaction(cb)
+        : (cb) => cb(database);
+
+      return await executor(async (tx) => {
+        const [rows] = await tx.query(
+          `UPDATE products
+           SET status = 'archived',
+               is_available = FALSE,
+               -- Keep the display name for historic joins; release only the
+               -- globally-unique technical slug for create-after-delete.
+               -- 170 + the delimiter + the largest bigint decimal representation
+               -- stays within products.slug VARCHAR(200).
+               slug = LEFT(slug, 170) || '--archived-' || id::text,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1
+           RETURNING *`,
+          [id],
+        );
+        if (!rows[0]) {
+          throw new CatalogV2Error('Sản phẩm không tồn tại', 404);
+        }
+
+        // Archive and release all product_variants SKUs so create-after-delete can reuse them
+        await tx.query(
+          `UPDATE product_variants
+           SET status = 'archived',
+               sku = LEFT(sku, 60) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE product_id = $1 AND status <> 'archived'`,
+          [id],
+        );
+
+        return rows[0];
+      });
     },
 
     async createVariant(productId, variantData) {
@@ -473,6 +514,19 @@ export function createAdminCatalogV2Repository(database = postgresDb) {
         }
 
         const signature = generateCanonicalVariantSignature(providedValues);
+
+        if (variantData.sku) {
+          const targetSku = variantData.sku.trim();
+          // Retire any archived or orphaned variant holding the same SKU
+          await tx.query(
+            `UPDATE product_variants
+             SET sku = LEFT(sku, 60) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                 status = 'archived',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE sku = $1 AND (status = 'archived' OR product_id IN (SELECT id FROM products WHERE status = 'archived'))`,
+            [targetSku],
+          );
+        }
 
         const [vRows] = await tx.query(
           `INSERT INTO product_variants (product_id, sku, variant_signature, name_suffix, barcode, status)

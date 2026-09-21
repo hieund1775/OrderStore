@@ -87,25 +87,77 @@ export function createCatalogV2Repository(database = postgresDb) {
         throw new CatalogV2Error('Ngành hàng không thuộc riêng khu vực Bếp hoặc Đóng gói', 400);
       }
 
+      const executor = typeof database.transaction === 'function'
+        ? (cb) => database.transaction(cb)
+        : (cb) => cb(database);
+
       try {
-        const [rows] = await database.query(
-          `INSERT INTO categories (
-             name, slug, parent_id, depth, product_type_id, default_fulfillment_lane, sort_order, is_visible
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *`,
-          [
-            data.name,
-            data.slug,
-            data.parent_id || null,
-            depth,
-            productTypeId,
-            defaultFulfillmentLane,
-            data.sort_order || 0,
-            data.is_visible ?? true,
-          ],
-        );
-        return rows[0];
+        return await executor(async (tx) => {
+          const targetSlug = (data.slug || '').trim().toLowerCase();
+          const targetName = (data.name || '').trim();
+          const parentId = data.parent_id || null;
+
+          // 1. Check duplicate name among active siblings
+          if (depth === 0) {
+            const [existingRoot] = await tx.query(
+              'SELECT 1 FROM categories WHERE name = $1 AND parent_id IS NULL AND archived_at IS NULL LIMIT 1',
+              [targetName],
+            );
+            if (existingRoot[0]) {
+              throw new CatalogV2Error('Tên hoặc slug ngành hàng gốc đã tồn tại', 409);
+            }
+          } else {
+            const [existingSub] = await tx.query(
+              'SELECT 1 FROM categories WHERE parent_id = $1 AND name = $2 AND archived_at IS NULL LIMIT 1',
+              [parentId, targetName],
+            );
+            if (existingSub[0]) {
+              throw new CatalogV2Error('Tên hoặc slug danh mục đã tồn tại', 409);
+            }
+          }
+
+          // 2. Retire any previously archived category holding the same slug or name
+          await tx.query(
+            `UPDATE categories
+             SET slug = LEFT(slug, 110) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                 name = LEFT(name, 110) || ' [archived-' || id::text || ']'
+             WHERE (slug = $1 OR (parent_id IS NOT DISTINCT FROM $2 AND name = $3)) AND archived_at IS NOT NULL`,
+            [targetSlug, parentId, targetName],
+          );
+
+          // 3. Automatically resolve unique slug if targetSlug is already used by an active category
+          let candidateSlug = targetSlug;
+          let counter = 1;
+          while (true) {
+            const [exists] = await tx.query(
+              'SELECT 1 FROM categories WHERE slug = $1 AND archived_at IS NULL LIMIT 1',
+              [candidateSlug],
+            );
+            if (!exists[0]) break;
+            candidateSlug = `${targetSlug}-${counter}`;
+            counter++;
+          }
+
+          const [rows] = await tx.query(
+            `INSERT INTO categories (
+               name, slug, parent_id, depth, product_type_id, default_fulfillment_lane, sort_order, is_visible
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [
+              targetName,
+              candidateSlug,
+              parentId,
+              depth,
+              productTypeId,
+              defaultFulfillmentLane,
+              data.sort_order || 0,
+              data.is_visible ?? true,
+            ],
+          );
+          return rows[0];
+        });
       } catch (err) {
+        if (err instanceof CatalogV2Error) throw err;
         if (err?.code === '23505') {
           throw new CatalogV2Error(
             depth === 0
