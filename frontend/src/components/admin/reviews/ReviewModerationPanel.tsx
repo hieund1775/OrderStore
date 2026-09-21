@@ -40,13 +40,25 @@ interface ReviewItem {
   reply: { id: number; body: string; createdAt: string } | null;
 }
 
-export function ReviewModerationPanel() {
+export interface ReviewModerationPanelProps {
+  initialVisibility?: string;
+  initialStoreId?: string;
+  initialQuery?: string;
+  onFilterChange?: (filters: { visibility: string; store_id: string; q: string }) => void;
+}
+
+export function ReviewModerationPanel({
+  initialVisibility = 'all',
+  initialStoreId = '',
+  initialQuery = '',
+  onFilterChange,
+}: ReviewModerationPanelProps = {}) {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [storeFilter, setStoreFilter] = useState<string>('');
-  const [visibilityFilter, setVisibilityFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [storeFilter, setStoreFilter] = useState<string>(initialStoreId);
+  const [visibilityFilter, setVisibilityFilter] = useState<string>(initialVisibility);
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
   const [selectedReview, setSelectedReview] = useState<ReviewItem | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -64,6 +76,19 @@ export function ReviewModerationPanel() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  const isFilterFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFilterFirstMount.current) {
+      isFilterFirstMount.current = false;
+      return;
+    }
+    onFilterChange?.({
+      visibility: visibilityFilter,
+      store_id: storeFilter,
+      q: debouncedQuery,
+    });
+  }, [debouncedQuery, visibilityFilter, storeFilter, onFilterChange]);
 
   // Load reviews automatically on mount and whenever filters change
   useEffect(() => {

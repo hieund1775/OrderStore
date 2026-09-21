@@ -31,12 +31,16 @@ import {
 } from "@/lib/notifications";
 
 export const Route = createFileRoute("/admin/thong-bao")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page: Number(search.page) > 0 ? Number(search.page) : 1,
+    type: typeof search.type === "string" ? search.type : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
       {
         name: "description",
-        content: "Đơn hàng mới và cập nhật tiến độ vận hành real-time cho toàn chuỗi.",
+        content: "Trung tâm thông báo thời gian thực dành cho ban quản trị và nhân viên.",
       },
       { name: "robots", content: "noindex" },
       { property: "og:title", content: "Trung tâm thông báo | Admin Trà Trái Cây Tô" },
@@ -64,8 +68,32 @@ const icons: Record<string, typeof Bell> = {
 
 function NotificationsPage() {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all");
-  const [page, setPage] = useState(1);
+  const searchParams = Route.useSearch();
+  const page = searchParams.page || 1;
+  const filter = searchParams.type || "all";
+
+  const setPage = (newPageOrFn: number | ((prev: number) => number)) => {
+    const nextVal = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn;
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        page: nextVal > 1 ? nextVal : undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  const setFilter = (type: string) => {
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        type: type !== 'all' ? type : undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
+  };
+
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const { data, isLoading, isError, refetch, markRead, markAllRead, clearAll, isMutating } = useAdminNotifications({
     page,

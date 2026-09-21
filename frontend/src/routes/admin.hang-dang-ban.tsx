@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   RefreshCw,
   PackageCheck,
@@ -24,6 +24,13 @@ type CatalogCategory = {
 };
 
 export const Route = createFileRoute('/admin/hang-dang-ban')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page: Number(search.page) > 0 ? Number(search.page) : 1,
+    store_id: typeof search.store_id === 'string' ? search.store_id : undefined,
+    root_id: typeof search.root_id === 'string' ? search.root_id : undefined,
+    child_id: typeof search.child_id === 'string' ? search.child_id : undefined,
+    search: typeof search.search === 'string' ? search.search : undefined,
+  }),
   component: AdminHangDangBanPage,
   head: () => ({
     meta: [
@@ -34,16 +41,20 @@ export const Route = createFileRoute('/admin/hang-dang-ban')({
 });
 
 function AdminHangDangBanPage() {
+  const navigate = useNavigate();
+  const searchParams = Route.useSearch();
+
+  const page = searchParams.page || 1;
+  const selectedStoreId = searchParams.store_id || '1';
+  const selectedRootId = searchParams.root_id || 'all';
+  const selectedChildId = searchParams.child_id || 'all';
+
   const [offers, setOffers] = useState<BranchOfferRow[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('1');
-  const [selectedRootId, setSelectedRootId] = useState<string>('all');
-  const [selectedChildId, setSelectedChildId] = useState<string>('all');
-  const [search, setSearch] = useState<string>('');
-  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+  const [search, setSearch] = useState<string>(searchParams.search || '');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(searchParams.search || '');
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
   const currentUser = getUser();
@@ -68,29 +79,70 @@ function AdminHangDangBanPage() {
     return undefined;
   }, [selectedChildId, selectedRootId]);
 
+  const setPage = (newPageOrFn: number | ((prev: number) => number)) => {
+    const nextVal = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn;
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        page: nextVal > 1 ? nextVal : undefined,
+      }),
+      replace: true,
+    });
+  };
+
   const handleRootChange = (newRootId: string) => {
-    setSelectedRootId(newRootId);
-    setSelectedChildId('all');
-    setPage(1);
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        root_id: newRootId !== 'all' ? newRootId : undefined,
+        child_id: undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
   };
 
   const handleChildChange = (newChildId: string) => {
-    setSelectedChildId(newChildId);
-    setPage(1);
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        child_id: newChildId !== 'all' ? newChildId : undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
   };
 
   const handleStoreChange = (newStoreId: string) => {
-    setSelectedStoreId(newStoreId);
-    setPage(1);
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        store_id: newStoreId !== '1' ? newStoreId : undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
   };
 
+  const isSearchFirstMount = useRef(true);
   useEffect(() => {
+    if (isSearchFirstMount.current) {
+      isSearchFirstMount.current = false;
+      return;
+    }
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
-      setPage(1);
+      navigate({
+        search: (prev: any) => ({
+          ...prev,
+          search: search.trim() || undefined,
+          page: undefined,
+        }),
+        replace: true,
+      });
     }, 300);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, navigate]);
 
   const loadData = useCallback(async () => {
     setLoading(true);

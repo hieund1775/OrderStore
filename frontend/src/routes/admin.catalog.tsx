@@ -1,5 +1,5 @@
-import { createFileRoute, useLocation } from '@tanstack/react-router';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { createFileRoute, useLocation, useNavigate } from '@tanstack/react-router';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   FolderTree,
   ShoppingBag,
@@ -52,6 +52,9 @@ import {
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/admin/catalog')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    rootId: typeof search.rootId === 'string' ? search.rootId : undefined,
+  }),
   component: AdminCatalogPage,
   head: () => ({
     meta: [
@@ -63,6 +66,7 @@ export const Route = createFileRoute('/admin/catalog')({
 
 export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const routeLane = location?.pathname?.includes('/packing') ? 'packing' : 'kitchen';
   const activeLane = lane || routeLane;
   const [categories, setCategories] = useState<CategoryNode[]>([]);
@@ -70,8 +74,28 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
   const [products, setProducts] = useState<ProductV2[]>([]);
   const [selectedProductType, setSelectedProductType] = useState<ProductType | null>(null);
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
-  const [selectedRootId, setSelectedRootId] = useState<string>('');
+  const [selectedRootId, setSelectedRootId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('rootId') || '';
+    }
+    return '';
+  });
   const [loading, setLoading] = useState(true);
+
+  const updateUrlRootId = useCallback((id: string) => {
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        rootId: id || undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
+
+  const handleSelectRootId = useCallback((id: string) => {
+    setSelectedRootId(id);
+    updateUrlRootId(id);
+  }, [updateUrlRootId]);
 
   // Modal tạo / sửa danh mục gốc
   const [createRootOpen, setCreateRootOpen] = useState(false);
@@ -160,14 +184,26 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
   // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn hoặc id không còn tồn tại
   useEffect(() => {
     if (rootCategories.length > 0) {
-      const selectedExists = rootCategories.some((root) => String(root.id) === selectedRootId);
-      if (!selectedExists) {
-        setSelectedRootId(String(rootCategories[0].id));
+      const urlParamId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('rootId') : null;
+      const targetCandidate = selectedRootId || urlParamId || '';
+      const candidateExists = targetCandidate ? rootCategories.some((root) => String(root.id) === targetCandidate) : false;
+
+      if (candidateExists && targetCandidate) {
+        if (selectedRootId !== targetCandidate) {
+          setSelectedRootId(targetCandidate);
+        }
+        if (urlParamId !== targetCandidate) {
+          updateUrlRootId(targetCandidate);
+        }
+      } else {
+        const fallbackId = String(rootCategories[0].id);
+        setSelectedRootId(fallbackId);
+        updateUrlRootId(fallbackId);
       }
     } else {
       setSelectedRootId('');
     }
-  }, [rootCategories, selectedRootId]);
+  }, [rootCategories, selectedRootId, updateUrlRootId]);
 
   // Danh mục thuộc khu vực activeLane (loại trừ tuyệt đối danh mục của lane khác)
   const laneCategories = useMemo(() => {
@@ -259,7 +295,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
     try {
       await archiveCatalogCategory(root.id);
       toast.success(`Đã xóa ngành hàng "${root.name}"`);
-      setSelectedRootId('all');
+      handleSelectRootId('');
       await loadAllData();
     } catch (err: any) {
       toast.error(err.message || 'Lỗi xóa ngành hàng');
@@ -293,7 +329,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
           default_fulfillment_lane: activeLane,
         });
         toast.success(`Đã tạo ngành hàng "${newRootName}"`);
-        if (created?.rootCategory?.id) setSelectedRootId(String(created.rootCategory.id));
+        if (created?.rootCategory?.id) handleSelectRootId(String(created.rootCategory.id));
       }
       setCreateRootOpen(false);
       setNewRootName('');
@@ -432,7 +468,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
         roots={rootCategories}
         totalCategories={laneCategories.length}
         value={selectedRootId}
-        onValueChange={setSelectedRootId}
+        onValueChange={handleSelectRootId}
         canCreateRoot={isSuperAdmin}
         onCreateRoot={handleOpenCreateRoot}
         onEditRoot={handleOpenEditRoot}
@@ -444,7 +480,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
       <CatalogTabBlocksView
         rootCategories={rootCategories}
         selectedRootId={selectedRootId}
-        onSelectRootId={setSelectedRootId}
+        onSelectRootId={handleSelectRootId}
         categories={filteredCategories}
         products={filteredProducts}
         productTypes={productTypes}

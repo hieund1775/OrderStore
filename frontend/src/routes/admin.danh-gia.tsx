@@ -6,6 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { ReviewModerationPanel } from '@/components/admin/reviews/ReviewModerationPanel';
 
 export const Route = createFileRoute('/admin/danh-gia')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    visibility: typeof search.visibility === 'string' ? search.visibility : undefined,
+    store_id: typeof search.store_id === 'string' ? search.store_id : undefined,
+    q: typeof search.q === 'string' ? search.q : undefined,
+  }),
   component: AdminReviewsPage,
   head: () => ({
     meta: [{ title: 'Quản lý đánh giá — Admin — Trà Trái Cây Tô' }],
@@ -13,6 +18,9 @@ export const Route = createFileRoute('/admin/danh-gia')({
 });
 
 function AdminReviewsPage() {
+  const navigate = useNavigate();
+  const searchParams = Route.useSearch();
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-6">
@@ -22,7 +30,22 @@ function AdminReviewsPage() {
         </p>
       </div>
 
-      <ReviewModerationPanel />
+      <ReviewModerationPanel
+        initialVisibility={searchParams.visibility}
+        initialStoreId={searchParams.store_id}
+        initialQuery={searchParams.q}
+        onFilterChange={(filters) => {
+          navigate({
+            search: (prev: any) => ({
+              ...prev,
+              visibility: filters.visibility !== 'all' ? filters.visibility : undefined,
+              store_id: filters.store_id || undefined,
+              q: filters.q ? filters.q.trim() : undefined,
+            }),
+            replace: true,
+          });
+        }}
+      />
     </div>
   );
 }

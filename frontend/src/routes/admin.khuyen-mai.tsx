@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
@@ -37,6 +37,9 @@ import { vnd } from "@/lib/data";
 import { formatLocalDateKey, formatVoucherDate, getPromotionStatus, type PromotionStatusInput } from "@/lib/promotion-status";
 
 export const Route = createFileRoute("/admin/khuyen-mai")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    page: Number(search.page) > 0 ? Number(search.page) : 1,
+  }),
   head: () => ({
     meta: [
       { title: "Khuyến mãi & Voucher | Admin Trà Trái Cây Tô" },
@@ -99,11 +102,26 @@ function renderVoucherBadge(p: Promotion) {
 }
 
 function PromotionsAdminPage() {
+  const navigate = useNavigate();
+  const searchParams = Route.useSearch();
+  const page = searchParams.page || 1;
+
   const canManage = getUser()?.role === "super";
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  const setPage = (newPageOrFn: number | ((prev: number) => number)) => {
+    const nextVal = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn;
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        page: nextVal > 1 ? nextVal : undefined,
+      }),
+      replace: true,
+    });
+  };
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Promotion | null>(null);
   const [saving, setSaving] = useState(false);

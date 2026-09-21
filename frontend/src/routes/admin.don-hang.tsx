@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Eye, Filter, LayoutGrid, List, Loader2, Printer, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
@@ -40,10 +40,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet, apiPatch, apiPut } from "@/lib/api";
+import { apiGet, apiPatch } from "@/lib/api";
 import { fmtDateTime, vnd } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/don-hang")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    view: search.view === "kanban" || search.view === "list" ? (search.view as "list" | "kanban") : undefined,
+    status: typeof search.status === "string" ? search.status : undefined,
+    branchId: typeof search.branchId === "string" ? search.branchId : undefined,
+    type: typeof search.type === "string" ? search.type : undefined,
+    payment: typeof search.payment === "string" ? search.payment : undefined,
+    q: typeof search.q === "string" ? search.q : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Quản lý đơn hàng | Admin Trà Trái Cây Tô" },
@@ -134,12 +142,50 @@ const statusTone: Record<string, string> = {
 };
 
 function OrdersPage() {
-  const [view, setView] = useState<"list" | "kanban">("list");
-  const [status, setStatus] = useState("Tất cả");
-  const [type, setType] = useState("Tất cả");
-  const [payment, setPayment] = useState("Tất cả");
-  const [branchId, setBranchId] = useState("all");
-  const [q, setQ] = useState("");
+  const navigate = useNavigate();
+  const searchParams = Route.useSearch();
+
+  const view = searchParams.view || "list";
+  const status = searchParams.status || "Tất cả";
+  const type = searchParams.type || "Tất cả";
+  const payment = searchParams.payment || "Tất cả";
+  const branchId = searchParams.branchId || "all";
+  const [q, setQ] = useState(searchParams.q || "");
+
+  const updateSearch = useCallback((updates: Record<string, any>) => {
+    navigate({
+      search: (prev: any) => {
+        const next = { ...prev, ...updates };
+        if (next.view === "list") delete next.view;
+        if (next.status === "Tất cả") delete next.status;
+        if (next.branchId === "all") delete next.branchId;
+        if (next.type === "Tất cả") delete next.type;
+        if (next.payment === "Tất cả") delete next.payment;
+        if (!next.q) delete next.q;
+        return next;
+      },
+      replace: true,
+    });
+  }, [navigate]);
+
+  const setView = (v: "list" | "kanban") => updateSearch({ view: v });
+  const setStatus = (s: string) => updateSearch({ status: s });
+  const setBranchId = (b: string) => updateSearch({ branchId: b });
+  const setType = (t: string) => updateSearch({ type: t });
+  const setPayment = (p: string) => updateSearch({ payment: p });
+
+  const isSearchFirstMount = useRef(true);
+  useEffect(() => {
+    if (isSearchFirstMount.current) {
+      isSearchFirstMount.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      updateSearch({ q: q.trim() || undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [q, updateSearch]);
+
   const [orders, setOrders] = useState<AdminOrderRow[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
