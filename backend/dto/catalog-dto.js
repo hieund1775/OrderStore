@@ -29,6 +29,7 @@ export function toProductDto(product) {
     is_seasonal: parsedTags.includes('seasonal'),
     rating: product.rating == null ? 5 : Number(product.rating),
     review_count: product.review_count == null ? 0 : Number(product.review_count),
+    total_sold: product.total_sold == null ? 0 : Number(product.total_sold),
     is_available: product.is_available !== false,
     fulfillment_lane: product.fulfillment_lane || 'kitchen',
     category_name: product.category_name || undefined,

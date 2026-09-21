@@ -71,6 +71,8 @@ export type Product = {
   image: string;
   rating: number;
   reviews: number;
+  total_sold?: number;
+  created_at?: string;
   calories: number;
   line: string;
   fruit: string;
@@ -88,6 +90,8 @@ export type ApiCatalogProduct = {
   image_url?: string | null;
   rating?: number | string;
   review_count?: number | string;
+  total_sold?: number | string;
+  created_at?: string;
   calories?: number | string;
   category_name?: string | null;
   fulfillment_lane?: string | null;
@@ -316,6 +320,11 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
       ? parsedRating
       : 5;
 
+  const parsedTotalSold = Number(product.total_sold);
+  const total_sold = Number.isFinite(parsedTotalSold) && parsedTotalSold >= 0
+    ? parsedTotalSold
+    : 0;
+
   // Fallback to match mock/catalog product tags if still empty
   if (tags.length === 0) {
     const matched = products.find(
@@ -344,6 +353,8 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     }),
     rating,
     reviews,
+    total_sold,
+    created_at: product.created_at,
     calories: Number(product.calories || 180),
     line: category,
     fruit: category,

@@ -260,36 +260,111 @@ function Home() {
         (p as any).status !== "inactive" &&
         !p.slug?.includes("--archived-"),
     );
-    const filtered = activeProducts.filter(
-      (p) => p.tags && (p.tags.includes("best-seller") || p.tags.includes("new")),
-    );
-    let list: Product[] = [];
-    if (filtered.length >= 4) {
-      list = filtered.slice(0, 4);
-    } else if (filtered.length > 0) {
-      const extra = activeProducts.filter((p) => !filtered.some((f) => f.id === p.id));
-      list = [...filtered, ...extra].slice(0, 4);
-    } else {
-      list = activeProducts.length > 0 ? activeProducts.slice(0, 4) : fallbackProducts.slice(0, 4);
+
+    if (activeProducts.length === 0) {
+      return fallbackProducts.slice(0, 4).map((p) => ({
+        ...p,
+        tags: ["best-seller"] as ProductTag[],
+      }));
     }
 
-    // Curated tag patterns from Image 1:
-    // Card 1: Best Seller + Trái Cây Theo Mùa
-    // Card 2: Best Seller
-    // Card 3: Món Mới
-    // Card 4: Món Mới + Trái Cây Theo Mùa
-    const defaultTagPatterns: ProductTag[][] = [
-      ["best-seller", "seasonal"],
-      ["best-seller"],
-      ["new"],
-      ["new", "seasonal"],
-    ];
+    // 1. Quality Gate:
+    // If a product has reviews (reviews > 0), its rating MUST be >= 3.5.
+    // Products with rating < 3.5 are excluded from Best Seller candidacy.
+    const qualifiedProducts = activeProducts.filter((p) => {
+      const revCount = Number(p.reviews || 0);
+      if (revCount > 0) {
+        return Number(p.rating || 0) >= 3.5;
+      }
+      return true;
+    });
 
-    return list.slice(0, 4).map((p, idx) => {
-      const hasTags = p.tags && p.tags.length > 0;
+    const candidates = qualifiedProducts.length > 0 ? qualifiedProducts : activeProducts;
+
+    // 2. Best Seller Score:
+    // Balance between actual sales volume (total_sold) and verified reviews with logarithmic scaling.
+    const scoredProducts = candidates.map((p) => {
+      const sold = Number(p.total_sold || 0);
+      const reviews = Number(p.reviews || 0);
+      const rating = Number(p.rating || 0);
+
+      // Logarithmic review score ensures 4.0 with 120 reviews can legitimately outrank 5.0 with 1 review
+      const reviewScore = reviews > 0 ? rating * Math.log10(reviews + 9) * 10 : 0;
+      const score = sold * 0.6 + reviewScore * 0.4;
+
+      return {
+        product: p,
+        score,
+        sold,
+        reviews,
+        rating,
+        category: p.line || p.base || "Khác",
+      };
+    });
+
+    // Primary: Score DESC; Secondary: sold DESC; Tertiary: rating DESC
+    scoredProducts.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.sold !== a.sold) return b.sold - a.sold;
+      return b.rating - a.rating;
+    });
+
+    // 3. Category Round-Robin (Diversity Distribution):
+    // Distribute across diverse categories so homepage doesn't display only 1 category.
+    const selected: Product[] = [];
+    const usedCategories = new Set<string>();
+    const usedProductIds = new Set<string>();
+
+    // Pass 1: Select highest-scoring item from each distinct category
+    for (const item of scoredProducts) {
+      if (selected.length >= 4) break;
+      if (!usedCategories.has(item.category)) {
+        selected.push(item.product);
+        usedCategories.add(item.category);
+        usedProductIds.add(item.product.id);
+      }
+    }
+
+    // Pass 2: Fill remaining slots with next highest-scoring items
+    if (selected.length < 4) {
+      for (const item of scoredProducts) {
+        if (selected.length >= 4) break;
+        if (!usedProductIds.has(item.product.id)) {
+          selected.push(item.product);
+          usedProductIds.add(item.product.id);
+        }
+      }
+    }
+
+    // Pass 3: Fallback if still under 4 items
+    if (selected.length < 4) {
+      for (const p of activeProducts) {
+        if (selected.length >= 4) break;
+        if (!usedProductIds.has(p.id)) {
+          selected.push(p);
+          usedProductIds.add(p.id);
+        }
+      }
+    }
+
+    // 4. Dynamic Badges/Tags (without seasonal fruit tags):
+    // Selected items receive 'best-seller'. Items created within 30 days also get 'new'.
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    return selected.slice(0, 4).map((p) => {
+      const dynamicTags: ProductTag[] = ["best-seller"];
+      const isRecent = p.created_at
+        ? new Date(p.created_at).getTime() >= thirtyDaysAgo
+        : false;
+      const hadNewTag = Array.isArray(p.tags) && p.tags.includes("new");
+
+      if ((isRecent || hadNewTag) && !dynamicTags.includes("new")) {
+        dynamicTags.push("new");
+      }
+
       return {
         ...p,
-        tags: hasTags ? p.tags : defaultTagPatterns[idx % defaultTagPatterns.length],
+        tags: dynamicTags,
       };
     });
   }, [catalogProducts]);

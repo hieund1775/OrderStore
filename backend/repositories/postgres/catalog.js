@@ -14,10 +14,16 @@ export function createCatalogRepository(database = postgresDb) {
       let sql = `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
                         COALESCE(root.id, c.id) AS root_category_id,
                         COALESCE(root.name, c.name) AS root_category_name,
-                        COALESCE(root.slug, c.slug) AS root_category_slug
+                        COALESCE(root.slug, c.slug) AS root_category_slug,
+                        COALESCE(sold.total_sold, 0)::int AS total_sold
         FROM products p
         JOIN categories c ON p.category_id = c.id
         LEFT JOIN categories root ON root.id = c.parent_id
+        LEFT JOIN (
+          SELECT product_id, SUM(qty)::int AS total_sold
+          FROM order_items
+          GROUP BY product_id
+        ) sold ON sold.product_id = p.id
         WHERE p.is_available = TRUE
           AND COALESCE(p.status, 'active') = 'active'
           AND c.is_visible = TRUE
@@ -51,10 +57,16 @@ export function createCatalogRepository(database = postgresDb) {
         `SELECT p.*, c.name AS category_name, c.slug AS category_slug,
                 COALESCE(root.id, c.id) AS root_category_id,
                 COALESCE(root.name, c.name) AS root_category_name,
-                COALESCE(root.slug, c.slug) AS root_category_slug
+                COALESCE(root.slug, c.slug) AS root_category_slug,
+                COALESCE(sold.total_sold, 0)::int AS total_sold
          FROM products p
          JOIN categories c ON p.category_id = c.id
          LEFT JOIN categories root ON root.id = c.parent_id
+         LEFT JOIN (
+           SELECT product_id, SUM(qty)::int AS total_sold
+           FROM order_items
+           GROUP BY product_id
+         ) sold ON sold.product_id = p.id
          WHERE p.slug = $1
            AND p.is_available = TRUE
            AND COALESCE(p.status, 'active') = 'active'
