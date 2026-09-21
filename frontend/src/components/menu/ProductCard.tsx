@@ -153,54 +153,40 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
           {/* Action Buttons */}
           <div className="mt-3 flex items-center gap-1.5 sm:gap-2">
             {usePreorder ? (
-              <>
-                <Button
-                  variant="soft"
-                  size="sm"
-                  aria-label="Thêm nhanh vào giỏ"
-                  className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
-                  onClick={() => {
-                    if (product.slug) {
-                      setConfigMode('add');
-                      setOpen(true);
-                      return;
-                    }
-                    const added = addItem({
-                      storeId: selectedStore?.id,
-                      storeName: selectedStore?.name,
-                      storeDistrict: selectedStore?.district,
-                      productId: product.id,
-                      name: product.name,
-                      image: product.image,
-                      size: 'M',
-                      base: product.base,
-                      sugar: '100%',
-                      ice: '100%',
-                      toppings: [],
-                      unitPrice: product.price,
-                      qty: 1,
-                    });
-                    if (added) {
-                      toast.success('Đã thêm vào giỏ', { description: product.name });
-                    }
-                  }}
-                >
-                  <ShoppingCart className="size-4 shrink-0" />
-                  <span className="hidden sm:inline text-xs sm:text-sm">Thêm nhanh</span>
-                </Button>
-                <Button
-                  variant="hero"
-                  size="sm"
-                  className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
-                  onClick={() => {
+              <Button
+                variant="hero"
+                size="sm"
+                aria-label="Thêm Đặt Trước"
+                className="h-9 w-full min-w-0 text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 shadow-xs"
+                onClick={() => {
+                  if (product.slug) {
                     setConfigMode('add');
                     setOpen(true);
-                  }}
-                >
-                  <Settings2 className="size-3.5 sm:size-4 shrink-0" />
-                  <span className="truncate">Tùy chọn</span>
-                </Button>
-              </>
+                    return;
+                  }
+                  const added = addItem({
+                    storeId: selectedStore?.id,
+                    storeName: selectedStore?.name,
+                    storeDistrict: selectedStore?.district,
+                    productId: product.id,
+                    name: product.name,
+                    image: product.image,
+                    size: 'M',
+                    base: product.base,
+                    sugar: '100%',
+                    ice: '100%',
+                    toppings: [],
+                    unitPrice: product.price,
+                    qty: 1,
+                  });
+                  if (added) {
+                    toast.success('Đã thêm vào đơn đặt trước', { description: product.name });
+                  }
+                }}
+              >
+                <ShoppingCart className="size-4 shrink-0" />
+                <span>Thêm Đặt Trước</span>
+              </Button>
             ) : (
               <>
                 <Button

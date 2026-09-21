@@ -474,7 +474,7 @@ export const products: Product[] = [
 
 export const tagLabel: Record<ProductTag, string> = {
   'best-seller': '🔥 Best Seller',
-  new: '✨ Món Mới',
+  new: '✨ New',
   seasonal: '🥭 Trái Cây Theo Mùa',
 };
 

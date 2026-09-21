@@ -334,11 +334,11 @@ function PreorderCheckoutPage() {
     } finally { setSubmitting(false); }
   }
 
-  return <div className="container-page max-w-3xl space-y-6 py-8">
+  return <div className="container-page space-y-6 py-8">
     <div className="flex items-start gap-3"><CalendarClock className="mt-1 size-7 text-primary" /><div><h1 className="text-2xl font-bold">Đặt trước tại cửa hàng</h1><p className="text-muted-foreground">Thanh toán 100% ngay. Manager sẽ xác nhận sau khi thanh toán thành công.</p></div></div>
     {!getCustomerToken() && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">Bạn cần <Link className="font-semibold underline" to="/ho-so">đăng nhập</Link> trước khi đặt trước.</div>}
     {preorderStores != null && !anyStorePreorderAvailable && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">Đặt trước hiện chưa áp dụng tại các cửa hàng. Vui lòng quay lại sau.</div>}
-    <section className="grid gap-4 rounded-xl border bg-card p-5 md:grid-cols-2">
+    <section className="grid gap-4 rounded-xl border bg-card p-5 md:grid-cols-2 lg:grid-cols-3">
       <div><Label>Chi nhánh</Label><Select value={storeId ? String(storeId) : ''} onValueChange={(value) => selectStore(value)}><SelectTrigger><SelectValue placeholder="Chọn chi nhánh" /></SelectTrigger><SelectContent>{stores.map((store) => {
         const available = preorderStores == null ? true : isPreorderAvailableForStore(preorderStores, store.id);
         return <SelectItem key={store.id} value={String(store.id)} disabled={!available}>{store.name}{available ? '' : ' · Chưa áp dụng đặt trước'}</SelectItem>;
@@ -358,12 +358,12 @@ function PreorderCheckoutPage() {
           </p>
         )}
       </div>
-      {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
+      {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2 lg:col-span-3"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
       <div><Label>Khung giờ nhận ({slotRangeText})</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
       <div><Label><Ticket className="mr-1 inline size-4" />Mã voucher (áp dụng đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value.toUpperCase())} placeholder="Ví dụ: PREORDER10" /></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input type="tel" maxLength={15} value={phone} placeholder="Ví dụ: 0901234567" onChange={(event) => setPhone(event.target.value)} />{phone.trim() && (!isValidPhone(phone.trim()) || phone.trim().length > 15) && <p className="mt-1 text-xs text-destructive">Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 03, 05, 07, 08, 09).</p>}</div>
-      <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 md:col-span-2">
+      <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 md:col-span-2 lg:col-span-3">
         <p className="font-semibold">Lưu ý thời gian check-in tự phục vụ:</p>
         <p className="mt-0.5 text-blue-800">Khung giờ khách tự check-in tại cửa hàng mở trong giờ hoạt động (<strong>{storeOperatingHoursText}</strong>) trong ngày đã chọn. Giờ đặt trước là thời gian dự kiến để cửa hàng chuẩn bị món chu đáo nhất.</p>
       </div>
@@ -401,7 +401,7 @@ function PreorderCheckoutPage() {
           </div>
           <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Tìm món…" className="sm:max-w-52" aria-label="Tìm món preorder" />
         </div>
-        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} usePreorder />)}</div>}
+        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} usePreorder />)}</div>}
       </> : null}
     </section>
 

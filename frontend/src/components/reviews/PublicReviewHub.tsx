@@ -288,13 +288,32 @@ export function PublicReviewHub({
               key={rev.id}
               className="rounded-2xl border bg-card p-5 sm:p-6 shadow-sm space-y-4 transition-all hover:shadow-card-soft"
             >
-              {/* Header: Customer name (masked) & source badge & rating */}
+              {/* Header: Customer name (masked) · Product name · Order type badge */}
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* 1. Tên */}
                     <span className="font-semibold text-sm text-foreground">
                       {rev.user?.fullname || 'Khách hàng'}
                     </span>
+
+                    {/* 2. Tên sản phẩm */}
+                    {rev.product && (
+                      <>
+                        <span className="text-muted-foreground/40 text-xs select-none">|</span>
+                        <Link
+                          to="/menu"
+                          className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline max-w-[240px] truncate"
+                          title={rev.product.name}
+                        >
+                          <ShoppingBag className="size-3 shrink-0 text-primary" />
+                          <span className="truncate">{rev.product.name}</span>
+                        </Link>
+                      </>
+                    )}
+
+                    {/* 3. Loại đơn */}
+                    <span className="text-muted-foreground/40 text-xs select-none">|</span>
                     {rev.source === 'preorder' ? (
                       <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 text-[10px] py-0 px-2 font-normal">
                         Đơn đặt trước
@@ -323,17 +342,6 @@ export function PublicReviewHub({
                     </span>
                   </div>
                 </div>
-
-                {/* Product target link */}
-                {rev.product && (
-                  <Link
-                    to="/menu"
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary font-medium bg-muted/40 px-2.5 py-1 rounded-xl border transition-colors max-w-[240px] truncate"
-                  >
-                    <ShoppingBag className="size-3 shrink-0 text-primary" />
-                    <span className="truncate">{rev.product.name}</span>
-                  </Link>
-                )}
               </div>
 
               {/* Comment Content */}

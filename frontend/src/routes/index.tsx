@@ -23,7 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { ProductCard } from "@/components/menu/ProductCard";
 import {
   mapApiProduct,
-  products as fallbackProducts,
   promotions as fallbackPromotions,
   stores as fallbackStores,
   vnd,
@@ -147,7 +146,8 @@ function formatAmenityLabel(amenity: string): string {
 function Home() {
   const navigate = useNavigate();
   const { selectStore } = useBranch();
-  const [catalogProducts, setCatalogProducts] = useState<Product[]>(fallbackProducts);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [storeList, setStoreList] = useState<Store[]>(fallbackStores);
   const [apiPromos, setApiPromos] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -165,9 +165,16 @@ function Home() {
               !r.slug?.includes("--archived-"),
           );
           setCatalogProducts(activeRows.map(mapApiProduct));
+        } else if (!cancelled) {
+          setCatalogProducts([]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setCatalogProducts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProducts(false);
+      });
 
     apiGet<Store[]>("/api/stores")
       .then((rows) => {
@@ -262,10 +269,7 @@ function Home() {
     );
 
     if (activeProducts.length === 0) {
-      return fallbackProducts.slice(0, 4).map((p) => ({
-        ...p,
-        tags: ["best-seller"] as ProductTag[],
-      }));
+      return [];
     }
 
     // 1. Quality Gate:
@@ -482,11 +486,35 @@ function Home() {
             </Link>
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {bestSellers.slice(0, 4).map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        {loadingProducts ? (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="bg-card rounded-2xl border p-3 sm:p-4 h-[350px] flex flex-col justify-between animate-pulse"
+              >
+                <div className="bg-muted aspect-square w-full rounded-xl" />
+                <div className="space-y-2 mt-3 flex-1">
+                  <div className="bg-muted h-4 w-3/4 rounded" />
+                  <div className="bg-muted h-3 w-1/2 rounded" />
+                  <div className="bg-muted h-3 w-1/3 rounded" />
+                  <div className="bg-muted h-5 w-1/2 rounded mt-2" />
+                </div>
+                <div className="bg-muted h-9 w-full rounded-xl mt-3" />
+              </div>
+            ))}
+          </div>
+        ) : bestSellers.length > 0 ? (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {bestSellers.slice(0, 4).map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+        ) : (
+          <div className="py-12 text-center text-muted-foreground border rounded-2xl bg-muted/20">
+            <p className="text-sm font-medium">Hiện chưa có sản phẩm nào</p>
+          </div>
+        )}
       </section>
 
       {/* Promotions teaser */}
