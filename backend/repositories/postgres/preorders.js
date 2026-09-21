@@ -390,6 +390,8 @@ export function createPreordersRepository(database = postgresDb) {
       to = null,
       includePendingOnly = false,
       includeReviews = false,
+      kitchenUpcomingOnly = false,
+      lane = null,
       page = null,
       limit = null,
       orderBy = 'active',
@@ -403,6 +405,34 @@ export function createPreordersRepository(database = postgresDb) {
       if (from) where.push(`p.scheduled_start_at >= ${add(from)}`);
       if (to) where.push(`p.scheduled_start_at < ${add(to)}`);
       if (includePendingOnly) where.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
+      if (lane) {
+        where.push(`EXISTS (
+          SELECT 1 FROM orders o
+          JOIN order_items oi ON oi.order_id = o.id
+          WHERE o.preorder_id = p.id AND oi.fulfillment_lane = ${add(String(lane))}
+        )`);
+      }
+      if (kitchenUpcomingOnly) {
+        where.push(`NOT EXISTS (
+          SELECT 1 FROM orders o
+          JOIN order_status_history osh ON osh.order_id = o.id
+          WHERE o.preorder_id = p.id
+            AND osh.status IN ('Hoàn thành', 'Đã hủy')
+            AND NOT EXISTS (
+              SELECT 1 FROM order_status_history newer
+              WHERE newer.order_id = o.id
+                AND (newer.created_at > osh.created_at OR (newer.created_at = osh.created_at AND newer.id > osh.id))
+            )
+        )`);
+        if (lane === 'packing') {
+          where.push(`NOT EXISTS (
+            SELECT 1 FROM orders o
+            JOIN fulfillment_tasks ft ON ft.order_id = o.id AND ft.lane = 'packing'
+            WHERE o.preorder_id = p.id
+              AND ft.status IN ('ready', 'completed', 'cancelled')
+          )`);
+        }
+      }
       const checkin = await checkinProjection(database);
 
       const isPaginated = page != null && limit != null;
@@ -446,6 +476,34 @@ export function createPreordersRepository(database = postgresDb) {
           if (from) countWhere.push(`p.scheduled_start_at >= ${addC(from)}`);
           if (to) countWhere.push(`p.scheduled_start_at < ${addC(to)}`);
           if (includePendingOnly) countWhere.push("p.status = 'PENDING_MANAGER_CONFIRMATION'");
+          if (lane) {
+            countWhere.push(`EXISTS (
+              SELECT 1 FROM orders o
+              JOIN order_items oi ON oi.order_id = o.id
+              WHERE o.preorder_id = p.id AND oi.fulfillment_lane = ${addC(String(lane))}
+            )`);
+          }
+          if (kitchenUpcomingOnly) {
+            countWhere.push(`NOT EXISTS (
+              SELECT 1 FROM orders o
+              JOIN order_status_history osh ON osh.order_id = o.id
+              WHERE o.preorder_id = p.id
+                AND osh.status IN ('Hoàn thành', 'Đã hủy')
+                AND NOT EXISTS (
+                  SELECT 1 FROM order_status_history newer
+                  WHERE newer.order_id = o.id
+                    AND (newer.created_at > osh.created_at OR (newer.created_at = osh.created_at AND newer.id > osh.id))
+                )
+            )`);
+            if (lane === 'packing') {
+              countWhere.push(`NOT EXISTS (
+                SELECT 1 FROM orders o
+                JOIN fulfillment_tasks ft ON ft.order_id = o.id AND ft.lane = 'packing'
+                WHERE o.preorder_id = p.id
+                  AND ft.status IN ('ready', 'completed', 'cancelled')
+              )`);
+            }
+          }
           const countRes = rowsOf(await database.query(
             `SELECT COUNT(*)::int AS total FROM preorders p ${countWhere.length ? `WHERE ${countWhere.join(' AND ')}` : ''}`,
             countValues,

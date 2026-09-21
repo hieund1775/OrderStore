@@ -1,4 +1,5 @@
 import rawData from '../data/vietnam-addresses.json';
+import { apiFetch } from './api';
 
 interface RawWard {
   c: number;
@@ -219,7 +220,7 @@ export function parseBranchAddress(
 }
 
 /**
- * Gợi ý tên đường thời gian thực qua Nominatim OpenStreetMap dựa trên bối cảnh địa giới đã chọn
+ * Gợi ý tên đường: Ưu tiên tìm kiếm từ Database nội bộ Backend, tự động fallback sang OpenStreetMap nếu cần
  */
 export async function searchStreetSuggestions(
   query: string,
@@ -231,6 +232,23 @@ export async function searchStreetSuggestions(
   // Bóc tách nếu query có sẵn số nhà phía trước (ví dụ "123 Lê Lợi" -> tìm "Lê Lợi")
   const cleanedQuery = q.replace(/^(\d+[\w/.-]*\s+)/, '').trim() || q;
 
+  // 1. Ưu tiên tìm kiếm từ API PostgreSQL Backend (tốc độ cao, chính xác theo khu vực)
+  try {
+    const params = new URLSearchParams();
+    if (context.province) params.set('province', context.province);
+    if (context.district) params.set('district', context.district);
+    params.set('q', cleanedQuery);
+    params.set('limit', '12');
+
+    const internalResults = await apiFetch<string[]>(`/api/address/streets?${params.toString()}`);
+    if (Array.isArray(internalResults) && internalResults.length > 0) {
+      return internalResults;
+    }
+  } catch {
+    // Nếu backend chưa có hoặc mạng lỗi, chuyển sang fallback
+  }
+
+  // 2. Fallback sang OpenStreetMap Nominatim nếu backend chưa có tuyến đường này
   const parts = [cleanedQuery];
   if (context.ward) parts.push(context.ward);
   if (context.district) parts.push(context.district);

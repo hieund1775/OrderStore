@@ -124,9 +124,15 @@ function PreorderCheckoutPage() {
   const [date, setDate] = useState(vietnamToday());
   const handleDateChange = (val: string) => {
     const todayStr = vietnamToday();
+    const maxDateStr = vietnamMaxPreorderDate();
     if (val && val < todayStr) {
       toast.error('Không thể chọn ngày trong quá khứ. Đã tự động điều chỉnh về ngày hôm nay.');
       setDate(todayStr);
+      return;
+    }
+    if (val && val > maxDateStr) {
+      toast.error('Chỉ nhận đặt trước trong vòng 7 ngày.');
+      setDate(maxDateStr);
       return;
     }
     setDate(val);
@@ -140,13 +146,21 @@ function PreorderCheckoutPage() {
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [activeCatalogCategory, setActiveCatalogCategory] = useState('');
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCatalogSearch(catalogSearch.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [catalogSearch]);
+
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const request = useRef<{ signature: string; key: string } | null>(null);
 
   const storeId = Number(selectedStoreId);
-  const deferredCatalogSearch = useDeferredValue(catalogSearch.trim());
   const selectedStore = stores.find((store) => store.id === storeId);
   const categoryTreeQuery = usePublicCategoryTree(Number.isInteger(storeId) && storeId > 0 ? storeId : null);
   const preorderCategories = categoryTreeQuery.data || [];
@@ -197,7 +211,7 @@ function PreorderCheckoutPage() {
     fetchPublicProducts({
       store_id: storeId,
       category: activeCatalogCategory || undefined,
-      search: deferredCatalogSearch || undefined,
+      search: debouncedCatalogSearch || undefined,
       limit: 100,
     })
       .then((result) => {
@@ -212,7 +226,7 @@ function PreorderCheckoutPage() {
       })
       .finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
-  }, [activeCatalogCategory, deferredCatalogSearch, selectedStorePreorderAvailable, storeId]);
+  }, [activeCatalogCategory, debouncedCatalogSearch, selectedStorePreorderAvailable, storeId]);
 
   useEffect(() => {
     setActiveCatalogCategory('');

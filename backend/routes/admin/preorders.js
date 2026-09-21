@@ -95,14 +95,17 @@ router.get('/', requireRole('super', 'manager'), asyncHandler(async (req, res) =
 
 // Kitchen may see a confirmed preorder in its dedicated upcoming queue, but
 // the normal KDS queue never receives its linked orders until check-in.
-router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asyncHandler(async (req, res) => {
+router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
     const storeId = resolveStoreScope(req.user, req.query.store_id);
+    const lane = req.query.lane ? String(req.query.lane).trim() : null;
     if (req.query.limit !== undefined) {
       const limit = validateLimit(req.query.limit, 6, 50);
       const result = await repository.list({
         storeId,
         status: 'CONFIRMED',
+        kitchenUpcomingOnly: true,
+        lane,
         page: 1,
         limit,
         orderBy: 'active',
@@ -110,7 +113,13 @@ router.get('/kitchen/confirmed', requireRole('super', 'manager', 'kitchen'), asy
       const items = Array.isArray(result) ? result : (result?.items || []);
       return res.json(items);
     }
-    const rows = await repository.list({ storeId, status: 'CONFIRMED', orderBy: 'active' });
+    const rows = await repository.list({
+      storeId,
+      status: 'CONFIRMED',
+      kitchenUpcomingOnly: true,
+      lane,
+      orderBy: 'active',
+    });
     return res.json(Array.isArray(rows) ? rows : (rows?.items || []));
   } catch (error) { return errorResponse(res, error); }
 }));

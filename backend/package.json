@@ -15,6 +15,7 @@
     "db:pg:migrate:test": "node database/postgres/migrate.js",
     "db:pg:migrate:production": "node database/postgres/migrate-production.js",
     "db:pg:seed": "node database/postgres/seed-demo.js",
+    "db:pg:seed:streets": "node scripts/seed-vietnam-streets.mjs",
     "db:pg:catalog-v2:backfill": "node commands/backfill-catalog-v2.js",
     "db:pg:catalog-reset:plan": "node commands/plan-production-catalog-reset.js --dry-run",
     "db:pg:catalog-reset:production": "node commands/reset-production-catalog.js",

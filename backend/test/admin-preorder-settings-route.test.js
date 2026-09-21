@@ -107,8 +107,7 @@ test('operational preorder views never include awaiting-payment records', async 
     const response = await fetch(`${fixture.baseUrl}/admin/preorders?view=upcoming`);
     assert.equal(response.status, 200);
     assert.deepEqual(received.statuses, [
-      'PENDING_MANAGER_CONFIRMATION', 'CONFIRMED', 'CHECKED_IN', 'COMPLETED',
-      'CUSTOMER_CANCELLED', 'NO_SHOW', 'PAYMENT_EXPIRED', 'LATE_PAID_REQUIRES_ACTION',
+      'CONFIRMED', 'PENDING_MANAGER_CONFIRMATION',
     ]);
     assert.equal(received.statuses.includes('AWAITING_PAYMENT'), false);
   } finally { await fixture.close(); }

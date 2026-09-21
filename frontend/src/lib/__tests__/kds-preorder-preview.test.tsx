@@ -152,4 +152,87 @@ describe('KDS Preorder Preview Suite', () => {
 
     expect(container?.textContent).not.toContain('Preorder sắp tới');
   });
+
+  it('filters out preorders whose linked orders are finished or cancelled', async () => {
+    vi.mocked(api.apiGet).mockImplementation(async (url: string) => {
+      if (url.startsWith('/admin/kitchen/orders')) {
+        return {
+          items: [
+            {
+              id: 501,
+              order_code: 'ORD-DONE-1',
+              order_type: 'Take-away',
+              preorder_id: 10,
+              customer_name: 'Khách A',
+              current_status: 'Hoàn thành',
+              created_at: new Date().toISOString(),
+              items: [],
+            },
+            {
+              id: 502,
+              order_code: 'ORD-CANCEL-1',
+              order_type: 'Take-away',
+              preorder_id: 20,
+              customer_name: 'Khách B',
+              current_status: 'Đã hủy',
+              created_at: new Date().toISOString(),
+              items: [],
+            },
+            {
+              id: 503,
+              order_code: 'ORD-PREP-1',
+              order_type: 'Take-away',
+              preorder_id: 30,
+              customer_name: 'Khách C',
+              current_status: 'Đang chuẩn bị',
+              created_at: new Date().toISOString(),
+              items: [],
+            },
+          ],
+          pagination: { page: 1, limit: 10, totalPages: 1, totalItems: 3 },
+        };
+      }
+      if (url.startsWith('/admin/preorders/kitchen/confirmed')) {
+        return [
+          {
+            id: 10,
+            preorder_code: 'PRE-DONE-10',
+            scheduled_start_at: '2026-09-15T12:00:00.000Z',
+            store_name: 'Chi nhánh 1',
+            customer_name: 'Khách A',
+          },
+          {
+            id: 20,
+            preorder_code: 'PRE-CANCEL-20',
+            scheduled_start_at: '2026-09-15T12:30:00.000Z',
+            store_name: 'Chi nhánh 1',
+            customer_name: 'Khách B',
+          },
+          {
+            id: 30,
+            preorder_code: 'PRE-ACTIVE-30',
+            scheduled_start_at: '2026-09-15T13:00:00.000Z',
+            store_name: 'Chi nhánh 1',
+            customer_name: 'Khách C',
+          },
+        ];
+      }
+      return [];
+    });
+
+    await act(async () => {
+      root?.render(<KdsPage />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container?.textContent).toContain('Preorder sắp tới');
+    // Active preorder should be visible
+    expect(container?.textContent).toContain('PRE-ACTIVE-30');
+    // Completed and cancelled preorders should be filtered out
+    expect(container?.textContent).not.toContain('PRE-DONE-10');
+    expect(container?.textContent).not.toContain('PRE-CANCEL-20');
+  });
 });

@@ -11,9 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ChinhSachBaoMatRouteImport } from './routes/chinh-sach-bao-mat'
+import { Route as ChinhSachDoiTraRouteImport } from './routes/chinh-sach-doi-tra'
+import { Route as ChinhSachGiaoHangRouteImport } from './routes/chinh-sach-giao-hang'
 import { Route as CuaHangRouteImport } from './routes/cua-hang'
 import { Route as DanhGiaRouteImport } from './routes/danh-gia'
 import { Route as DatTruocRouteImport } from './routes/dat-truoc'
+import { Route as DieuKhoanDichVuRouteImport } from './routes/dieu-khoan-dich-vu'
 import { Route as DonDatTruocRouteImport } from './routes/don-dat-truoc'
 import { Route as GioiThieuRouteImport } from './routes/gioi-thieu'
 import { Route as HoSoRouteImport } from './routes/ho-so'
@@ -22,10 +26,6 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ThanhToanRouteImport } from './routes/thanh-toan'
 import { Route as TheoDoiDonRouteImport } from './routes/theo-doi-don'
 import { Route as TuyenDungRouteImport } from './routes/tuyen-dung'
-import { Route as ChinhSachBaoMatRouteImport } from './routes/chinh-sach-bao-mat'
-import { Route as DieuKhoanDichVuRouteImport } from './routes/dieu-khoan-dich-vu'
-import { Route as ChinhSachGiaoHangRouteImport } from './routes/chinh-sach-giao-hang'
-import { Route as ChinhSachDoiTraRouteImport } from './routes/chinh-sach-doi-tra'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminBepRouteImport } from './routes/admin.bep'
 import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
@@ -58,6 +58,21 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChinhSachBaoMatRoute = ChinhSachBaoMatRouteImport.update({
+  id: '/chinh-sach-bao-mat',
+  path: '/chinh-sach-bao-mat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChinhSachDoiTraRoute = ChinhSachDoiTraRouteImport.update({
+  id: '/chinh-sach-doi-tra',
+  path: '/chinh-sach-doi-tra',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChinhSachGiaoHangRoute = ChinhSachGiaoHangRouteImport.update({
+  id: '/chinh-sach-giao-hang',
+  path: '/chinh-sach-giao-hang',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CuaHangRoute = CuaHangRouteImport.update({
   id: '/cua-hang',
   path: '/cua-hang',
@@ -71,6 +86,11 @@ const DanhGiaRoute = DanhGiaRouteImport.update({
 const DatTruocRoute = DatTruocRouteImport.update({
   id: '/dat-truoc',
   path: '/dat-truoc',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DieuKhoanDichVuRoute = DieuKhoanDichVuRouteImport.update({
+  id: '/dieu-khoan-dich-vu',
+  path: '/dieu-khoan-dich-vu',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DonDatTruocRoute = DonDatTruocRouteImport.update({
@@ -111,26 +131,6 @@ const TheoDoiDonRoute = TheoDoiDonRouteImport.update({
 const TuyenDungRoute = TuyenDungRouteImport.update({
   id: '/tuyen-dung',
   path: '/tuyen-dung',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChinhSachBaoMatRoute = ChinhSachBaoMatRouteImport.update({
-  id: '/chinh-sach-bao-mat',
-  path: '/chinh-sach-bao-mat',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DieuKhoanDichVuRoute = DieuKhoanDichVuRouteImport.update({
-  id: '/dieu-khoan-dich-vu',
-  path: '/dieu-khoan-dich-vu',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChinhSachGiaoHangRoute = ChinhSachGiaoHangRouteImport.update({
-  id: '/chinh-sach-giao-hang',
-  path: '/chinh-sach-giao-hang',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChinhSachDoiTraRoute = ChinhSachDoiTraRouteImport.update({
-  id: '/chinh-sach-doi-tra',
-  path: '/chinh-sach-doi-tra',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -242,9 +242,13 @@ const AdminCatalogPackingRoute = AdminCatalogPackingRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chinh-sach-bao-mat': typeof ChinhSachBaoMatRoute
+  '/chinh-sach-doi-tra': typeof ChinhSachDoiTraRoute
+  '/chinh-sach-giao-hang': typeof ChinhSachGiaoHangRoute
   '/cua-hang': typeof CuaHangRoute
   '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/dieu-khoan-dich-vu': typeof DieuKhoanDichVuRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -277,9 +281,13 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chinh-sach-bao-mat': typeof ChinhSachBaoMatRoute
+  '/chinh-sach-doi-tra': typeof ChinhSachDoiTraRoute
+  '/chinh-sach-giao-hang': typeof ChinhSachGiaoHangRoute
   '/cua-hang': typeof CuaHangRoute
   '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/dieu-khoan-dich-vu': typeof DieuKhoanDichVuRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -314,9 +322,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chinh-sach-bao-mat': typeof ChinhSachBaoMatRoute
+  '/chinh-sach-doi-tra': typeof ChinhSachDoiTraRoute
+  '/chinh-sach-giao-hang': typeof ChinhSachGiaoHangRoute
   '/cua-hang': typeof CuaHangRoute
   '/danh-gia': typeof DanhGiaRoute
   '/dat-truoc': typeof DatTruocRoute
+  '/dieu-khoan-dich-vu': typeof DieuKhoanDichVuRoute
   '/don-dat-truoc': typeof DonDatTruocRoute
   '/gioi-thieu': typeof GioiThieuRoute
   '/ho-so': typeof HoSoRoute
@@ -352,9 +364,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/chinh-sach-bao-mat'
+    | '/chinh-sach-doi-tra'
+    | '/chinh-sach-giao-hang'
     | '/cua-hang'
     | '/danh-gia'
     | '/dat-truoc'
+    | '/dieu-khoan-dich-vu'
     | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
@@ -387,9 +403,13 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/chinh-sach-bao-mat'
+    | '/chinh-sach-doi-tra'
+    | '/chinh-sach-giao-hang'
     | '/cua-hang'
     | '/danh-gia'
     | '/dat-truoc'
+    | '/dieu-khoan-dich-vu'
     | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
@@ -423,9 +443,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/chinh-sach-bao-mat'
+    | '/chinh-sach-doi-tra'
+    | '/chinh-sach-giao-hang'
     | '/cua-hang'
     | '/danh-gia'
     | '/dat-truoc'
+    | '/dieu-khoan-dich-vu'
     | '/don-dat-truoc'
     | '/gioi-thieu'
     | '/ho-so'
@@ -460,9 +484,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ChinhSachBaoMatRoute: typeof ChinhSachBaoMatRoute
+  ChinhSachDoiTraRoute: typeof ChinhSachDoiTraRoute
+  ChinhSachGiaoHangRoute: typeof ChinhSachGiaoHangRoute
   CuaHangRoute: typeof CuaHangRoute
   DanhGiaRoute: typeof DanhGiaRoute
   DatTruocRoute: typeof DatTruocRoute
+  DieuKhoanDichVuRoute: typeof DieuKhoanDichVuRoute
   DonDatTruocRoute: typeof DonDatTruocRoute
   GioiThieuRoute: typeof GioiThieuRoute
   HoSoRoute: typeof HoSoRoute
@@ -491,6 +519,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chinh-sach-bao-mat': {
+      id: '/chinh-sach-bao-mat'
+      path: '/chinh-sach-bao-mat'
+      fullPath: '/chinh-sach-bao-mat'
+      preLoaderRoute: typeof ChinhSachBaoMatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chinh-sach-doi-tra': {
+      id: '/chinh-sach-doi-tra'
+      path: '/chinh-sach-doi-tra'
+      fullPath: '/chinh-sach-doi-tra'
+      preLoaderRoute: typeof ChinhSachDoiTraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chinh-sach-giao-hang': {
+      id: '/chinh-sach-giao-hang'
+      path: '/chinh-sach-giao-hang'
+      fullPath: '/chinh-sach-giao-hang'
+      preLoaderRoute: typeof ChinhSachGiaoHangRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cua-hang': {
       id: '/cua-hang'
       path: '/cua-hang'
@@ -510,6 +559,13 @@ declare module '@tanstack/react-router' {
       path: '/dat-truoc'
       fullPath: '/dat-truoc'
       preLoaderRoute: typeof DatTruocRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dieu-khoan-dich-vu': {
+      id: '/dieu-khoan-dich-vu'
+      path: '/dieu-khoan-dich-vu'
+      fullPath: '/dieu-khoan-dich-vu'
+      preLoaderRoute: typeof DieuKhoanDichVuRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/don-dat-truoc': {
@@ -777,9 +833,13 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ChinhSachBaoMatRoute: ChinhSachBaoMatRoute,
+  ChinhSachDoiTraRoute: ChinhSachDoiTraRoute,
+  ChinhSachGiaoHangRoute: ChinhSachGiaoHangRoute,
   CuaHangRoute: CuaHangRoute,
   DanhGiaRoute: DanhGiaRoute,
   DatTruocRoute: DatTruocRoute,
+  DieuKhoanDichVuRoute: DieuKhoanDichVuRoute,
   DonDatTruocRoute: DonDatTruocRoute,
   GioiThieuRoute: GioiThieuRoute,
   HoSoRoute: HoSoRoute,
@@ -788,10 +848,6 @@ const rootRouteChildren: RootRouteChildren = {
   ThanhToanRoute: ThanhToanRoute,
   TheoDoiDonRoute: TheoDoiDonRoute,
   TuyenDungRoute: TuyenDungRoute,
-  ChinhSachBaoMatRoute: ChinhSachBaoMatRoute,
-  DieuKhoanDichVuRoute: DieuKhoanDichVuRoute,
-  ChinhSachGiaoHangRoute: ChinhSachGiaoHangRoute,
-  ChinhSachDoiTraRoute: ChinhSachDoiTraRoute,
   SanPhamSlugRoute: SanPhamSlugRoute,
   ThanhToanSandboxRoute: ThanhToanSandboxRoute,
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import {
   Package,
@@ -13,6 +13,7 @@ import {
   RefreshCw,
   AlertCircle,
   Truck,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,7 +57,17 @@ type FulfillmentTask = {
   completed_at?: string;
   current_status?: string;
   all_tasks_ready?: boolean;
+  preorder_code?: string | null;
+  preorder_scheduled_start_at?: string | null;
   items: FulfillmentTaskItem[];
+};
+
+type ConfirmedPreorderPreview = {
+  id: number;
+  preorder_code: string;
+  store_name?: string;
+  scheduled_start_at: string;
+  customer_name?: string;
 };
 
 export function PackingStationPage() {
@@ -75,6 +86,23 @@ export function PackingStationPage() {
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [handoverLoading, setHandoverLoading] = useState(false);
+  const [confirmedPreorders, setConfirmedPreorders] = useState<ConfirmedPreorderPreview[]>([]);
+
+  const activeConfirmedPreorders = useMemo(() => {
+    const inactiveCodes = new Set<string>();
+    for (const t of tasks) {
+      if (
+        t.preorder_code &&
+        (t.status === 'ready' ||
+          t.status === 'completed' ||
+          t.current_status === 'Hoàn thành' ||
+          t.current_status === 'Đã hủy')
+      ) {
+        inactiveCodes.add(t.preorder_code);
+      }
+    }
+    return confirmedPreorders.filter((p) => !inactiveCodes.has(p.preorder_code));
+  }, [confirmedPreorders, tasks]);
 
   const fetchTasks = async () => {
     try {
@@ -85,10 +113,17 @@ export function PackingStationPage() {
         query.set('branch_id', selectedBranch);
       }
 
-      const data = await apiGet<{ tasks: FulfillmentTask[] }>(
-        `/admin/fulfillment/tasks?${query.toString()}`,
-      );
+      const preorderParams = new URLSearchParams({ limit: '6', lane: 'packing' });
+      if (selectedBranch && selectedBranch !== 'all') {
+        preorderParams.set('store_id', selectedBranch);
+      }
+
+      const [data, previews] = await Promise.all([
+        apiGet<{ tasks: FulfillmentTask[] }>(`/admin/fulfillment/tasks?${query.toString()}`),
+        apiGet<ConfirmedPreorderPreview[]>(`/admin/preorders/kitchen/confirmed?${preorderParams.toString()}`).catch(() => []),
+      ]);
       setTasks(data.tasks || []);
+      setConfirmedPreorders(Array.isArray(previews) ? previews : []);
     } catch (err: any) {
       toast.error(err?.message || 'Không thể tải danh sách đóng gói');
     } finally {
@@ -239,6 +274,35 @@ export function PackingStationPage() {
         </Tabs>
       </div>
 
+      {/* Upcoming Preorders Banner */}
+      {activeConfirmedPreorders.length > 0 && (
+        <section className="rounded-xl border border-violet-200 bg-violet-50/70 dark:bg-violet-950/20 dark:border-violet-800/40 p-4">
+          <div className="flex items-start gap-2">
+            <CalendarClock className="mt-0.5 size-5 text-violet-700 dark:text-violet-300" />
+            <div>
+              <h2 className="font-semibold text-violet-950 dark:text-violet-200">Preorder sắp tới (Đóng gói)</h2>
+              <p className="text-sm text-violet-900 dark:text-violet-300">
+                Manager đã xác nhận. Bộ phận đóng gói có thể chủ động chuẩn bị sản phẩm/quà tặng theo lịch hẹn.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {activeConfirmedPreorders.map((preorder) => (
+              <article key={preorder.id} className="rounded-lg border border-violet-200 dark:border-violet-800/40 bg-background p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{preorder.preorder_code}</span>
+                  <Badge variant="outline" className="text-[10px] text-violet-700 dark:text-violet-300 border-violet-300">
+                    Hẹn lấy
+                  </Badge>
+                </div>
+                <p className="mt-1 text-muted-foreground">{new Date(preorder.scheduled_start_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{preorder.store_name || 'Chi nhánh'} · {preorder.customer_name || 'Khách hàng'}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Task Grid */}
       {filteredTasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16 text-center">
@@ -265,13 +329,18 @@ export function PackingStationPage() {
               >
                 <CardHeader className="pb-3 border-b">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-base font-bold text-foreground">
                         #{task.order_code}
                       </span>
                       <Badge variant="outline" className="text-[11px] font-semibold">
                         {task.order_type}
                       </Badge>
+                      {task.preorder_code && (
+                        <Badge variant="secondary" className="bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/20 text-[11px] font-bold">
+                          📅 Preorder #{task.preorder_code}
+                        </Badge>
+                      )}
                     </div>
                     {task.current_status === 'Đang giao' ? (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-500/20 font-bold text-xs">
@@ -295,14 +364,22 @@ export function PackingStationPage() {
                       </Badge>
                     ) : null}
                   </div>
-                  <CardDescription className="text-xs flex items-center justify-between pt-1">
-                    <span className="flex items-center gap-1">
-                      <Store className="size-3 text-muted-foreground" /> {task.store_name}
-                    </span>
-                    <span className="flex items-center gap-1 font-mono">
-                      <Clock className="size-3 text-muted-foreground" />
-                      {new Date(task.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                  <CardDescription className="text-xs flex flex-col gap-1 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Store className="size-3 text-muted-foreground" /> {task.store_name}
+                      </span>
+                      <span className="flex items-center gap-1 font-mono">
+                        <Clock className="size-3 text-muted-foreground" />
+                        {new Date(task.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {task.preorder_scheduled_start_at && (
+                      <div className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 flex items-center gap-1">
+                        <CalendarClock className="size-3" />
+                        Hẹn lấy: {new Date(task.preorder_scheduled_start_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+                      </div>
+                    )}
                   </CardDescription>
                 </CardHeader>
 

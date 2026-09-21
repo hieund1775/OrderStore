@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bike, CalendarClock, Clock, EyeOff, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
@@ -55,6 +55,7 @@ export type KitchenOrder = {
   id: number;
   order_code: string;
   order_type: string;
+  preorder_id?: number | null;
   customer_name: string;
   customer_phone?: string;
   delivery_addr?: string | null;
@@ -172,6 +173,21 @@ export function KdsPage() {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [confirmedPreorders, setConfirmedPreorders] = useState<ConfirmedPreorderPreview[]>([]);
   const [doneOrders, setDoneOrders] = useState<KitchenOrder[]>([]);
+
+  const activeConfirmedPreorders = useMemo(() => {
+    const inactivePreorderIds = new Set<number>();
+    for (const o of orders) {
+      if (o.preorder_id && (o.current_status === "Hoàn thành" || o.current_status === "Đã hủy")) {
+        inactivePreorderIds.add(o.preorder_id);
+      }
+    }
+    for (const d of doneOrders) {
+      if (d.preorder_id) {
+        inactivePreorderIds.add(d.preorder_id);
+      }
+    }
+    return confirmedPreorders.filter((p) => !inactivePreorderIds.has(p.id));
+  }, [confirmedPreorders, orders, doneOrders]);
   const [doneAt, setDoneAt] = useState<Record<number, number>>({});
   const [newIds, setNewIds] = useState<Record<number, boolean>>({});
   const [selected, setSelected] = useState<KitchenOrder | null>(null);
@@ -540,7 +556,7 @@ export function KdsPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-display text-base sm:text-lg font-extrabold">{o.order_code}</p>
-                    <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                    <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                       {o.location_name && (
                         <span className="flex items-center gap-1">
                           <MapPin className="size-3" /> {o.location_name}
@@ -556,7 +572,7 @@ export function KdsPage() {
                               : o.order_type}
                         </Badge>
                       )}
-                    </p>
+                    </div>
                   </div>
                   <div className="text-right flex flex-col items-end shrink-0">
                     <div className="text-[11px] font-medium text-muted-foreground leading-tight">
@@ -801,7 +817,7 @@ export function KdsPage() {
         </div>
       </div>
 
-      {confirmedPreorders.length > 0 && (
+      {activeConfirmedPreorders.length > 0 && (
         <section className="mb-5 rounded-xl border border-violet-200 bg-violet-50/70 p-4">
           <div className="flex items-start gap-2">
             <CalendarClock className="mt-0.5 size-5 text-violet-700" />
@@ -811,7 +827,7 @@ export function KdsPage() {
             </div>
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {confirmedPreorders.map((preorder) => (
+            {activeConfirmedPreorders.map((preorder) => (
               <article key={preorder.id} className="rounded-lg border border-violet-200 bg-background p-3 text-sm">
                 <p className="font-semibold">{preorder.preorder_code}</p>
                 <p className="mt-1 text-muted-foreground">{new Date(preorder.scheduled_start_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>

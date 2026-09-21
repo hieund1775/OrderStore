@@ -49,6 +49,7 @@ export function toKitchenOrderDto(order) {
   if (dto.id != null) dto.id = Number(dto.id);
   if (dto.store_id != null) dto.store_id = Number(dto.store_id);
   if (dto.table_id != null) dto.table_id = Number(dto.table_id);
+  if (dto.preorder_id != null) dto.preorder_id = Number(dto.preorder_id);
   if (dto.subtotal != null) dto.subtotal = Number(dto.subtotal);
   if (dto.discount_amount != null) dto.discount_amount = Number(dto.discount_amount);
   if (dto.total != null) dto.total = Number(dto.total);

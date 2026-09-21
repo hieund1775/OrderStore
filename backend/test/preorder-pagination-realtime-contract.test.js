@@ -98,11 +98,11 @@ import { createAdminPreordersRouter } from '../routes/admin/preorders.js';
 import { createPreordersRepository } from '../repositories/postgres/preorders.js';
 
 describe('Admin Preorders Router Pagination Contract Tests', () => {
-  async function startServer(repository) {
+  async function startServer(repository, user = { role: 'super', sub: 1 }) {
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
-      req.user = { role: 'super', sub: 1 };
+      req.user = user;
       next();
     });
     app.use('/admin/preorders', createAdminPreordersRouter({
@@ -215,6 +215,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         assert.equal(capturedOpts.page, 1);
         assert.equal(capturedOpts.limit, 6);
         assert.equal(capturedOpts.status, 'CONFIRMED');
+        assert.equal(capturedOpts.kitchenUpcomingOnly, true);
         assert.equal(capturedOpts.orderBy, 'active');
       } finally {
         await fixture.close();
@@ -244,6 +245,7 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         assert.equal(capturedOpts.page, undefined);
         assert.equal(capturedOpts.limit, undefined);
         assert.equal(capturedOpts.status, 'CONFIRMED');
+        assert.equal(capturedOpts.kitchenUpcomingOnly, true);
         assert.equal(capturedOpts.orderBy, 'active');
       } finally {
         await fixture.close();
@@ -257,6 +259,28 @@ describe('Admin Preorders Router Pagination Contract Tests', () => {
         assert.equal(res.status, 400);
         const data = await res.json();
         assert.ok(data.error.includes('Giới hạn số lượng (limit) phải là số nguyên dương'));
+      } finally {
+        await fixture.close();
+      }
+    });
+
+    it('authorizes role: packing and forwards lane=packing to repository.list', async () => {
+      let capturedOpts = null;
+      const repository = {
+        async list(opts) {
+          capturedOpts = opts;
+          return [{ id: 99, preorder_code: 'PRE-PACKING-1' }];
+        },
+      };
+      const fixture = await startServer(repository, { role: 'packing', sub: 25, branch_id: 1 });
+      try {
+        const res = await fetch(`${fixture.baseUrl}/admin/preorders/kitchen/confirmed?lane=packing&limit=6`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data[0].preorder_code, 'PRE-PACKING-1');
+        assert.equal(capturedOpts.lane, 'packing');
+        assert.equal(capturedOpts.status, 'CONFIRMED');
+        assert.equal(capturedOpts.kitchenUpcomingOnly, true);
       } finally {
         await fixture.close();
       }
