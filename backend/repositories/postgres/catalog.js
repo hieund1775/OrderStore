@@ -20,7 +20,6 @@ export function createCatalogRepository(database = postgresDb) {
         LEFT JOIN categories root ON root.id = c.parent_id
         WHERE p.is_available = TRUE
           AND COALESCE(p.status, 'active') = 'active'
-          AND p.archived_at IS NULL
           AND c.is_visible = TRUE
           AND c.archived_at IS NULL
           AND p.slug NOT LIKE '%--archived-%'`;
@@ -59,7 +58,6 @@ export function createCatalogRepository(database = postgresDb) {
          WHERE p.slug = $1
            AND p.is_available = TRUE
            AND COALESCE(p.status, 'active') = 'active'
-           AND p.archived_at IS NULL
            AND c.is_visible = TRUE
            AND c.archived_at IS NULL
            AND p.slug NOT LIKE '%--archived-%'
