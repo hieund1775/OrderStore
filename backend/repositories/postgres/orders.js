@@ -474,7 +474,7 @@ export function createOrdersRepository(
            SELECT status FROM order_status_history WHERE order_id = o.id
            ORDER BY created_at DESC, id DESC LIMIT 1
          ) latest ON TRUE
-         WHERE o.user_id = $1 ${cursorClause}
+         WHERE o.user_id = $1 AND o.preorder_id IS NULL AND o.order_code NOT LIKE 'PO%' ${cursorClause}
          ORDER BY o.created_at DESC, o.id DESC LIMIT $${params.length}`,
         params,
       );

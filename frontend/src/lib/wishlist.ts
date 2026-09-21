@@ -111,6 +111,7 @@ export function buildWishlistQuickCartItem(item: WishlistItem): Omit<CartItem, "
 
   return {
     productId: String(productId),
+    productSlug: item.product_slug?.trim() || String(productId),
     name,
     image: item.image_url || "",
     size: "M",

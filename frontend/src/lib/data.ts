@@ -108,13 +108,163 @@ export const DEFAULT_PRODUCT_IMAGES: Record<string, string> = {
 
 export const FALLBACK_TEA_IMAGE = 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=640&q=80';
 
-export function resolveProductImage(slug?: string, image?: string | null): string {
-  if (image && image.trim() !== '' && !image.startsWith('/src/assets/p-')) {
-    return image;
+export const DEFAULT_PRODUCT_PLACEHOLDER =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" fill="none">
+  <rect width="600" height="600" fill="#F1F5F9"/>
+  <circle cx="300" cy="250" r="100" fill="#E2E8F0"/>
+  <path d="M260 210H340L330 310H270L260 210Z" fill="#CBD5E1" stroke="#94A3B8" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M310 170L325 210" stroke="#059669" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="300" cy="255" r="18" fill="#10B981" fill-opacity="0.2"/>
+  <text x="300" y="410" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="#475569" text-anchor="middle">TeaPlus</text>
+  <text x="300" y="445" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="500" fill="#94A3B8" text-anchor="middle">H&igrave;nh &aacute;nh đang c&#7853;p nh&#7853;t</text>
+</svg>`);
+
+export function resolveProductImage(
+  slug?: string,
+  image?: string | null,
+  context?: { category?: string | null; fulfillment_lane?: string | null; name?: string },
+): string {
+  const cat = (context?.category || '').toLowerCase();
+  const lane = (context?.fulfillment_lane || '').toLowerCase();
+  const name = (context?.name || '').toLowerCase();
+  const s = (slug || '').toLowerCase();
+
+  const isNonDrink =
+    lane === 'packing' ||
+    cat.includes('áo') ||
+    cat.includes('aó') ||
+    cat.includes('quần') ||
+    cat.includes('merch') ||
+    cat.includes('thời trang') ||
+    cat.includes('đóng gói') ||
+    cat.includes('dong goi') ||
+    cat.includes('phụ kiện') ||
+    cat.includes('quà tặng') ||
+    name.includes('áo') ||
+    name.includes('aó') ||
+    name.startsWith('ao ') ||
+    name.includes(' áo ') ||
+    name.includes('quần') ||
+    name.includes('hoodie') ||
+    name.includes('túi') ||
+    name.includes('nón') ||
+    name.includes('bình giữ nhiệt') ||
+    s.includes('ao-') ||
+    s.includes('quan-') ||
+    s.includes('hoodie') ||
+    s.includes('tui-') ||
+    s.includes('merch') ||
+    s.includes('dong-goi');
+
+  // Direct image from database / CDN if valid and not a broken local path
+  const targetImage = (image && image.trim() !== '') ? image.trim() : (context?.image_url && context.image_url.trim() !== '') ? context.image_url.trim() : null;
+
+  if (isNonDrink) {
+    if (
+      targetImage &&
+      !targetImage.startsWith('/src/assets/p-') &&
+      targetImage !== FALLBACK_TEA_IMAGE &&
+      !targetImage.includes('images.unsplash.com/photo-1556679343-c7306c1976bc')
+    ) {
+      return targetImage;
+    }
+    return DEFAULT_PRODUCT_PLACEHOLDER;
   }
+
+  // Handle valid external/public URL from database
+  if (
+    targetImage &&
+    !targetImage.startsWith('/src/assets/p-') &&
+    (targetImage.startsWith('http://') ||
+      targetImage.startsWith('https://') ||
+      targetImage.startsWith('/catalog/') ||
+      targetImage.startsWith('/images/') ||
+      targetImage.startsWith('data:image/'))
+  ) {
+    return targetImage;
+  }
+
+  // Map seed path /src/assets/p-... to matching slug or defaults
+  if (targetImage && targetImage.startsWith('/src/assets/p-')) {
+    if (targetImage.includes('cam-sa')) return DEFAULT_PRODUCT_IMAGES['tra-cam-sa'];
+    if (targetImage.includes('dau-tay')) return DEFAULT_PRODUCT_IMAGES['tra-dau-tay'];
+    if (targetImage.includes('xoai')) return DEFAULT_PRODUCT_IMAGES['tra-xoai-chanh-day'];
+    if (targetImage.includes('dao-vai')) return DEFAULT_PRODUCT_IMAGES['tra-dao-vai'];
+    if (targetImage.includes('dua-hau')) return DEFAULT_PRODUCT_IMAGES['tuyet-dua-hau'];
+    if (targetImage.includes('nho')) return DEFAULT_PRODUCT_IMAGES['detox-nho-nha-dam'];
+  }
+
+  // Exact slug match
   if (slug && DEFAULT_PRODUCT_IMAGES[slug]) {
     return DEFAULT_PRODUCT_IMAGES[slug];
   }
+
+  // Semantic category and keyword matching for dishes entered in QA / DB (Bạc xỉu, Cà phê đen, Trà dâu, Trà dưa hấu, etc.)
+  if (
+    name.includes('bạc xỉu') ||
+    name.includes('bac xiu') ||
+    name.includes('cà phê') ||
+    name.includes('ca phe') ||
+    name.includes('cafe') ||
+    name.includes('coffee') ||
+    s.includes('bac-xiu') ||
+    s.includes('ca-phe') ||
+    s.includes('coffee') ||
+    cat.includes('cà phê') ||
+    cat.includes('ca phe')
+  ) {
+    return '/catalog/ca-phe-sua.png';
+  }
+
+  if (name.includes('dưa hấu') || name.includes('dua hau') || s.includes('dua-hau')) {
+    return DEFAULT_PRODUCT_IMAGES['tuyet-dua-hau'];
+  }
+
+  if (name.includes('dâu') || name.includes('dau') || s.includes('dau')) {
+    return DEFAULT_PRODUCT_IMAGES['tra-dau-tay'];
+  }
+
+  if (name.includes('đào') || name.includes('dao') || s.includes('dao')) {
+    return '/catalog/tra-dao-cam-sa.png';
+  }
+
+  if (
+    name.includes('trà sữa') ||
+    name.includes('tra sua') ||
+    name.includes('ô long') ||
+    name.includes('o long') ||
+    s.includes('tra-sua') ||
+    s.includes('olong')
+  ) {
+    return '/catalog/tra-sua-olong.png';
+  }
+
+  if (name.includes('xoài') || name.includes('xoai') || s.includes('xoai')) {
+    return DEFAULT_PRODUCT_IMAGES['tra-xoai-chanh-day'];
+  }
+
+  if (name.includes('cam') || name.includes('sả') || name.includes('sa') || s.includes('cam-sa')) {
+    return DEFAULT_PRODUCT_IMAGES['tra-cam-sa'];
+  }
+
+  if (name.includes('nho') || name.includes('nha đam') || name.includes('nha dam') || s.includes('nho')) {
+    return DEFAULT_PRODUCT_IMAGES['detox-nho-nha-dam'];
+  }
+
+  if (name.includes('hạt') || name.includes('hat') || name.includes('snack') || s.includes('snack') || s.includes('hat')) {
+    return '/catalog/hat-dinh-duong.png';
+  }
+
+  if (name.includes('ly') || name.includes('bình') || name.includes('binh') || s.includes('ly') || s.includes('binh')) {
+    return '/catalog/ly-giu-nhiet.png';
+  }
+
+  // Any other non-empty image string from database
+  if (targetImage && !targetImage.startsWith('/src/assets/p-')) {
+    return targetImage;
+  }
+
   return FALLBACK_TEA_IMAGE;
 }
 
@@ -176,14 +326,22 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     }
   }
 
+  const cleanName = (product.name || 'Sản phẩm TeaPlus').replace(/\bAó\b/g, 'Áo').replace(/\baó\b/g, 'áo');
+  const rawImage = product.image_url || (product as any).image;
+
   return {
     id: String(product.id),
-    name: product.name || 'Sản phẩm TeaPlus',
+    name: cleanName,
     slug,
     base: product.base_tea || category,
     desc: product.description || '',
     price: Number(product.price || 0),
-    image: resolveProductImage(slug, product.image_url),
+    image: resolveProductImage(slug, rawImage, {
+      category: product.category_name,
+      fulfillment_lane: product.fulfillment_lane,
+      name: product.name,
+      image_url: product.image_url,
+    }),
     rating,
     reviews,
     calories: Number(product.calories || 180),

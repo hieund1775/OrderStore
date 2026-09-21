@@ -127,10 +127,18 @@ function ProductDetailPage() {
       <div className="mb-6 flex flex-col gap-6 sm:flex-row">
         <div className="flex h-64 w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 sm:w-64">
           <img
-            src={resolveProductImage(product.slug, product.image_url)}
+            src={resolveProductImage(product.slug, product.image_url, {
+              category: (product as any).category_name || (product as any).line,
+              fulfillment_lane: (product as any).fulfillment_lane,
+              name: product.name,
+            })}
             alt={product.name}
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+              (e.currentTarget as HTMLImageElement).src = resolveProductImage(product.slug, null, {
+                category: (product as any).category_name || (product as any).line,
+                fulfillment_lane: (product as any).fulfillment_lane,
+                name: product.name,
+              });
             }}
             className="h-full w-full object-cover"
           />

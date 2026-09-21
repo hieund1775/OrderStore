@@ -25,7 +25,6 @@ import {
 import { useCart, type CartItem } from '@/lib/cart';
 import { vnd } from '@/lib/data';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
-import { useCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
 
 function formatAddedTime(isoString?: string): string {
   if (!isoString) return '';
@@ -72,19 +71,16 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
 
   const [editingItem, setEditingItem] = useState<CartItem | null>(null);
   const [open, setOpen] = useState(false);
-  const session = useCustomerSession();
 
   useEffect(() => {
-    if (!session) {
-      setOpen(false);
-    }
-  }, [session]);
+    const handleOpenCart = () => setOpen(true);
+    window.addEventListener('teaplus:open-cart', handleOpenCart);
+    return () => {
+      window.removeEventListener('teaplus:open-cart', handleOpenCart);
+    };
+  }, []);
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen && !session) {
-      openCustomerLoginModal();
-      return;
-    }
     setOpen(nextOpen);
   };
 
@@ -128,34 +124,25 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
   return (
     <>
       <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetTrigger
-          asChild
-          onClickCapture={(e) => {
-            if (!session) {
-              e.preventDefault();
-              e.stopPropagation();
-              openCustomerLoginModal();
-            }
-          }}
-        >
+        <SheetTrigger asChild>
           {children || (
             <Button
               variant="ghost"
               size="icon"
-              className="relative rounded-full"
-              aria-label="Giỏ hàng"
+              className="relative rounded-full cursor-pointer hover:bg-accent"
+              aria-label={`Giỏ hàng (${count})`}
             >
               <ShoppingCart className="size-5" />
               {count > 0 && (
                 <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4.5 min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] font-bold shadow-sm">
-                  {count}
+                  {count > 99 ? '99+' : count}
                 </span>
               )}
             </Button>
           )}
         </SheetTrigger>
 
-        <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
+        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
           {/* Header */}
           <SheetHeader className="border-b px-5 py-4">
             <div className="flex items-center justify-between">
@@ -355,17 +342,27 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                 </div>
               </div>
 
-              <Button
-                asChild
-                variant="hero"
-                className="w-full h-11 rounded-xl font-bold shadow-glow"
-                disabled={selectedCount === 0}
-              >
-                <Link to="/thanh-toan">
-                  <span>Mua Hàng ({selectedCount})</span>
+              {selectedCount === 0 ? (
+                <Button
+                  variant="hero"
+                  className="w-full h-11 rounded-xl font-bold opacity-50 cursor-not-allowed"
+                  disabled
+                >
+                  <span>Mua Hàng (0)</span>
                   <ChevronRight className="size-4 ml-1" />
-                </Link>
-              </Button>
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  variant="hero"
+                  className="w-full h-11 rounded-xl font-bold shadow-glow"
+                >
+                  <Link to="/thanh-toan" onClick={() => setOpen(false)}>
+                    <span>Mua Hàng ({selectedCount})</span>
+                    <ChevronRight className="size-4 ml-1" />
+                  </Link>
+                </Button>
+              )}
             </div>
           )}
         </SheetContent>

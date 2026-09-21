@@ -143,7 +143,7 @@ function RootComponent() {
                 <MobileCartBar />
               </div>
             )}
-            <Toaster position="top-center" richColors />
+            <Toaster position="top-right" offset="80px" richColors />
           </BranchProvider>
         </PreorderCartProvider>
       </CartProvider>

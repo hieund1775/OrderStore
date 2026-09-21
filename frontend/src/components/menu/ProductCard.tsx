@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Heart, Settings2, ShoppingBag, ShoppingCart, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
   toppingOptions,
   vnd,
   resolveProductImage,
+  DEFAULT_PRODUCT_PLACEHOLDER,
   FALLBACK_TEA_IMAGE,
   type Product,
 } from '@/lib/data';
@@ -40,13 +41,33 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
   const [configMode, setConfigMode] = useState<'add' | 'buy'>('add');
   const liked = isFavorite(product.id);
   const pending = isPending(product.id);
-  const [imgSrc, setImgSrc] = useState(() => resolveProductImage(product.slug, product.image));
+  const rawImage = product.image || (product as any).image_url;
+  const [imgSrc, setImgSrc] = useState(() =>
+    resolveProductImage(product.slug, rawImage, {
+      category: product.line || (product as any).category_name,
+      fulfillment_lane: product.fulfillment_lane,
+      name: product.name,
+      image_url: (product as any).image_url,
+    }),
+  );
+
+  useEffect(() => {
+    const currentImg = product.image || (product as any).image_url;
+    setImgSrc(
+      resolveProductImage(product.slug, currentImg, {
+        category: product.line || (product as any).category_name,
+        fulfillment_lane: product.fulfillment_lane,
+        name: product.name,
+        image_url: (product as any).image_url,
+      }),
+    );
+  }, [product.slug, product.image, (product as any).image_url, product.line, (product as any).category_name, product.fulfillment_lane, product.name]);
 
   return (
     <>
       <article className="group bg-card flex flex-col overflow-hidden rounded-2xl border transition-all hover:-translate-y-1 hover:shadow-card-soft">
         <div
-          className="relative aspect-square overflow-hidden cursor-pointer"
+          className="relative aspect-square overflow-hidden cursor-pointer bg-slate-100 dark:bg-slate-800 flex items-center justify-center"
           onClick={() => {
             setConfigMode('add');
             setOpen(true);
@@ -69,8 +90,8 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             width={640}
             height={640}
             onError={() => {
-              if (imgSrc !== FALLBACK_TEA_IMAGE) {
-                setImgSrc(FALLBACK_TEA_IMAGE);
+              if (imgSrc !== DEFAULT_PRODUCT_PLACEHOLDER) {
+                setImgSrc(DEFAULT_PRODUCT_PLACEHOLDER);
               }
             }}
             className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -485,11 +506,19 @@ function CustomizeDialog({
         <div className="grid md:grid-cols-[minmax(0,320px)_1fr]">
           <div className="bg-accent/50 relative hidden md:block">
             <img
-              src={resolveProductImage(product.slug, product.image)}
+              src={resolveProductImage(product.slug, product.image, {
+                category: product.line,
+                fulfillment_lane: product.fulfillment_lane,
+                name: product.name,
+              })}
               alt={product.name}
               loading="lazy"
               onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+                (e.currentTarget as HTMLImageElement).src = resolveProductImage(product.slug, null, {
+                  category: product.line,
+                  fulfillment_lane: product.fulfillment_lane,
+                  name: product.name,
+                });
               }}
               className="size-full object-cover"
             />

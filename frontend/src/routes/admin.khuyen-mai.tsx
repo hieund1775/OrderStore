@@ -194,7 +194,12 @@ function PromotionsAdminPage() {
   async function save() {
     if (!canManage) return;
     if (!form.title.trim()) return toast.error("Nhập tên chương trình");
-    if (!form.code.trim()) return toast.error("Nhập mã giảm giá");
+    const cleanCode = form.code.trim().toUpperCase();
+    if (!cleanCode) return toast.error("Nhập mã giảm giá");
+    if (cleanCode.includes("%")) return toast.error("Mã giảm giá không được chứa ký tự %");
+    if (!/^[A-Z0-9_-]+$/.test(cleanCode)) {
+      return toast.error("Mã giảm giá chỉ gồm chữ cái, số và dấu gạch nối (- hoặc _)");
+    }
     if (!form.start_date) return toast.error("Chọn ngày bắt đầu");
     const discount = Number(form.discount_value);
     if (!discount || discount <= 0 || discount > 100) {

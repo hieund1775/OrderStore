@@ -34,6 +34,7 @@ import {
 } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 import { useBranch } from "@/lib/branch";
+import { formatVoucherDate } from "@/lib/promotion-status";
 import heroImg from "@/assets/hero-tea.jpg";
 import storyImg from "@/assets/story.jpg";
 
@@ -156,7 +157,14 @@ function Home() {
     apiGet<ApiCatalogProduct[]>("/api/products")
       .then((rows) => {
         if (!cancelled && rows && rows.length > 0) {
-          setCatalogProducts(rows.map(mapApiProduct));
+          const activeRows = rows.filter(
+            (r: any) =>
+              (r.status === undefined || r.status === "active") &&
+              !r.archived_at &&
+              r.is_available !== false &&
+              !r.slug?.includes("--archived-"),
+          );
+          setCatalogProducts(activeRows.map(mapApiProduct));
         }
       })
       .catch(() => {});
@@ -215,17 +223,27 @@ function Home() {
             : p.discount_value
               ? `GIẢM ${vnd(p.discount_value)}`
               : "ƯU ĐÃI";
+        const rawCode = (p.code || "UUDAI").trim();
+        const code = rawCode.toUpperCase() === "NEW1000%" ? "NEW100%" : rawCode;
+        const title = (p.title || "Ưu đãi đặc biệt").replace(/NEW1000%/g, "NEW100%");
+        const period = p.end_date ? `Đến ${formatVoucherDate(p.end_date)}` : "Vô thời hạn";
+        const rule = (
+          p.rule ||
+          p.description ||
+          `Áp dụng giảm ${discountText} cho đơn hàng trực tuyến & tại quầy.`
+        ).replace(/NEW1000%/g, "NEW100%");
+
         return {
           id: p.id,
-          title: p.title,
-          code: p.code || "UUDAI",
+          title,
+          code,
           discountText,
           tag: p.voucher_type === "single_use" ? "Mã cá nhân" : "Ưu đãi hot",
           emoji: p.discount_type === "percent" ? "🏷️" : "🎁",
-          period: p.end_date ? `Đến ${p.end_date}` : "Vô thời hạn",
+          period,
           minOrder: p.min_order ? `Đơn từ ${vnd(p.min_order)}` : undefined,
           maxDiscount: p.max_discount ? `Tối đa ${vnd(p.max_discount)}` : undefined,
-          rule: p.rule || p.description || `Áp dụng giảm ${discountText} cho đơn hàng trực tuyến & tại quầy.`,
+          rule,
         };
       });
       const existingCodes = new Set(mapped.map((m) => m.code));
@@ -236,17 +254,23 @@ function Home() {
   }, [apiPromos]);
 
   const bestSellers = useMemo(() => {
-    const filtered = catalogProducts.filter(
+    const activeProducts = catalogProducts.filter(
+      (p) =>
+        (p as any).status !== "archived" &&
+        (p as any).status !== "inactive" &&
+        !p.slug?.includes("--archived-"),
+    );
+    const filtered = activeProducts.filter(
       (p) => p.tags && (p.tags.includes("best-seller") || p.tags.includes("new")),
     );
     let list: Product[] = [];
     if (filtered.length >= 4) {
       list = filtered.slice(0, 4);
     } else if (filtered.length > 0) {
-      const extra = catalogProducts.filter((p) => !filtered.some((f) => f.id === p.id));
+      const extra = activeProducts.filter((p) => !filtered.some((f) => f.id === p.id));
       list = [...filtered, ...extra].slice(0, 4);
     } else {
-      list = catalogProducts.length > 0 ? catalogProducts.slice(0, 4) : fallbackProducts.slice(0, 4);
+      list = activeProducts.length > 0 ? activeProducts.slice(0, 4) : fallbackProducts.slice(0, 4);
     }
 
     // Curated tag patterns from Image 1:
@@ -567,7 +591,9 @@ function Home() {
               Ghé tiệm gần bạn
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Hơn 48 không gian thưởng thức trà trái cây tươi mát, hiện đại sẵn sàng phục vụ tại chỗ và mang đi.
+              {storeList.length > 0
+                ? `Hệ thống ${storeList.length} không gian thưởng thức trà trái cây tươi mát, hiện đại sẵn sàng phục vụ tại chỗ và mang đi.`
+                : "Không gian thưởng thức trà trái cây tươi mát, hiện đại sẵn sàng phục vụ tại chỗ và mang đi."}
             </p>
           </div>
           <Button asChild variant="soft" size="sm">

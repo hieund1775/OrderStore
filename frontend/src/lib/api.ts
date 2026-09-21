@@ -715,13 +715,40 @@ export type ResolvedProductConfiguration = {
   unit_price: number;
 };
 
+function cleanCategoryName(name: string): string {
+  if (!name) return name;
+  return name.replace(/\bAó\b/g, 'Áo').replace(/\baó\b/g, 'áo');
+}
+
+function cleanCategoryNode(node: PublicCategoryNode): PublicCategoryNode {
+  return {
+    ...node,
+    name: cleanCategoryName(node.name),
+    children: node.children ? node.children.map(cleanCategoryNode) : undefined,
+  };
+}
+
 export async function fetchPublicCategoryTree(storeId?: number | string | null): Promise<PublicCategoryNode[]> {
   const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : '';
-  return apiFetch<PublicCategoryNode[]>(`/api/catalog/categories/tree${query}`);
+  const data = await apiFetch<PublicCategoryNode[]>(`/api/catalog/categories/tree${query}`);
+  return (data || []).map(cleanCategoryNode);
 }
 
 export async function fetchPublicCatalogSections(storeId: number | string, limitPerRoot = 12): Promise<{ sections: PublicCatalogSection[] }> {
-  return apiFetch<{ sections: PublicCatalogSection[] }>(`/api/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
+  const data = await apiFetch<{ sections: PublicCatalogSection[] }>(`/api/catalog/sections?store_id=${storeId}&limit_per_root=${limitPerRoot}`);
+  if (data?.sections) {
+    data.sections = data.sections.map((s) => ({
+      ...s,
+      root_name: cleanCategoryName(s.root_name),
+      children: s.children ? s.children.map((c) => ({ ...c, name: cleanCategoryName(c.name) })) : [],
+      products: s.products ? s.products.map((p) => ({
+        ...p,
+        name: cleanCategoryName(p.name),
+        category_name: p.category_name ? cleanCategoryName(p.category_name) : p.category_name,
+      })) : [],
+    }));
+  }
+  return data;
 }
 
 export async function fetchPublicProducts(params?: { store_id?: number | string; category?: string; search?: string; limit?: number; offset?: number }): Promise<PublicCatalogProductsResponse> {

@@ -59,7 +59,15 @@ type ProfileOrder = {
 export function normalizeProfileOrders(value: unknown): ProfileOrder[] {
   if (!Array.isArray(value)) return [];
   return value
-    .filter((raw): raw is Record<string, unknown> => Boolean(raw) && typeof raw === 'object')
+    .filter((raw): raw is Record<string, unknown> => {
+      if (!raw || typeof raw !== 'object') return false;
+      const code = String(raw.order_code || '').trim().toUpperCase();
+      // Exclude preorder items (#PO...) so they only display in the dedicated Preorders tab
+      if (code.startsWith('PO') || code.startsWith('#PO') || Boolean(raw.preorder_id)) {
+        return false;
+      }
+      return true;
+    })
     .map((raw, orderIndex) => ({
       id: Number(raw.id) || orderIndex + 1,
       order_code: String(raw.order_code || 'Chưa có mã đơn').trim(),
@@ -320,22 +328,23 @@ function Profile() {
   useEffect(() => {
     if (search?.tab && PROFILE_TABS.has(search.tab)) {
       setActiveTab(search.tab);
-    } else if (!search?.tab) {
-      setActiveTab('orders');
     }
   }, [search?.tab]);
 
   const handleTabChange = (val: string) => {
     setActiveTab(val);
-    void navigate({
-      to: "/ho-so",
-      search: (prev) => ({
-        ...prev,
-        tab: val === "orders" ? undefined : val,
-        code: val === "preorders" ? prev.code : undefined,
-      }),
-      replace: true,
-    });
+    try {
+      void navigate({
+        to: "/ho-so",
+        search: {
+          tab: val === "orders" ? undefined : val,
+          code: val === "preorders" ? search?.code : undefined,
+        },
+        replace: true,
+      });
+    } catch {
+      // safe fallback
+    }
   };
 
   if (!isLoggedIn || !user) {

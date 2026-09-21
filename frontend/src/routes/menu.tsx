@@ -415,9 +415,21 @@ function MenuPage() {
                 <span className="text-muted-foreground text-sm">Tạm tính</span>
                 <span className="text-primary text-lg font-extrabold">{vnd(subtotal)}</span>
               </div>
-              <Button asChild variant="hero" className="mt-4 w-full">
-                <Link to="/thanh-toan">Thanh toán <ChevronRight className="size-4" /></Link>
-              </Button>
+              {items.length === 0 ? (
+                <Button
+                  variant="hero"
+                  className="mt-4 w-full opacity-50 cursor-not-allowed pointer-events-none"
+                  disabled
+                >
+                  Thanh toán <ChevronRight className="size-4" />
+                </Button>
+              ) : (
+                <Button asChild variant="hero" className="mt-4 w-full">
+                  <Link to="/thanh-toan">
+                    Thanh toán <ChevronRight className="size-4" />
+                  </Link>
+                </Button>
+              )}
             </div>
           </aside>
         </div>

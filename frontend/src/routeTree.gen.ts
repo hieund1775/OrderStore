@@ -22,6 +22,10 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ThanhToanRouteImport } from './routes/thanh-toan'
 import { Route as TheoDoiDonRouteImport } from './routes/theo-doi-don'
 import { Route as TuyenDungRouteImport } from './routes/tuyen-dung'
+import { Route as ChinhSachBaoMatRouteImport } from './routes/chinh-sach-bao-mat'
+import { Route as DieuKhoanDichVuRouteImport } from './routes/dieu-khoan-dich-vu'
+import { Route as ChinhSachGiaoHangRouteImport } from './routes/chinh-sach-giao-hang'
+import { Route as ChinhSachDoiTraRouteImport } from './routes/chinh-sach-doi-tra'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminBepRouteImport } from './routes/admin.bep'
 import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
@@ -107,6 +111,26 @@ const TheoDoiDonRoute = TheoDoiDonRouteImport.update({
 const TuyenDungRoute = TuyenDungRouteImport.update({
   id: '/tuyen-dung',
   path: '/tuyen-dung',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChinhSachBaoMatRoute = ChinhSachBaoMatRouteImport.update({
+  id: '/chinh-sach-bao-mat',
+  path: '/chinh-sach-bao-mat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DieuKhoanDichVuRoute = DieuKhoanDichVuRouteImport.update({
+  id: '/dieu-khoan-dich-vu',
+  path: '/dieu-khoan-dich-vu',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChinhSachGiaoHangRoute = ChinhSachGiaoHangRouteImport.update({
+  id: '/chinh-sach-giao-hang',
+  path: '/chinh-sach-giao-hang',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChinhSachDoiTraRoute = ChinhSachDoiTraRouteImport.update({
+  id: '/chinh-sach-doi-tra',
+  path: '/chinh-sach-doi-tra',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -764,6 +788,10 @@ const rootRouteChildren: RootRouteChildren = {
   ThanhToanRoute: ThanhToanRoute,
   TheoDoiDonRoute: TheoDoiDonRoute,
   TuyenDungRoute: TuyenDungRoute,
+  ChinhSachBaoMatRoute: ChinhSachBaoMatRoute,
+  DieuKhoanDichVuRoute: DieuKhoanDichVuRoute,
+  ChinhSachGiaoHangRoute: ChinhSachGiaoHangRoute,
+  ChinhSachDoiTraRoute: ChinhSachDoiTraRoute,
   SanPhamSlugRoute: SanPhamSlugRoute,
   ThanhToanSandboxRoute: ThanhToanSandboxRoute,
 }

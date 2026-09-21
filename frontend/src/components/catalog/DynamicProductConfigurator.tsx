@@ -171,10 +171,26 @@ export function DynamicProductConfigurator({
         }
       }
 
+      if (!data && initialItem?.productId && String(initialItem.productId) !== String(productSlug)) {
+        try {
+          data = await fetchPublicProductDetails(String(initialItem.productId), storeId);
+        } catch {
+          try {
+            data = await fetchPublicProductDetails(String(initialItem.productId));
+          } catch {
+            data = null;
+          }
+        }
+      }
+
       // Fallback to local catalog if API did not find product
       if (!data) {
         const found = fallbackProducts.find(
-          (p) => p.slug === productSlug || String(p.id) === productSlug,
+          (p) =>
+            p.slug === productSlug ||
+            String(p.id) === productSlug ||
+            (initialItem?.productId && String(p.id) === String(initialItem.productId)) ||
+            (initialItem?.name && p.name === initialItem.name),
         );
         if (found) {
           data = {
@@ -609,9 +625,60 @@ export function DynamicProductConfigurator({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-0">
-        {loading || !product ? (
-          <div className="p-12 text-center text-sm text-muted-foreground">
-            {loadError || 'Đang tải tùy chọn...'}
+        {loadError ? (
+          <div className="p-12 text-center text-sm text-destructive flex flex-col items-center gap-3">
+            <AlertCircle className="size-8 text-destructive/80" />
+            <p className="font-semibold">{loadError}</p>
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              Đóng
+            </Button>
+          </div>
+        ) : loading || !product ? (
+          <div className="animate-pulse space-y-6">
+            {/* Header Skeleton */}
+            <div className="border-b bg-muted/20 p-5 flex gap-4">
+              <div className="size-20 shrink-0 rounded-2xl bg-muted" />
+              <div className="flex-1 space-y-2.5 py-1">
+                <div className="h-5 w-3/4 rounded-md bg-muted" />
+                <div className="h-4 w-1/3 rounded-md bg-muted" />
+              </div>
+            </div>
+
+            {/* Content Options Skeleton */}
+            <div className="space-y-6 p-5">
+              <div className="space-y-2.5">
+                <div className="h-4 w-24 rounded-md bg-muted" />
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="h-9 rounded-xl bg-muted" />
+                  <div className="h-9 rounded-xl bg-muted" />
+                  <div className="h-9 rounded-xl bg-muted" />
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="h-4 w-28 rounded-md bg-muted" />
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="h-9 rounded-xl bg-muted" />
+                  <div className="h-9 rounded-xl bg-muted" />
+                  <div className="h-9 rounded-xl bg-muted" />
+                  <div className="h-9 rounded-xl bg-muted" />
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="h-4 w-28 rounded-md bg-muted" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="h-10 rounded-xl bg-muted" />
+                  <div className="h-10 rounded-xl bg-muted" />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Skeleton */}
+            <div className="border-t bg-card p-4 flex items-center justify-between gap-4">
+              <div className="h-10 w-28 rounded-xl bg-muted" />
+              <div className="h-11 flex-1 rounded-xl bg-muted" />
+            </div>
           </div>
         ) : (
           <div>
@@ -619,10 +686,18 @@ export function DynamicProductConfigurator({
             <div className="relative border-b bg-muted/20 p-5">
               <div className="flex gap-4">
                 <img
-                  src={resolveProductImage(product.slug, product.image_url)}
+                  src={resolveProductImage(product.slug, product.image_url, {
+                    category: (product as any).category_name,
+                    fulfillment_lane: product.fulfillment_lane,
+                    name: product.name,
+                  })}
                   alt={product.name}
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = FALLBACK_TEA_IMAGE;
+                    (e.currentTarget as HTMLImageElement).src = resolveProductImage(product.slug, null, {
+                      category: (product as any).category_name,
+                      fulfillment_lane: product.fulfillment_lane,
+                      name: product.name,
+                    });
                   }}
                   className="size-20 shrink-0 rounded-2xl object-cover border"
                 />

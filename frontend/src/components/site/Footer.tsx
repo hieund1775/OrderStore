@@ -44,12 +44,28 @@ export function Footer() {
         </div>
 
         <div>
-          <p className="mb-3 text-sm font-semibold">Chính sách</p>
+          <p className="mb-3 text-sm font-semibold">Chính sách & Pháp lý</p>
           <ul className="text-muted-foreground space-y-2 text-sm">
-            <li>Chính sách bảo mật</li>
-            <li>Điều khoản dịch vụ</li>
-            <li>Chính sách giao hàng</li>
-            <li>Chính sách đổi trả</li>
+            <li>
+              <Link to="/chinh-sach-bao-mat" className="hover:text-primary transition-colors">
+                Chính sách bảo mật
+              </Link>
+            </li>
+            <li>
+              <Link to="/dieu-khoan-dich-vu" className="hover:text-primary transition-colors">
+                Điều khoản dịch vụ
+              </Link>
+            </li>
+            <li>
+              <Link to="/chinh-sach-giao-hang" className="hover:text-primary transition-colors">
+                Chính sách giao hàng
+              </Link>
+            </li>
+            <li>
+              <Link to="/chinh-sach-doi-tra" className="hover:text-primary transition-colors">
+                Chính sách đổi trả
+              </Link>
+            </li>
           </ul>
         </div>
 

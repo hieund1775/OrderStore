@@ -27,6 +27,17 @@ import {
 } from '@/lib/api';
 import { toast } from 'sonner';
 
+export function slugifyVietnamese(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
 export type CategoryNode = {
   id: number;
   name: string;
@@ -280,11 +291,11 @@ export function CategoryTreeEditor({
               <Input
                 value={formData.name}
                 onChange={(e) => {
-                  const val = e.target.value;
+                  const val = e.target.value.replace(/\bAó\b/g, 'Áo').replace(/\baó\b/g, 'áo');
                   setFormData((prev) => ({
                     ...prev,
                     name: val,
-                    slug: prev.slug || val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+                    slug: prev.slug || slugifyVietnamese(val),
                   }));
                 }}
                 placeholder="VD: Áo thun nam, Trà trái cây..."

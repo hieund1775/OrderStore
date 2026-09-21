@@ -319,7 +319,8 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
          LEFT JOIN product_type_schemas pts ON pts.id = p.product_type_schema_id
          LEFT JOIN product_types pt ON pt.id = pts.product_type_id
          ${storeJoin}
-         WHERE p.slug = $1 AND p.status = 'active'
+         WHERE (p.slug = $1 OR (CASE WHEN $1 ~ '^[0-9]+$' THEN p.id = $1::bigint ELSE FALSE END))
+           AND p.status = 'active'
          LIMIT 1`,
         params,
       );
