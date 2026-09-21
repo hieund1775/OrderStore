@@ -37,4 +37,20 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
     expect(chiNhanh?.section).toBe('store_management');
     expect(viTri?.section).toBe('store_management');
   });
+
+  it('Admin sidebar restricts sensitive system config menus to super admin only', () => {
+    const catalog = adminNav.find((item) => item.to === '/admin/catalog');
+    const chiNhanh = adminNav.find((item) => item.to === '/admin/chi-nhanh');
+    const khuyenMai = adminNav.find((item) => item.to === '/admin/khuyen-mai');
+    const danhGia = adminNav.find((item) => item.to === '/admin/danh-gia');
+    const tuyenDung = adminNav.find((item) => item.to === '/admin/tuyen-dung');
+    const caiDat = adminNav.find((item) => item.to === '/admin/cai-dat');
+
+    expect(catalog?.roles).toEqual(['super']);
+    expect(chiNhanh?.roles).toEqual(['super']);
+    expect(khuyenMai?.roles).toEqual(['super']);
+    expect(danhGia?.roles).toEqual(['super']);
+    expect(tuyenDung?.roles).toEqual(['super']);
+    expect(caiDat?.roles).toEqual(['super']);
+  });
 });

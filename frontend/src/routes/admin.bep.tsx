@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InBillModal, type BillOrder } from "@/components/admin/InBillModal";
 import { PrinterPairingModal } from "@/components/admin/PrinterPairingModal";
 import { apiGet, apiPatch, apiPost, clearToken, getUser } from "@/lib/api";
-import { elapsedDurationMs, fmtClockTimer, fmtDate, fmtDateTime, fmtTime } from "@/lib/data";
+import { elapsedDurationMs, fmtClockTimer, fmtDate, fmtDateTime, fmtTime, formatOrderItemOptions } from "@/lib/data";
 import { isAutoPrintEnabled, setAutoPrintEnabled, isOrderPrinted, silentPrintTicket, getActivePrinterConfig, type ActivePrinterConfig } from "@/lib/auto-print";
 import { getConnectedPrinter, isWebBluetoothSupported } from "@/lib/ble-print";
 import { PollingController } from "@/lib/polling-controller";
@@ -602,9 +602,7 @@ export function KdsPage() {
                         {it.qty}× {it.product_name}
                       </p>
                       <p className="text-muted-foreground text-xs">
-                        {it.size_label} · {it.base_tea} · {it.sugar_level} đường · {it.ice_level} đá
-                        {it.toppings.length > 0 &&
-                          ` · ${it.toppings.map((t) => t.name).join(", ")}`}
+                        {formatOrderItemOptions(it)}
                       </p>
                       {it.note && <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>}
                     </li>
@@ -940,8 +938,7 @@ export function KdsPage() {
                       {it.qty}× {it.product_name}
                     </p>
                     <p className="text-muted-foreground text-xs">
-                      {it.size_label} · {it.base_tea} · {it.sugar_level} đường · {it.ice_level} đá
-                      {it.toppings.length > 0 && ` · ${it.toppings.map((t) => t.name).join(", ")}`}
+                      {formatOrderItemOptions(it)}
                     </p>
                     {it.note && (
                       <p className="text-muted-foreground text-xs italic">📝 {it.note}</p>

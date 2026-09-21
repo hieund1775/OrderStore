@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Loader2, Users, History, Laptop, CreditCard } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +21,13 @@ import { apiGet, getUser } from "@/lib/api";
 import { fmtDateTime } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/cai-dat")({
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const user = getUser();
+    if (user?.role !== "super") {
+      throw redirect({ to: "/admin/don-hang" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Tài khoản & Cài đặt | Admin Trà Trái Cây Tô" },

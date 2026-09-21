@@ -17,7 +17,16 @@ export function clearToken() {
   window.localStorage.removeItem('admin_user');
 }
 
-export function getUser() {
+export interface AdminUser {
+  id: number;
+  fullname: string;
+  phone: string;
+  role: string;
+  branch_id: number | null;
+  branch_name?: string | null;
+}
+
+export function getUser(): AdminUser | null {
   if (typeof window === 'undefined') return null;
   const stored = window.localStorage.getItem('admin_user');
   if (stored) {
@@ -26,7 +35,7 @@ export function getUser() {
   return null;
 }
 
-export function setUser(u: { id: number; fullname: string; phone: string; role: string; branch_id: number | null } | null) {
+export function setUser(u: AdminUser | null) {
   if (u) {
     window.localStorage.setItem('admin_user', JSON.stringify(u));
   } else {

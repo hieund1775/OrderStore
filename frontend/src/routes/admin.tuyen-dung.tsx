@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
   Briefcase,
   CheckCircle2,
@@ -47,9 +47,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, getUser } from "@/lib/api";
 
 export const Route = createFileRoute("/admin/tuyen-dung")({
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const user = getUser();
+    if (user?.role !== "super") {
+      throw redirect({ to: "/admin/don-hang" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Quản lý tuyển dụng & Ứng viên | Admin Trà Trái Cây Tô" },

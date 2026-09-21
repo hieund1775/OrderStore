@@ -1,5 +1,6 @@
 import { Bell, LogOut, Menu } from 'lucide-react';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -10,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getUser } from '@/lib/api';
+import { apiGet, getUser, setUser, type AdminUser } from '@/lib/api';
 import { explicitAdminLogout } from '@/lib/auth-logout';
 import { isSafeInternalLink, useAdminNotifications } from '@/lib/notifications';
 import { toast } from 'sonner';
@@ -25,7 +26,26 @@ export function AdminTopbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }
   const adminUser = getUser();
   const displayName = adminUser?.fullname || 'Quản trị viên';
   const roleLabel = formatAdminRoleLabel(adminUser?.role);
+  const [branchName, setBranchName] = useState<string | null>(adminUser?.branch_name || null);
   const initials = displayName.split(' ').pop()?.charAt(0)?.toUpperCase() || 'A';
+
+  useEffect(() => {
+    if (adminUser?.branch_id && !branchName) {
+      apiGet<AdminUser>('/admin/me')
+        .then((me) => {
+          if (me?.branch_name) {
+            setBranchName(me.branch_name);
+            setUser({
+              ...adminUser,
+              branch_name: me.branch_name,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [adminUser?.branch_id, branchName]);
+
+  const roleDisplay = branchName ? `${roleLabel} · ${branchName}` : roleLabel;
 
   const { data: notificationData, isLoading, isError, refetch, markRead } = useAdminNotifications();
   const unreadBadge = formatNotificationBadgeCount(notificationData?.unread_count);
@@ -150,14 +170,14 @@ export function AdminTopbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }
             </span>
             <span className="hidden text-left leading-tight sm:block">
               <span className="block text-xs font-semibold">{displayName}</span>
-              <span className="text-muted-foreground block text-[11px]">{roleLabel}</span>
+              <span className="text-muted-foreground block text-[11px] truncate max-w-[220px]" title={roleDisplay}>{roleDisplay}</span>
             </span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel>
             <p className="text-xs font-bold">{displayName}</p>
-            <p className="text-muted-foreground text-[11px] font-normal">{roleLabel}</p>
+            <p className="text-muted-foreground text-[11px] font-normal leading-snug">{roleDisplay}</p>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => explicitAdminLogout()} className="text-destructive focus:text-destructive cursor-pointer">

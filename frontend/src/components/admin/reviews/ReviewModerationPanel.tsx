@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { apiDelete, apiGet, apiPost, apiPatch } from '@/lib/api';
+import { fmtDateTime } from '@/lib/data';
 
 interface ReviewItem {
   id: number;
@@ -37,7 +38,7 @@ interface ReviewItem {
   purchaseVerifiedAt: string | null;
   createdAt: string;
   orderCode?: string | null;
-  reply: { id: number; body: string; createdAt: string } | null;
+  reply: { id: number; body: string; createdAt?: string; created_at?: string } | null;
 }
 
 export interface ReviewModerationPanelProps {
@@ -260,7 +261,7 @@ export function ReviewModerationPanel({
                       <MessageSquare className="size-3.5" />
                       <span>Phản hồi từ cửa hàng</span>
                       <span className="text-[10px] text-muted-foreground font-normal">
-                        ({new Date(review.reply.createdAt).toLocaleDateString('vi-VN')})
+                        ({fmtDateTime(review.reply.createdAt || review.reply.created_at)})
                       </span>
                     </div>
                     <p className="text-foreground leading-relaxed whitespace-pre-line">

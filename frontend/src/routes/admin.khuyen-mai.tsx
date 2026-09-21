@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
@@ -40,6 +40,13 @@ export const Route = createFileRoute("/admin/khuyen-mai")({
   validateSearch: (search: Record<string, unknown>) => ({
     page: Number(search.page) > 0 ? Number(search.page) : 1,
   }),
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const user = getUser();
+    if (user?.role !== "super") {
+      throw redirect({ to: "/admin/don-hang" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Khuyến mãi & Voucher | Admin Trà Trái Cây Tô" },
@@ -554,7 +561,21 @@ function PromotionsAdminPage() {
                 max={100}
                 placeholder="10"
                 value={form.discount_value}
-                onChange={(e) => setForm({ ...form, discount_value: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '') {
+                    setForm({ ...form, discount_value: '' });
+                    return;
+                  }
+                  const num = Number(val);
+                  if (num > 100) {
+                    setForm({ ...form, discount_value: '100' });
+                  } else if (num < 0) {
+                    setForm({ ...form, discount_value: '0' });
+                  } else {
+                    setForm({ ...form, discount_value: val });
+                  }
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -563,10 +584,11 @@ function PromotionsAdminPage() {
                 id="promo-max"
                 type="number"
                 min={0}
-                placeholder="VD: 30000 (để trống nếu không giới hạn)"
+                placeholder="VD: 30000"
                 value={form.max_discount}
                 onChange={(e) => setForm({ ...form, max_discount: e.target.value })}
               />
+              <p className="text-[11px] text-muted-foreground">Để trống nếu không giới hạn</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="promo-min">Đơn tối thiểu (₫)</Label>
@@ -574,10 +596,11 @@ function PromotionsAdminPage() {
                 id="promo-min"
                 type="number"
                 min={0}
-                placeholder="VD: 89000 (để trống nếu không giới hạn)"
+                placeholder="VD: 89000"
                 value={form.min_order}
                 onChange={(e) => setForm({ ...form, min_order: e.target.value })}
               />
+              <p className="text-[11px] text-muted-foreground">Để trống nếu không giới hạn</p>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Kiểu sử dụng</Label>

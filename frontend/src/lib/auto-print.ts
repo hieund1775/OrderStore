@@ -1,4 +1,4 @@
-import { fmtDateTime, vnd } from './data';
+import { fmtDateTime, vnd, normalizeSugarLevel, normalizeIceLevel } from './data';
 import { buildKitchenTicketEscPos, buildTestTicketEscPos, type EscPosEncoding } from './escpos';
 import { getConnectedPrinter, isWebBluetoothSupported, printBLEBytes } from './ble-print';
 
@@ -89,7 +89,7 @@ export function generateReceiptHtml(order: any): string {
     </tr>
     ${
       it.size_label || it.size
-        ? `<tr><td colspan="3" style="font-size: 11px; color: #555; padding-bottom: 2px;">Size: ${it.size_label || it.size} ${it.sugar_level ? `· ${it.sugar_level} đường` : ''} ${it.ice_level ? `· ${it.ice_level} đá` : ''}</td></tr>`
+        ? `<tr><td colspan="3" style="font-size: 11px; color: #555; padding-bottom: 2px;">Size: ${it.size_label || it.size} ${it.sugar_level ? `· ${normalizeSugarLevel(it.sugar_level)}` : ''} ${it.ice_level ? `· ${normalizeIceLevel(it.ice_level)}` : ''}</td></tr>`
         : ''
     }
     ${

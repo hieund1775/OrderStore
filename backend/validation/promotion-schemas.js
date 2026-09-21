@@ -72,6 +72,16 @@ export function validatePromotionInput(body = {}, { isUpdate = false } = {}) {
     throw new PromotionValidationError('Loại giảm giá phải là percent hoặc fixed');
   }
 
+  if (discount_value !== undefined && discount_value !== null && discount_value !== '') {
+    const num = Number(discount_value);
+    if (isNaN(num) || num <= 0) {
+      throw new PromotionValidationError('Giá trị giảm giá phải lớn hơn 0');
+    }
+    if ((discount_type === 'percent' || (!discount_type && !isUpdate)) && num > 100) {
+      throw new PromotionValidationError('Phần trăm giảm giá không được vượt quá 100%');
+    }
+  }
+
   if (voucher_type !== undefined && !['single_use', 'shared'].includes(voucher_type)) {
     throw new PromotionValidationError('Loại voucher phải là single_use hoặc shared');
   }

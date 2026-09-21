@@ -1,4 +1,4 @@
-import { createFileRoute, useLocation, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, redirect, useLocation, useNavigate } from '@tanstack/react-router';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   FolderTree,
@@ -17,7 +17,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -27,6 +26,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   fetchCatalogCategories,
   fetchProductTypes,
@@ -55,6 +56,13 @@ export const Route = createFileRoute('/admin/catalog')({
   validateSearch: (search: Record<string, unknown>) => ({
     rootId: typeof search.rootId === 'string' ? search.rootId : undefined,
   }),
+  beforeLoad: () => {
+    if (typeof window === 'undefined') return;
+    const user = getUser();
+    if (user?.role !== 'super') {
+      throw redirect({ to: '/admin/don-hang' });
+    }
+  },
   component: AdminCatalogPage,
   head: () => ({
     meta: [

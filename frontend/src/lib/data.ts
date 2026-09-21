@@ -59,6 +59,68 @@ export function formatFullAddress(address?: string, district?: string, city?: st
   return parts.join(', ');
 }
 
+/**
+ * Standardize sugar level to prevent duplicates like "100% Đường đường" or "Không đường đường"
+ */
+export function normalizeSugarLevel(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  if (/đường/i.test(trimmed)) {
+    const cleaned = trimmed.replace(/\s*đường/gi, '').trim();
+    return cleaned ? `${cleaned} Đường` : 'Đường';
+  }
+  return `${trimmed} Đường`;
+}
+
+/**
+ * Standardize ice level to prevent duplicates like "100% Đá đá" or "Không đá đá"
+ */
+export function normalizeIceLevel(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  if (/^(nóng|hot)$/i.test(trimmed)) {
+    return 'Nóng';
+  }
+  if (/đá/i.test(trimmed)) {
+    const cleaned = trimmed.replace(/\s*đá/gi, '').trim();
+    return cleaned ? `${cleaned} Đá` : 'Đá';
+  }
+  return `${trimmed} Đá`;
+}
+
+/**
+ * Format all order item customizations cleanly into a single unified string
+ * e.g. "M · Lục Trà Lài · 100% Đường · 100% Đá · Trân châu đen"
+ */
+export function formatOrderItemOptions(item: {
+  size_label?: string | null;
+  base_tea?: string | null;
+  sugar_level?: string | null;
+  ice_level?: string | null;
+  toppings?: Array<{ name: string } | string> | null;
+}): string {
+  const parts: string[] = [];
+  if (item.size_label) parts.push(item.size_label);
+  if (item.base_tea) parts.push(item.base_tea);
+  const sugar = normalizeSugarLevel(item.sugar_level);
+  if (sugar) parts.push(sugar);
+  const ice = normalizeIceLevel(item.ice_level);
+  if (ice) parts.push(ice);
+  if (Array.isArray(item.toppings) && item.toppings.length > 0) {
+    const toppingNames = item.toppings
+      .map((t) => (typeof t === 'string' ? t : t?.name))
+      .filter(Boolean);
+    if (toppingNames.length > 0) {
+      parts.push(toppingNames.join(', '));
+    }
+  }
+  return parts.join(' · ');
+}
+
 export type ProductTag = 'best-seller' | 'new' | 'seasonal';
 
 export type Product = {

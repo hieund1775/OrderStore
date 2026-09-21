@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/site/PageHeader";
 import { apiGet, apiPost } from "@/lib/api";
-import { vnd } from "@/lib/data";
+import { fmtDateTime, vnd, normalizeSugarLevel, normalizeIceLevel } from "@/lib/data";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { getOrderRequestHeaders, isPayOSLinkActive, isSafePayOSCheckoutUrl } from "@/lib/order-access";
 import { resolveCheckoutPaymentRedirect } from "@/lib/payment-redirect";
@@ -185,8 +185,8 @@ function itemOptions(it: LookupItem) {
   return [
     it.size_label ? `Size ${it.size_label}` : null,
     it.base_tea ? it.base_tea : null,
-    it.sugar_level ? `${it.sugar_level} đường` : null,
-    it.ice_level ? `${it.ice_level} đá` : null,
+    it.sugar_level ? normalizeSugarLevel(it.sugar_level) : null,
+    it.ice_level ? normalizeIceLevel(it.ice_level) : null,
     it.toppings && it.toppings.length > 0 ? it.toppings.map((t) => t.name).join(", ") : null,
   ]
     .filter(Boolean)

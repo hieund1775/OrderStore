@@ -41,7 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiGet, apiPatch } from "@/lib/api";
-import { fmtDateTime, vnd } from "@/lib/data";
+import { fmtDateTime, vnd, formatOrderItemOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/don-hang")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -308,8 +308,11 @@ function OrdersPage() {
       />
 
       <Card className="shadow-soft mb-5">
-        <CardContent className="grid gap-2.5 sm:gap-3 p-3 sm:p-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <div className="sm:col-span-2 lg:col-span-1">
+        <CardContent className="grid gap-2.5 sm:gap-3 p-3 sm:p-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end">
+          <div className="sm:col-span-2 lg:col-span-1 space-y-1">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Tìm kiếm
+            </label>
             <Input
               placeholder="Tìm mã đơn / khách hàng"
               value={q}
@@ -329,20 +332,20 @@ function OrdersPage() {
           <FilterSelect
             value={status}
             onChange={setStatus}
-            label="Trạng thái"
-            options={statuses.map((s) => ({ v: s, l: s }))}
+            label="Trạng thái đơn"
+            options={statuses.map((s) => ({ v: s, l: s === "Tất cả" ? "Tất cả trạng thái" : s }))}
           />
           <FilterSelect
             value={type}
             onChange={setType}
             label="Loại đơn"
-            options={types.map((s) => ({ v: s, l: s }))}
+            options={types.map((s) => ({ v: s, l: s === "Tất cả" ? "Tất cả loại đơn" : s }))}
           />
           <FilterSelect
             value={payment}
             onChange={setPayment}
             label="Thanh toán"
-            options={payments.map((s) => ({ v: s, l: s }))}
+            options={payments.map((s) => ({ v: s, l: s === "Tất cả" ? "Tất cả thanh toán" : s }))}
           />
         </CardContent>
       </Card>
@@ -564,18 +567,23 @@ function FilterSelect({
   options: { v: string; l: string }[];
 }) {
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger>
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.v} value={o.v}>
-            {o.l}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="space-y-1">
+      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+        {label}
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue placeholder={label} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.v} value={o.v}>
+              {o.l}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -727,16 +735,8 @@ function OrderDetail({
                           {it.qty}× {it.product_name}
                         </span>
                         <span className="text-muted-foreground block text-xs">
-                          {[
-                            it.size_label ? `Size ${it.size_label}` : null,
-                            it.base_tea || null,
-                            it.sugar_level ? `${it.sugar_level} đường` : null,
-                            it.ice_level ? `${it.ice_level} đá` : null,
-                            it.toppings.length > 0 ? it.toppings.map((t) => t.name).join(", ") : null,
-                            it.note ? `(${it.note})` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
+                          {formatOrderItemOptions(it) || "—"}
+                          {it.note ? ` (${it.note})` : ''}
                         </span>
                       </span>
                       <span className="font-semibold whitespace-nowrap">{vnd(it.line_total)}</span>

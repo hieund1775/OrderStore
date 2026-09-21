@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import {
   forwardRef,
   useCallback,
@@ -65,6 +65,13 @@ import {
 import { StreetAutocompleteInput } from "@/components/checkout/StreetAutocompleteInput";
 
 export const Route = createFileRoute("/admin/chi-nhanh")({
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const user = getUser();
+    if (user?.role !== "super") {
+      throw redirect({ to: "/admin/don-hang" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Hệ thống cửa hàng | Admin Trà Trái Cây Tô" },

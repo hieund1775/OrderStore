@@ -27,6 +27,7 @@ import { Route as ThanhToanRouteImport } from './routes/thanh-toan'
 import { Route as TheoDoiDonRouteImport } from './routes/theo-doi-don'
 import { Route as TuyenDungRouteImport } from './routes/tuyen-dung'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminSplatRouteImport } from './routes/admin.$'
 import { Route as AdminBepRouteImport } from './routes/admin.bep'
 import { Route as AdminCaiDatRouteImport } from './routes/admin.cai-dat'
 import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
@@ -136,6 +137,11 @@ const TuyenDungRoute = TuyenDungRouteImport.update({
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSplatRoute = AdminSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminBepRoute = AdminBepRouteImport.update({
@@ -257,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
+  '/admin/$': typeof AdminSplatRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRouteWithChildren
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
+  '/admin/$': typeof AdminSplatRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRouteWithChildren
@@ -337,6 +345,7 @@ export interface FileRoutesById {
   '/thanh-toan': typeof ThanhToanRoute
   '/theo-doi-don': typeof TheoDoiDonRoute
   '/tuyen-dung': typeof TuyenDungRoute
+  '/admin/$': typeof AdminSplatRoute
   '/admin/bep': typeof AdminBepRoute
   '/admin/cai-dat': typeof AdminCaiDatRoute
   '/admin/catalog': typeof AdminCatalogRouteWithChildren
@@ -379,6 +388,7 @@ export interface FileRouteTypes {
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
+    | '/admin/$'
     | '/admin/bep'
     | '/admin/cai-dat'
     | '/admin/catalog'
@@ -418,6 +428,7 @@ export interface FileRouteTypes {
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
+    | '/admin/$'
     | '/admin/bep'
     | '/admin/cai-dat'
     | '/admin/catalog'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/thanh-toan'
     | '/theo-doi-don'
     | '/tuyen-dung'
+    | '/admin/$'
     | '/admin/bep'
     | '/admin/cai-dat'
     | '/admin/catalog'
@@ -631,6 +643,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/$': {
+      id: '/admin/$'
+      path: '/$'
+      fullPath: '/admin/$'
+      preLoaderRoute: typeof AdminSplatRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/bep': {
       id: '/admin/bep'
       path: '/bep'
@@ -789,6 +808,7 @@ const AdminCatalogRouteWithChildren = AdminCatalogRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
+  AdminSplatRoute: typeof AdminSplatRoute
   AdminBepRoute: typeof AdminBepRoute
   AdminCaiDatRoute: typeof AdminCaiDatRoute
   AdminCatalogRoute: typeof AdminCatalogRouteWithChildren
@@ -809,6 +829,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminSplatRoute: AdminSplatRoute,
   AdminBepRoute: AdminBepRoute,
   AdminCaiDatRoute: AdminCaiDatRoute,
   AdminCatalogRoute: AdminCatalogRouteWithChildren,

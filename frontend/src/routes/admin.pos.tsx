@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost, clearToken, createIdempotencyKey, getUser } from "@/lib/api";
-import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions } from "@/lib/data";
+import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions, formatOrderItemOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
   head: () => ({
@@ -478,12 +478,7 @@ function PosPage() {
                   >
                     <p className="font-bold text-sm leading-tight truncate">{item.product_name}</p>
                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed line-clamp-2">
-                      {item.size_label} · {item.base_tea} · {item.sugar_level} đường · {item.ice_level} đá
-                      {item.toppings.length > 0 && (
-                        <span className="block text-primary/80 font-medium mt-0.5">
-                          + {item.toppings.map((t) => `${t.qty}x ${t.name}`).join(", ")}
-                        </span>
-                      )}
+                      {formatOrderItemOptions(item)}
                       {item.note && <span className="block italic mt-0.5 opacity-80">Ghi chú: {item.note}</span>}
                     </p>
                   </div>

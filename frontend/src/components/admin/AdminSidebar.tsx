@@ -26,6 +26,7 @@ import { fetchBranchCapabilities, getUser } from '@/lib/api';
 type AdminRole = 'super' | 'manager' | 'kitchen' | 'cashier' | 'packing';
 const ALL_ROLES: AdminRole[] = ['super', 'manager', 'kitchen', 'cashier', 'packing'];
 const MANAGEMENT_ROLES: AdminRole[] = ['super', 'manager'];
+const SUPER_ROLES: AdminRole[] = ['super'];
 
 export const adminNav = [
   // Nhóm 1: Vận hành
@@ -35,17 +36,17 @@ export const adminNav = [
   { to: '/admin/dat-truoc', label: 'Đơn đặt trước', icon: CalendarClock, section: 'operations', roles: MANAGEMENT_ROLES },
   // Nhóm 2: Hàng hóa
   { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList, section: 'catalog', roles: ALL_ROLES },
-  { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog', roles: MANAGEMENT_ROLES },
+  { to: '/admin/catalog', label: 'Sản phẩm & Danh mục', icon: Boxes, section: 'catalog', roles: SUPER_ROLES },
   { to: '/admin/hang-dang-ban', label: 'Hàng bán chi nhánh', icon: PackageCheck, section: 'catalog', roles: MANAGEMENT_ROLES },
   // Nhóm 3: Quản lý cửa hàng
-  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'store_management', roles: MANAGEMENT_ROLES },
+  { to: '/admin/chi-nhanh', label: 'Hệ thống cửa hàng', icon: Store, section: 'store_management', roles: SUPER_ROLES },
   { to: '/admin/vi-tri', label: 'Vị trí & Mã QR bàn', icon: QrCode, section: 'store_management', roles: MANAGEMENT_ROLES },
   // Nhóm 4: Quản trị
-  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone, section: 'management', roles: MANAGEMENT_ROLES },
-  { to: '/admin/danh-gia', label: 'Quản lý đánh giá', icon: Star, section: 'management', roles: MANAGEMENT_ROLES },
-  { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase, section: 'management', roles: MANAGEMENT_ROLES },
+  { to: '/admin/khuyen-mai', label: 'Khuyến mãi & Voucher', icon: Megaphone, section: 'management', roles: SUPER_ROLES },
+  { to: '/admin/danh-gia', label: 'Quản lý đánh giá', icon: Star, section: 'management', roles: SUPER_ROLES },
+  { to: '/admin/tuyen-dung', label: 'Tuyển dụng & Ứng viên', icon: Briefcase, section: 'management', roles: SUPER_ROLES },
   { to: '/admin/thong-bao', label: 'Trung tâm thông báo', icon: Bell, section: 'management', roles: ALL_ROLES },
-  { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings, section: 'management', roles: MANAGEMENT_ROLES },
+  { to: '/admin/cai-dat', label: 'Tài khoản & Nhật ký', icon: Settings, section: 'management', roles: SUPER_ROLES },
 ] as const;
 
 const sectionLabels = {

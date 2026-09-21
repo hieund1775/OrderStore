@@ -130,7 +130,21 @@ export function toAdminReviewDto(row) {
     customerEditUsedAt: row.customer_edit_used_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    reply: row.reply || null,
+    reply: row.reply
+      ? {
+          id: row.reply.id,
+          body: row.reply.body,
+          createdAt: row.reply.created_at || row.reply.createdAt || null,
+          created_at: row.reply.created_at || row.reply.createdAt || null,
+        }
+      : (row.reply_comment || row.reply_body
+        ? {
+            id: row.reply_id || null,
+            body: row.reply_comment || row.reply_body,
+            createdAt: row.reply_created_at || row.reply_createdAt || null,
+            created_at: row.reply_created_at || row.reply_createdAt || null,
+          }
+        : null),
   };
 }
 

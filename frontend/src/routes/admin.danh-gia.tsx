@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, redirect, useNavigate, useRouter } from '@tanstack/react-router';
 import { Star, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ReviewModerationPanel } from '@/components/admin/reviews/ReviewModerationPanel';
+import { getUser } from '@/lib/api';
 
 export const Route = createFileRoute('/admin/danh-gia')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -11,6 +12,13 @@ export const Route = createFileRoute('/admin/danh-gia')({
     store_id: typeof search.store_id === 'string' ? search.store_id : undefined,
     q: typeof search.q === 'string' ? search.q : undefined,
   }),
+  beforeLoad: () => {
+    if (typeof window === 'undefined') return;
+    const user = getUser();
+    if (user?.role !== 'super') {
+      throw redirect({ to: '/admin/don-hang' });
+    }
+  },
   component: AdminReviewsPage,
   head: () => ({
     meta: [{ title: 'Quản lý đánh giá — Admin — Trà Trái Cây Tô' }],
