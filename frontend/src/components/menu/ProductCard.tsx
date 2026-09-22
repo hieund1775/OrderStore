@@ -338,7 +338,7 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
               qty: configured.quantity,
             };
             setBuyNowIntent(session.userId, buyNowItem);
-            navigate({ to: '/thanh-toan' });
+            navigate({ to: '/thanh-toan', search: { source: 'buy_now' } });
           }}
         />
       ) : (
@@ -454,7 +454,7 @@ function CustomizeDialog({
         qty,
       };
       setBuyNowIntent(session.userId, buyNowItem);
-      navigate({ to: '/thanh-toan' });
+      navigate({ to: '/thanh-toan', search: { source: 'buy_now' } });
       onOpenChange(false);
       return;
     }

@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { ArrowUp, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/lib/cart';
+import { clearBuyNowIntent } from '@/lib/buy-now';
 import { vnd } from '@/lib/data';
 import { useCustomerSession } from '@/lib/customer-session';
 
@@ -47,7 +48,15 @@ export function MobileCartBar() {
           <p className="text-sm font-bold">{vnd(subtotal)}</p>
         </div>
         <Button asChild variant="hero" size="sm">
-          <Link to="/thanh-toan">Thanh toán</Link>
+          <Link
+            to="/thanh-toan"
+            search={{ source: 'cart' }}
+            onClick={() => {
+              clearBuyNowIntent();
+            }}
+          >
+            Thanh toán
+          </Link>
         </Button>
       </div>
     </div>

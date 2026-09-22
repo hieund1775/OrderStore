@@ -23,6 +23,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { useCart, type CartItem } from '@/lib/cart';
+import { clearBuyNowIntent } from '@/lib/buy-now';
 import { vnd } from '@/lib/data';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 
@@ -357,7 +358,14 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                   variant="hero"
                   className="w-full h-11 rounded-xl font-bold shadow-glow"
                 >
-                  <Link to="/thanh-toan" onClick={() => setOpen(false)}>
+                  <Link
+                    to="/thanh-toan"
+                    search={{ source: "cart" }}
+                    onClick={() => {
+                      clearBuyNowIntent();
+                      setOpen(false);
+                    }}
+                  >
                     <span>Mua Hàng ({selectedCount})</span>
                     <ChevronRight className="size-4 ml-1" />
                   </Link>

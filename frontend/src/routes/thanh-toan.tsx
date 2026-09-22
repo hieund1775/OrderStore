@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Bike, MapPin, QrCode, Settings2, Store, Ticket } from "lucide-react";
+import { Bike, MapPin, QrCode, Settings2, Store, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +42,7 @@ import { DeliveryAddressSelector } from "@/components/checkout/DeliveryAddressSe
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
-  validateSearch: (search: Record<string, unknown>): { table_id?: string; table_token?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { table_id?: string; table_token?: string; source?: string } => ({
     table_id:
       typeof search.table_id === "string"
         ? search.table_id
@@ -51,6 +51,9 @@ export const Route = createFileRoute("/thanh-toan")({
           : undefined,
     table_token: typeof search.table_token === "string" && search.table_token.trim()
       ? search.table_token.trim()
+      : undefined,
+    source: typeof search.source === "string" && search.source.trim()
+      ? search.source.trim()
       : undefined,
   }),
   head: () => ({
@@ -105,18 +108,31 @@ type CreateOrderResponse = {
 
 function Checkout() {
   const session = useCustomerSession();
-  const { removeItems, updateItem, selectedItems, selectedSubtotal } = useCart();
-  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(() =>
-    getCustomerSession() ? getBuyNowIntent(getCustomerSession()?.userId) : null
-  );
+  const { table_id: searchTableId, table_token: searchTableToken, source: searchSource } = useSearch({ from: "/thanh-toan" });
+  const { removeItem, removeItems, setQty, updateItem, selectedItems, selectedSubtotal, selectedCount } = useCart();
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("source") === "cart") {
+        clearBuyNowIntent(getCustomerSession()?.userId);
+        return null;
+      }
+    }
+    return getCustomerSession() ? getBuyNowIntent(getCustomerSession()?.userId) : null;
+  });
 
   useEffect(() => {
+    if (searchSource === "cart") {
+      clearBuyNowIntent(session?.userId);
+      setBuyNowItem(null);
+      return;
+    }
     if (session?.userId) {
       setBuyNowItem(getBuyNowIntent(session.userId));
     } else {
       setBuyNowItem(null);
     }
-  }, [session?.userId]);
+  }, [session?.userId, searchSource]);
 
   const isBuyNow = buyNowItem !== null;
   const checkoutItems = useMemo(
@@ -185,6 +201,29 @@ function Checkout() {
     setEditingItem(null);
     setEditingModalOpen(false);
   };
+
+  const handleItemQtyChange = (item: CartItem, delta: number) => {
+    const nextQty = Math.max(1, Math.min(99, item.qty + delta));
+    if (nextQty === item.qty) return;
+
+    if (isBuyNow && session?.userId) {
+      const updated = updateBuyNowIntent(session.userId, { ...item, qty: nextQty });
+      setBuyNowItem(updated);
+    } else {
+      setQty(item.key, nextQty);
+    }
+  };
+
+  const handleItemRemove = (item: CartItem) => {
+    if (isBuyNow) {
+      clearBuyNowIntent(session?.userId);
+      setBuyNowItem(null);
+      toast.info("Đã xóa sản phẩm mua ngay.");
+    } else {
+      removeItem(item.key);
+      toast.info(`Đã xóa ${item.name} khỏi đơn thanh toán.`);
+    }
+  };
   const {
     stores: storeOptions,
     selectedStoreId,
@@ -196,7 +235,6 @@ function Checkout() {
     clearTable,
   } = useBranch();
   const navigate = useNavigate();
-  const { table_id: searchTableId, table_token: searchTableToken } = useSearch({ from: "/thanh-toan" });
 
   const [method, setMethod] = useState<"delivery" | "takeaway">("delivery");
   const [name, setName] = useState("");
@@ -1106,20 +1144,24 @@ function Checkout() {
                 </Badge>
                 <div className="text-xs">
                   <p className="font-semibold text-foreground">Bạn đang thanh toán nhanh cho 1 món riêng biệt</p>
-                  <p className="text-muted-foreground">Giỏ hàng của bạn vẫn được giữ nguyên đầy đủ.</p>
+                  <p className="text-muted-foreground">
+                    {selectedCount > 0
+                      ? `Giỏ hàng của bạn (${selectedCount} món) vẫn được giữ nguyên đầy đủ.`
+                      : 'Giỏ hàng của bạn vẫn được giữ nguyên đầy đủ.'}
+                  </p>
                 </div>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs h-8 px-3 border-border hover:bg-background shrink-0"
+                className="text-xs h-8 px-3 border-border hover:bg-background shrink-0 font-medium"
                 onClick={() => {
                   clearBuyNowIntent(session?.userId);
                   setBuyNowItem(null);
-                  toast.info("Đã hủy thanh toán Mua ngay, quay lại giỏ hàng.");
+                  toast.info("Đã chuyển sang thanh toán giỏ hàng.");
                 }}
               >
-                Hủy mua ngay
+                {selectedCount > 0 ? `Chuyển sang giỏ hàng (${selectedCount})` : "Hủy mua ngay"}
               </Button>
             </div>
           )}
@@ -1173,18 +1215,30 @@ function Checkout() {
                             <div className="flex items-start justify-between gap-2">
                               <p className="font-semibold text-sm">{i.name}</p>
                               {!pendingOrder && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1 shrink-0"
-                                  onClick={() => {
-                                    setEditingItem(i);
-                                    setEditingModalOpen(true);
-                                  }}
-                                >
-                                  <Settings2 className="size-3" />
-                                  <span>Chỉnh sửa</span>
-                                </Button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1"
+                                    onClick={() => {
+                                      setEditingItem(i);
+                                      setEditingModalOpen(true);
+                                    }}
+                                  >
+                                    <Settings2 className="size-3" />
+                                    <span className="hidden sm:inline">Chỉnh sửa</span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1"
+                                    onClick={() => handleItemRemove(i)}
+                                    title="Xóa món"
+                                  >
+                                    <Trash2 className="size-3 text-destructive" />
+                                    <span className="hidden sm:inline text-destructive">Xóa</span>
+                                  </Button>
+                                </div>
                               )}
                             </div>
                             <p className="text-muted-foreground text-xs">
@@ -1198,9 +1252,42 @@ function Checkout() {
                             {i.note && (
                               <p className="text-muted-foreground text-xs italic">Ghi chú: {i.note}</p>
                             )}
-                            <p className="text-primary mt-1 font-bold text-xs">
-                              {vnd(i.unitPrice)} × {i.qty} = {vnd(i.unitPrice * i.qty)}
-                            </p>
+                            <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-primary font-bold text-xs">
+                                  {vnd(i.unitPrice * i.qty)}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  ({vnd(i.unitPrice)}/món)
+                                </span>
+                              </div>
+
+                              {!pendingOrder && (
+                                <div className="inline-flex items-center rounded-md border border-border/70 bg-background shadow-xs p-0.5">
+                                  <button
+                                    type="button"
+                                    aria-label="Giảm số lượng"
+                                    disabled={i.qty <= 1}
+                                    onClick={() => handleItemQtyChange(i, -1)}
+                                    className="size-6 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                                  >
+                                    −
+                                  </button>
+                                  <span className="w-7 text-center font-mono text-xs font-semibold text-foreground">
+                                    {i.qty}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    aria-label="Tăng số lượng"
+                                    disabled={i.qty >= 99}
+                                    onClick={() => handleItemQtyChange(i, 1)}
+                                    className="size-6 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}

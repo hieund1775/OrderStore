@@ -9,6 +9,7 @@ import { CatalogSection } from "@/components/catalog/CatalogSection";
 import { CategorySelector } from "@/components/catalog/CategorySelector";
 import { PublicReviewHub } from "@/components/reviews/PublicReviewHub";
 import { useCart } from "@/lib/cart";
+import { clearBuyNowIntent } from "@/lib/buy-now";
 import { useBranch } from "@/lib/branch";
 import {
   fetchPublicCatalogSections,
@@ -425,7 +426,13 @@ function MenuPage() {
                 </Button>
               ) : (
                 <Button asChild variant="hero" className="mt-4 w-full">
-                  <Link to="/thanh-toan">
+                  <Link
+                    to="/thanh-toan"
+                    search={{ source: "cart" }}
+                    onClick={() => {
+                      clearBuyNowIntent();
+                    }}
+                  >
                     Thanh toán <ChevronRight className="size-4" />
                   </Link>
                 </Button>
