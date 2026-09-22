@@ -288,7 +288,7 @@ export function CatalogOption3BlocksEditor({
       {/* 2 BLOCKS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* ======================================================= */}
-        {/* BLOCK 1: TÙY CHỌN KHÔNG TIỀN (CHỌN 1 TRONG NHÓM) */}
+        {/* BLOCK 1: NHÓM CHỌN MỘT */}
         {/* ======================================================= */}
         <div className="bg-card rounded-xl border p-4 space-y-3.5 shadow-2xs flex flex-col justify-between">
           <div className="space-y-3">
@@ -299,9 +299,10 @@ export function CatalogOption3BlocksEditor({
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Block 1: Tùy Chọn Không Tiền
+                    Block 1: Nhóm chọn một
                   </h3>
-                  <p className="text-[11px] text-muted-foreground">Chọn 1 trong nhóm (+0đ): Đường, Đá...</p>
+                  <p className="text-[11px] text-muted-foreground">Khách chỉ chọn 1 lựa chọn trong nhóm.</p>
+                  <p className="text-[10px] text-muted-foreground/80 italic">Ví dụ: Kích cỡ, Đường, Đá, Mức ngọt.</p>
                 </div>
               </div>
             </div>
@@ -310,7 +311,7 @@ export function CatalogOption3BlocksEditor({
             <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
               {freeAttributes.length === 0 ? (
                 <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
-                  Chưa có nhóm tùy chọn không tiền nào. Bấm nút bên dưới để tạo mới.
+                  Chưa có nhóm chọn một nào. Bấm nút bên dưới để tạo mới.
                 </div>
               ) : (
                 freeAttributes.map((attr) => {
@@ -389,12 +390,12 @@ export function CatalogOption3BlocksEditor({
             className="w-full text-xs font-semibold h-8 border-dashed"
             onClick={() => handleOpenCreateModal('free')}
           >
-            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Không Tiền (Đá, Đường...)
+            <Plus className="size-3.5 mr-1" /> Thêm nhóm chọn một
           </Button>
         </div>
 
         {/* ======================================================= */}
-        {/* BLOCK 2: TÙY CHỌN CÓ TIỀN (CHỌN NHIỀU, TÍNH PHỤ THU) */}
+        {/* BLOCK 2: NHÓM CHỌN NHIỀU */}
         {/* ======================================================= */}
         <div className="bg-card rounded-xl border p-4 space-y-3.5 shadow-2xs flex flex-col justify-between">
           <div className="space-y-3">
@@ -405,9 +406,10 @@ export function CatalogOption3BlocksEditor({
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Block 2: Tùy Chọn Có Tiền
+                    Block 2: Nhóm chọn nhiều
                   </h3>
-                  <p className="text-[11px] text-muted-foreground">Chọn nhiều (+tiền): Topping, Size, Thêm...</p>
+                  <p className="text-[11px] text-muted-foreground">Khách có thể chọn nhiều lựa chọn trong nhóm.</p>
+                  <p className="text-[10px] text-muted-foreground/80 italic">Ví dụ: Topping, món thêm.</p>
                 </div>
               </div>
             </div>
@@ -416,7 +418,7 @@ export function CatalogOption3BlocksEditor({
             <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
               {paidAttributes.length === 0 ? (
                 <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
-                  Chưa có nhóm tùy chọn có tiền nào. Bấm nút bên dưới để tạo mới.
+                  Chưa có nhóm chọn nhiều nào. Bấm nút bên dưới để tạo mới.
                 </div>
               ) : (
                 paidAttributes.map((attr) => {
@@ -493,7 +495,7 @@ export function CatalogOption3BlocksEditor({
             className="w-full text-xs font-semibold h-8 border-dashed"
             onClick={() => handleOpenCreateModal('paid')}
           >
-            <Plus className="size-3.5 mr-1" /> Thêm Nhóm Có Tiền (Topping, Size...)
+            <Plus className="size-3.5 mr-1" /> Thêm nhóm chọn nhiều
           </Button>
         </div>
       </div>
@@ -507,11 +509,11 @@ export function CatalogOption3BlocksEditor({
                 <span>
                   {modalType === 'free'
                     ? modalMode === 'edit'
-                      ? '✏️ Sửa Nhóm Tùy Chọn Không Tiền'
-                      : '🧊 Tạo Nhóm Tùy Chọn Không Tiền'
+                      ? '✏️ Sửa Nhóm Chọn Một'
+                      : '🧊 Tạo Nhóm Chọn Một'
                     : modalMode === 'edit'
-                    ? '✏️ Sửa Nhóm Tùy Chọn Có Tiền'
-                    : '💰 Tạo Nhóm Tùy Chọn Có Tiền'}
+                    ? '✏️ Sửa Nhóm Chọn Nhiều'
+                    : '💰 Tạo Nhóm Chọn Nhiều'}
                 </span>
               </DialogTitle>
             </DialogHeader>
@@ -530,8 +532,8 @@ export function CatalogOption3BlocksEditor({
                   id="modal-group-name"
                   placeholder={
                     modalType === 'free'
-                      ? 'Ví dụ: Mức Đá, Mức Đường, Nhiệt Độ...'
-                      : 'Ví dụ: Topping Thêm, Size Nâng Cấp...'
+                      ? 'Ví dụ: Kích cỡ, Đường, Đá, Mức ngọt...'
+                      : 'Ví dụ: Topping, Món thêm...'
                   }
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
@@ -564,9 +566,9 @@ export function CatalogOption3BlocksEditor({
                   <span className="text-[11px] text-muted-foreground">
                     {modalType === 'free'
                       ? block1HasPrice
-                        ? 'Chọn 1 (Có tính tiền theo món)'
-                        : 'Chọn 1 trong nhóm (+0đ)'
-                      : 'Chọn nhiều, mỗi món có giá riêng'}
+                        ? 'Khách chỉ chọn 1 lựa chọn trong nhóm (Có tính tiền)'
+                        : 'Khách chỉ chọn 1 lựa chọn trong nhóm (+0đ)'
+                      : 'Khách có thể chọn nhiều, mỗi lựa chọn được phép có giá 0đ hoặc có phụ thu'}
                   </span>
                 </div>
 

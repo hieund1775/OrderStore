@@ -46,7 +46,7 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
     ],
   };
 
-  it('renders Block 1 (Không tiền) and Block 2 (Có tiền) with Edit and Delete action buttons', () => {
+  it('renders Block 1 (Nhóm chọn một) and Block 2 (Nhóm chọn nhiều) with Edit and Delete action buttons', () => {
     const html = renderToString(
       <CatalogOption3BlocksEditor
         categoryId={2}
@@ -58,13 +58,17 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
     );
 
     // Block 1
-    expect(html).toContain('Block 1: Tùy Chọn Không Tiền');
+    expect(html).toContain('Block 1: Nhóm chọn một');
+    expect(html).toContain('Khách chỉ chọn 1 lựa chọn trong nhóm.');
+    expect(html).toContain('Ví dụ: Kích cỡ, Đường, Đá, Mức ngọt.');
     expect(html).toContain('Mức Đá');
     expect(html).toContain('100% Đá');
     expect(html).toContain('50% Đá');
 
     // Block 2
-    expect(html).toContain('Block 2: Tùy Chọn Có Tiền');
+    expect(html).toContain('Block 2: Nhóm chọn nhiều');
+    expect(html).toContain('Khách có thể chọn nhiều lựa chọn trong nhóm.');
+    expect(html).toContain('Ví dụ: Topping, món thêm.');
     expect(html).toContain('Topping Thêm');
     expect(html).toContain('Trân châu đen');
     expect(html).toContain('+5.000đ');
@@ -88,8 +92,8 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
       />,
     );
 
-    expect(html).toContain('Thêm Nhóm Không Tiền (Đá, Đường...)');
-    expect(html).toContain('Thêm Nhóm Có Tiền (Topping, Size...)');
+    expect(html).toContain('Thêm nhóm chọn một');
+    expect(html).toContain('Thêm nhóm chọn nhiều');
   });
 
   it('renders Block 1 with price adjustment badges if a single_select group has prices (e.g. Size)', () => {
