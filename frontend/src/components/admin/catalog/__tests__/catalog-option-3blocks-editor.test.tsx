@@ -91,4 +91,46 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
     expect(html).toContain('Thêm Nhóm Không Tiền (Đá, Đường...)');
     expect(html).toContain('Thêm Nhóm Có Tiền (Topping, Size...)');
   });
+
+  it('renders Block 1 with price adjustment badges if a single_select group has prices (e.g. Size)', () => {
+    const sizeSchema: SchemaDetails = {
+      ...sampleSchema,
+      attributes: [
+        {
+          id: 10,
+          name: 'Kích cỡ (Size)',
+          code: 'size',
+          role: 'modifier',
+          input_type: 'single_select',
+          is_required: true,
+          sort_order: 1,
+          min_selections: 1,
+          max_selections: 1,
+          values: [
+            { id: 101, code: 'size_m', label: 'Size M', price_adjustment: 0, sort_order: 1, is_active: true },
+            { id: 102, code: 'size_l', label: 'Size L', price_adjustment: 3000, sort_order: 2, is_active: true },
+            { id: 103, code: 'size_xl', label: 'Size XL', price_adjustment: 5000, sort_order: 3, is_active: true },
+          ],
+        },
+      ],
+    };
+
+    const html = renderToString(
+      <CatalogOption3BlocksEditor
+        categoryId={2}
+        categoryName="Trà sữa"
+        schema={sizeSchema}
+        categoryProducts={[]}
+        onRefresh={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('Kích cỡ (Size)');
+    expect(html).toContain('Size M');
+    expect(html).toContain('Size L');
+    expect(html).toContain('+3.000đ');
+    expect(html).toContain('Size XL');
+    expect(html).toContain('+5.000đ');
+  });
 });
+

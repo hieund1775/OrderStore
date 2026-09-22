@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,7 @@ export function CatalogOption3BlocksEditor({
   const [groupName, setGroupName] = useState('');
   const [optionsList, setOptionsList] = useState<OptionRowItem[]>([]);
   const [modalSaving, setModalSaving] = useState(false);
+  const [block1HasPrice, setBlock1HasPrice] = useState(false);
 
   // Dialog Xác Nhận Xóa
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -135,6 +137,7 @@ export function CatalogOption3BlocksEditor({
     setModalType(type);
     setEditingAttribute(null);
     setGroupName('');
+    setBlock1HasPrice(false);
     if (type === 'free') {
       setOptionsList([
         { label: '100% Đá', price: 0 },
@@ -164,6 +167,7 @@ export function CatalogOption3BlocksEditor({
       price: Number(v.price_adjustment) || 0,
     }));
     setOptionsList(existingValues.length > 0 ? existingValues : [{ label: '', price: 0 }]);
+    setBlock1HasPrice(type === 'free' ? existingValues.some((v) => v.price > 0) : true);
     setModalOpen(true);
   };
 
@@ -232,13 +236,14 @@ export function CatalogOption3BlocksEditor({
     try {
       setModalSaving(true);
       const isFree = modalType === 'free';
+      const shouldApplyPrice = modalType === 'paid' || (isFree && block1HasPrice);
       const values = cleanOptions.map((opt, index) => {
         const code = opt.code || generateCode(opt.label || `opt_${index}`);
         return {
           id: opt.id,
           code,
           label: opt.label.trim(),
-          price_adjustment: isFree ? 0 : Number(opt.price) || 0,
+          price_adjustment: shouldApplyPrice ? Math.max(0, Number(opt.price) || 0) : 0,
           sort_order: index + 1,
           is_active: true,
         };
@@ -327,9 +332,14 @@ export function CatalogOption3BlocksEditor({
                             {attr.values?.map((v) => (
                               <span
                                 key={v.id}
-                                className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 font-medium"
+                                className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 font-medium flex items-center gap-1"
                               >
-                                {v.label || (v as any).value_label}
+                                <span>{v.label || (v as any).value_label}</span>
+                                {Number(v.price_adjustment || 0) > 0 && (
+                                   <span className="text-blue-900 font-bold">
+                                     {`(+${Number(v.price_adjustment).toLocaleString('vi-VN')}đ)`}
+                                   </span>
+                                 )}
                               </span>
                             ))}
                           </div>
@@ -533,12 +543,29 @@ export function CatalogOption3BlocksEditor({
               {/* Danh sách các lựa chọn động (Repeater) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold">
-                    Danh sách lựa chọn <span className="text-destructive">*</span>
-                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-semibold">
+                      Danh sách lựa chọn <span className="text-destructive">*</span>
+                    </Label>
+                    {modalType === 'free' && (
+                      <div className="flex items-center gap-1.5 bg-muted/60 px-2 py-0.5 rounded-full border border-border/60">
+                        <Label htmlFor="block1-has-price" className="text-[11px] font-medium text-muted-foreground cursor-pointer select-none">
+                          Bật tính tiền
+                        </Label>
+                        <Switch
+                          id="block1-has-price"
+                          checked={block1HasPrice}
+                          onCheckedChange={setBlock1HasPrice}
+                          className="scale-75 origin-center data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
                   <span className="text-[11px] text-muted-foreground">
                     {modalType === 'free'
-                      ? 'Chọn 1 trong nhóm (+0đ)'
+                      ? block1HasPrice
+                        ? 'Chọn 1 (Có tính tiền theo món)'
+                        : 'Chọn 1 trong nhóm (+0đ)'
                       : 'Chọn nhiều, mỗi món có giá riêng'}
                   </span>
                 </div>
@@ -547,32 +574,32 @@ export function CatalogOption3BlocksEditor({
                   {/* Table Header */}
                   <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                     <span className="flex-1">Tên lựa chọn</span>
-                    {modalType === 'paid' && <span className="w-28 text-right pr-2">Giá tiền (đ)</span>}
+                    {(modalType === 'paid' || block1HasPrice) && <span className="w-28 text-right pr-2">Giá tiền (đ)</span>}
                     <span className="w-7 text-center">Xóa</span>
                   </div>
 
-                  {/* Rows */}
-                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
-                    {optionsList.map((opt, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <Input
-                          placeholder={modalType === 'free' ? 'VD: 100% Đá, 50% Đá...' : 'VD: Trân châu đen, Thạch...'}
-                          value={opt.label}
-                          onChange={(e) => handleOptionLabelChange(index, e.target.value)}
-                          className="h-8 text-xs flex-1 bg-background"
-                          required={index === 0}
-                        />
-                        {modalType === 'paid' && (
-                          <Input
-                            type="number"
-                            min="0"
-                            step="500"
-                            placeholder="0"
-                            value={opt.price}
-                            onChange={(e) => handleOptionPriceChange(index, Number(e.target.value))}
-                            className="h-8 text-xs w-28 text-right bg-background"
-                          />
-                        )}
+                   {/* Rows */}
+                   <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
+                     {optionsList.map((opt, index) => (
+                       <div key={index} className="flex items-center gap-2">
+                         <Input
+                           placeholder={modalType === 'free' ? (block1HasPrice ? 'VD: Size M, Size L, Size XL...' : 'VD: 100% Đá, 50% Đá...') : 'VD: Trân châu đen, Thạch...'}
+                           value={opt.label}
+                           onChange={(e) => handleOptionLabelChange(index, e.target.value)}
+                           className="h-8 text-xs flex-1 bg-background"
+                           required={index === 0}
+                         />
+                         {(modalType === 'paid' || block1HasPrice) && (
+                           <Input
+                             type="number"
+                             min="0"
+                             step="500"
+                             placeholder="0"
+                             value={opt.price}
+                             onChange={(e) => handleOptionPriceChange(index, Number(e.target.value))}
+                             className="h-8 text-xs w-28 text-right bg-background"
+                           />
+                         )}
                         <Button
                           type="button"
                           size="icon"
