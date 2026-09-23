@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { useCart } from '@/lib/cart';
+import { useCart, mapConfiguredItemToCartItem } from '@/lib/cart';
 import { SmartCartDrawer } from '@/components/cart/SmartCartDrawer';
 import { ForgotPasswordDialog } from '@/components/site/ForgotPasswordDialog';
 import { useBranch } from '@/lib/branch';
@@ -50,6 +50,7 @@ import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/li
 import { toast } from 'sonner';
 import { explicitCustomerLogout } from '@/lib/auth-logout';
 import { getCustomerSession, useCustomerSession, openCustomerLoginModal } from '@/lib/customer-session';
+import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 import {
   apiPost,
   clearToken,
@@ -60,6 +61,7 @@ import {
   setCustomerToken,
   setCustomerUser,
   clearCustomerToken,
+  resolveProductConfiguration,
 } from '@/lib/api';
 import { resolveLoginDestination } from '@/lib/auth-login-destination';
 import { googleClientId, hasGoogleSignIn } from '@/lib/google-signin';
@@ -142,11 +144,14 @@ function QuickCart() {
   return <SmartCartDrawer />;
 }
 
-function WishlistButton() {
+export function WishlistButton() {
   const [open, setOpen] = useState(false);
   const session = useCustomerSession();
+  const { selectedStore } = useBranch();
   const { addItem } = useCart();
-  const { items, count, isLoading, isError, refetch, removeFavorite, isPending } = useWishlist();
+  const { items, count, isLoading, isError, refetch, removeFavorite, isPending } = useWishlist(selectedStore?.id);
+  const [configuringItem, setConfiguringItem] = useState<WishlistItem | null>(null);
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!session) {
@@ -162,114 +167,194 @@ function WishlistButton() {
     setOpen(nextOpen);
   };
 
-  const handleQuickAdd = (item: WishlistItem) => {
-    const cartItem = buildWishlistQuickCartItem(item);
-    if (!cartItem) {
-      toast.error('Thông tin món chưa đầy đủ, vui lòng chọn lại từ thực đơn');
+  const handleQuickAdd = async (item: WishlistItem) => {
+    if (!selectedStore?.id) {
+      toast.error('Vui lòng chọn chi nhánh trước khi thêm món');
       return;
     }
-    const success = addItem(cartItem);
-    if (success) {
-      toast.success(`Đã thêm "${item.product_name}" vào giỏ hàng`);
+
+    if (item.is_available !== true || !item.price || item.price <= 0) {
+      toast.error('Món hiện không khả dụng tại chi nhánh này');
+      return;
+    }
+
+    // If product has customizable options, open DynamicProductConfigurator
+    if (item.has_options) {
+      setConfiguringItem(item);
+      return;
+    }
+
+    // If product has no options, resolve default variant from backend first
+    try {
+      setResolvingId(Number(item.product_id));
+      const resolved = await resolveProductConfiguration({
+        store_id: selectedStore.id,
+        product_slug: item.product_slug || String(item.product_id),
+      });
+
+      const cartItem = buildWishlistQuickCartItem(item, selectedStore, {
+        sku: resolved.variant?.sku,
+        variantId: resolved.variant?.id,
+        variantName: resolved.variant?.name_suffix,
+        price: resolved.pricing?.final_price ?? resolved.variant?.base_price ?? item.price,
+        fulfillmentLane: resolved.product?.fulfillment_lane,
+        stockMode: resolved.product?.stock_mode,
+      });
+
+      if (!cartItem) {
+        toast.error('Không tìm thấy thông tin biến thể hợp lệ tại chi nhánh');
+        return;
+      }
+
+      const success = addItem(cartItem);
+      if (success) {
+        toast.success(`Đã thêm "${item.product_name}" vào giỏ hàng`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể lấy thông tin món từ chi nhánh');
+    } finally {
+      setResolvingId(null);
     }
   };
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger
-        asChild
-        onClickCapture={(e) => {
-          if (!session) {
-            e.preventDefault();
-            e.stopPropagation();
-            openCustomerLoginModal();
-          }
-        }}
-      >
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative hidden rounded-full sm:inline-flex"
-          aria-label={`Yêu thích (${count})`}
+    <>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetTrigger
+          asChild
+          onClickCapture={(e) => {
+            if (!session) {
+              e.preventDefault();
+              e.stopPropagation();
+              openCustomerLoginModal();
+            }
+          }}
         >
-          <Heart className="size-5" />
-          {count > 0 && (
-            <span className="bg-berry text-white absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold">
-              {count > 99 ? '99+' : count}
-            </span>
-          )}
-        </Button>
-      </SheetTrigger>
-      <SheetContent className="w-full sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="font-display">Món yêu thích ({count})</SheetTitle>
-        </SheetHeader>
-        <div className="mt-4 space-y-3 px-4">
-          {isLoading && (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
-              <Loader2 className="size-6 animate-spin text-primary" />
-              <p className="text-sm">Đang tải danh sách yêu thích...</p>
-            </div>
-          )}
-
-          {!isLoading && isError && (
-            <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-              <p className="text-destructive text-sm">Không thể tải danh sách yêu thích.</p>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="mr-1.5 size-3.5" /> Thử lại
-              </Button>
-            </div>
-          )}
-
-          {!isLoading && !isError && items.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-              <Heart className="mb-2 size-10 stroke-1 text-muted-foreground/40" />
-              <p className="text-sm font-medium">Chưa có món nào trong danh sách yêu thích</p>
-              <p className="text-xs text-muted-foreground/80 mt-1">Hãy bấm thả tim các món bạn yêu thích trên thực đơn nhé!</p>
-            </div>
-          )}
-
-          {!isLoading && !isError && items.map((p) => {
-            const pending = isPending(p.product_id);
-            return (
-              <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3 bg-card shadow-sm">
-                <img
-                  src={p.image_url || '/placeholder.png'}
-                  alt={p.product_name || 'Món'}
-                  loading="lazy"
-                  className="size-14 rounded-lg object-cover bg-muted"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{p.product_name}</p>
-                  <p className="text-xs text-muted-foreground">{p.base_tea || 'Thiếu dữ liệu cốt trà'}</p>
-                  <p className="text-primary text-sm font-bold mt-0.5">{vnd(p.price)}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="soft"
-                    size="sm"
-                    className="text-xs h-8 px-2.5"
-                    onClick={() => handleQuickAdd(p)}
-                  >
-                    + Giỏ
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={pending}
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeFavorite(p.product_id)}
-                    aria-label={`Xóa ${p.product_name} khỏi yêu thích`}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative hidden rounded-full sm:inline-flex"
+            aria-label={`Yêu thích (${count})`}
+          >
+            <Heart className="size-5" />
+            {count > 0 && (
+              <span className="bg-berry text-white absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold">
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </Button>
+        </SheetTrigger>
+        <SheetContent className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle className="font-display">Món yêu thích ({count})</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-3 px-4">
+            {isLoading && (
+              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+                <Loader2 className="size-6 animate-spin text-primary" />
+                <p className="text-sm">Đang tải danh sách yêu thích...</p>
               </div>
+            )}
+
+            {!isLoading && isError && (
+              <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+                <p className="text-destructive text-sm">Không thể tải danh sách yêu thích.</p>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RefreshCw className="mr-1.5 size-3.5" /> Thử lại
+                </Button>
+              </div>
+            )}
+
+            {!isLoading && !isError && items.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                <Heart className="mb-2 size-10 stroke-1 text-muted-foreground/40" />
+                <p className="text-sm font-medium">Chưa có món nào trong danh sách yêu thích</p>
+                <p className="text-xs text-muted-foreground/80 mt-1">Hãy bấm thả tim các món bạn yêu thích trên thực đơn nhé!</p>
+              </div>
+            )}
+
+            {!isLoading && !isError && items.map((p) => {
+              const pending = isPending(p.product_id);
+              const isAvailable = p.is_available === true && typeof p.price === 'number' && p.price > 0;
+              const isBusy = resolvingId === Number(p.product_id);
+              return (
+                <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3 bg-card shadow-sm">
+                  <img
+                    src={p.image_url || '/placeholder.png'}
+                    alt={p.product_name || 'Món'}
+                    loading="lazy"
+                    className="size-14 rounded-lg object-cover bg-muted"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{p.product_name}</p>
+                    <p className="text-xs text-muted-foreground">{p.base_tea || 'Thiếu dữ liệu cốt trà'}</p>
+                    <p className={isAvailable ? "text-primary text-sm font-bold mt-0.5" : "text-muted-foreground text-xs mt-0.5"}>
+                      {isAvailable ? vnd(p.price) : 'Tạm ngưng tại chi nhánh'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {isAvailable ? (
+                      <Button
+                        variant="soft"
+                        size="sm"
+                        className="text-xs h-8 px-2.5"
+                        disabled={isBusy}
+                        onClick={() => handleQuickAdd(p)}
+                      >
+                        {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : '+ Giỏ'}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled
+                        className="text-xs h-8 px-2.5 opacity-60 cursor-not-allowed text-muted-foreground"
+                      >
+                        Hết hàng
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={pending}
+                      className="size-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeFavorite(p.product_id)}
+                      aria-label={`Xóa ${p.product_name} khỏi yêu thích`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Dynamic Configurator Modal for Wishlist item with options */}
+      {configuringItem && (
+        <DynamicProductConfigurator
+          open={Boolean(configuringItem)}
+          onOpenChange={(isOpen) => !isOpen && setConfiguringItem(null)}
+          productSlug={configuringItem.product_slug || String(configuringItem.product_id)}
+          storeId={selectedStore?.id}
+          mode="add"
+          onAddToCart={(configured) => {
+            const cartItem = mapConfiguredItemToCartItem(
+              configured,
+              selectedStore,
+              {
+                image: configuringItem.image_url || undefined,
+                base: configuringItem.base_tea || undefined,
+              }
             );
-          })}
-        </div>
-      </SheetContent>
-    </Sheet>
+            addItem(cartItem);
+            setConfiguringItem(null);
+            toast.success(`Đã thêm "${configured.productName}" vào giỏ hàng`);
+          }}
+        />
+      )}
+    </>
   );
 }
 

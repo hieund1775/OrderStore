@@ -446,7 +446,7 @@ function PreorderCheckoutPage() {
                         ?.map(
                           (m) =>
                             `${m.value_label}${
-                              m.price_adjustment > 0
+                              m.price_adjustment && m.price_adjustment > 0
                                 ? ` (+${vnd(m.price_adjustment)})`
                                 : ''
                             }`,
@@ -454,12 +454,19 @@ function PreorderCheckoutPage() {
                         .join(' · ')}
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {item.size || 'M'} · {item.sugar || '100%'} đường · {item.ice || '100%'} đá
-                      {item.toppings && item.toppings.length > 0 && (
-                        <span> · +{item.toppings.join(', ')}</span>
-                      )}
-                    </p>
+                    (() => {
+                      const details: string[] = [];
+                      if (item.size) details.push(item.size.toLowerCase().startsWith('size ') ? item.size : `Size ${item.size}`);
+                      if (item.base) details.push(item.base);
+                      if (item.sugar) details.push(item.sugar.includes('đường') ? item.sugar : `${item.sugar} đường`);
+                      if (item.ice) details.push(item.ice.includes('đá') ? item.ice : `${item.ice} đá`);
+                      if (item.toppings && item.toppings.length > 0) details.push(`+${item.toppings.join(', ')}`);
+                      return details.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          {details.join(' · ')}
+                        </p>
+                      ) : null;
+                    })()
                   )}
 
                   {item.note && (

@@ -22,7 +22,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { useCart, type CartItem } from '@/lib/cart';
+import { toast } from 'sonner';
+import { useCart, type CartItem, mapConfiguredItemToCartItem } from '@/lib/cart';
 import { clearBuyNowIntent } from '@/lib/buy-now';
 import { vnd } from '@/lib/data';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
@@ -86,35 +87,31 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
   };
 
   const handleEditClick = (item: CartItem) => {
+    if (!item.storeId) {
+      toast.error('Món này thiếu thông tin chi nhánh. Vui lòng xóa món và thêm lại từ thực đơn');
+      return;
+    }
     setEditingItem(item);
   };
 
   const handleSaveEdit = (configured: any) => {
     if (!editingItem) return;
 
+    const mapped = mapConfiguredItemToCartItem(
+      configured,
+      { id: editingItem.storeId, name: editingItem.storeName, district: editingItem.storeDistrict },
+      {
+        image: editingItem.image,
+        base: editingItem.base,
+        size: editingItem.size,
+        sugar: editingItem.sugar,
+        ice: editingItem.ice,
+        toppings: editingItem.toppings,
+      }
+    );
+
     updateItem(editingItem.key, {
-      storeId: editingItem.storeId,
-      storeName: editingItem.storeName,
-      storeDistrict: editingItem.storeDistrict,
-      productId: String(configured.productId),
-      productSlug: configured.productSlug,
-      name: configured.productName,
-      image: configured.image || editingItem.image,
-      variantId: configured.variantId,
-      sku: configured.sku,
-      variantName: configured.variantName,
-      stockMode: configured.stockMode,
-      fulfillmentLane: configured.fulfillmentLane,
-      size: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'size')?.value_code?.toUpperCase() || editingItem.size,
-      base: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'base')?.value_label || editingItem.base,
-      sugar: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'sugar')?.value_label || editingItem.sugar,
-      ice: configured.appliedModifiers?.find((m: any) => m.attribute_code === 'ice')?.value_label || editingItem.ice,
-      toppings: configured.appliedModifiers
-        ?.filter((m: any) => m.attribute_code === 'toppings' || m.attribute_code === 'topping' || m.attribute_name?.toLowerCase().includes('topping'))
-        .map((m: any) => m.value_label || m.value_code) || editingItem.toppings,
-      appliedModifiers: configured.appliedModifiers || [],
-      unitPrice: configured.unitPrice,
-      qty: configured.quantity,
+      ...mapped,
       selected: editingItem.selected,
       note: editingItem.note,
     });
@@ -260,8 +257,8 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                                 {item.appliedModifiers
                                   ?.map(
                                     (m) =>
-                                      `${m.value_label}${
-                                        m.price_adjustment > 0
+                                      `${m.value_label || ''}${
+                                        m.price_adjustment && m.price_adjustment > 0
                                           ? ` (+${vnd(m.price_adjustment)})`
                                           : ''
                                       }`,
@@ -269,12 +266,19 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                                   .join(' · ')}
                               </p>
                             ) : (
-                              <p className="text-[11px] text-muted-foreground">
-                                {item.size} · {item.sugar} đường · {item.ice} đá
-                                {item.toppings && item.toppings.length > 0 && (
-                                  <span> · +{item.toppings.join(', ')}</span>
-                                )}
-                              </p>
+                              (() => {
+                                const details: string[] = [];
+                                if (item.size) details.push(item.size.toLowerCase().startsWith('size ') ? item.size : `Size ${item.size}`);
+                                if (item.base) details.push(item.base);
+                                if (item.sugar) details.push(item.sugar.includes('đường') ? item.sugar : `${item.sugar} đường`);
+                                if (item.ice) details.push(item.ice.includes('đá') ? item.ice : `${item.ice} đá`);
+                                if (item.toppings && item.toppings.length > 0) details.push(`+${item.toppings.join(', ')}`);
+                                return details.length > 0 ? (
+                                  <p className="text-[11px] text-muted-foreground">
+                                    {details.join(' · ')}
+                                  </p>
+                                ) : null;
+                              })()
                             )}
 
                             {/* Added time tag */}

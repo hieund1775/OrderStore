@@ -692,7 +692,9 @@ export type AppliedModifier = {
   value_code?: string;
   value_label?: string;
   attribute_label?: string;
-  price_adjustment: number;
+  price_adjustment?: number;
+  attribute_id?: number;
+  value_id?: number;
 };
 
 export type ResolvedProductConfiguration = {

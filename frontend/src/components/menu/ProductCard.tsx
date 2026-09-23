@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { useCart, usePreorderCart } from '@/lib/cart';
+import { useCart, usePreorderCart, mapConfiguredItemToCartItem } from '@/lib/cart';
 import { useWishlist } from '@/lib/wishlist';
 import { useBranch } from '@/lib/branch';
 import { setBuyNowIntent } from '@/lib/buy-now';
@@ -35,8 +35,8 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
   const normalCart = useCart();
   const preorderCart = usePreorderCart();
   const { addItem } = usePreorder ? preorderCart : normalCart;
-  const { isFavorite, isPending, setFavorite } = useWishlist();
   const { selectedStore } = useBranch();
+  const { isFavorite, isPending, setFavorite } = useWishlist(selectedStore?.id);
   const [open, setOpen] = useState(false);
   const [configMode, setConfigMode] = useState<'add' | 'buy'>('add');
   const liked = isFavorite(product.id);
@@ -47,7 +47,6 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
       category: product.line || (product as any).category_name,
       fulfillment_lane: product.fulfillment_lane,
       name: product.name,
-      image_url: (product as any).image_url,
     }),
   );
 
@@ -58,7 +57,6 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
         category: product.line || (product as any).category_name,
         fulfillment_lane: product.fulfillment_lane,
         name: product.name,
-        image_url: (product as any).image_url,
       }),
     );
   }, [product.slug, product.image, (product as any).image_url, product.line, (product as any).category_name, product.fulfillment_lane, product.name]);
@@ -235,53 +233,12 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
           onOpenChange={setOpen}
           mode={configMode}
           onAddToCart={(configured) => {
-            addItem({
-              storeId: selectedStore?.id,
-              storeName: selectedStore?.name,
-              storeDistrict: selectedStore?.district,
-              productId: String(configured.productId),
-              productSlug: configured.productSlug,
-              name: configured.productName,
-              image: configured.image || product.image,
-              variantId: configured.variantId,
-              sku: configured.sku,
-              variantName: configured.variantName,
-              stockMode: configured.stockMode,
-              fulfillmentLane: configured.fulfillmentLane,
-              size:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size')
-                )?.value_label ||
-                configured.variantName ||
-                'M',
-              base:
-                configured.appliedModifiers.find(
-                  (m) =>
-                    m.attribute_code === 'base' ||
-                    m.attribute_name.toLowerCase().includes('nền') ||
-                    m.attribute_name.toLowerCase().includes('base')
-                )?.value_label || product.base,
-              sugar:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường')
-                )?.value_label || '100%',
-              ice:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá')
-                )?.value_label || '100%',
-              toppings: configured.appliedModifiers
-                .filter((m) => m.attribute_code === 'toppings' || m.attribute_name.toLowerCase().includes('topping'))
-                .map((m) => m.value_label || (m as { attribute_label?: string }).attribute_label || m.attribute_name),
-              appliedModifiers: configured.appliedModifiers.map((m) => ({
-                attribute_code: m.attribute_code,
-                attribute_name: m.attribute_name,
-                value_code: m.value_code,
-                value_label: m.value_label,
-                price_adjustment: m.price_adjustment,
-              })),
-              unitPrice: configured.unitPrice,
-              qty: configured.quantity,
-            });
+            const cartItem = mapConfiguredItemToCartItem(
+              configured,
+              selectedStore,
+              { image: product.image, base: product.base }
+            );
+            addItem(cartItem);
           }}
           onBuyNow={(configured) => {
             const session = getCustomerSession();
@@ -290,53 +247,11 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
               openCustomerLoginModal();
               return;
             }
-            const buyNowItem = {
-              storeId: selectedStore?.id,
-              storeName: selectedStore?.name,
-              storeDistrict: selectedStore?.district,
-              productId: String(configured.productId),
-              productSlug: configured.productSlug,
-              name: configured.productName,
-              image: configured.image || product.image,
-              variantId: configured.variantId,
-              sku: configured.sku,
-              variantName: configured.variantName,
-              stockMode: configured.stockMode,
-              fulfillmentLane: configured.fulfillmentLane,
-              size:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'size' || m.attribute_name.toLowerCase().includes('size')
-                )?.value_label ||
-                configured.variantName ||
-                'M',
-              base:
-                configured.appliedModifiers.find(
-                  (m) =>
-                    m.attribute_code === 'base' ||
-                    m.attribute_name.toLowerCase().includes('nền') ||
-                    m.attribute_name.toLowerCase().includes('base')
-                )?.value_label || product.base,
-              sugar:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'sugar' || m.attribute_name.toLowerCase().includes('đường')
-                )?.value_label || '100%',
-              ice:
-                configured.appliedModifiers.find(
-                  (m) => m.attribute_code === 'ice' || m.attribute_name.toLowerCase().includes('đá')
-                )?.value_label || '100%',
-              toppings: configured.appliedModifiers
-                .filter((m) => m.attribute_code === 'toppings' || m.attribute_name.toLowerCase().includes('topping'))
-                .map((m) => m.value_label || (m as { attribute_label?: string }).attribute_label || m.attribute_name),
-              appliedModifiers: configured.appliedModifiers.map((m) => ({
-                attribute_code: m.attribute_code,
-                attribute_name: m.attribute_name,
-                value_code: m.value_code,
-                value_label: m.value_label,
-                price_adjustment: m.price_adjustment,
-              })),
-              unitPrice: configured.unitPrice,
-              qty: configured.quantity,
-            };
+            const buyNowItem = mapConfiguredItemToCartItem(
+              configured,
+              selectedStore,
+              { image: product.image, base: product.base }
+            );
             setBuyNowIntent(session.userId, buyNowItem);
             navigate({ to: '/thanh-toan', search: { source: 'buy_now' } });
           }}

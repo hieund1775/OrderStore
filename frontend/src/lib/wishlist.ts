@@ -20,8 +20,15 @@ export type WishlistItem = {
   product_name: string;
   product_slug: string;
   base_tea: string;
-  price: number;
+  price: number | null;
   image_url: string | null;
+  is_available?: boolean;
+  has_options?: boolean;
+  sku?: string | null;
+  variant_id?: number | null;
+  variant_name?: string | null;
+  fulfillment_lane?: 'kitchen' | 'packing' | null;
+  stock_mode?: 'tracked' | 'made_to_order' | null;
   created_at: string;
 };
 
@@ -44,10 +51,11 @@ type WishlistMutationVariables = {
   userId: number;
   productId: number;
   product?: ProductSnapshot;
+  storeId?: number | string | null;
 };
 
-export function customerWishlistKey(userId: number) {
-  return ["customer-wishlist", userId] as const;
+export function customerWishlistKey(userId: number, storeId?: number | string | null) {
+  return storeId ? (["customer-wishlist", userId, String(storeId)] as const) : (["customer-wishlist", userId] as const);
 }
 
 export function customerWishlistMutationKey(userId: number) {
@@ -98,34 +106,83 @@ export function createOptimisticWishlistItem(
     base_tea: baseTea,
     price,
     image_url: product.image || null,
+    is_available: true,
+    has_options: undefined,
+    sku: null,
+    variant_id: null,
+    variant_name: null,
+    fulfillment_lane: undefined,
+    stock_mode: undefined,
     created_at: createdAt,
   };
 }
 
-export function buildWishlistQuickCartItem(item: WishlistItem): Omit<CartItem, "key"> | null {
+export function buildWishlistQuickCartItem(
+  item: WishlistItem,
+  storeInfo?: { id?: number | string; name?: string; district?: string } | null,
+  resolvedVariant?: {
+    sku?: string | null;
+    variantId?: number | null;
+    variantName?: string | null;
+    price?: number | null;
+    fulfillmentLane?: 'kitchen' | 'packing';
+    stockMode?: 'tracked' | 'made_to_order';
+  } | null,
+): Omit<CartItem, "key"> | null {
   const productId = normalizeWishlistProductId(item.product_id);
   const name = item.product_name?.trim();
   const baseTea = item.base_tea?.trim();
-  const price = Number(item.price);
-  if (!productId || !name || !baseTea || !Number.isFinite(price) || price < 0) return null;
+  const rawPrice = resolvedVariant?.price ?? item.price;
+  const price = Number(rawPrice);
+  if (!productId || !name || !baseTea || !Number.isFinite(price) || price <= 0) return null;
+  if (item.is_available !== true) return null;
+
+  // Strict store check: must have valid storeId
+  const rawStoreId = storeInfo?.id;
+  if (!rawStoreId) return null;
+
+  // Strict SKU and variantId check: must have valid sku and variantId
+  const sku = resolvedVariant?.sku || item.sku;
+  const variantId = resolvedVariant?.variantId ?? item.variant_id;
+  if (!sku || !variantId || !Number.isInteger(Number(variantId)) || Number(variantId) <= 0) return null;
+
+  // Strict fulfillmentLane and stockMode check: no fabricated fallback
+  const fulfillmentLane = resolvedVariant?.fulfillmentLane || item.fulfillment_lane;
+  const stockMode = resolvedVariant?.stockMode || item.stock_mode;
+  if (!fulfillmentLane || !stockMode) return null;
+
+  const variantName = resolvedVariant?.variantName ?? item.variant_name ?? undefined;
+  const size = variantName ? (variantName.toLowerCase().startsWith('size ') ? variantName.slice(5) : variantName) : undefined;
 
   return {
+    storeId: String(rawStoreId),
+    storeName: storeInfo?.name,
+    storeDistrict: storeInfo?.district,
     productId: String(productId),
     productSlug: item.product_slug?.trim() || String(productId),
     name,
     image: item.image_url || "",
-    size: "M",
-    base: baseTea,
-    sugar: "100%",
-    ice: "100%",
+    size,
+    base: baseTea || undefined,
+    sugar: undefined,
+    ice: undefined,
     toppings: [],
     unitPrice: price,
     qty: 1,
+    sku,
+    variantId: Number(variantId),
+    variantName: variantName || undefined,
+    fulfillmentLane,
+    stockMode,
   };
 }
 
-export async function fetchUserWishlist(userId: number): Promise<WishlistItem[]> {
-  const res = await apiGet<WishlistItem[]>(`/api/users/${userId}/wishlist`);
+export async function fetchUserWishlist(
+  userId: number,
+  storeId?: number | string | null,
+): Promise<WishlistItem[]> {
+  const query = storeId ? `?store_id=${encodeURIComponent(String(storeId))}` : '';
+  const res = await apiGet<WishlistItem[]>(`/api/users/${userId}/wishlist${query}`);
   const currentSession = getCustomerSession();
   if (currentSession && currentSession.userId !== userId) {
     return [];
@@ -136,8 +193,10 @@ export async function fetchUserWishlist(userId: number): Promise<WishlistItem[]>
 export async function ensureUserWishlist(
   userId: number,
   productId: number,
+  storeId?: number | string | null,
 ): Promise<WishlistEnsureResponse> {
-  return apiPut<WishlistEnsureResponse>(`/api/users/${userId}/wishlist/${productId}`, {});
+  const query = storeId ? `?store_id=${encodeURIComponent(String(storeId))}` : '';
+  return apiPut<WishlistEnsureResponse>(`/api/users/${userId}/wishlist/${productId}${query}`, {});
 }
 
 export async function removeUserWishlist(
@@ -165,7 +224,7 @@ export function hasPendingWishlistMutation(
     });
 }
 
-export function useWishlist() {
+export function useWishlist(storeId?: number | string | null) {
   const queryClient = useQueryClient();
   const { token, user } = useCustomerIdentity();
   const userId = Number(user?.id) || null;
@@ -174,20 +233,26 @@ export function useWishlist() {
   useEffect(() => {
     const previous = previousUserId.current;
     if (previous && previous !== userId) {
-      void queryClient.cancelQueries({ queryKey: customerWishlistKey(previous), exact: true });
-      queryClient.removeQueries({ queryKey: customerWishlistKey(previous), exact: true });
+      void queryClient.cancelQueries({ queryKey: ["customer-wishlist", previous] });
+      queryClient.removeQueries({ queryKey: ["customer-wishlist", previous] });
     }
     if (!userId) {
-      void queryClient.cancelQueries({ queryKey: ["customer-wishlist", "signed-out"], exact: true });
-      queryClient.removeQueries({ queryKey: ["customer-wishlist", "signed-out"], exact: true });
+      void queryClient.cancelQueries({ queryKey: ["customer-wishlist", "signed-out"] });
+      queryClient.removeQueries({ queryKey: ["customer-wishlist", "signed-out"] });
     }
     previousUserId.current = userId;
   }, [queryClient, userId]);
 
+  const hasValidStore = Boolean(storeId && Number.isInteger(Number(storeId)) && Number(storeId) > 0);
+
+  const queryKey = userId
+    ? customerWishlistKey(userId, storeId)
+    : (["customer-wishlist", "signed-out", storeId ? String(storeId) : "no-store"] as const);
+
   const query = useQuery({
-    queryKey: userId ? customerWishlistKey(userId) : ["customer-wishlist", "signed-out"],
-    queryFn: () => fetchUserWishlist(userId as number),
-    enabled: Boolean(token && userId),
+    queryKey,
+    queryFn: () => fetchUserWishlist(userId as number, storeId),
+    enabled: Boolean(token && userId && hasValidStore),
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -212,9 +277,9 @@ export function useWishlist() {
   const addMutation = useMutation({
     mutationKey,
     mutationFn: ({ userId: mutationUserId, productId }: WishlistMutationVariables) =>
-      ensureUserWishlist(mutationUserId, productId),
+      ensureUserWishlist(mutationUserId, productId, storeId),
     onMutate: async (variables) => {
-      const key = customerWishlistKey(variables.userId);
+      const key = customerWishlistKey(variables.userId, storeId);
       await queryClient.cancelQueries({ queryKey: key, exact: true });
       const currentItems = queryClient.getQueryData<WishlistItem[]>(key) ?? [];
       const previousItem =
@@ -230,7 +295,7 @@ export function useWishlist() {
       return { previousItem };
     },
     onError: (error, variables, context) => {
-      const key = customerWishlistKey(variables.userId);
+      const key = customerWishlistKey(variables.userId, storeId);
       const currentItems = queryClient.getQueryData<WishlistItem[]>(key) ?? [];
       queryClient.setQueryData<WishlistItem[]>(
         key,
@@ -246,15 +311,14 @@ export function useWishlist() {
       );
     },
     onSuccess: (data, variables) => {
-      const key = customerWishlistKey(variables.userId);
+      const key = customerWishlistKey(variables.userId, storeId);
       const currentItems = queryClient.getQueryData<WishlistItem[]>(key) ?? [];
       queryClient.setQueryData<WishlistItem[]>(key, upsertWishlistProduct(currentItems, data.item));
       if (data.created) toast.success(data.message || "Đã thêm vào danh sách yêu thích");
     },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
-        queryKey: customerWishlistKey(variables.userId),
-        exact: true,
+        queryKey: ["customer-wishlist", variables.userId],
       });
     },
   });
@@ -264,7 +328,7 @@ export function useWishlist() {
     mutationFn: ({ userId: mutationUserId, productId }: WishlistMutationVariables) =>
       removeUserWishlist(mutationUserId, productId),
     onMutate: async (variables) => {
-      const key = customerWishlistKey(variables.userId);
+      const key = customerWishlistKey(variables.userId, storeId);
       await queryClient.cancelQueries({ queryKey: key, exact: true });
       const currentItems = queryClient.getQueryData<WishlistItem[]>(key) ?? [];
       const previousItem =
@@ -276,7 +340,7 @@ export function useWishlist() {
       return { previousItem };
     },
     onError: (error, variables, context) => {
-      const key = customerWishlistKey(variables.userId);
+      const key = customerWishlistKey(variables.userId, storeId);
       const currentItems = queryClient.getQueryData<WishlistItem[]>(key) ?? [];
       queryClient.setQueryData<WishlistItem[]>(
         key,
@@ -296,8 +360,7 @@ export function useWishlist() {
     },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
-        queryKey: customerWishlistKey(variables.userId),
-        exact: true,
+        queryKey: ["customer-wishlist", variables.userId],
       });
     },
   });

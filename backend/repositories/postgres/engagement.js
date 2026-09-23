@@ -11,23 +11,147 @@ export function createEngagementRepository(database = postgresDb, { clock = () =
       return rows[0] || null;
     },
 
-    async listUserWishlist(userId) {
+    async listUserWishlist(userId, storeId = null) {
+      const normalizedStoreId = Number(storeId);
+      const hasStore = Number.isInteger(normalizedStoreId) && normalizedStoreId > 0;
+      const params = [userId];
+      let variantLateral = '';
+      let priceSelect = 'p.price AS price, p.is_available AS is_available';
+
+      if (hasStore) {
+        params.push(normalizedStoreId);
+        variantLateral = `
+          LEFT JOIN LATERAL (
+            SELECT pv.id, pv.sku, pv.name_suffix, pv.variant_signature,
+                   bvo.price AS branch_price,
+                   (
+                     COALESCE(bvo.is_available, FALSE) = TRUE
+                     AND bvo.price IS NOT NULL
+                     AND bvo.price > 0
+                   ) AS is_sellable
+            FROM product_variants pv
+            LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $2
+            WHERE pv.product_id = p.id AND pv.status = 'active'
+            ORDER BY
+              CASE WHEN (
+                COALESCE(bvo.is_available, FALSE) = TRUE
+                AND bvo.price IS NOT NULL
+                AND bvo.price > 0
+              ) THEN 0 ELSE 1 END,
+              bvo.price ASC NULLS LAST,
+              CASE WHEN pv.variant_signature = 'default' THEN 0 ELSE 1 END,
+              pv.id ASC
+            LIMIT 1
+          ) pv_def ON TRUE
+        `;
+        priceSelect = `
+          pv_def.branch_price AS price,
+          (p.is_available = TRUE AND COALESCE(pv_def.is_sellable, FALSE) = TRUE) AS is_available
+        `;
+      } else {
+        variantLateral = `
+          LEFT JOIN LATERAL (
+            SELECT pv.id, pv.sku, pv.name_suffix, pv.variant_signature,
+                   NULL::integer AS branch_price,
+                   TRUE AS is_sellable
+            FROM product_variants pv
+            WHERE pv.product_id = p.id AND pv.status = 'active'
+            ORDER BY CASE WHEN pv.variant_signature = 'default' THEN 0 ELSE 1 END, pv.id ASC
+            LIMIT 1
+          ) pv_def ON TRUE
+        `;
+      }
+
       const [rows] = await database.query(
-        `SELECT w.id, w.user_id, w.product_id, p.name AS product_name, p.slug AS product_slug, p.base_tea, p.price, p.image_url, w.created_at
+        `SELECT w.id, w.user_id, w.product_id,
+                p.name AS product_name, p.slug AS product_slug,
+                p.base_tea, p.image_url, p.fulfillment_lane, p.stock_mode,
+                pv_def.id AS variant_id, pv_def.sku AS sku, pv_def.name_suffix AS variant_name,
+                (
+                  p.product_type_schema_id IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM attribute_definitions ad
+                    WHERE ad.schema_id = p.product_type_schema_id
+                  )
+                ) AS has_options,
+                ${priceSelect},
+                w.created_at
          FROM wishlists w
          JOIN products p ON p.id = w.product_id
-         WHERE w.user_id = $1 AND p.is_available = TRUE
+         ${variantLateral}
+         WHERE w.user_id = $1 AND p.status = 'active' AND p.is_available = TRUE
          ORDER BY w.created_at DESC, w.id DESC`,
-        [userId],
+        params,
       );
       return rows;
     },
 
-    async ensureUserWishlistItem(userId, productId) {
+    async ensureUserWishlistItem(userId, productId, storeId = null) {
+      const normalizedStoreId = Number(storeId);
+      const hasStore = Number.isInteger(normalizedStoreId) && normalizedStoreId > 0;
+      const prodParams = [productId];
+      let variantLateral = '';
+      let priceSelect = 'p.price AS price, p.is_available AS is_available';
+
+      if (hasStore) {
+        prodParams.push(normalizedStoreId);
+        variantLateral = `
+          LEFT JOIN LATERAL (
+            SELECT pv.id, pv.sku, pv.name_suffix, pv.variant_signature,
+                   bvo.price AS branch_price,
+                   (
+                     COALESCE(bvo.is_available, FALSE) = TRUE
+                     AND bvo.price IS NOT NULL
+                     AND bvo.price > 0
+                   ) AS is_sellable
+            FROM product_variants pv
+            LEFT JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $2
+            WHERE pv.product_id = p.id AND pv.status = 'active'
+            ORDER BY
+              CASE WHEN (
+                COALESCE(bvo.is_available, FALSE) = TRUE
+                AND bvo.price IS NOT NULL
+                AND bvo.price > 0
+              ) THEN 0 ELSE 1 END,
+              bvo.price ASC NULLS LAST,
+              CASE WHEN pv.variant_signature = 'default' THEN 0 ELSE 1 END,
+              pv.id ASC
+            LIMIT 1
+          ) pv_def ON TRUE
+        `;
+        priceSelect = `
+          pv_def.branch_price AS price,
+          (p.is_available = TRUE AND COALESCE(pv_def.is_sellable, FALSE) = TRUE) AS is_available
+        `;
+      } else {
+        variantLateral = `
+          LEFT JOIN LATERAL (
+            SELECT pv.id, pv.sku, pv.name_suffix, pv.variant_signature,
+                   NULL::integer AS branch_price,
+                   TRUE AS is_sellable
+            FROM product_variants pv
+            WHERE pv.product_id = p.id AND pv.status = 'active'
+            ORDER BY CASE WHEN pv.variant_signature = 'default' THEN 0 ELSE 1 END, pv.id ASC
+            LIMIT 1
+          ) pv_def ON TRUE
+        `;
+      }
+
       return await database.transaction(async (tx) => {
         const [productRows] = await tx.query(
-          'SELECT id, name, slug, base_tea, price, image_url, is_available FROM products WHERE id = $1 FOR SHARE',
-          [productId],
+          `SELECT p.id, p.name, p.slug, p.base_tea, p.image_url, p.is_available AS product_is_available,
+                  p.fulfillment_lane, p.stock_mode,
+                  pv_def.id AS variant_id, pv_def.sku AS sku, pv_def.name_suffix AS variant_name,
+                  (
+                    p.product_type_schema_id IS NOT NULL AND EXISTS (
+                      SELECT 1 FROM attribute_definitions ad
+                      WHERE ad.schema_id = p.product_type_schema_id
+                    )
+                  ) AS has_options,
+                  ${priceSelect}
+           FROM products p
+           ${variantLateral}
+           WHERE p.id = $1 AND p.status = 'active' FOR SHARE OF p`,
+          prodParams,
         );
         if (!productRows || !productRows.length) {
           const err = new Error('Không tìm thấy sản phẩm');
@@ -36,7 +160,8 @@ export function createEngagementRepository(database = postgresDb, { clock = () =
           throw err;
         }
         const product = productRows[0];
-        if (!product.is_available) {
+        const isGloballyAvailable = product.product_is_available ?? product.is_available;
+        if (!isGloballyAvailable) {
           const err = new Error('Sản phẩm hiện đang tạm ngưng phục vụ');
           err.status = 409;
           err.expose = true;
@@ -73,6 +198,13 @@ export function createEngagementRepository(database = postgresDb, { clock = () =
             base_tea: product.base_tea,
             price: product.price,
             image_url: product.image_url,
+            is_available: product.is_available,
+            has_options: product.has_options,
+            sku: product.sku,
+            variant_id: product.variant_id,
+            variant_name: product.variant_name,
+            fulfillment_lane: product.fulfillment_lane,
+            stock_mode: product.stock_mode,
             created_at: row.created_at,
           },
         };

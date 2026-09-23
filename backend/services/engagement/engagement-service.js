@@ -1,17 +1,31 @@
 import defaultEngagementRepository from '../../repositories/postgres/engagement.js';
 
+function validateStoreId(storeId) {
+  if (storeId === null || storeId === undefined || storeId === '') return null;
+  const num = Number(storeId);
+  if (!Number.isInteger(num) || num <= 0) {
+    const err = new Error('Mã chi nhánh không hợp lệ');
+    err.status = 400;
+    err.expose = true;
+    throw err;
+  }
+  return num;
+}
+
 export function createEngagementService(repository = defaultEngagementRepository) {
   return {
     async getUserProfile(userId) {
       return repository.getUserProfile(userId);
     },
 
-    async listUserWishlist(userId) {
-      return repository.listUserWishlist(userId);
+    async listUserWishlist(userId, storeId = null) {
+      const validatedStoreId = validateStoreId(storeId);
+      return repository.listUserWishlist(userId, validatedStoreId);
     },
 
-    async ensureUserWishlistItem(userId, productId) {
-      return repository.ensureUserWishlistItem(userId, productId);
+    async ensureUserWishlistItem(userId, productId, storeId = null) {
+      const validatedStoreId = validateStoreId(storeId);
+      return repository.ensureUserWishlistItem(userId, productId, validatedStoreId);
     },
 
     async removeUserWishlistItem(userId, productId) {

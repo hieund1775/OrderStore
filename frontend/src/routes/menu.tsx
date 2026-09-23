@@ -403,10 +403,25 @@ function MenuPage() {
                     <img src={item.image} alt={item.name} loading="lazy" className="size-12 rounded-lg object-cover" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{item.qty}× {item.name}</p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {item.size} · {item.sugar} đường · {item.ice} đá
-                        {item.toppings?.length ? ` · ${item.toppings.join(", ")}` : ""}
-                      </p>
+                      {(() => {
+                        if (item.appliedModifiers && item.appliedModifiers.length > 0) {
+                          return (
+                            <p className="text-muted-foreground truncate text-xs">
+                              {item.appliedModifiers.map((m) => m.value_label || '').filter(Boolean).join(' · ')}
+                            </p>
+                          );
+                        }
+                        const details: string[] = [];
+                        if (item.size) details.push(item.size.toLowerCase().startsWith('size ') ? item.size : `Size ${item.size}`);
+                        if (item.sugar) details.push(item.sugar.includes('đường') ? item.sugar : `${item.sugar} đường`);
+                        if (item.ice) details.push(item.ice.includes('đá') ? item.ice : `${item.ice} đá`);
+                        if (item.toppings?.length) details.push(`+${item.toppings.join(', ')}`);
+                        return details.length > 0 ? (
+                          <p className="text-muted-foreground truncate text-xs">
+                            {details.join(' · ')}
+                          </p>
+                        ) : null;
+                      })()}
                     </div>
                     <span className="text-sm font-bold">{vnd(item.unitPrice * item.qty)}</span>
                   </div>

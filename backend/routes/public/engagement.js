@@ -113,10 +113,25 @@ router.get('/users/:id', authenticate, requireCustomerSelf, asyncHandler(async (
   }
 }));
 
+function validateWishlistStoreId(val) {
+  if (val === undefined || val === null || val === '') {
+    return null;
+  }
+  const num = Number(val);
+  if (!Number.isInteger(num) || num <= 0) {
+    const err = new Error('Mã chi nhánh không hợp lệ');
+    err.status = 400;
+    err.expose = true;
+    throw err;
+  }
+  return num;
+}
+
 router.get('/users/:id/wishlist', authenticate, requireCustomerWishlistOwner, asyncHandler(async (req, res) => {
   try {
     const id = validateCustomerId(req.params.id);
-    const rows = await engagementService.listUserWishlist(id);
+    const storeId = validateWishlistStoreId(req.query.store_id);
+    const rows = await engagementService.listUserWishlist(id, storeId);
     res.json(rows.map(toWishlistDto));
   } catch (err) {
     const status = err.status || 500;
@@ -128,7 +143,9 @@ router.put('/users/:id/wishlist/:productId', authenticate, requireCustomerWishli
   try {
     const id = validateCustomerId(req.params.id);
     const productId = validateWishlistProductId(req.params.productId);
-    const result = await engagementService.ensureUserWishlistItem(id, productId);
+    const rawStoreId = req.query.store_id ?? req.body?.store_id;
+    const storeId = validateWishlistStoreId(rawStoreId);
+    const result = await engagementService.ensureUserWishlistItem(id, productId, storeId);
     const status = result.created ? 201 : 200;
     res.status(status).json({
       present: true,

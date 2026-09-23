@@ -22,9 +22,11 @@ import {
 import { PageHeader } from "@/components/site/PageHeader";
 import { CustomerPreordersTab } from "@/components/profile/CustomerPreordersTab";
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
-import { useCart } from "@/lib/cart";
-import { buildWishlistQuickCartItem, useWishlist } from "@/lib/wishlist";
-import { apiGet, apiPost, setCustomerUser, getCustomerToken } from "@/lib/api";
+import { useCart, mapConfiguredItemToCartItem } from "@/lib/cart";
+import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from "@/lib/wishlist";
+import { apiGet, apiPost, setCustomerUser, getCustomerToken, resolveProductConfiguration } from "@/lib/api";
+import { useBranch } from "@/lib/branch";
+import { DynamicProductConfigurator } from "@/components/catalog/DynamicProductConfigurator";
 import { vnd } from "@/lib/data";
 import { OrderReviewPanel } from "@/components/reviews/OrderReviewPanel";
 import {
@@ -129,6 +131,7 @@ function Profile() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const { addItem } = useCart();
+  const { selectedStore } = useBranch();
   const {
     items: wishlistItems,
     count: wishlistCount,
@@ -137,7 +140,57 @@ function Profile() {
     refetch: refetchWishlist,
     removeFavorite,
     isPending: isWishlistPending,
-  } = useWishlist();
+  } = useWishlist(selectedStore?.id);
+  const [configuringWishlistItem, setConfiguringWishlistItem] = useState<WishlistItem | null>(null);
+  const [resolvingWishlistId, setResolvingWishlistId] = useState<number | null>(null);
+
+  const handleWishlistQuickAdd = async (item: WishlistItem) => {
+    if (!selectedStore?.id) {
+      toast.error('Vui lòng chọn chi nhánh trước khi thêm món');
+      return;
+    }
+
+    if (item.is_available !== true || !item.price || item.price <= 0) {
+      toast.error('Món hiện không khả dụng tại chi nhánh này');
+      return;
+    }
+
+    if (item.has_options) {
+      setConfiguringWishlistItem(item);
+      return;
+    }
+
+    try {
+      setResolvingWishlistId(Number(item.product_id));
+      const resolved = await resolveProductConfiguration({
+        store_id: selectedStore.id,
+        product_slug: item.product_slug || String(item.product_id),
+      });
+
+      const cartItem = buildWishlistQuickCartItem(item, selectedStore, {
+        sku: resolved.variant?.sku,
+        variantId: resolved.variant?.id,
+        variantName: resolved.variant?.name_suffix,
+        price: resolved.pricing?.final_price ?? resolved.variant?.base_price ?? item.price,
+        fulfillmentLane: resolved.product?.fulfillment_lane,
+        stockMode: resolved.product?.stock_mode,
+      });
+
+      if (!cartItem) {
+        toast.error('Không tìm thấy thông tin biến thể hợp lệ tại chi nhánh');
+        return;
+      }
+
+      const success = addItem(cartItem);
+      if (success) {
+        toast.success(`Đã thêm "${item.product_name}" vào giỏ hàng`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể lấy thông tin món từ chi nhánh');
+    } finally {
+      setResolvingWishlistId(null);
+    }
+  };
   const [notifsPage, setNotifsPage] = useState(1);
   const {
     user,
@@ -735,6 +788,8 @@ function Profile() {
               <div className="grid gap-4 sm:grid-cols-2">
                 {wishlistItems.map((p) => {
                   const pending = isWishlistPending(p.product_id);
+                  const isAvailable = p.is_available === true && typeof p.price === 'number' && p.price > 0;
+                  const isBusy = resolvingWishlistId === Number(p.product_id);
                   return (
                     <div key={p.id} className="bg-card flex items-center justify-between rounded-2xl border p-4 shadow-sm gap-3">
                       <img
@@ -746,27 +801,31 @@ function Profile() {
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm truncate">{p.product_name}</p>
                         <p className="text-xs text-muted-foreground">{p.base_tea || "Thiếu dữ liệu cốt trà"}</p>
-                        <p className="text-primary font-bold text-sm mt-1">{vnd(p.price)}</p>
+                        <p className={isAvailable ? "text-primary font-bold text-sm mt-1" : "text-muted-foreground text-xs mt-1"}>
+                          {isAvailable ? vnd(p.price) : "Tạm ngưng tại chi nhánh"}
+                        </p>
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0">
-                        <Button
-                          variant="soft"
-                          size="sm"
-                          className="text-xs h-7 px-2.5"
-                          onClick={() => {
-                            const cartItem = buildWishlistQuickCartItem(p);
-                            if (!cartItem) {
-                              toast.error("Thông tin món chưa đầy đủ, vui lòng chọn lại từ thực đơn");
-                              return;
-                            }
-                            const added = addItem(cartItem);
-                            if (added) {
-                              toast.success(`Đã thêm "${p.product_name}" vào giỏ hàng`);
-                            }
-                          }}
-                        >
-                          + Giỏ
-                        </Button>
+                        {isAvailable ? (
+                          <Button
+                            variant="soft"
+                            size="sm"
+                            className="text-xs h-7 px-2.5"
+                            disabled={isBusy}
+                            onClick={() => handleWishlistQuickAdd(p)}
+                          >
+                            {isBusy ? <Loader2 className="size-3.5 animate-spin" /> : "+ Giỏ"}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            className="text-xs h-7 px-2.5 opacity-60 cursor-not-allowed text-muted-foreground"
+                          >
+                            Hết hàng
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -962,6 +1021,29 @@ function Profile() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {configuringWishlistItem && (
+        <DynamicProductConfigurator
+          open={Boolean(configuringWishlistItem)}
+          onOpenChange={(isOpen) => !isOpen && setConfiguringWishlistItem(null)}
+          productSlug={configuringWishlistItem.product_slug || String(configuringWishlistItem.product_id)}
+          storeId={selectedStore?.id}
+          mode="add"
+          onAddToCart={(configured) => {
+            const cartItem = mapConfiguredItemToCartItem(
+              configured,
+              selectedStore,
+              {
+                image: configuringWishlistItem.image_url || undefined,
+                base: configuringWishlistItem.base_tea || undefined,
+              }
+            );
+            addItem(cartItem);
+            setConfiguringWishlistItem(null);
+            toast.success(`Đã thêm "${configured.productName}" vào giỏ hàng`);
+          }}
+        />
+      )}
 
     </>
   );

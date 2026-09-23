@@ -29,6 +29,7 @@ export function toReviewDto(review) {
 
 export function toWishlistDto(item) {
   if (!item) return null;
+  const price = item.price == null ? undefined : Number(item.price);
   return {
     id: Number(item.id),
     user_id: Number(item.user_id),
@@ -36,8 +37,15 @@ export function toWishlistDto(item) {
     product_name: item.product_name || item.name || undefined,
     product_slug: item.product_slug || item.slug || undefined,
     base_tea: item.base_tea || null,
-    price: item.price == null ? undefined : Number(item.price),
+    price,
     image_url: item.image_url || null,
+    is_available: Boolean(item.is_available === true && price !== undefined && Number.isFinite(price) && price > 0),
+    has_options: Boolean(item.has_options),
+    sku: item.sku || null,
+    variant_id: item.variant_id ? Number(item.variant_id) : null,
+    variant_name: item.variant_name || null,
+    fulfillment_lane: item.fulfillment_lane || null,
+    stock_mode: item.stock_mode || null,
     created_at: item.created_at,
   };
 }

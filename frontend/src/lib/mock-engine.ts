@@ -342,10 +342,25 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
 
   // 7b. Wishlist API (GET / PUT / DELETE /api/users/:id/wishlist)
   if (path.includes('/api/users/') && path.includes('/wishlist')) {
-    const match = path.match(/^\/api\/users\/(\d+)\/wishlist(?:\/(\d+))?$/);
+    const [cleanPath, search] = path.split('?');
+    const match = cleanPath.match(/^\/api\/users\/(\d+)\/wishlist(?:\/(\d+))?$/);
     if (!match) return Promise.reject(new Error('Đường dẫn wishlist không hợp lệ'));
     const uId = match[1];
     const pId = match && match[2] ? Number(match[2]) : null;
+
+    if (search) {
+      const searchParams = new URLSearchParams(search);
+      const storeIdParam = searchParams.get('store_id');
+      if (storeIdParam !== null && storeIdParam !== '') {
+        const storeIdNum = Number(storeIdParam);
+        if (!Number.isInteger(storeIdNum) || storeIdNum <= 0) {
+          const err = new Error('Mã chi nhánh không hợp lệ');
+          (err as any).status = 400;
+          return Promise.reject(err);
+        }
+      }
+    }
+
     const customerUser = getStoredCustomerUser();
     const customerToken = typeof window !== 'undefined' ? localStorage.getItem('teaplus_customer_token') : null;
     if (!customerToken) return Promise.reject(new Error('Thiếu token xác thực'));

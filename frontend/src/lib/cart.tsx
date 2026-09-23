@@ -3,11 +3,16 @@ import { toast } from 'sonner';
 import { getCustomerSession, openCustomerLoginModal } from './customer-session';
 
 export type AppliedModifier = {
-  attribute_code: string;
+  attribute_definition_id?: number;
+  attribute_code?: string;
   attribute_name: string;
-  value_code: string;
-  value_label: string;
-  price_adjustment: number;
+  attribute_value_id?: number;
+  value_code?: string;
+  value_label?: string;
+  attribute_label?: string;
+  price_adjustment?: number;
+  attribute_id?: number;
+  value_id?: number;
 };
 
 export type CartItem = {
@@ -59,8 +64,8 @@ export function buildCartItemKey(item: Partial<CartItem>): string {
   if (item.appliedModifiers && item.appliedModifiers.length > 0) {
     modPart = item.appliedModifiers
       .slice()
-      .sort((a, b) => a.attribute_code.localeCompare(b.attribute_code) || a.value_code.localeCompare(b.value_code))
-      .map((m) => `${m.attribute_code}:${m.value_code}`)
+      .sort((a, b) => (a.attribute_code || '').localeCompare(b.attribute_code || '') || (a.value_code || '').localeCompare(b.value_code || ''))
+      .map((m) => `${m.attribute_code || ''}:${m.value_code || ''}`)
       .join('|');
   } else {
     modPart = [
@@ -74,6 +79,117 @@ export function buildCartItemKey(item: Partial<CartItem>): string {
 
   const notePart = item.note ? item.note.trim() : '';
   return `${storePart}__${prodPart}__${variantPart}__${modPart}__${notePart}`;
+}
+
+export function mapConfiguredItemToCartItem(
+  configured: {
+    productId: number | string;
+    productName: string;
+    productSlug: string;
+    variantId?: number | null;
+    sku?: string;
+    variantName?: string | null;
+    quantity: number;
+    unitPrice: number;
+    appliedModifiers?: AppliedModifier[];
+    stockMode?: 'tracked' | 'made_to_order';
+    fulfillmentLane?: 'kitchen' | 'packing';
+    image?: string;
+  },
+  storeInfo?: { id?: number | string; name?: string; district?: string } | null,
+  fallbackDefaults?: {
+    image?: string;
+    base?: string;
+    size?: string;
+    sugar?: string;
+    ice?: string;
+    toppings?: string[];
+  },
+): Omit<CartItem, 'key'> {
+  const rawSize =
+    configured.appliedModifiers?.find(
+      (m) => m.attribute_code === 'size' || m.attribute_name?.toLowerCase().includes('size')
+    )?.value_label ||
+    configured.variantName ||
+    fallbackDefaults?.size;
+  const size = rawSize ? (rawSize.toLowerCase().startsWith('size ') ? rawSize.slice(5) : rawSize) : undefined;
+
+  const base =
+    configured.appliedModifiers?.find(
+      (m) =>
+        m.attribute_code === 'base' ||
+        m.attribute_name?.toLowerCase().includes('nền') ||
+        m.attribute_name?.toLowerCase().includes('base')
+    )?.value_label ||
+    fallbackDefaults?.base ||
+    undefined;
+
+  const sugar =
+    configured.appliedModifiers?.find(
+      (m) => m.attribute_code === 'sugar' || m.attribute_name?.toLowerCase().includes('đường')
+    )?.value_label ||
+    fallbackDefaults?.sugar ||
+    undefined;
+
+  const ice =
+    configured.appliedModifiers?.find(
+      (m) => m.attribute_code === 'ice' || m.attribute_name?.toLowerCase().includes('đá')
+    )?.value_label ||
+    fallbackDefaults?.ice ||
+    undefined;
+
+  const toppings = configured.appliedModifiers
+    ? configured.appliedModifiers
+        .filter(
+          (m) =>
+            m.attribute_code === 'toppings' ||
+            m.attribute_code === 'topping' ||
+            m.attribute_name?.toLowerCase().includes('topping')
+        )
+        .map((m) => m.value_label || m.attribute_label || m.value_code || m.attribute_name)
+    : (fallbackDefaults?.toppings || []);
+
+  const appliedModifiers: AppliedModifier[] | undefined = configured.appliedModifiers
+    ? configured.appliedModifiers.map((m) => {
+        const attributeDefinitionId = m.attribute_definition_id ?? m.attribute_id;
+        const attributeValueId = m.attribute_value_id ?? m.value_id;
+        return {
+          attribute_definition_id: attributeDefinitionId,
+          attribute_id: attributeDefinitionId,
+          attribute_code: m.attribute_code,
+          attribute_name: m.attribute_name,
+          attribute_label: m.attribute_label,
+          attribute_value_id: attributeValueId,
+          value_id: attributeValueId,
+          value_code: m.value_code,
+          value_label: m.value_label,
+          price_adjustment: m.price_adjustment ?? 0,
+        };
+      })
+    : undefined;
+
+  return {
+    storeId: storeInfo?.id ? String(storeInfo.id) : undefined,
+    storeName: storeInfo?.name,
+    storeDistrict: storeInfo?.district,
+    productId: String(configured.productId),
+    productSlug: configured.productSlug,
+    name: configured.productName,
+    image: configured.image || fallbackDefaults?.image || '',
+    variantId: configured.variantId ?? undefined,
+    sku: configured.sku,
+    variantName: configured.variantName,
+    stockMode: configured.stockMode,
+    fulfillmentLane: configured.fulfillmentLane,
+    size,
+    base,
+    sugar,
+    ice,
+    toppings,
+    appliedModifiers,
+    unitPrice: configured.unitPrice,
+    qty: configured.quantity,
+  };
 }
 
 type CartContextValue = {

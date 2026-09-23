@@ -116,16 +116,32 @@ describe("wishlist cache helpers and API contract", () => {
       image: "",
     });
     expect(optimistic?.id).toBe(-2);
-    expect(buildWishlistQuickCartItem(optimistic as WishlistItem)).toMatchObject({
+    // Optimistic item lacks storeId, sku, variantId, fulfillmentLane, stockMode -> must return null
+    expect(buildWishlistQuickCartItem(optimistic as WishlistItem)).toBeNull();
+
+    // When fully resolved with store and variant data, builds cart item
+    const cartItem = buildWishlistQuickCartItem(
+      {
+        ...(optimistic as WishlistItem),
+        fulfillment_lane: "kitchen",
+        stock_mode: "made_to_order",
+      },
+      { id: "1", name: "Chi nhánh 1", district: "Quận 1" },
+      { sku: "SKU-2", variantId: 201, variantName: "Size M", price: 55000, fulfillmentLane: "kitchen", stockMode: "made_to_order" }
+    );
+    expect(cartItem).toMatchObject({
+      storeId: "1",
       productId: "2",
       name: "Trà Dâu",
       base: "Trà lài",
       size: "M",
-      sugar: "100%",
-      ice: "100%",
       toppings: [],
       unitPrice: 55000,
       qty: 1,
+      sku: "SKU-2",
+      variantId: 201,
+      fulfillmentLane: "kitchen",
+      stockMode: "made_to_order",
     });
 
     expect(buildWishlistQuickCartItem({ ...item(2), base_tea: "" })).toBeNull();
