@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import {
   Package,
@@ -14,6 +14,9 @@ import {
   AlertCircle,
   Truck,
   CalendarClock,
+  Maximize,
+  Minimize,
+  Volume2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +73,32 @@ type ConfirmedPreorderPreview = {
   customer_name?: string;
 };
 
+let audioCtx: AudioContext | null = null;
+
+function playDingDong() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') void audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const playNote = (freq: number, at: number, dur: number) => {
+      const osc = audioCtx!.createOscillator();
+      const gain = audioCtx!.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.35, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      osc.connect(gain).connect(audioCtx!.destination);
+      osc.start(at);
+      osc.stop(at + dur + 0.05);
+    };
+    playNote(1318.5, now, 0.6); // E6
+    playNote(1046.5, now + 0.35, 0.9); // C6
+  } catch {
+    /* audio bị chặn — bỏ qua */
+  }
+}
+
 export function PackingStationPage() {
   const user = getUser();
   const isSuperAdmin = user?.role === 'super';
@@ -87,6 +116,33 @@ export function PackingStationPage() {
   const [driverPhone, setDriverPhone] = useState('');
   const [handoverLoading, setHandoverLoading] = useState(false);
   const [confirmedPreorders, setConfirmedPreorders] = useState<ConfirmedPreorderPreview[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const prevTaskIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      toast.error('Không thể chuyển đổi chế độ toàn màn hình');
+    }
+  };
 
   const activeConfirmedPreorders = useMemo(() => {
     const inactiveCodes = new Set<string>();
@@ -122,8 +178,19 @@ export function PackingStationPage() {
         apiGet<{ tasks: FulfillmentTask[] }>(`/admin/fulfillment/tasks?${query.toString()}`),
         apiGet<ConfirmedPreorderPreview[]>(`/admin/preorders/kitchen/confirmed?${preorderParams.toString()}`).catch(() => []),
       ]);
-      setTasks(data.tasks || []);
+      const incomingTasks = data.tasks || [];
+      setTasks(incomingTasks);
       setConfirmedPreorders(Array.isArray(previews) ? previews : []);
+
+      const incomingIds = new Set(incomingTasks.map((t) => t.id));
+      const fresh = incomingTasks.filter((t) => t.status === 'pending' && !prevTaskIds.current.has(t.id));
+      if (prevTaskIds.current.size > 0 && fresh.length > 0) {
+        if (soundEnabledRef.current) {
+          playDingDong();
+          toast.success(`Có ${fresh.length} đơn đóng gói mới!`, { description: fresh[0].order_code });
+        }
+      }
+      prevTaskIds.current = incomingIds;
     } catch (err: any) {
       toast.error(err?.message || 'Không thể tải danh sách đóng gói');
     } finally {
@@ -132,6 +199,7 @@ export function PackingStationPage() {
   };
 
   useEffect(() => {
+    prevTaskIds.current = new Set();
     fetchTasks();
     const interval = setInterval(fetchTasks, 10000);
     return () => clearInterval(interval);
@@ -223,6 +291,29 @@ export function PackingStationPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={soundEnabled ? 'hero' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setSoundEnabled((v) => !v);
+              if (!soundEnabled) playDingDong();
+            }}
+            aria-pressed={soundEnabled}
+          >
+            <Volume2 className="size-4" />
+            {soundEnabled ? 'Chuông: BẬT' : 'Chuông: TẮT'}
+          </Button>
+
+          <Button
+            variant={isFullscreen ? 'hero' : 'outline'}
+            size="sm"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Thoát toàn màn hình (Esc)' : 'Bật toàn màn hình'}
+          >
+            {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+            {isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}
+          </Button>
+
           <Button variant="outline" size="sm" onClick={fetchTasks} disabled={loading}>
             <RefreshCw className={`mr-2 size-4 ${loading ? 'animate-spin' : ''}`} />
             Làm mới

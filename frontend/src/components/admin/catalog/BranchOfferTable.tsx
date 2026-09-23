@@ -13,6 +13,7 @@ import {
   updateBranchOffer,
 } from '@/lib/api';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 export type BranchOfferRow = {
   variant_id: number;
@@ -37,6 +38,13 @@ export type BranchOfferRow = {
   on_hand: number;
   reserved: number;
   available_quantity: number;
+};
+
+export const isBranchOfferPriceValid = (val: string) => {
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  const num = Number(trimmed);
+  return Number.isInteger(num) && num >= 1000;
 };
 
 interface BranchOfferTableProps {
@@ -99,15 +107,22 @@ export function BranchOfferTable({
     }
   };
 
+  const isPriceValid = isBranchOfferPriceValid;
+
   const handleStartEditPrice = (offer: BranchOfferRow) => {
     setEditingPriceVariantId(offer.variant_id);
     setEditPriceValue(String(offer.price !== null ? offer.price : offer.base_price));
   };
 
   const handleSavePrice = async (offer: BranchOfferRow) => {
-    const numPrice = Number(editPriceValue);
-    if (!Number.isInteger(numPrice) || numPrice < 0) {
-      toast.error('Giá bán phải là số nguyên không âm');
+    const trimmed = editPriceValue.trim();
+    if (!trimmed) {
+      toast.error('Giá bán chi nhánh không được để trống');
+      return;
+    }
+    const numPrice = Number(trimmed);
+    if (!Number.isInteger(numPrice) || numPrice < 1000) {
+      toast.error('Giá bán chi nhánh phải là số nguyên từ 1.000đ trở lên');
       return;
     }
 
@@ -198,39 +213,52 @@ export function BranchOfferTable({
 
                       <td className="py-3 px-3">
                         {isEditingPrice ? (
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1000"
-                              value={editPriceValue}
-                              onChange={(e) => setEditPriceValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSavePrice(offer);
-                                if (e.key === 'Escape') setEditingPriceVariantId(null);
-                              }}
-                              className="h-7 w-24 text-xs font-mono"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              className="h-7 w-7 p-0"
-                              onClick={() => handleSavePrice(offer)}
-                              disabled={savingPrice}
-                              title="Lưu giá"
-                            >
-                              <Check className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                              onClick={() => setEditingPriceVariantId(null)}
-                              disabled={savingPrice}
-                              title="Hủy"
-                            >
-                              <X className="size-3.5" />
-                            </Button>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                min="1000"
+                                step="1000"
+                                value={editPriceValue}
+                                onChange={(e) => setEditPriceValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSavePrice(offer);
+                                  if (e.key === 'Escape') setEditingPriceVariantId(null);
+                                }}
+                                className={cn(
+                                  "h-7 w-24 text-xs font-mono",
+                                  !isPriceValid(editPriceValue) && "border-destructive focus-visible:ring-destructive text-destructive"
+                                )}
+                                autoFocus
+                                aria-label="Nhập giá bán chi nhánh"
+                              />
+                              <Button
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => handleSavePrice(offer)}
+                                disabled={savingPrice || !isPriceValid(editPriceValue)}
+                                title={isPriceValid(editPriceValue) ? "Lưu giá" : "Vui lòng nhập giá từ 1.000đ trở lên"}
+                                aria-label="Xác nhận lưu giá bán"
+                              >
+                                <Check className="size-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => setEditingPriceVariantId(null)}
+                                disabled={savingPrice}
+                                title="Hủy"
+                                aria-label="Hủy sửa giá"
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            </div>
+                            {!isPriceValid(editPriceValue) && (
+                              <span className="text-[10px] text-destructive font-medium">
+                                {editPriceValue.trim() === '' ? 'Không để trống' : 'Tối thiểu 1.000đ'}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">

@@ -48,9 +48,15 @@ export function validateTableId(value, { required = false } = {}) {
   return positiveInteger(value, 'table_id', { required });
 }
 
-export function validateOrderFilters({ status, store_id, table_id, search } = {}) {
+export function validateOrderFilters({ status, store_id, table_id, search, order_type, payment_method } = {}) {
   if (status !== undefined && !VALID_STATUSES.includes(status)) {
     throw new OrderValidationError('Trạng thái không hợp lệ', 'ORDER_INVALID_STATUS');
+  }
+  if (order_type !== undefined && order_type !== 'Tất cả' && !VALID_ORDER_TYPES.includes(order_type)) {
+    throw new OrderValidationError('Loại đơn không hợp lệ', 'ORDER_INVALID_FILTER');
+  }
+  if (payment_method !== undefined && payment_method !== 'Tất cả' && !VALID_PAYMENT_METHODS.includes(payment_method)) {
+    throw new OrderValidationError('Phương thức thanh toán không hợp lệ', 'ORDER_INVALID_FILTER');
   }
   if (search !== undefined && (typeof search !== 'string' || search.length > 200)) {
     throw new OrderValidationError('Từ khóa tìm kiếm không hợp lệ', 'ORDER_INVALID_FILTER');
@@ -59,6 +65,8 @@ export function validateOrderFilters({ status, store_id, table_id, search } = {}
     status: status?.trim() || undefined,
     storeId: validateStoreId(store_id, { required: false }),
     tableId: validateTableId(table_id, { required: false }),
+    orderType: order_type && order_type !== 'Tất cả' ? order_type.trim() : undefined,
+    paymentMethod: payment_method && payment_method !== 'Tất cả' ? payment_method.trim() : undefined,
   };
 }
 

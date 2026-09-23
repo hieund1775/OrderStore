@@ -1,0 +1,1426 @@
+[
+  {
+    "method": "GET",
+    "path": "/admin/branch-offers",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/branch-offers/:variant_id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/branch-offers/batch-availability",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/branches",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/branches",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/branches/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/branches/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/branches/:storeId/capabilities",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/branches/:storeId/capabilities",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/attributes/:id/values",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/categories",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/categories",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/catalog/categories/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/catalog/categories/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/categories/:id/option-assignments",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/catalog/categories/:id/option-assignments",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/catalog/categories/:id/option-assignments/:attributeId",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/categories/:id/option-groups",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/industries",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/presets",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/catalog/presets",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/catalog/presets/:targetType/:targetId/:attributeId",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/product-type-schemas/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/product-type-schemas/:id/attributes",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/product-type-schemas/:id/publish",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/product-types",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/product-types",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/product-types/:id/schemas",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/products",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/products",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/catalog/products/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/products/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/catalog/products/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/catalog/products/:id/option-overrides",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/catalog/products/:id/option-overrides",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/catalog/products/:id/option-overrides/:attributeId",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/products/:id/variants",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/catalog/products/preview-variants",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/customers",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/customers/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/kpi",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/revenue-by-branch",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/revenue-by-category",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/revenue-by-hour",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/top-products",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/dashboard/urgent",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/fulfillment/orders/:id/handover",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/fulfillment/tasks",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/fulfillment/tasks/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/fulfillment/tasks/:id/status",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/inventory",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/inventory/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/inventory/:id/log",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/job-applications",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/job-applications/:id/status",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/jobs",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/jobs",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/jobs/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/jobs/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/kitchen/orders",
+    "middlewares": [
+      "authenticate",
+      "noCache"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/login",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/admin/me",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/menu/bases",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/menu/bases/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/menu/bases/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/menu/categories",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/menu/categories",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/menu/categories/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/menu/categories/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/menu/options",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/menu/products",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/menu/products",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/menu/products/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/menu/products/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/menu/products/:id/availability",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/menu/toppings",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/menu/toppings/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/menu/toppings/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/notifications",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/notifications",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/notifications",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/notifications/:id/read",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/notifications/read-all",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/orders",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/orders/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/orders/:id/cancel",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/orders/:id/payment/confirm",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/orders/:id/print",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/orders/:id/status",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/orders/:id/status",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/payment-profiles",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/payment-profiles",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/payment-profiles/:id",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/payment-profiles/:id",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/payment-profiles/:id/assign-root",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/payment-profiles/assign-root/:rootId",
+    "middlewares": [
+      "authenticate",
+      "requireSuperAdmin"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/pos/orders",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/preorders",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/:id/check-in",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/:id/check-in/reject",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/:id/confirm",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/:id/handover",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/:id/reschedule",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/preorders/incidents/list",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/preorders/kitchen/confirmed",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/preorders/managers/:id/preorder-strikes/reset",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/preorders/settings",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/preorders/settings/:storeId",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/promotions",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/promotions",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/promotions/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/promotions/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/reports/kpi-summary",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/reports/summary",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/reviews",
+    "middlewares": []
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/reviews/:id",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/admin/reviews/:id",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/admin/reviews/:id/reply",
+    "middlewares": []
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/reviews/:id/visibility",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/admin/settings/accounts",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/settings/accounts",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/settings/accounts/:id/resend-invitation",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/settings/accounts/:id/status",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/settings/audit-logs",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/tables",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/tables",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/tables/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/tables/:id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/tables/:id/rotate-qr",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/variant-inventory/:variant_id",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/admin/variant-inventory/adjust",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/admin/variant-inventory/movements",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api-docs.json",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/forgot-password/reset",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/forgot-password/send-otp",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/forgot-password/verify-phone",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/google",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/me",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/profile/send-email-otp",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/profile/verify-email",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/register",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/send-otp",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/staff-invitation/accept",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/verify-otp",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/catalog/categories/tree",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/catalog/products",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/catalog/products/:slug",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/catalog/resolve-configuration",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/catalog/sections",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/categories",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/health",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/jobs",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/jobs/:id/apply",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/options/bases",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/options/ices",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/options/sizes",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/options/sugars",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/options/toppings",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/orders",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/orders/:id/cancel",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/orders/:orderCode/items/:orderItemId/review",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/orders/:orderCode/items/:orderItemId/review",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/orders/cancel",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/orders/lookup",
+    "middlewares": [
+      "noCache"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/orders/track",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/payos/regenerate-qr",
+    "middlewares": [
+      "handlePaymentRegenerate"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/payos/simulate-success",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/payments/payos/status",
+    "middlewares": [
+      "noCache",
+      "handlePaymentStatus"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/payos/webhook",
+    "middlewares": [
+      "handlePayOSWebhook"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/regenerate",
+    "middlewares": [
+      "handlePaymentRegenerate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/payments/sandbox/session",
+    "middlewares": [
+      "noCache"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/sandbox/transfer",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/payments/status",
+    "middlewares": [
+      "noCache",
+      "handlePaymentStatus"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/preorders/:code",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/preorders/:code/cancel",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/preorders/:code/check-in",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/preorders/:code/check-in-request",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/preorders/availability",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/preorders/checkout",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/preorders/mine",
+    "middlewares": [
+      "authenticate",
+      "customerOnly"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/preorders/stores",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/preorders/tables",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/products",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/products/:id/reviews",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/products/:productId/reviews",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/products/:slug",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/promotions",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/review-media/intents",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/reviews",
+    "middlewares": []
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/reviews/:reviewId",
+    "middlewares": [
+      "authenticate"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/rewards",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/runtime-build",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/search/suggestions",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/stores",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/stores/districts",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/table/resolve",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/tiers",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerSelf"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/users/:id/notifications",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerNotificationOwner"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id/notifications",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerNotificationOwner"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/users/:id/notifications/:notificationId/read",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerNotificationOwner"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/:id/notifications/read-all",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerNotificationOwner"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id/orders",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerSelf"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id/vouchers",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerSelf"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id/wishlist",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerWishlistOwner"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/users/:id/wishlist/:productId",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerWishlistOwner"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/users/:id/wishlist/:productId",
+    "middlewares": [
+      "authenticate",
+      "requireCustomerWishlistOwner"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/vouchers/apply",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/catalog/categories/tree",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/catalog/products",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/catalog/products/:slug",
+    "middlewares": []
+  },
+  {
+    "method": "POST",
+    "path": "/catalog/resolve-configuration",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/catalog/sections",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/live",
+    "middlewares": []
+  },
+  {
+    "method": "GET",
+    "path": "/ready",
+    "middlewares": []
+  }
+]

@@ -1,0 +1,183 @@
+﻿==========================================
+SHEET: Users (r:id rId5)
+==========================================
+A1: TC | B1: NGÆ¯á»œI TÃŒM BUG | C1: TÃŠN Lá»–I | D1: CHá»– Lá»–I | E1: THÃ”NG TIN Lá»–I | F1: MONG MUá»N Xáº¢Y RA | G1: LINK Lá»–I | H1: Fix Lá»—i | I1: LÃ½ Do Náº¿u KhÃ´ng Fix ÄÆ°á»£c
+A2: TC-00 | B2: Nguyá»…n DÆ°Æ¡ng Hiáº¿u | C2: Chá»— Login | D2: /route | E2: ÄÄƒng nháº­p lá»—i | F2: ÄÄƒng nháº­p Ä‘Æ°á»£c | G2: Tester Order Link gá»­i áº£nh á»Ÿ Ä‘Ã¢y | H2: ChÆ°a Fix | I2: System.Xml.XmlElement
+A3: TC-01 | B3: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C3: TÃ¬m kiáº¿m tá»« khÃ³a "Ão" khÃ´ng hiá»ƒn thá»‹ sáº£n pháº©m dÃ¹ danh má»¥c con "Ão QA" Ä‘ang hiá»ƒn thá»‹ vÃ  cÃ³ 1 mÃ³n | D3: /menu - Thanh tÃ¬m kiáº¿m sáº£n pháº©m | E3: BÆ°á»›c 1: Táº¡i trang Admin, danh má»¥c con "Ão QA" cÃ³ 1 sáº£n pháº©m vÃ  Ä‘ang á»Ÿ tráº¡ng thÃ¡i "Äang hiá»ƒn thá»‹".
+BÆ°á»›c 2: DÃ¹ng tÃ i khoáº£n khÃ¡ch truy cáº­p /menu.
+BÆ°á»›c 3: Táº¡i tab "Táº¥t cáº£ sáº£n pháº©m", nháº­p tá»« khÃ³a "Ão" vÃ o Ã´ tÃ¬m kiáº¿m.
+BÆ°á»›c 4: Há»‡ thá»‘ng tráº£ vá» Danh sÃ¡ch sáº£n pháº©m (0) vÃ  thÃ´ng bÃ¡o: "ChÆ°a cÃ³ sáº£n pháº©m trong danh má»¥c nÃ y. Vui lÃ²ng chá»n danh má»¥c khÃ¡c hoáº·c quay láº¡i danh má»¥c gá»‘c." | F3: Há»‡ thá»‘ng pháº£i tráº£ vá» káº¿t quáº£ tÃ¬m kiáº¿m chá»©a sáº£n pháº©m thuá»™c danh má»¥c "Ão QA" (hoáº·c sáº£n pháº©m cÃ³ chá»©a tá»« khÃ³a "Ão"). Náº¿u thá»±c sá»± khÃ´ng cÃ³ káº¿t quáº£, thÃ´ng bÃ¡o rá»—ng pháº£i hiá»ƒn thá»‹ Ä‘Ãºng ngá»¯ cáº£nh tÃ¬m kiáº¿m (vÃ­ dá»¥: "KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m phÃ¹ há»£p vá»›i tá»« khÃ³a"). | G3:  | H3: ÄÃ£ Fix | I3: 
+A4: TC-02 | B4: LÆ°Æ¡ng HoÃ ng Danh | C4: Font chá»¯ bá»‹ lá»—i táº¡i tab thÃ´ng bÃ¡o cá»§a User | D4: /ho-so?tab=notifications | E4: System.Xml.XmlElement | F4: Ná»™i dung thÃ´ng bÃ¡o hiá»ƒn thá»‹ Ä‘Ãºng | G4:  | H4: ÄÃ£ Fix | I4: 
+A5: TC-03 | B5: LÃª HoÃ ng | C5: Thanh menu Sidebar cá»§a nhÃ¢n viÃªn Báº¿p vÃ  ÄÃ³ng gÃ³i bá»‹ thiáº¿u liÃªn káº¿t dáº«n vÃ o mÃ n hÃ¬nh lÃ m viá»‡c nghiá»‡p vá»¥ | D5: Menu Sidebar trang Admin (/admin/*) cho role kitchen vÃ  packing | E5: BÆ°á»›c 1: ÄÄƒng nháº­p báº±ng tÃ i khoáº£n QA Kitchen A (0999000005) hoáº·c QA Packing A (0999000006).
+BÆ°á»›c 2: Quan sÃ¡t thanh Ä‘iá»u hÆ°á»›ng (Sidebar) bÃªn trÃ¡i mÃ n hÃ¬nh.
+BÆ°á»›c 3: Sidebar chá»‰ hiá»ƒn thá»‹ 2 má»¥c: "ÄÆ¡n hÃ ng" vÃ  "Trung tÃ¢m thÃ´ng bÃ¡o".
+BÆ°á»›c 4: HoÃ n toÃ n khÃ´ng cÃ³ menu dáº«n vÃ o "MÃ n hÃ¬nh Báº¿p (KDS)" (/admin/bep) hoáº·c "Khu vá»±c ÄÃ³ng gÃ³i" (/admin/dong-goi). NhÃ¢n viÃªn pháº£i tá»± gÃµ URL thá»§ cÃ´ng trÃªn thanh Ä‘á»‹a chá»‰ má»›i vÃ o Ä‘Æ°á»£c trang lÃ m viá»‡c. | F5: Thanh Sidebar pháº£i hiá»ƒn thá»‹ má»¥c nghiá»‡p vá»¥ tÆ°Æ¡ng á»©ng theo vai trÃ² tÃ i khoáº£n: Role kitchen hiá»ƒn thá»‹ má»¥c "MÃ n hÃ¬nh Báº¿p (KDS)" dáº«n tá»›i /admin/bep; Role packing hiá»ƒn thá»‹ má»¥c "Khu vá»±c ÄÃ³ng gÃ³i" dáº«n tá»›i /admin/dong-goi. | G5:  | H5: ÄÃ£ Fix | I5: 
+A6: TC-04 | B6: LÃª HoÃ ng | C6: Lá»—i há»‡ thá»‘ng HTTP 500 (INTERNAL_SERVER_ERROR) khi táº£i danh sÃ¡ch nhiá»‡m vá»¥ táº¡i mÃ n hÃ¬nh ÄÃ³ng gÃ³i | D6: MÃ n hÃ¬nh ÄÃ³ng gÃ³i (/admin/dong-goi), API GET /admin/fulfillment/tasks?lane=packing&branch_id=1 | E6: BÆ°á»›c 1: ÄÄƒng nháº­p tÃ i khoáº£n QA Packing A (0999000006).
+BÆ°á»›c 2: Truy cáº­p trang Khu Vá»±c ÄÃ³ng GÃ³i táº¡i URL /admin/dong-goi.
+BÆ°á»›c 3: Frontend gá»­i request API GET /admin/fulfillment/tasks?lane=packing&branch_id=1.
+BÆ°á»›c 4: Backend tráº£ vá» mÃ£ lá»—i HTTP 500: {"error":"Há»‡ thá»‘ng Ä‘ang báº­n. Vui lÃ²ng thá»­ láº¡i sau.","code":"INTERNAL_SERVER_ERROR"}. Giao diá»‡n xuáº¥t hiá»‡n toast thÃ´ng bÃ¡o Ä‘á»: "Há»‡ thá»‘ng Ä‘ang báº­n. Vui lÃ²ng thá»­ láº¡i sau." trÃªn Ä‘áº§u trang. | F6: API fulfillment pháº£i xá»­ lÃ½ an toÃ n vÃ  tráº£ vá» mÃ£ HTTP 200 kÃ¨m máº£ng rá»—ng [] khi chi nhÃ¡nh chÆ°a cÃ³ Ä‘Æ¡n Ä‘Ã³ng gÃ³i nÃ o, khÃ´ng Ä‘Æ°á»£c tráº£ vá» lá»—i HTTP 500 gÃ¢y thÃ´ng bÃ¡o Ä‘á» cho nhÃ¢n viÃªn. | G6:  | H6: ÄÃ£ Fix | I6: 
+A7: TC-05 | B7: Nguyá»…n Äá»©c Anh | C7: Lá»—i khÃ´ng thá»ƒ chá»n láº¡i preorder ngÃ y, khung giá» vÃ  phiáº¿u preorder phÃ¹ há»£p khi Ä‘Ã£ chá»n sai ngÃ y trong trang Ä‘áº·t trÆ°á»›c cá»§a Customer | D7: /dat-truoc - khung chá»n "NgÃ y nháº­n" vÃ  thanh dropdown "Khung giá» nháº­n" | E7: BÆ°á»›c 1: Ä‘Äƒng nháº­p tÃ i khoáº£n QA Customer 1
+BÆ°á»›c 2: chá»n "Äáº·t trÆ°á»›c" trÃªn thanh Ä‘iá»u hÆ°á»›ng
+BÆ°á»›c 3: Nháº­p ngÃ y nháº­n cÃ¡ch ngÃ y hiá»‡n táº¡i >7 ngÃ y (Khi nÃ y trang sáº½ thÃ´ng bÃ¡o "Chá»‰ nháº­n Ä‘áº·t trÆ°á»›c trong vÃ²ng 7 ngÃ y") 
+BÆ°á»›c 4: chá»n láº¡i ngÃ y nháº­n má»›i, khi nÃ y phiáº¿u order chá»‰ hiá»ƒn thá»‹ thÃªm "Äáº·t trÆ°á»›c hiá»‡n chÆ°a Ã¡p dá»¥ng táº¡i TeaPlus Quáº­n 1 - Nguyá»…n Huá»‡. HÃ£y chá»n chi nhÃ¡nh khÃ¡c." vÃ  khÃ´ng thá»ƒ chá»n khung giá» phÃ¹ há»£p máº·c dÃ¹ sÃ´ ngÃ y nháº­p má»›i cÃ³ <7 hay >7 | F7: Khi chá»n sá»‘ ngÃ y >7 thÃ¬ hiá»ƒn thá»‹ thÃ´ng bÃ¡o "Chá»‰ nháº­n Ä‘áº·t trÆ°á»›c trong vÃ²ng 7 ngÃ y" vÃ  chá»n láº¡i sá»‘ ngÃ y <7 váº«n cÃ³ thá»ƒ tiáº¿p tá»¥c nháº­p cÃ¡c má»¥c khÃ¡c á»Ÿ phiá»ƒu preorder | G7:  | H7: ÄÃ£ Fix | I7: 
+A8: TC-06 | B8: Nguyá»…n Minh Quang | C8: Báº¥m "Sá»­a" á»Ÿ giá» hÃ ng khÃ´ng náº¡p láº¡i Ä‘Ãºng Topping Ä‘Ã£ chá»n trÆ°á»›c Ä‘Ã³ | D8: Trang Menu â€” popup Sá»­a mÃ³n trong Giá» hÃ ng | E8: Sáº£n pháº©m trong giá» cÃ³ Topping "Kem Macchiato PhÃ´ Mai" (+12.000Ä‘), tá»•ng 48.000Ä‘. Khi báº¥m "Sá»­a", popup má»Ÿ ra khÃ´ng tick chá»n topping nÃ y, Tá»•ng cá»™ng hiá»ƒn thá»‹ láº¡i 36.000Ä‘ (giÃ¡ gá»‘c, thiáº¿u topping) | F8: Popup Sá»­a pháº£i náº¡p láº¡i Ä‘Ãºng toÃ n bá»™ cáº¥u hÃ¬nh Ä‘Ã£ chá»n (Size, ÄÆ°á»ng, ÄÃ¡, Topping) vÃ  Tá»•ng cá»™ng pháº£i khá»›p vá»›i giÃ¡ Ä‘ang cÃ³ trong giá» (48.000Ä‘) | G8:  | H8: ChÆ°a Fix | I8: 
+A9: TC-07 | B9: Nguyá»…n Tiáº¿n Anh Quá»‘c | C9: TÃ¬m kiáº¿m sáº£n pháº©m Ä‘ang hiá»ƒn thá»‹ trÃªn 
+Menu nhÆ°ng há»‡ thá»‘ng bÃ¡o khÃ´ng thá»ƒ táº£i danh má»¥c | D9: /menu â€“ Thanh tÃ¬m kiáº¿m sáº£n pháº©m | E9: BÆ°á»›c 1: ÄÄƒng nháº­p QA Customer 1 vÃ  truy cáº­p /menu. 
+BÆ°á»›c 2: Quan sÃ¡t tháº¥y sáº£n pháº©m â€œTrÃ¡i CÃ¢y TÃ´ Äáº·c Biá»‡tâ€ Ä‘ang hiá»ƒn thá»‹ trong danh sÃ¡ch. 
+BÆ°á»›c 3: Nháº­p â€œTrÃ¡i cÃ¢y tÃ´ Ä‘áº·c biá»‡tâ€ vÃ o thanh tÃ¬m kiáº¿m. 
+BÆ°á»›c 4: Há»‡ thá»‘ng khÃ´ng tráº£ vá» sáº£n pháº©m tÆ°Æ¡ng á»©ng mÃ  hiá»ƒn thá»‹ â€œKhÃ´ng thá»ƒ táº£i danh má»¥c â€“ Há»‡ thá»‘ng Ä‘ang báº­n. Vui lÃ²ng thá»­ láº¡i sau.â€ | F9: Khi nháº­p tÃªn cá»§a sáº£n pháº©m Ä‘ang tá»“n táº¡i vÃ  hiá»ƒn thá»‹ trÃªn Menu, há»‡ thá»‘ng pháº£i tráº£ vá» sáº£n pháº©m phÃ¹ há»£p, khÃ´ng Ä‘Æ°á»£c hiá»ƒn thá»‹ lá»—i táº£i danh má»¥c. | G9:  | H9: ChÆ°a Fix | I9: 
+A10: TC-08 | B10: Nguyá»…n Tiáº¿n Anh Quá»‘c | C10: Tab â€œTáº¥t cáº£ sáº£n pháº©mâ€ khÃ´ng hiá»ƒn thá»‹ Ä‘áº§y Ä‘á»§
+ sáº£n pháº©m tá»« cÃ¡c danh má»¥c | D10: /menu â€“ Bá»™ lá»c â€œTáº¥t cáº£ sáº£n pháº©mâ€ | E10: BÆ°á»›c 1: ÄÄƒng nháº­p QA Customer 1 vÃ  truy cáº­p /menu. 
+BÆ°á»›c 2: Chá»n danh má»¥c â€œTrÃ  TrÃ¡i CÃ¢y TÆ°Æ¡iâ€, há»‡ thá»‘ng hiá»ƒn thá»‹ 3 sáº£n pháº©m: TrÃ  ÄÃ o Cam Sáº£, TrÃ  XoÃ i, TrÃ  DÃ¢u. 
+BÆ°á»›c 3: Chuyá»ƒn sang â€œTáº¥t cáº£ sáº£n pháº©mâ€. 
+BÆ°á»›c 4: CÃ¡c sáº£n pháº©m thuá»™c â€œTrÃ  TrÃ¡i CÃ¢y TÆ°Æ¡iâ€ khÃ´ng cÃ²n xuáº¥t hiá»‡n trong danh sÃ¡ch â€œTáº¥t cáº£ sáº£n pháº©mâ€. | F10: Khi chá»n â€œTáº¥t cáº£ sáº£n pháº©mâ€, há»‡ thá»‘ng pháº£i hiá»ƒn thá»‹ Ä‘áº§y Ä‘á»§ cÃ¡c sáº£n pháº©m Ä‘ang Ä‘Æ°á»£c phÃ©p hiá»ƒn thá»‹ tá»« táº¥t cáº£ danh má»¥c, bao gá»“m cÃ¡c sáº£n pháº©m thuá»™c â€œTrÃ  TrÃ¡i CÃ¢y TÆ°Æ¡iâ€. | G10:  | H10:  | I10: 
+A11: TC-09 | B11: Nguyá»…n Äá»©c Anh | C11: Sá»‘ Ä‘iá»‡n thoáº¡i trong phiáº¿u preorder cÃ³ thá»ƒ Ä‘á»ƒ trá»‘ng hoáº·c nháº­p chá»¯ thay vÃ¬ sá»‘ | D11: /dat-truoc - Ã´ nháº­p "Sá»‘ Ä‘iá»‡n thoáº¡i" | E11: BÆ°á»›c 1: Ä‘Äƒng nháº­p tÃ i khoáº£n QA Customer 1
+BÆ°á»›c 2: chá»n "Äáº·t trÆ°á»›c" trÃªn thanh Ä‘iá»u hÆ°á»›ng
+BÆ°á»›c 3: Táº¡i Ã´ nháº­p "Sá»‘ Ä‘iá»‡n thoáº¡i", nháº­p chá»¯ hoáº·c sá»‘ ngáº«u nhiÃªn
+BÆ°á»›c 4: Há»‡ thá»‘ng váº«n xá»­ lÃ­ vÃ  chuyá»ƒn Ä‘áº¿n trang /thanh-toan | F11: Hiá»ƒn thá»‹ thÃ´ng bÃ¡o nháº­p sai format sá»‘ Ä‘iá»‡n thoáº¡i khi nháº­p chá»¯ vÃ  sá»‘ ngáº«u nhiÃªn | G11:  | H11: ChÆ°a Fix | I11: 
+A12: TC-10 | B12: Nguyá»…n Äá»©c Anh | C12: System.Xml.XmlElement | D12: /dat-truoc - Ã´ nháº­p "Sá»‘ Ä‘iá»‡n thoáº¡i" | E12: BÆ°á»›c 1: Ä‘Äƒng nháº­p tÃ i khoáº£n QA Customer 1
+BÆ°á»›c 2: chá»n "Äáº·t trÆ°á»›c" trÃªn thanh Ä‘iá»u hÆ°á»›ng
+BÆ°á»›c 3: Táº¡i Ã´ nháº­p "Sá»‘ Ä‘iá»‡n thoáº¡i", nháº­p >21 sá»‘ ngáº«u nhiÃªn hoáº·c chá»¯ 
+BÆ°á»›c 4: Há»‡ thá»‘ng sáº½ thÃ´ng bÃ¡o "Há»‡ thá»‘ng Ä‘ang báº­n. Vui lÃ²ng thá»­ láº¡i sau." | F12: Giá»›i háº¡n sá»‘ kÃ½ tá»± tá»‘i Ä‘a hoáº·c khi nháº­p >21 kÃ­ tá»± thÃ¬ sáº½ yÃªu cáº§u nháº­p láº¡i sá»‘ Ä‘iá»‡n thoáº¡i Ä‘Ãºng | G12:  | H12: ChÆ°a Fix | I12: 
+A13: TC-11 | B13: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C13: KhÃ´ng thá»ƒ thay Ä‘á»•i hoáº·c Ã¡p dá»¥ng mÃ£ giáº£m giÃ¡ má»›i sau khi Ä‘Ã£ Ã¡p dá»¥ng má»™t mÃ£ trÆ°á»›c Ä‘Ã³ | D13: MÃ n hÃ¬nh Thanh toÃ¡n (/thanh-toan) - Khá»‘i TÃ³m táº¯t Ä‘Æ¡n hÃ ng | E13: BÆ°á»›c 1: KhÃ¡ch Ä‘áº·t hÃ ng chuyá»ƒn tá»›i trang /thanh-toan.
+BÆ°á»›c 2: Nháº­p mÃ£ giáº£m giÃ¡ TEST530437 vÃ  Ã¡p dá»¥ng thÃ nh cÃ´ng (nÃºt chuyá»ƒn sang "ÄÃ£ Ã¡p dá»¥ng", Ä‘Æ¡n giáº£m 3.000Ä‘).
+BÆ°á»›c 3: Nháº­p má»™t mÃ£ giáº£m giÃ¡ khÃ¡c vÃ o Ã´ (TEST313861).
+BÆ°á»›c 4: NÃºt báº¥m váº«n giá»¯ nguyÃªn tráº¡ng thÃ¡i "ÄÃ£ Ã¡p dá»¥ng" (bá»‹ vÃ´ hiá»‡u hÃ³a), khÃ´ng cho phÃ©p nháº¥n Ä‘á»ƒ kiá»ƒm tra vÃ  Ã¡p dá»¥ng mÃ£ má»›i.
+BÆ°á»›c 5: ÄÆ¡n hÃ ng váº«n tÃ­nh theo chiáº¿t kháº¥u cá»§a mÃ£ cÅ© dÃ¹ ná»™i dung trong Ã´ nháº­p Ä‘Ã£ thay Ä‘á»•i. | F13: 1. Khi ngÆ°á»i dÃ¹ng thay Ä‘á»•i kÃ½ tá»± trong Ã´ nháº­p mÃ£, nÃºt "ÄÃ£ Ã¡p dá»¥ng" pháº£i chuyá»ƒn láº¡i thÃ nh nÃºt "Ãp dá»¥ng" Ä‘á»ƒ cho phÃ©p gá»­i request kiá»ƒm tra mÃ£ má»›i.
+2. Cáº§n cÃ³ nÃºt "Há»§y / Gá»¡ bá»" Ä‘á»ƒ khÃ¡ch hÃ ng cÃ³ thá»ƒ xÃ³a mÃ£ giáº£m giÃ¡ Ä‘Ã£ chá»n vá» tráº¡ng thÃ¡i ban Ä‘áº§u. | G13:  | H13: ChÆ°a Fix | I13: 
+A14: TC-12 | B14: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C14: Sá»‘ lÆ°á»£ng giá» hÃ ng khÃ´ng Ä‘á»“ng bá»™: Icon Header hiá»ƒn thá»‹ 1 mÃ³n nhÆ°ng khung Giá» hÃ ng bÃªn pháº£i bÃ¡o 0 mÃ³n | D14: /menu vÃ  /thanh-toan (CÆ¡ cháº¿ Ä‘á»“ng bá»™ State/Storage giá»¯a cÃ¡c tab) | E14: BÆ°á»›c 1: Má»Ÿ cÃ¹ng lÃºc 2 tab trÃªn cÃ¹ng má»™t trÃ¬nh duyá»‡t vá»›i tÃ i khoáº£n khÃ¡ch hÃ ng.
+BÆ°á»›c 2: Táº¡i Tab 1, vÃ o trang /thanh-toan (hoáº·c luá»“ng thanh toÃ¡n nhanh).
+BÆ°á»›c 3: Táº¡i Tab 2, chá»n voucher vÃ  báº¥m "DÃ¹ng voucher" (hoáº·c Ä‘iá»u chá»‰nh giá» hÃ ng).
+BÆ°á»›c 4: Táº¡i Tab 1, khÃ´ng tiáº¿p tá»¥c thanh toÃ¡n (báº¥m há»§y mua ngay / quay láº¡i Menu).
+BÆ°á»›c 5: Quan sÃ¡t mÃ n hÃ¬nh Menu: Há»‡ thá»‘ng khÃ´ng Ä‘á»“ng bá»™ realtime giá»¯a 2 tab, dáº«n Ä‘áº¿n badge icon Giá» hÃ ng trÃªn Header hiá»ƒn thá»‹ sá»‘ 1, nhÆ°ng khung "Giá» hÃ ng cá»§a báº¡n" bÃªn pháº£i láº¡i hiá»ƒn thá»‹ 0 mÃ³n Ä‘Ã£ chá»n (0Ä‘) vÃ  nÃºt "Thanh toÃ¡n >" váº«n sÃ¡ng cam | F14: 1. Há»‡ thá»‘ng pháº£i láº¯ng nghe sá»± kiá»‡n Ä‘á»“ng bá»™ giá»¯a cÃ¡c tab (qua Storage Event / BroadcastChannel); khi thay Ä‘á»•i giá» hÃ ng hoáº·c há»§y thanh toÃ¡n á»Ÿ tab nÃ y, tab kia pháº£i tá»± Ä‘á»™ng cáº­p nháº­t realtime khá»›p cáº£ icon Header láº«n khung Giá» hÃ ng.
+2. TrÃ¡nh tÃ¬nh tráº¡ng lá»‡ch tráº¡ng thÃ¡i (Header bÃ¡o 1, widget bÃ¡o 0) gÃ¢y hiá»ƒu láº§m cho khÃ¡ch hÃ ng. | G14:  | H14: ChÆ°a Fix | I14: 
+A15:  | B15:  | C15:  | D15:  | E15:  | F15:  | G15:  | H15:  | I15: 
+A16:  | B16:  | C16:  | D16:  | E16:  | F16:  | G16:  | H16:  | I16: 
+A17:  | B17:  | C17:  | D17:  | E17:  | F17:  | G17:  | H17:  | I17: 
+A18:  | B18:  | C18:  | D18:  | E18:  | F18:  | G18:  | H18:  | I18: 
+A19:  | B19:  | C19:  | D19:  | E19:  | F19:  | G19:  | H19:  | I19: 
+A20:  | B20:  | C20:  | D20:  | E20:  | F20:  | G20:  | H20:  | I20: 
+A21:  | B21:  | C21:  | D21:  | E21:  | F21:  | G21:  | H21:  | I21: 
+A22:  | B22:  | C22:  | D22:  | E22:  | F22:  | G22:  | H22:  | I22: 
+A23:  | B23:  | C23:  | D23:  | E23:  | F23:  | G23:  | H23:  | I23: 
+A24:  | B24:  | C24:  | D24:  | E24:  | F24:  | G24:  | H24:  | I24: 
+A25:  | B25:  | C25:  | D25:  | E25:  | F25:  | G25:  | H25:  | I25: 
+A26:  | B26:  | C26:  | D26:  | E26:  | F26:  | G26:  | H26:  | I26: 
+A27:  | B27:  | C27:  | D27:  | E27:  | F27:  | G27:  | H27:  | I27: 
+A28:  | B28:  | C28:  | D28:  | E28:  | F28:  | G28:  | H28:  | I28: 
+A29:  | B29:  | C29:  | D29:  | E29:  | F29:  | G29:  | H29:  | I29: 
+A30:  | B30:  | C30:  | D30:  | E30:  | F30:  | G30:  | H30:  | I30: 
+A31:  | B31:  | C31:  | D31:  | E31:  | F31:  | G31:  | H31:  | I31: 
+A32:  | B32:  | C32:  | D32:  | E32:  | F32:  | G32:  | H32:  | I32: 
+A33:  | B33:  | C33:  | D33:  | E33:  | F33:  | G33:  | H33:  | I33: 
+A34:  | B34:  | C34:  | D34:  | E34:  | F34:  | G34:  | H34:  | I34: 
+A35:  | B35:  | C35:  | D35:  | E35:  | F35:  | G35:  | H35:  | I35: 
+A36:  | B36:  | C36:  | D36:  | E36:  | F36:  | G36:  | H36:  | I36: 
+A37:  | B37:  | C37:  | D37:  | E37:  | F37:  | G37:  | H37:  | I37: 
+A38:  | B38:  | C38:  | D38:  | E38:  | F38:  | G38:  | H38:  | I38: 
+A39:  | B39:  | C39:  | D39:  | E39:  | F39:  | G39:  | H39:  | I39: 
+A40:  | B40:  | C40:  | D40:  | E40:  | F40:  | G40:  | H40:  | I40: 
+A41:  | B41:  | C41:  | D41:  | E41:  | F41:  | G41:  | H41:  | I41: 
+C42:  | D42:  | E42:  | F42: 
+==========================================
+SHEET: Admin (r:id rId6)
+==========================================
+A1: TC | B1: NGÆ¯á»œI TÃŒM BUG | C1: TÃŠN Lá»–I | D1: CHá»– Lá»–I | E1: THÃ”NG TIN Lá»–I | F1: MONG MUá»N Xáº¢Y RA | G1: LINK Lá»–I | H1: Fix Lá»—i | I1: LÃ½ Do Náº¿u KhÃ´ng Fix ÄÆ°á»£c
+A2: TC-00 | B2: Nguyá»…n DÆ°Æ¡ng Hiáº¿u | C2: Chá»— Login | D2: /route | E2: ÄÄƒng nháº­p lá»—i | F2: ÄÄƒng nháº­p Ä‘Æ°á»£c | G2: Tester Order Link gá»­i áº£nh á»Ÿ Ä‘Ã¢y | H2: ÄÃ£ Fix | I2: 
+A3: TC-01 | B3: LÆ°Æ¡ng HoÃ ng Danh | C3: Lá»—i khÃ´ng thá»ƒ táº¡o láº¡i sáº£n pháº©m cÃ¹ng tÃªn sau khi Ä‘Ã£ xÃ³a | D3: /admin/catalog/kitchen - tab quáº£n lÃ­ sáº£n pháº©m | E3: BÆ°á»›c 1: Truy cáº­p /admin/catalog/kitchen.
+BÆ°á»›c 2: Chá»n ngÃ nh hÃ ng gá»‘c NÆ°á»›c Giáº£i KhÃ¡t
+BÆ°á»›c 3: Táº¡i tab Quáº£n LÃ½ Sáº£n Pháº©m chá»n CÃ  phÃª sá»¯a QA vÃ  báº¥m nÃºt XÃ³a.
+BÆ°á»›c 4: Há»‡ thá»‘ng xÃ³a thÃ nh cÃ´ng, sáº£n pháº©m khÃ´ng cÃ²n hiá»ƒn thá»‹ trÃªn danh sÃ¡ch.
+BÆ°á»›c 5: Báº¥m nÃºt ThÃªm MÃ³n Má»›i
+BÆ°á»›c 6: Nháº­p láº¡i Ä‘Ãºng tÃªn sáº£n pháº©m cÅ© CÃ  phÃª sá»¯a QA vÃ  báº¥m LÆ°u
+BÆ°á»›c 7: Há»‡ thá»‘ng bÃ¡o lá»—i Sáº£n pháº©m Ä‘Ã£ tá»“n táº¡i vÃ  khÃ´ng cho phÃ©p lÆ°u. | F3: XÃ³a Ä‘Æ°á»£c, táº¡o láº¡i Ä‘Æ°á»£c | G3:  | H3: ÄÃ£ Fix | I3: 
+A4: TC-02 | B4: LÆ°Æ¡ng HoÃ ng Danh | C4: Lá»—i lÆ°u ngáº§m vÃ  bÃ¡o lá»—i sai khi táº¡o nhÃ³m trong Block 2 | D4: /admin/catalog/kitchen - tab tÃ¹y chá»n danh má»¥c con | E4: System.Xml.XmlElement | F4: Báº¥m "Táº¡o vÃ  báº­t Ã¡p dá»¥ng" thÃ nh cÃ´ng vÃ  khÃ´ng bÃ¡o lá»—i | G4:  | H4: ÄÃ£ Fix | I4: 
+A5: TC-03 | B5: LÆ°Æ¡ng HoÃ ng Danh | C5: LÆ°u sai Block vÃ  bÃ¡o lá»—i sai khi táº¡o tÃ¹y chá»n trong Block 2 | D5: /admin/catalog/kitchen tab tÃ¹y chá»n danh má»¥c con - block 2 | E5: Sau khi áº¥n nÃºt "Táº¡o vÃ  báº­t Ã¡p dá»¥ng trong block 2 - tab tÃ¹y chá»n danh má»¥c con", thÃ´ng bÃ¡o: "tÃ¹y chá»n khÃ´ng thuá»™c loáº¡i sáº£n pháº©m cá»§a danh má»¥c". KhÃ´ng hiá»ƒn tÃ¹y chá»n thá»‹ ngay láº­p tá»©c, sau khi áº¥n F5 tÃ¹y chá»n má»›i hiá»ƒn thá»‹ nhÆ°ng tÃ¹y chá»n hiá»ƒn thá»‹ táº¡i Block 1 | F5: Báº¥m "Táº¡o vÃ  báº­t Ã¡p dá»¥ng" thÃ nh cÃ´ng, khÃ´ng cÃ³ thÃ´ng bÃ¡o lá»—i. TÃ¹y chá»n pháº£i hiá»ƒn thá»‹ ngay vÃ  náº±m Ä‘Ãºng vá»‹ trÃ­ táº¡i | G5:  | H5: ÄÃ£ Fix | I5: 
+A6: TC04 | B6: Nguyá»…n Tiáº¿n Anh Quá»‘c | C6: KhÃ´ng thá»ƒ táº¡o danh má»¥c con Ão do bÃ¡o trÃ¹ng tÃªn/slug | D6: /admin/catalog/packing - tab Danh Má»¥c Con | E6: BÆ°á»›c 1: Truy cáº­p /admin/catalog/packing.
+BÆ°á»›c 2: Chá»n ngÃ nh hÃ ng gá»‘c "HÃ ng Ä‘Ã³ng gÃ³i".
+BÆ°á»›c 3: Táº¡i tab "Danh Má»¥c Con", báº¥m "ThÃªm Danh Má»¥c Con".
+BÆ°á»›c 4: Nháº­p tÃªn danh má»¥c con "Ão" vÃ  báº¥m "Táº¡o danh má»¥c".
+BÆ°á»›c 5: Há»‡ thá»‘ng bÃ¡o lá»—i "TÃªn hoáº·c slug danh má»¥c Ä‘Ã£ tá»“n táº¡i".
+BÆ°á»›c 6: Chá»n "Táº¥t cáº£ ngÃ nh hÃ ng" Ä‘á»ƒ kiá»ƒm tra nhÆ°ng khÃ´ng tÃ¬m tháº¥y danh má»¥c con "Ão" trong danh sÃ¡ch. | F6: Táº¡o thÃ nh cÃ´ng danh má»¥c con "Ão" thuá»™c ngÃ nh "HÃ ng Ä‘Ã³ng gÃ³i"; náº¿u tÃªn/slug Ä‘Ã£ tá»“n táº¡i, há»‡ thá»‘ng cáº§n hiá»ƒn thá»‹ rÃµ danh má»¥c Ä‘ang tá»“n táº¡i Ä‘á»ƒ ngÆ°á»i dÃ¹ng kiá»ƒm tra. | G6:  | H6: ÄÃ£ Fix | I6: 
+A7: TC05 | B7: Nguyá»…n Tiáº¿n Anh Quá»‘c | C7: Danh má»¥c Báº¿p hiá»ƒn thá»‹ ngÃ nh hÃ ng thuá»™c Danh má»¥c ÄÃ³ng gÃ³i | D7: /admin/catalog/kitchen â€“ Danh má»¥c Báº¿p | E7: B1: VÃ o Danh má»¥c ÄÃ³ng gÃ³i vÃ  táº¡o ngÃ nh hÃ ng gá»‘c â€œHÃ ng Ä‘Ã³ng gÃ³iâ€ â†’ táº¡o thÃ nh cÃ´ng. 
+B2: Chuyá»ƒn sang mÃ n Danh má»¥c Báº¿p. 
+B3: Má»Ÿ danh sÃ¡ch NgÃ nh hÃ ng gá»‘c â†’ váº«n tháº¥y â€œHÃ ng Ä‘Ã³ng gÃ³iâ€. 
+B4: Chá»n â€œHÃ ng Ä‘Ã³ng gÃ³iâ€ â†’ há»‡ thá»‘ng váº«n hiá»ƒn thá»‹ ngÃ nh hÃ ng vÃ  cho phÃ©p truy cáº­p cÃ¡c chá»©c nÄƒng quáº£n lÃ½ cá»§a ngÃ nh. | F7: Danh má»¥c Báº¿p chá»‰ hiá»ƒn thá»‹ ngÃ nh hÃ ng/danh má»¥c/sáº£n pháº©m thuá»™c Báº¿p; khÃ´ng hiá»ƒn thá»‹ ngÃ nh hÃ ng thuá»™c Danh má»¥c ÄÃ³ng gÃ³i. | G7:  | H7: ÄÃ£ Fix | I7: 
+A8: TC-06 | B8: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C8: Cá»¥m nÃºt phÃ¢n trang "Trang trÆ°á»›c / Trang sau" thiáº¿u giao diá»‡n nÃºt báº¥m chuáº©n vÃ  thiáº¿u tráº¡ng thÃ¡i Disabled rÃµ rÃ ng | D8: MÃ n hÃ¬nh Quáº£n trá»‹ â†’ /admin/promotions (Khuyáº¿n mÃ£i & Voucher) - ChÃ¢n báº£ng | E8: BÆ°á»›c 1: Truy cáº­p mÃ n hÃ¬nh Khuyáº¿n mÃ£i & Voucher.
+BÆ°á»›c 2: Quan sÃ¡t gÃ³c dÆ°á»›i bÃªn pháº£i chÃ¢n báº£ng (khu vá»±c phÃ¢n trang Trang 1 / 3).
+BÆ°á»›c 3: NÃºt "Trang trÆ°á»›c" vÃ  "Trang sau" hiá»ƒn thá»‹ dÆ°á»›i dáº¡ng vÄƒn báº£n thuáº§n (plain text), khÃ´ng cÃ³ khung viá»n nÃºt (button border), khÃ´ng cÃ³ icon mÅ©i tÃªn Ä‘iá»u hÆ°á»›ng.
+BÆ°á»›c 4: DÃ¹ Ä‘ang á»Ÿ trang Ä‘áº§u tiÃªn (Trang 1 / 3), chá»¯ "Trang trÆ°á»›c" chá»‰ bá»‹ má» nháº¹, khÃ´ng cÃ³ hiá»‡u á»©ng cáº¥m báº¥m (cursor: not-allowed hoáº·c thuá»™c tÃ­nh disabled rÃµ rÃ ng). | F8: 1. CÃ¡c nÃºt phÃ¢n trang pháº£i cÃ³ kiá»ƒu dÃ¡ng nÃºt chuáº©n (cÃ³ border, background hoáº·c icon Ä‘iá»u hÆ°á»›ng < >).
+2. Khi Ä‘ang á»Ÿ trang 1, nÃºt "Trang trÆ°á»›c" pháº£i bá»‹ khÃ³a hoÃ n toÃ n (Disabled, má» rÃµ vÃ  con trá» chuá»™t hiá»ƒn thá»‹ tráº¡ng thÃ¡i khÃ´ng Ä‘Æ°á»£c báº¥m). | G8:  | H8: ÄÃ£ Fix | I8: 
+A9: TC07 | B9: Nguyá»…n Tiáº¿n Anh Quá»‘c | C9: TÃ¹y chá»n cá»§a ngÃ nh HÃ ng Ä‘Ã³ng gÃ³i hiá»ƒn thá»‹ sai sang ngÃ nh NÆ°á»›c Giáº£i KhÃ¡t | D9: /admin/catalog/packing - Tab 3 TÃ¹y Chá»n Danh Má»¥c Con | E9: 1. Chá»n ngÃ nh HÃ ng Ä‘Ã³ng gÃ³i â†’ danh má»¥c Ão QA.
+2. Táº¡o Block 1 gá»“m MÃ u: Äen, Tráº¯ng vÃ  In logo: CÃ³, KhÃ´ng. 
+3. Chuyá»ƒn sang ngÃ nh NÆ°á»›c Giáº£i KhÃ¡t â†’ danh má»¥c CÃ  phÃª. 
+4. Nháº¥n F5 Ä‘á»ƒ táº£i láº¡i trang. 
+5. Má»Ÿ Tab 3 TÃ¹y Chá»n Danh Má»¥c Con. 
+6. Chá»n pháº¡m vi NÆ°á»›c Giáº£i KhÃ¡t (NgÃ nh Gá»‘c â€“ DÃ¹ng chung/Káº¿ thá»«a). 
+7. Há»‡ thá»‘ng váº«n hiá»ƒn thá»‹ MÃ u vÃ  In logo Ä‘Ã£ táº¡o cho HÃ ng Ä‘Ã³ng gÃ³i. | F9: TÃ¹y chá»n MÃ u vÃ  In logo cá»§a HÃ ng Ä‘Ã³ng gÃ³i khÃ´ng Ä‘Æ°á»£c hiá»ƒn thá»‹ trong pháº¡m vi NÆ°á»›c Giáº£i KhÃ¡t. Má»—i ngÃ nh/danh má»¥c pháº£i hiá»ƒn thá»‹ Ä‘Ãºng tÃ¹y chá»n thuá»™c pháº¡m vi cá»§a mÃ¬nh. | G9:  | H9: ÄÃ£ Fix | I9: 
+A10: TC08 | B10: Nguyá»…n Minh Quang | C10: Danh má»¥c con thuá»™c ngÃ nh ÄÃ³ng gÃ³i bá»‹ gÃ¡n sai Khu vá»±c xá»­ lÃ½ = "Quáº§y Báº¿p/Pha cháº¿" | D10: /admin/catalog/packing â€” tab "1. Danh Má»¥c Con", danh má»¥c "Ão QA" | E10: Danh má»¥c con "Ão QA" thuá»™c ngÃ nh gá»‘c "HÃ ng Ä‘Ã³ng gÃ³i" nhÆ°ng cá»™t Khu vá»±c xá»­ lÃ½ hiá»ƒn thá»‹ "Quáº§y Báº¿p/Pha cháº¿". Sáº£n pháº©m "Ão khoÃ¡c QA" bÃªn trong káº¿ thá»«a luÃ´n lá»—i nÃ y | F10: Danh má»¥c con thuá»™c ngÃ nh ÄÃ³ng gÃ³i pháº£i tá»± nháº­n Khu vá»±c xá»­ lÃ½ = "ÄÃ³ng gÃ³i", khÃ´ng thá»ƒ lÃ  Báº¿p | G10:  | H10: ÄÃ£ Fix | I10: 
+A11: TC-09 | B11: LÆ°Æ¡ng HoÃ ng Danh | C11: Tá»± Ä‘á»™ng chuyá»ƒn Ä‘á»•i bá»™ lá»c "NgÃ nh hÃ ng gá»‘c" khi áº¥n nÃºt Táº¡m áº©n/Hiá»ƒn thá»‹ danh má»¥c con | D11: /admin/catalog/kitchen | E11: Khi Ä‘ang á»Ÿ cháº¿ Ä‘á»™ "Táº¥t cáº£ ngÃ nh hÃ ng", ngÆ°á»i dÃ¹ng báº¥m nÃºt "Táº¡m áº©n / Hiá»ƒn thá»‹" cá»§a má»™t danh má»¥c con thuá»™c má»™t ngÃ nh hÃ ng cá»¥ thá»ƒ. Há»‡ thá»‘ng tá»± Ä‘á»™ng chuyá»ƒn "NgÃ nh hÃ ng gá»‘c" tá»« "Táº¥t cáº£ ngÃ nh hÃ ng" sang "HÃ ng Ä‘Ã³ng gÃ³i". | F11: Sau khi táº¡m áº©n/hiá»ƒn thá»‹, bá»™ lá»c "NgÃ nh hÃ ng gá»‘c" pháº£i giá»¯ nguyÃªn lÃ  "Táº¥t cáº£ ngÃ nh hÃ ng" hoáº·c ngÃ nh hÃ ng hiá»‡n táº¡i Ä‘ang chá»n. | G11:  | H11: ÄÃ£ Fix | I11: 
+A12: System.Xml.XmlElement | B12: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C12: MÃ n hÃ¬nh Danh má»¥c ÄÃ³ng gÃ³i hiá»ƒn thá»‹ toÃ n bá»™ danh má»¥c con thuá»™c Quáº§y Báº¿p / Pha cháº¿ | D12: /admin/catalog/packing - Tab 1. Danh Má»¥c Con | E12: BÆ°á»›c 1: ÄÄƒng nháº­p tÃ i khoáº£n QA Super Admin.
+BÆ°á»›c 2: VÃ o menu bÃªn trÃ¡i chá»n Danh má»¥c ÄÃ³ng gÃ³i (URL: /admin/catalog/packing).
+BÆ°á»›c 3: Táº¡i tab "1. Danh Má»¥c Con", kiá»ƒm tra báº£ng danh sÃ¡ch.
+BÆ°á»›c 4: Báº£ng hiá»ƒn thá»‹ 4 danh má»¥c con cá»§a Báº¿p (TrÃ  hoa quáº£, CÃ  phÃª, TrÃ¡i CÃ¢y TÃ´ a, TrÃ¡i nÃ¨) vá»›i cá»™t Khu vá»±c xá»­ lÃ½ lÃ  Quáº§y Báº¿p / Pha cháº¿. | F12: Catalog ÄÃ³ng gÃ³i chá»‰ hiá»ƒn thá»‹ ngÃ nh hÃ ng/danh má»¥c thuá»™c khu vá»±c ÄÃ³ng gÃ³i; khÃ´ng hiá»ƒn thá»‹ danh má»¥c thuá»™c Báº¿p (theo Ä‘Ãºng quy táº¯c cÃ¡ch ly Catalog táº¡i Má»¥c 5.3). | G12:  | H12: ÄÃ£ Fix | I12: 
+A13: TC-11 | B13: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C13: KhÃ´ng thá»ƒ Ä‘á»•i tÃªn ngÃ nh hÃ ng gá»‘c do lá»—i validate áº©n: "Category slug must be kebab-case" | D13: /admin/catalog/packing (hoáº·c catalog) - Popup "Äá»•i TÃªn NgÃ nh HÃ ng Gá»‘c" | E13: BÆ°á»›c 1: Táº¡i mÃ n hÃ¬nh quáº£n trá»‹ Danh má»¥c, chá»n má»™t ngÃ nh hÃ ng gá»‘c (vÃ­ dá»¥: "Ão -" vÃ¬ "Ão" Ä‘Ã£ bá»‹ bÃ¡o lá»—i trÃ¹ng Ä‘Ã£ log bug bÃªn trÃªn rá»“i).
+BÆ°á»›c 2: Báº¥m nÃºt Sá»­a tÃªn ngÃ nh.
+BÆ°á»›c 3: Nháº­p tÃªn má»›i vÃ o Ã´ "TÃªn ngÃ nh hÃ ng gá»‘c" (vÃ­ dá»¥: nháº­p Ã¡o).
+BÆ°á»›c 4: Báº¥m Cáº­p nháº­t.
+BÆ°á»›c 5: Há»‡ thá»‘ng bÃ¡o lá»—i: "Category slug must be kebab-case (e.g. "tra-trai-cay", "ao-thun-nam")" vÃ  cháº·n khÃ´ng cho lÆ°u. | F13: 1. Há»‡ thá»‘ng pháº£i tá»± Ä‘á»™ng chuáº©n hÃ³a TÃªn thÃ nh Slug há»£p lá»‡ (vÃ­ dá»¥: "Ã¡o" -> "ao") mÃ  khÃ´ng bÃ¡o lá»—i
+2. Cháº¥p nháº­n cÃ¡c tá»« Ä‘Æ¡n khÃ´ng cÃ³ dáº¥u gáº¡ch ngang.
+3. KhÃ´ng hiá»ƒn thá»‹ thÃ´ng bÃ¡o lá»—i ká»¹ thuáº­t vá» trÆ°á»ng slug khi ngÆ°á»i dÃ¹ng chá»‰ nháº­p trÆ°á»ng TÃªn hiá»ƒn thá»‹. | G13:  | H13: ÄÃ£ Fix | I13: 
+A14: TC-012 | B14: LÆ°Æ¡ng HoÃ ng Danh | C14: Tá»± Ä‘á»™ng chuyá»ƒn Ä‘á»•i NgÃ nh hÃ ng gá»‘c sang danh má»¥c khÃ¡c sau khi Edit sáº£n pháº©m | D14: System.Xml.XmlElement | E14: BÆ°á»›c 1: Truy cáº­p /admin/catalog/kitchen.
+BÆ°á»›c 2: Táº¡i NgÃ nh hÃ ng gá»‘c, chá»n Táº¥t cáº£ ngÃ nh hÃ ng.
+BÆ°á»›c 3: Táº¡i tab Quáº£n LÃ½ Sáº£n Pháº©m, chá»n sáº£n pháº©m CÃ  phÃª sá»¯a vÃ  báº¥m nÃºt Sá»­a.
+BÆ°á»›c 4: Trong form Chá»‰nh Sá»­a MÃ³n, giá»¯ nguyÃªn thÃ´ng tin hoáº·c thay Ä‘á»•i giÃ¡ bÃ¡n, sau Ä‘Ã³ báº¥m nÃºt Cáº­p nháº­t.
+BÆ°á»›c 5: Há»‡ thá»‘ng lÆ°u thÃ nh cÃ´ng nhÆ°ng tá»± Ä‘á»™ng thay Ä‘á»•i NgÃ nh hÃ ng gá»‘c tá»« Táº¥t cáº£ ngÃ nh hÃ ng sang ngÃ nh hÃ ng Ä‘áº§u tiÃªn trong dropdown NgÃ nh HÃ ng Gá»‘c. | F14: Sau khi báº¥m "Cáº­p nháº­t", há»‡ thá»‘ng pháº£i giá»¯ nguyÃªn bá»™ lá»c "NgÃ nh hÃ ng gá»‘c" hiá»‡n táº¡i vÃ  hiá»ƒn thá»‹ láº¡i danh sÃ¡ch sáº£n pháº©m bÃ¬nh thÆ°á»ng, khÃ´ng tá»± Ä‘á»™ng nháº£y sang ngÃ nh hÃ ng khÃ¡c. | G14:  | H14: ÄÃ£ Fix | I14: 
+A15: TC-013 | B15: DÆ°Æ¡ng Pháº¡m Trá»ng NghÄ©a | C15: Há»‡ thá»‘ng vÄƒng lá»—i "Danh má»¥c má»›i khÃ´ng cÃ¹ng loáº¡i sáº£n pháº©m vá»›i schema hiá»‡n táº¡i" khi thao tÃ¡c sáº£n pháº©m khÃ¡c luá»“ng táº¡i Danh má»¥c Báº¿p | D15: /admin/catalog/kitchen - Tab 2. Quáº£n LÃ½ Sáº£n Pháº©m | E15: BÆ°á»›c 1: VÃ o menu Danh má»¥c Báº¿p.
+BÆ°á»›c 2: Táº¡i "NgÃ nh hÃ ng gá»‘c", chá»n HÃ ng Ä‘Ã³ng gÃ³i.
+BÆ°á»›c 3: Chuyá»ƒn sang tab "2. Quáº£n LÃ½ Sáº£n Pháº©m".
+BÆ°á»›c 4: Quan sÃ¡t hoáº·c thá»±c hiá»‡n thao tÃ¡c (Sá»­a/Má»Ÿ bÃ¡n) vá»›i sáº£n pháº©m "Ão khoÃ¡c QA".
+BÆ°á»›c 5: Há»‡ thá»‘ng hiá»ƒn thá»‹ thÃ´ng bÃ¡o lá»—i mÃ u Ä‘á»: "Danh má»¥c má»›i khÃ´ng cÃ¹ng loáº¡i sáº£n pháº©m vá»›i schema hiá»‡n táº¡i", Ä‘á»“ng thá»i sáº£n pháº©m thá»i trang láº¡i bá»‹ gÃ¡n khu vá»±c xá»­ lÃ½ lÃ  "Báº¿p". | F15: 1. Danh má»¥c Báº¿p tuyá»‡t Ä‘á»‘i khÃ´ng Ä‘Æ°á»£c hiá»ƒn thá»‹ ngÃ nh "HÃ ng Ä‘Ã³ng gÃ³i" vÃ  sáº£n pháº©m "Ão khoÃ¡c QA".
+2. Há»‡ thá»‘ng khÃ´ng quÄƒng lá»—i ká»¹ thuáº­t mang tÃ­nh ná»™i bá»™ (schema) lÃªn giao diá»‡n ngÆ°á»i dÃ¹ng.
+3. Khu vá»±c xá»­ lÃ½ cá»§a Ão khoÃ¡c pháº£i thuá»™c ÄÃ³ng gÃ³i, khÃ´ng Ä‘Æ°á»£c thuá»™c Báº¿p. | G15:  | H15: ChÆ°a Fix | I15: 
+A16: TC-014 | B16: Nguyá»…n Trá»ng KhiÃªm | C16: System.Xml.XmlElement | D16: /admin/don-hang - Tab 2. /ho-so?tab=preorders | E16: BÆ°á»›c 1: Äáº·t Ä‘Æ¡n Ä‘áº·t trÆ°á»›c.
+BÆ°á»›c 2: XÃ¡c nháº­n bÃªn phÃ­a Manager.
+BÆ°á»›c 3: Há»§y Ä‘Æ¡n hÃ ng bÃªn khÃ¡ch hÃ ng.
+BÆ°á»›c 4: Kiá»ƒm tra má»¥c Quáº£n lÃ½ Ä‘Æ¡n hÃ ng thÃ¬ sáº½ khÃ´ng tháº¥y Ä‘Æ¡n hÃ ng bá»‹ há»§y | F16: BÃªn phÃ­a quáº£n lÃ½ hiá»ƒn thá»‹ Ä‘Æ¡n hÃ ng Ä‘áº·t trÆ°á»›c bá»‹ há»§y trong danh má»¥c Quáº£n lÃ½ Ä‘Æ¡n hÃ ng | G16:  | H16:  | I16: 
+A17: TC-015 | B17: Nguyá»…n Trá»ng KhiÃªm | C17: Há»‡ thá»‘ng cho phÃ©p lÆ°u giá» hoáº¡t Ä‘á»™ng trÃ¹ng nhau (08:00 - 08:00) | D17: /admin/chi-nhanh | E17: BÆ°á»›c 1: ÄÄƒng nháº­p tÃ i khoáº£n Quáº£n lÃ½ chi nhÃ¡nh hoáº·c Super Admin.  
+BÆ°á»›c 2: VÃ o /admin/chi-nhanh, báº¥m "Chá»‰nh sá»­a" táº¡i chi nhÃ¡nh Quáº­n 1.
+BÆ°á»›c 3: Thiáº¿t láº­p khung giá» má»Ÿ cá»­a vÃ  Ä‘Ã³ng cá»­a cÃ¹ng lÃ  08:00
+BÆ°á»›c 4: Báº¥m LÆ°u vÃ  Há»‡ thá»‘ng lÆ°u thÃ nh cÃ´ng 08:00 â€“ 08:00. | F17: Giá» Ä‘Ã³ng cá»­a pháº£i lá»›n hÆ¡n giá» má»Ÿ cá»­a. | G17:  | H17:  | I17: 
+A18: TC-016 | B18: LÃª HoÃ ng | C18: KhÃ´ng hiá»ƒn thá»‹ ngÃ nh/danh má»¥c/sáº£n pháº©m cá»§a Báº¿p. Chá»‰ hiá»ƒn thá»‹ cÃ¡c má»¥c ÄÃ³ng gÃ³i. | D18: admin/catalog/packing | E18: BÆ°á»›c 1: ÄÄƒng nháº­p tÃ i khoáº£n QA Super Admin
+BÆ°á»›c 2: Má»Ÿ menu "Sáº£n pháº©m & Danh má»¥c" á»Ÿ thanh Ä‘iá»u hÆ°á»›ng bÃªn trÃ¡i, báº¥m chá»n "Danh má»¥c ÄÃ³ng gÃ³i" .
+BÆ°á»›c 3: Quan sÃ¡t báº£ng dá»¯ liá»‡u hiá»ƒn thá»‹ táº¡i Tab "1. Danh Má»¥c Con" vÃ  Tab "2. Quáº£n LÃ½ Sáº£n Pháº©m".
+BÆ°á»›c 4: Má»Ÿ Network tab kiá»ƒm tra request API gá»­i lÃªn backend.
+=> Thá»±c táº¿: MÃ n hÃ¬nh ÄÃ³ng gÃ³i váº«n hiá»ƒn thá»‹ toÃ n bá»™ danh má»¥c vÃ  sáº£n pháº©m cá»§a Báº¿p (CÃ  phÃª, TrÃ  hoa quáº£... vá»›i khu vá»±c xá»­ lÃ½ lÃ  "ðŸ³ Quáº§y Báº¿p / Pha cháº¿"). Frontend gá»­i request gá»i nháº§m tham sá»‘: GET /admin/catalog/products?lane=kitchen vÃ  GET /admin/catalog/categories?lane=kitchen (thay vÃ¬ lane=packing). | F18: MÃ n hÃ¬nh Danh má»¥c ÄÃ³ng gÃ³i (/admin/catalog/packing) pháº£i cÃ¡ch ly hoÃ n toÃ n vá»›i Báº¿p: chá»‰ hiá»ƒn thá»‹ cÃ¡c ngÃ nh hÃ ng, danh má»¥c con vÃ  sáº£n pháº©m thuá»™c khu vá»±c ÄÃ³ng gÃ³i; khÃ´ng hiá»ƒn thá»‹ cÃ¡c má»¥c cá»§a Báº¿p. Frontend pháº£i gá»i Ä‘Ãºng API vá»›i tham sá»‘ lane=packing. | G18:  | H18: ChÆ°a Fix | I18: 
+A19: TC-017 | B19: Nguyá»…n Trá»ng KhiÃªm | C19: System.Xml.XmlElement | D19: admin/chi-nhanh | E19: BÆ°á»›c 1: ÄÄƒng nháº­p tÃ i khoáº£n Quáº£n lÃ½ chi nhÃ¡nh hoáº·c Super Admin.  
+BÆ°á»›c 2: VÃ o /admin/chi-nhanh, báº¥m "Chá»‰nh sá»­a" táº¡i chi nhÃ¡nh Quáº­n 1.
+BÆ°á»›c 3: Thiáº¿t láº­p khung giá» má»Ÿ cá»­a 8:00 vÃ  Ä‘Ã³ng cá»­a 9:00
+BÆ°á»›c 4: Báº¥m LÆ°u vÃ  Há»‡ thá»‘ng lÆ°u thÃ nh cÃ´ng 08:00 â€“ 09:00 nhÆ°ng há»‡ thá»‘ng khÃ´ng chuyá»ƒn sang Ä‘Ã³ng cá»­a | F19: Chuyá»ƒn sang tráº¡ng thÃ¡i Ä‘Ã³ng cá»­a | G19:  | H19:  | I19: 
+A20: TC-018 | B20: LÆ°Æ¡ng HoÃ ng Danh | C20: BÃ¡o "Má»Ÿ bÃ¡n thÃ nh cÃ´ng" nhÆ°ng khÃ´ng cáº­p nháº­t tráº¡ng thÃ¡i, F5 bá»‹ reset tab vá» "Danh má»¥c con" vÃ  dá»¯ liá»‡u khÃ´ng lÆ°u | D20: /admin/catalog/kitchen | E20: BÆ°á»›c 1: Truy cáº­p /admin/catalog/kitchen.
+BÆ°á»›c 2: Táº¡i tab "Quáº£n LÃ½ Sáº£n Pháº©m", chá»n sáº£n pháº©m "CÃ  phÃª sá»¯a" Ä‘ang á»Ÿ tráº¡ng thÃ¡i "Táº¡m ngÆ°ng" vÃ  báº¥m nÃºt "Má»Ÿ bÃ¡n".
+BÆ°á»›c 3: Há»‡ thá»‘ng hiá»ƒn thá»‹ thÃ´ng bÃ¡o thÃ nh cÃ´ng "ÄÃ£ má»Ÿ bÃ¡n mÃ³n CÃ  phÃª sá»¯a". Tuy nhiÃªn, tráº¡ng thÃ¡i sáº£n pháº©m trong danh sÃ¡ch váº«n hiá»ƒn thá»‹ "Táº¡m ngÆ°ng"
+BÆ°á»›c 4: Nháº¥n F5 Ä‘á»ƒ táº£i láº¡i trang. Há»‡ thá»‘ng tá»± Ä‘á»™ng chuyá»ƒn vá» "Danh Má»¥c Con"
+BÆ°á»›c 5: áº¤n sang "Quáº£n LÃ½ Sáº£n Pháº©m", kiá»ƒm tra sáº£n pháº©m "CÃ  phÃª sá»¯a".
+BÆ°á»›c 6: Tráº¡ng thÃ¡i sáº£n pháº©m váº«n lÃ  "Táº¡m ngÆ°ng", khÃ´ng Ä‘Æ°á»£c cáº­p nháº­t thÃ nh "Äang bÃ¡n". áº¤n má»Ÿ bÃ¡n láº§n ná»¯a váº«n khÃ´ng cáº­p nháº­t tráº¡ng thÃ¡i | F20: áº¤n má»Ÿ bÃ¡n sáº½ cáº­p nháº­t vÃ  lÆ°u tráº¡ng thÃ¡i vÃ  váº«n giá»¯ nguyÃªn tab "Quáº£n lÃ­ sáº£n pháº©m" | G20:  | H20: ChÆ°a Fix | I20: 
+A21: TC-19 | B21: Nguyá»…n Tiáº¿n Anh Quá»‘c | C21: KhÃ´ng thá»ƒ má»Ÿ bÃ¡n sáº£n pháº©m ÄÃ³ng 
+gÃ³i do lá»—i khÃ´ng tÆ°Æ¡ng thÃ­ch schema danh má»¥c. | D21: /admin/catalog/packing | E21: 1.ÄÄƒng nháº­p báº±ng QA Super Admin.
+2.VÃ o Sáº£n pháº©m & Danh má»¥c.
+3.Chá»n Danh má»¥c ÄÃ³ng gÃ³i.
+4.Chá»n tab Quáº£n lÃ½ Sáº£n pháº©m.
+5.TÃ¬m sáº£n pháº©m Ão Thun QA Ä‘ang á»Ÿ tráº¡ng thÃ¡i Táº¡m ngÆ°ng.
+6.Báº¥m Má»Ÿ bÃ¡n. | F21: Sáº£n pháº©m thuá»™c danh má»¥c ÄÃ³ng gÃ³i há»£p lá»‡ pháº£i cÃ³ thá»ƒ chuyá»ƒn tá»« Táº¡m ngÆ°ng â†’ Äang bÃ¡n. Náº¿u schema khÃ´ng há»£p lá»‡, há»‡ thá»‘ng cáº§n xÃ¡c Ä‘á»‹nh rÃµ cáº¥u hÃ¬nh/danh má»¥c nÃ o khÃ´ng tÆ°Æ¡ng thÃ­ch. | G21:  | H21: ChÆ°a Fix | I21: 
+A22:  | B22:  | C22:  | D22:  | E22:  | F22:  | G22:  | H22:  | I22: 
+A23:  | B23:  | C23:  | D23:  | E23:  | F23:  | G23:  | H23:  | I23: 
+A24:  | B24:  | C24:  | D24:  | E24:  | F24:  | G24:  | H24:  | I24: 
+A25:  | B25:  | C25:  | D25:  | E25:  | F25:  | G25:  | H25:  | I25: 
+A26:  | B26:  | C26:  | D26:  | E26:  | F26:  | G26:  | H26:  | I26: 
+A27:  | B27:  | C27:  | D27:  | E27:  | F27:  | G27:  | H27:  | I27: 
+A28:  | B28:  | C28:  | D28:  | E28:  | F28:  | G28:  | H28:  | I28: 
+A29:  | B29:  | C29:  | D29:  | E29:  | F29:  | G29:  | H29:  | I29: 
+A30:  | B30:  | C30:  | D30:  | E30:  | F30:  | G30:  | H30:  | I30: 
+B31:  | G31:  | H31: ChÆ°a Fix | I31: 
+B32:  | G32:  | H32:  | I32:  | J32:  | K32:  | L32:  | M32:  | N32:  | O32:  | P32:  | Q32:  | R32:  | S32:  | T32:  | U32:  | V32:  | W32:  | X32:  | Y32:  | Z32: 

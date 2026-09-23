@@ -171,10 +171,12 @@ export function createAdminCatalogV2Service({
         });
       }
 
+      const validationRules = input.validation_rules && typeof input.validation_rules === 'object' ? input.validation_rules : undefined;
+
       return await schemaRepository.updateCategoryOptionGroup(
         Number(categoryId),
         normalizedAttrId,
-        { name },
+        { name, validation_rules: validationRules },
         values,
       );
     },

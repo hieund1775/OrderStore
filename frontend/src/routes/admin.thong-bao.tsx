@@ -10,7 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { AdminPageHeader, AdminPagination } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -104,6 +104,7 @@ function NotificationsPage() {
   const rows: AppNotification[] = paginatedData?.items ?? paginatedData?.notifications ?? [];
   const unreadCount = data?.unread_count ?? 0;
   const totalPages = paginatedData?.pagination?.total_pages ?? 1;
+  const totalItems = paginatedData?.pagination?.total_items;
   async function handleNotificationClick(n: AppNotification) {
     if (!n.is_read) {
       await markRead(n.id).catch(() => undefined);
@@ -220,27 +221,14 @@ function NotificationsPage() {
           })}
 
           {rows.length > 0 && (
-            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-              <span>Trang {page} / {totalPages}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                >
-                  Trang trước
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-                  disabled={page >= totalPages}
-                >
-                  Trang sau
-                </Button>
-              </div>
-            </div>
+            <AdminPagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              itemLabel="thông báo"
+              onPageChange={setPage}
+              loading={isLoading}
+            />
           )}
         </div>
       )}

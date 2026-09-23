@@ -16,7 +16,7 @@ function appendScope(sql, params, scopedStoreId, column = 'o.store_id') {
  */
 export function createOrderReadRepository(database = postgresDb) {
   return {
-    async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
+    async listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, orderType, paymentMethod, cursor, page, limit }) {
       const params = [];
       // Preorders enter ordinary order-management once confirmed, checked-in, or cancelled.
       let filters = "WHERE (o.payment_status = 'paid' OR o.payment_method = 'COD' OR o.order_type = 'POS' OR latest.status = 'Đã hủy' OR p.status = 'CUSTOMER_CANCELLED')";
@@ -26,6 +26,14 @@ export function createOrderReadRepository(database = postgresDb) {
         filters += ` AND latest.status = $${params.length}`;
       }
       filters = appendScope(filters, params, scopedStoreId);
+      if (orderType) {
+        params.push(orderType);
+        filters += ` AND o.order_type = $${params.length}`;
+      }
+      if (paymentMethod) {
+        params.push(paymentMethod);
+        filters += ` AND o.payment_method = $${params.length}`;
+      }
       if (dateFrom) {
         params.push(dateFrom);
         filters += ` AND o.created_at >= $${params.length}`;
@@ -38,11 +46,26 @@ export function createOrderReadRepository(database = postgresDb) {
         params.push(`%${search}%`);
         filters += ` AND (o.order_code ILIKE $${params.length} OR o.customer_name ILIKE $${params.length} OR o.customer_phone ILIKE $${params.length})`;
       }
-      if (cursor) {
-        params.push(cursor.createdAtIso, cursor.id);
-        filters += ` AND (o.created_at < $${params.length - 1} OR (o.created_at = $${params.length - 1} AND o.id < $${params.length}))`;
+
+      const isOffsetPaginated = page != null;
+      let countColumn = '';
+      let paginationClause = '';
+      if (isOffsetPaginated) {
+        countColumn = ', COUNT(*) OVER() AS total_count';
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        params.push((page - 1) * limit);
+        const offsetParam = `$${params.length}`;
+        paginationClause = ` LIMIT ${limitParam} OFFSET ${offsetParam}`;
+      } else {
+        if (cursor) {
+          params.push(cursor.createdAtIso, cursor.id);
+          filters += ` AND (o.created_at < $${params.length - 1} OR (o.created_at = $${params.length - 1} AND o.id < $${params.length}))`;
+        }
+        params.push(limit + 1);
+        paginationClause = ` LIMIT $${params.length}`;
       }
-      params.push(limit + 1);
+
       const [rows] = await database.query(
         `SELECT o.id, o.order_code, o.user_id, o.store_id, o.table_id, o.location_name,
                 o.order_type, o.payment_method, o.payment_status, o.payment_provider,
@@ -51,13 +74,32 @@ export function createOrderReadRepository(database = postgresDb) {
                 o.shipping_driver_phone, o.shipping_tracking_url, o.is_printed,
                 o.note, o.cancel_reason, o.created_at, o.updated_at, s.name AS store_name,
                 latest.status AS current_status, o.preorder_id
+                ${countColumn}
          FROM orders o JOIN stores s ON s.id = o.store_id
          LEFT JOIN preorders p ON p.id = o.preorder_id
          LEFT JOIN LATERAL (SELECT status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1) latest ON TRUE
-         ${filters} ORDER BY o.created_at DESC, o.id DESC LIMIT $${params.length}`,
+         ${filters} ORDER BY o.created_at DESC, o.id DESC${paginationClause}`,
         params,
       );
-      return rows;
+
+      if (!isOffsetPaginated) return rows;
+
+      let totalItems = 0;
+      if (rows.length > 0) {
+        totalItems = Number(rows[0].total_count) || 0;
+      } else if (page > 1) {
+        const countParams = params.slice(0, params.length - 2);
+        const [countRows] = await database.query(
+          `SELECT COUNT(*)::int AS total
+           FROM orders o JOIN stores s ON s.id = o.store_id
+           LEFT JOIN preorders p ON p.id = o.preorder_id
+           LEFT JOIN LATERAL (SELECT status FROM order_status_history osh WHERE osh.order_id = o.id ORDER BY osh.created_at DESC, osh.id DESC LIMIT 1) latest ON TRUE
+           ${filters}`,
+          countParams,
+        );
+        totalItems = Number(countRows[0]?.total) || 0;
+      }
+      return { rows, totalItems };
     },
 
     async getAdminDetail({ orderId, scopedStoreId }) {

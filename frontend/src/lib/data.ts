@@ -140,6 +140,7 @@ export type Product = {
   fruit: string;
   fulfillment_lane?: string;
   tags: ProductTag[];
+  is_available?: boolean;
 };
 
 export type ApiCatalogProduct = {
@@ -160,6 +161,7 @@ export type ApiCatalogProduct = {
   tags?: string | string[] | null;
   is_bestseller?: boolean;
   is_seasonal?: boolean;
+  is_available?: boolean;
 };
 
 export const DEFAULT_PRODUCT_IMAGES: Record<string, string> = {
@@ -452,6 +454,7 @@ export function mapApiProduct(product: ApiCatalogProduct): Product {
     fruit: category,
     fulfillment_lane: product.fulfillment_lane || undefined,
     tags,
+    is_available: product.is_available !== false,
   };
 }
 

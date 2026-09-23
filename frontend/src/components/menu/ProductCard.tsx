@@ -61,12 +61,22 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
     );
   }, [product.slug, product.image, (product as any).image_url, product.line, (product as any).category_name, product.fulfillment_lane, product.name]);
 
+  const isAvailable = product.is_available !== false;
+
   return (
     <>
-      <article className="group bg-card flex flex-col overflow-hidden rounded-2xl border transition-all hover:-translate-y-1 hover:shadow-card-soft">
+      <article className={`group bg-card flex flex-col overflow-hidden rounded-2xl border transition-all ${
+        isAvailable ? 'hover:-translate-y-1 hover:shadow-card-soft' : 'opacity-70 grayscale-[25%]'
+      }`}>
         <div
-          className="relative aspect-square overflow-hidden cursor-pointer bg-slate-100 dark:bg-slate-800 flex items-center justify-center"
+          className={`relative aspect-square overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center ${
+            isAvailable ? 'cursor-pointer' : 'cursor-not-allowed'
+          }`}
           onClick={() => {
+            if (!isAvailable) {
+              toast.error('Sản phẩm hiện đang tạm ngưng phục vụ tại chi nhánh này');
+              return;
+            }
             setConfigMode('add');
             setOpen(true);
           }}
@@ -75,6 +85,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
+              if (!isAvailable) {
+                toast.error('Sản phẩm hiện đang tạm ngưng phục vụ tại chi nhánh này');
+                return;
+              }
               setConfigMode('add');
               setOpen(true);
             }
@@ -100,6 +114,11 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
           <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1 pointer-events-none">
+            {!isAvailable && (
+              <Badge variant="destructive" className="bg-destructive text-destructive-foreground font-semibold text-[10px] shadow-sm">
+                Tạm ngưng phục vụ
+              </Badge>
+            )}
             {product.tags.map((t) => (
               <Badge key={t} className="bg-card text-foreground rounded-full text-[10px] shadow-sm">
                 {tagLabel[t]}
@@ -127,10 +146,16 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             <h3
               title={product.name}
               onClick={() => {
+                if (!isAvailable) {
+                  toast.error('Sản phẩm hiện đang tạm ngưng phục vụ tại chi nhánh này');
+                  return;
+                }
                 setConfigMode('add');
                 setOpen(true);
               }}
-              className="font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words cursor-pointer hover:text-primary transition-colors"
+              className={`font-display line-clamp-2 text-sm sm:text-base font-bold leading-snug break-words transition-colors ${
+                isAvailable ? 'cursor-pointer hover:text-primary' : 'cursor-not-allowed opacity-80'
+              }`}
             >
               {product.name}
             </h3>
@@ -160,8 +185,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
                 variant="hero"
                 size="sm"
                 aria-label="Thêm Đặt Trước"
-                className="h-9 w-full min-w-0 text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 shadow-xs"
+                disabled={!isAvailable}
+                className="h-9 w-full min-w-0 text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => {
+                  if (!isAvailable) return;
                   if (product.slug) {
                     setConfigMode('add');
                     setOpen(true);
@@ -188,7 +215,7 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
                 }}
               >
                 <ShoppingCart className="size-4 shrink-0" />
-                <span>Thêm Đặt Trước</span>
+                <span>{isAvailable ? 'Thêm Đặt Trước' : 'Tạm ngưng'}</span>
               </Button>
             ) : (
               <>
@@ -196,8 +223,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
                   variant="soft"
                   size="sm"
                   aria-label="Thêm vào giỏ"
-                  className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5"
+                  disabled={!isAvailable}
+                  className="h-9 px-2.5 sm:px-3 sm:flex-1 shrink-0 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => {
+                    if (!isAvailable) return;
                     setConfigMode('add');
                     setOpen(true);
                   }}
@@ -209,8 +238,10 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
                   variant="hero"
                   size="sm"
                   aria-label="Mua ngay"
-                  className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5"
+                  disabled={!isAvailable}
+                  className="h-9 flex-1 min-w-0 text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => {
+                    if (!isAvailable) return;
                     const session = getCustomerSession();
                     if (!session) {
                       toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để Mua ngay');

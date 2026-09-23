@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Loader2, Pencil, Plus, Trash2, Upload, X, Boxes, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { beginProductAvailabilityRequest, finishProductAvailabilityRequest } from "@/lib/product-availability";
-import { AdminPageHeader, SectionCard } from "@/components/admin/AdminUI";
+import { AdminPageHeader, SectionCard, AdminPagination } from "@/components/admin/AdminUI";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -129,6 +129,7 @@ function MenuAdminPage() {
   const [tab, setTab] = useState("products");
   const [productPage, setProductPage] = useState(1);
   const [totalProductPages, setTotalProductPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState<number | undefined>(undefined);
   const [reloadKey, setReloadKey] = useState(0);
 
   const load = useCallback(async () => {
@@ -148,6 +149,7 @@ function MenuAdminPage() {
         if (prodsRes.pagination) {
           const tp = Math.max(1, prodsRes.pagination.totalPages || 1);
           setTotalProductPages(tp);
+          setTotalProducts(prodsRes.pagination.totalItems);
           if (prodsRes.pagination.totalPages > 0 && productPage > prodsRes.pagination.totalPages) {
             setProductPage(prodsRes.pagination.totalPages);
           }
@@ -408,27 +410,14 @@ function MenuAdminPage() {
             </div>
 
             {products.length > 0 && (
-              <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-                <span>Trang {productPage} / {Math.max(1, totalProductPages)}</span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setProductPage((p) => Math.max(1, p - 1))}
-                    disabled={productPage <= 1 || loading}
-                  >
-                    Trang trước
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setProductPage((p) => (p < totalProductPages ? p + 1 : p))}
-                    disabled={productPage >= totalProductPages || loading}
-                  >
-                    Trang sau
-                  </Button>
-                </div>
-              </div>
+              <AdminPagination
+                page={productPage}
+                totalPages={totalProductPages}
+                totalItems={totalProducts}
+                itemLabel="món"
+                onPageChange={setProductPage}
+                loading={loading}
+              />
             )}
           </TabsContent>
 

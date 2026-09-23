@@ -29,8 +29,8 @@ export function createAdminOrdersRepository(
   const readRepository = createOrderReadRepository(database);
   const fulfillment = createFulfillmentRepository(database);
   return {
-    async list({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit }) {
-      return readRepository.listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, cursor, limit });
+    async list({ status, scopedStoreId, dateFrom, dateTo, search, orderType, paymentMethod, cursor, page, limit }) {
+      return readRepository.listAdmin({ status, scopedStoreId, dateFrom, dateTo, search, orderType, paymentMethod, cursor, page, limit });
     },
 
     async detail({ orderId, scopedStoreId }) {

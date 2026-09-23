@@ -331,7 +331,7 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
       // Fetch Attributes
       if (product.product_type_schema_id) {
         const [attrRows] = await database.query(
-          `SELECT a.id, a.code, a.name, a.role, a.input_type, a.is_required, a.min_selections, a.max_selections,
+          `SELECT a.id, a.code, a.name, a.role, a.input_type, a.is_required, a.min_selections, a.max_selections, a.validation_rules,
                   v.id AS value_id, v.code AS value_code, v.label AS value_label, v.price_adjustment, v.sort_order AS value_sort_order
            FROM attribute_definitions a
            JOIN attribute_values v ON v.attribute_definition_id = a.id AND v.is_active = TRUE
@@ -343,6 +343,14 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
         const attrMap = new Map();
         for (const row of attrRows) {
           if (!attrMap.has(row.id)) {
+            let rules = {};
+            if (row.validation_rules) {
+              try {
+                rules = typeof row.validation_rules === 'string' ? JSON.parse(row.validation_rules) : row.validation_rules;
+              } catch {
+                rules = {};
+              }
+            }
             attrMap.set(row.id, {
               id: row.id,
               code: row.code,
@@ -352,14 +360,23 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
               is_required: row.is_required,
               min_selections: row.min_selections,
               max_selections: row.max_selections,
+              validation_rules: rules,
               values: [],
             });
           }
-          attrMap.get(row.id).values.push({
+          const attr = attrMap.get(row.id);
+          const isDef = Boolean(
+            (attr.validation_rules &&
+              (attr.validation_rules.default_value_code === row.value_code ||
+               Number(attr.validation_rules.default_value_id) === Number(row.value_id))) ||
+            row.value_label?.includes('(Mặc định)')
+          );
+          attr.values.push({
             id: row.value_id,
             code: row.value_code,
             label: row.value_label,
             price_adjustment: Number(row.price_adjustment || 0),
+            is_default: isDef,
           });
         }
         product.attributes = Array.from(attrMap.values());

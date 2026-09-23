@@ -12,7 +12,8 @@ import type * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Clock, Loader2, MapPin, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { AdminPageHeader, AdminPagination } from "@/components/admin/AdminUI";
+import { AdminAccessDenied } from "./admin";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -328,12 +329,14 @@ type MapPickerProps = {
   onPicked: (lat: number, lng: number) => void;
 };
 
-function StoresAdminPage() {
+export function StoresAdminPage() {
   const user = getUser();
+  const isSuper = user?.role === "super";
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalStores, setTotalStores] = useState<number | undefined>(undefined);
   const [editing, setEditing] = useState<Store | null>(null);
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
@@ -351,6 +354,10 @@ function StoresAdminPage() {
   });
 
   const load = useCallback(async () => {
+    if (!isSuper) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiGet<any>(`/admin/branches?page=${page}&limit=6`);
@@ -362,6 +369,7 @@ function StoresAdminPage() {
         if (res.pagination) {
           const tp = Math.max(1, res.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalStores(res.pagination.totalItems);
           if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
             setPage(res.pagination.totalPages);
           }
@@ -373,11 +381,15 @@ function StoresAdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, isSuper]);
 
   useEffect(() => {
+    if (!isSuper) {
+      setLoading(false);
+      return;
+    }
     load();
-  }, [load]);
+  }, [load, isSuper]);
 
   async function saveStore(payload: StorePayload, id?: number) {
     try {
@@ -429,8 +441,12 @@ function StoresAdminPage() {
     }
   }
 
+  if (!isSuper) {
+    return <AdminAccessDenied />;
+  }
+
   return (
-    <>
+    <div className="space-y-6">
       <AdminPageHeader
         title="Hệ thống cửa hàng"
         desc={`${stores.length} chi nhánh đang vận hành`}
@@ -561,27 +577,14 @@ function StoresAdminPage() {
           </div>
 
           {stores.length > 0 && (
-            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-              <span>Trang {page} / {Math.max(1, totalPages)}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1 || loading}
-                >
-                  Trang trước
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-                  disabled={page >= totalPages || loading}
-                >
-                  Trang sau
-                </Button>
-              </div>
-            </div>
+            <AdminPagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalStores}
+              itemLabel="chi nhánh"
+              onPageChange={setPage}
+              loading={loading}
+            />
           )}
 
           {filteredStores.length === 0 && (
@@ -646,7 +649,7 @@ function StoresAdminPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
 

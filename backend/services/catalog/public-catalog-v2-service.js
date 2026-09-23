@@ -255,6 +255,11 @@ export function createPublicCatalogV2Service(options = {}) {
       if (!matchedVariant) {
         throw new CatalogV2Error('Tổ hợp biến thể này không tồn tại hoặc đã ngừng bán', 409);
       }
+      if (product.is_available === false || matchedVariant.is_available === false) {
+        const err = new CatalogV2Error('Sản phẩm đã tạm ngưng phục vụ tại chi nhánh này', 409);
+        err.code = 'BRANCH_OFFER_UNAVAILABLE';
+        throw err;
+      }
 
       const rawPrice = matchedVariant.price;
       const variantPrice = (rawPrice === null || rawPrice === undefined) ? NaN : Number(rawPrice);

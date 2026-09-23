@@ -88,3 +88,5 @@ export function SectionCard({
     </Card>
   );
 }
+
+export { AdminPagination, type AdminPaginationProps } from './AdminPagination';

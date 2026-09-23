@@ -176,7 +176,10 @@ export function createAdminStoresRepository(database = postgresDb) {
          FROM tables t
          JOIN stores s ON s.id = t.store_id
          ${where}
-         ORDER BY t.store_id ASC, t.id DESC
+         ORDER BY t.store_id ASC,
+                  NULLIF(regexp_replace(t.name, '\D', '', 'g'), '')::int ASC NULLS LAST,
+                  t.name ASC,
+                  t.id ASC
          ${paginationClause}`,
         params,
       );
@@ -233,7 +236,7 @@ export function createAdminStoresRepository(database = postgresDb) {
       });
     },
 
-    async updateTable(id, { name, is_active, scopedStoreId }) {
+    async updateTable(id, { name, store_id, is_active, scopedStoreId }) {
       return database.transaction(async (tx) => {
         const [cur] = await tx.query('SELECT id, store_id, name FROM tables WHERE id = $1', [id]);
         if (!cur[0]) throw new AdminStoreError('Không tìm thấy bàn', 404);
@@ -241,10 +244,12 @@ export function createAdminStoresRepository(database = postgresDb) {
           throw new AdminStoreError('Không có quyền thao tác bàn của chi nhánh khác', 403);
         }
 
+        const targetStoreId = store_id !== undefined ? Number(store_id) : Number(cur[0].store_id);
+
         if (name) {
           const num = extractTableNumber(name);
           if (num > 0) {
-            const [existing] = await tx.query('SELECT id, name FROM tables WHERE store_id = $1', [cur[0].store_id]);
+            const [existing] = await tx.query('SELECT id, name FROM tables WHERE store_id = $1', [targetStoreId]);
             const dup = existing.find((t) => Number(t.id) !== Number(cur[0].id) && extractTableNumber(t.name) === num);
             if (dup) throw new AdminStoreError('Số bàn này đã tồn tại trong chi nhánh');
           }
@@ -255,6 +260,14 @@ export function createAdminStoresRepository(database = postgresDb) {
         if (name !== undefined) {
           params.push(name.trim());
           sets.push(`name = $${params.length}`);
+        }
+        if (store_id !== undefined && Number(store_id) !== Number(cur[0].store_id)) {
+          params.push(Number(store_id));
+          sets.push(`store_id = $${params.length}`);
+          const { hashTableQrToken, getTableDeterministicToken } = await import('../../services/table-qr-token.js');
+          const newHash = hashTableQrToken(getTableDeterministicToken(id, store_id));
+          params.push(newHash);
+          sets.push(`qr_checkout_token_hash = $${params.length}`);
         }
         if (is_active !== undefined) {
           params.push(Boolean(is_active));

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiGet, apiPost, apiPut, getUser } from '@/lib/api';
 import { PollingController } from '@/lib/polling-controller';
+import { AdminPagination } from '@/components/admin/AdminUI';
 
 export const Route = createFileRoute('/admin/dat-truoc')({ component: AdminPreordersPage });
 
@@ -75,6 +76,7 @@ export function AdminPreordersPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalPreorders, setTotalPreorders] = useState<number | undefined>(undefined);
   const controllerRef = useRef<PollingController | null>(null);
   const [rescheduleId, setRescheduleId] = useState<number | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
@@ -112,6 +114,7 @@ export function AdminPreordersPage() {
         if (data.pagination) {
           const tp = Math.max(1, data.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalPreorders(data.pagination.totalItems);
           if (data.pagination.totalPages > 0 && page > data.pagination.totalPages) {
             setPage(data.pagination.totalPages);
           }
@@ -494,27 +497,14 @@ export function AdminPreordersPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-          <span>Trang {page} / {Math.max(1, totalPages)}</span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-            >
-              Trang trước
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-              disabled={page >= totalPages || loading}
-            >
-              Trang sau
-            </Button>
-          </div>
-        </div>
+        <AdminPagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalPreorders}
+          itemLabel="đơn đặt trước"
+          onPageChange={setPage}
+          loading={loading}
+        />
       )}
 
       {isSuper && <p className="text-xs text-muted-foreground">Super xử lý incident/strike trong quản trị; re-enable Manager dùng luồng Tài khoản canonical.</p>}

@@ -37,6 +37,7 @@ interface OptionRowItem {
   code?: string;
   label: string;
   price: number;
+  is_default?: boolean;
 }
 
 export function CatalogOption3BlocksEditor({
@@ -102,18 +103,62 @@ export function CatalogOption3BlocksEditor({
     attr.role === 'modifier' && !freeAttributes.includes(attr)
   ));
 
+  const getAttrAssignment = (attrId: number) => {
+    return assignments.find((a) => Number(a.attribute_definition_id) === Number(attrId)) || null;
+  };
+
   const isAttrAssigned = (attrId: number) => {
-    if (assignments.length === 0) return false;
-    const found = assignments.find((a) => Number(a.attribute_definition_id) === Number(attrId));
+    const found = getAttrAssignment(attrId);
     return found ? Boolean(found.is_enabled) : false;
   };
 
+  const getAnnotationText = (attrId: number) => {
+    const assignment = getAttrAssignment(attrId);
+    if (!assignment) {
+      return 'Đang tắt theo danh mục gốc';
+    }
+
+    if (assignment.is_inherited) {
+      const rootName = assignment.inherited_from_category_name ? `: ${assignment.inherited_from_category_name}` : '';
+      return assignment.is_enabled
+        ? `Đang bật theo danh mục gốc${rootName}`
+        : `Đang tắt theo danh mục gốc${rootName}`;
+    }
+
+    return assignment.is_enabled
+      ? `Đang bật riêng cho danh mục ${categoryName}`
+      : `Đang tắt riêng cho danh mục ${categoryName}`;
+  };
+
+  const canRestore = (attrId: number) => {
+    const assignment = getAttrAssignment(attrId);
+    return Boolean(assignment && !assignment.is_inherited && assignment.is_overridden);
+  };
+
   const handleToggleAssignment = async (attr: AttributeDefinition) => {
-    const currentlyAssigned = isAttrAssigned(attr.id);
+    const assignment = getAttrAssignment(attr.id);
+    const currentlyEnabled = assignment ? Boolean(assignment.is_enabled) : false;
+    const isInherited = Boolean(assignment?.is_inherited);
+
     try {
-      if (currentlyAssigned) {
-        await deleteCategoryOptionAssignment(categoryId, attr.id);
-        toast.success(`Đã tắt nhóm "${attr.name}" cho danh mục ${categoryName}`);
+      if (currentlyEnabled) {
+        if (isInherited) {
+          // Gốc đang bật -> Ghi đè tắt riêng cho danh mục con
+          await updateCategoryOptionAssignment(categoryId, {
+            attribute_definition_id: attr.id,
+            is_enabled: false,
+            inherit_to_descendants: true,
+          });
+          toast.success(`Đã tắt riêng nhóm "${attr.name}" cho danh mục ${categoryName}`);
+        } else {
+          // Đang bật trực tiếp -> Tắt
+          await updateCategoryOptionAssignment(categoryId, {
+            attribute_definition_id: attr.id,
+            is_enabled: false,
+            inherit_to_descendants: true,
+          });
+          toast.success(`Đã tắt nhóm "${attr.name}" cho danh mục ${categoryName}`);
+        }
       } else {
         await updateCategoryOptionAssignment(categoryId, {
           attribute_definition_id: attr.id,
@@ -132,6 +177,16 @@ export function CatalogOption3BlocksEditor({
     }
   };
 
+  const handleRestoreToRoot = async (attr: AttributeDefinition) => {
+    try {
+      await deleteCategoryOptionAssignment(categoryId, attr.id);
+      toast.success(`Đã khôi phục cài đặt theo danh mục gốc cho nhóm "${attr.name}"`);
+      await loadAssignments();
+    } catch (err: any) {
+      toast.error(err.message || `Lỗi khôi phục nhóm "${attr.name}"`);
+    }
+  };
+
   const handleOpenCreateModal = (type: 'free' | 'paid') => {
     setModalMode('create');
     setModalType(type);
@@ -140,16 +195,16 @@ export function CatalogOption3BlocksEditor({
     setBlock1HasPrice(false);
     if (type === 'free') {
       setOptionsList([
-        { label: '100% Đá', price: 0 },
-        { label: '70% Đá', price: 0 },
-        { label: '50% Đá', price: 0 },
-        { label: 'Không Đá', price: 0 },
+        { label: '100% Đá', price: 0, is_default: true },
+        { label: '70% Đá', price: 0, is_default: false },
+        { label: '50% Đá', price: 0, is_default: false },
+        { label: 'Không Đá', price: 0, is_default: false },
       ]);
     } else {
       setOptionsList([
-        { label: 'Trân châu đen', price: 5000 },
-        { label: 'Thạch củ năng', price: 3000 },
-        { label: 'Pudding trứng', price: 8000 },
+        { label: 'Trân châu đen', price: 5000, is_default: false },
+        { label: 'Thạch củ năng', price: 3000, is_default: false },
+        { label: 'Pudding trứng', price: 8000, is_default: false },
       ]);
     }
     setModalOpen(true);
@@ -160,15 +215,32 @@ export function CatalogOption3BlocksEditor({
     setModalType(type);
     setEditingAttribute(attr);
     setGroupName(attr.name);
+    const defaultValCode = (attr as any).validation_rules?.default_value_code;
+    const defaultValId = (attr as any).validation_rules?.default_value_id;
     const existingValues: OptionRowItem[] = (attr.values || []).map((v) => ({
       id: v.id,
       code: v.code,
       label: v.label || (v as any).value_label || '',
       price: Number(v.price_adjustment) || 0,
+      is_default: Boolean(
+        (v as any).is_default ||
+        (defaultValId && Number(v.id) === Number(defaultValId)) ||
+        (defaultValCode && v.code === defaultValCode) ||
+        (v.label && v.label.includes('(Mặc định)'))
+      ),
     }));
-    setOptionsList(existingValues.length > 0 ? existingValues : [{ label: '', price: 0 }]);
+    setOptionsList(existingValues.length > 0 ? existingValues : [{ label: '', price: 0, is_default: false }]);
     setBlock1HasPrice(type === 'free' ? existingValues.some((v) => v.price > 0) : true);
     setModalOpen(true);
+  };
+
+  const handleSetDefaultOption = (index: number) => {
+    setOptionsList((prev) =>
+      prev.map((opt, i) => ({
+        ...opt,
+        is_default: i === index ? !opt.is_default : false,
+      }))
+    );
   };
 
   const handleOpenDeleteDialog = (attr: AttributeDefinition) => {
@@ -194,7 +266,7 @@ export function CatalogOption3BlocksEditor({
   };
 
   const handleAddOptionRow = () => {
-    setOptionsList((prev) => [...prev, { label: '', price: 0 }]);
+    setOptionsList((prev) => [...prev, { label: '', price: 0, is_default: false }]);
   };
 
   const handleRemoveOptionRow = (index: number) => {
@@ -237,6 +309,15 @@ export function CatalogOption3BlocksEditor({
       setModalSaving(true);
       const isFree = modalType === 'free';
       const shouldApplyPrice = modalType === 'paid' || (isFree && block1HasPrice);
+      const defaultVal = cleanOptions.find((o) => o.is_default);
+      const validation_rules = defaultVal
+        ? {
+            default_value_code: defaultVal.code || generateCode(defaultVal.label),
+            default_value_id: defaultVal.id || null,
+            default_value_label: defaultVal.label.trim(),
+          }
+        : {};
+
       const values = cleanOptions.map((opt, index) => {
         const code = opt.code || generateCode(opt.label || `opt_${index}`);
         return {
@@ -246,12 +327,14 @@ export function CatalogOption3BlocksEditor({
           price_adjustment: shouldApplyPrice ? Math.max(0, Number(opt.price) || 0) : 0,
           sort_order: index + 1,
           is_active: true,
+          is_default: Boolean(opt.is_default),
         };
       });
 
       if (modalMode === 'edit' && editingAttribute) {
         await updateCategoryOptionGroup(categoryId, editingAttribute.id, {
           name: groupName.trim(),
+          validation_rules,
           values,
         });
         toast.success(`Đã cập nhật nhóm tùy chọn "${groupName}" thành công!`);
@@ -266,6 +349,7 @@ export function CatalogOption3BlocksEditor({
           min_selections: isFree ? 1 : 0,
           max_selections: isFree ? 1 : null,
           sort_order: (rawAttributes.length || 0) + 1,
+          validation_rules,
           values,
           is_enabled: true,
           inherit_to_descendants: true,
@@ -329,20 +413,47 @@ export function CatalogOption3BlocksEditor({
                             {attr.name}
                             <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
                           </p>
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {attr.values?.map((v) => (
-                              <span
-                                key={v.id}
-                                className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 font-medium flex items-center gap-1"
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                              {getAnnotationText(attr.id)}
+                            </span>
+                            {canRestore(attr.id) && (
+                              <button
+                                type="button"
+                                className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                                onClick={() => void handleRestoreToRoot(attr)}
                               >
-                                <span>{v.label || (v as any).value_label}</span>
-                                {Number(v.price_adjustment || 0) > 0 && (
-                                   <span className="text-blue-900 font-bold">
-                                     {`(+${Number(v.price_adjustment).toLocaleString('vi-VN')}đ)`}
-                                   </span>
-                                 )}
-                              </span>
-                            ))}
+                                Khôi phục theo gốc
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {attr.values?.map((v) => {
+                              const isDefault = Boolean(
+                                (v as any).is_default ||
+                                (attr as any).validation_rules?.default_value_code === v.code ||
+                                (attr as any).validation_rules?.default_value_id === v.id ||
+                                v.label?.includes('(Mặc định)')
+                              );
+                              return (
+                                <span
+                                  key={v.id}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${
+                                    isDefault
+                                      ? 'bg-primary/15 text-primary border border-primary/30 font-semibold'
+                                      : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  <span>{v.label || (v as any).value_label}</span>
+                                  {isDefault && <span className="text-[9px] font-bold text-primary">★ Mặc định</span>}
+                                  {Number(v.price_adjustment || 0) > 0 && (
+                                    <span className="text-blue-900 font-bold">
+                                      {`(+${Number(v.price_adjustment).toLocaleString('vi-VN')}đ)`}
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -436,6 +547,20 @@ export function CatalogOption3BlocksEditor({
                             {attr.name}
                             <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
                           </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                              {getAnnotationText(attr.id)}
+                            </span>
+                            {canRestore(attr.id) && (
+                              <button
+                                type="button"
+                                className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                                onClick={() => void handleRestoreToRoot(attr)}
+                              >
+                                Khôi phục theo gốc
+                              </button>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1 mt-1.5">
                             {attr.values?.map((v) => (
                               <span
@@ -565,9 +690,7 @@ export function CatalogOption3BlocksEditor({
                   </div>
                   <span className="text-[11px] text-muted-foreground">
                     {modalType === 'free'
-                      ? block1HasPrice
-                        ? 'Khách chỉ chọn 1 lựa chọn trong nhóm (Có tính tiền)'
-                        : 'Khách chỉ chọn 1 lựa chọn trong nhóm (+0đ)'
+                      ? 'Chọn 1 phương án làm mặc định khi khách mở sản phẩm'
                       : 'Khách có thể chọn nhiều, mỗi lựa chọn được phép có giá 0đ hoặc có phụ thu'}
                   </span>
                 </div>
@@ -575,33 +698,49 @@ export function CatalogOption3BlocksEditor({
                 <div className="border rounded-lg p-2.5 bg-muted/20 space-y-2">
                   {/* Table Header */}
                   <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                    {modalType === 'free' && <span className="w-16 text-center">Mặc định</span>}
                     <span className="flex-1">Tên lựa chọn</span>
                     {(modalType === 'paid' || block1HasPrice) && <span className="w-28 text-right pr-2">Giá tiền (đ)</span>}
                     <span className="w-7 text-center">Xóa</span>
                   </div>
 
-                   {/* Rows */}
-                   <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
-                     {optionsList.map((opt, index) => (
-                       <div key={index} className="flex items-center gap-2">
-                         <Input
-                           placeholder={modalType === 'free' ? (block1HasPrice ? 'VD: Size M, Size L, Size XL...' : 'VD: 100% Đá, 50% Đá...') : 'VD: Trân châu đen, Thạch...'}
-                           value={opt.label}
-                           onChange={(e) => handleOptionLabelChange(index, e.target.value)}
-                           className="h-8 text-xs flex-1 bg-background"
-                           required={index === 0}
-                         />
-                         {(modalType === 'paid' || block1HasPrice) && (
-                           <Input
-                             type="number"
-                             min="0"
-                             step="500"
-                             placeholder="0"
-                             value={opt.price}
-                             onChange={(e) => handleOptionPriceChange(index, Number(e.target.value))}
-                             className="h-8 text-xs w-28 text-right bg-background"
-                           />
-                         )}
+                  {/* Rows */}
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-0.5">
+                    {optionsList.map((opt, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        {modalType === 'free' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefaultOption(index)}
+                            title={opt.is_default ? "Đang là mặc định (bấm để hủy)" : "Đặt làm lựa chọn mặc định"}
+                            className={`w-16 h-8 flex items-center justify-center gap-1 text-[11px] font-medium rounded border transition-colors shrink-0 ${
+                              opt.is_default
+                                ? "bg-amber-500/10 text-amber-600 border-amber-300 dark:border-amber-700/50 font-bold"
+                                : "text-muted-foreground hover:bg-muted border-dashed border-border/80"
+                            }`}
+                          >
+                            <span className={`size-2 rounded-full ${opt.is_default ? 'bg-amber-500 ring-2 ring-amber-500/30' : 'border border-muted-foreground/60'}`} />
+                            <span>{opt.is_default ? 'Mặc định' : 'Chọn'}</span>
+                          </button>
+                        )}
+                        <Input
+                          placeholder={modalType === 'free' ? (block1HasPrice ? 'VD: Size M, Size L, Size XL...' : 'VD: 100% Đá, 50% Đá...') : 'VD: Trân châu đen, Thạch...'}
+                          value={opt.label}
+                          onChange={(e) => handleOptionLabelChange(index, e.target.value)}
+                          className="h-8 text-xs flex-1 bg-background"
+                          required={index === 0}
+                        />
+                        {(modalType === 'paid' || block1HasPrice) && (
+                          <Input
+                            type="number"
+                            min="0"
+                            step="500"
+                            placeholder="0"
+                            value={opt.price}
+                            onChange={(e) => handleOptionPriceChange(index, Number(e.target.value))}
+                            className="h-8 text-xs w-28 text-right bg-background"
+                          />
+                        )}
                         <Button
                           type="button"
                           size="icon"

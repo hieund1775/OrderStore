@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import React from 'react';
-import { BranchOfferTable, type BranchOfferRow } from '../BranchOfferTable';
+import { BranchOfferTable, isBranchOfferPriceValid, type BranchOfferRow } from '../BranchOfferTable';
 
 describe('Branch Offers & Inventory UI Suite', () => {
   const sampleOffers: BranchOfferRow[] = [
@@ -84,5 +83,19 @@ describe('Branch Offers & Inventory UI Suite', () => {
     expect(html).toContain((145000).toLocaleString('vi-VN'));
     expect(html).toContain('Sửa giá bán chi nhánh');
     expect(html).toContain('Thời Trang Nam');
+  });
+
+  it('validates branch offer price input (rejects empty, zero, sub-1000 and accepts >= 1000)', () => {
+    expect(isBranchOfferPriceValid('')).toBe(false);
+    expect(isBranchOfferPriceValid('   ')).toBe(false);
+    expect(isBranchOfferPriceValid('0')).toBe(false);
+    expect(isBranchOfferPriceValid('-1000')).toBe(false);
+    expect(isBranchOfferPriceValid('500')).toBe(false);
+    expect(isBranchOfferPriceValid('999')).toBe(false);
+    expect(isBranchOfferPriceValid('abc')).toBe(false);
+    expect(isBranchOfferPriceValid('1000.5')).toBe(false);
+
+    expect(isBranchOfferPriceValid('1000')).toBe(true);
+    expect(isBranchOfferPriceValid('35000')).toBe(true);
   });
 });

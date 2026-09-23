@@ -469,16 +469,26 @@ export function DynamicProductConfigurator({
       } else {
         setConfigWarning('');
         setQuantity(1);
-        // Pre-select first values for required single_select attributes (new add/buy mode only)
+        // Pre-select default values for single_select attributes (new add/buy mode only)
         const initialVarValIds: number[] = [];
         const initialModValIds: number[] = [];
 
         (data.attributes || []).forEach((attr) => {
-          if (attr.input_type === 'single_select' && attr.is_required && attr.values?.length > 0) {
-            if (attr.role === 'variant') {
-              initialVarValIds.push(attr.values[0].id);
-            } else if (attr.role === 'modifier') {
-              initialModValIds.push(attr.values[0].id);
+          if (attr.input_type === 'single_select' && attr.values?.length > 0) {
+            // Find explicitly marked default value, or default label indicator
+            const defaultVal = attr.values.find(
+              (v) => v.is_default || (typeof v.label === 'string' && v.label.includes('(Mặc định)'))
+            );
+            // If default found, select it regardless of is_required
+            // If no default found, only fallback to first value if attribute is required
+            const targetVal = defaultVal || (attr.is_required ? attr.values[0] : null);
+
+            if (targetVal) {
+              if (attr.role === 'variant') {
+                initialVarValIds.push(targetVal.id);
+              } else if (attr.role === 'modifier') {
+                initialModValIds.push(targetVal.id);
+              }
             }
           }
         });
@@ -573,8 +583,8 @@ export function DynamicProductConfigurator({
     const resolvedProduct = resolvedConfig.product;
     const resolvedVariant = resolvedConfig.variant;
 
-    if (resolvedVariant.is_available === false) {
-      toast.error('Biến thể món này hiện đang tạm hết tại chi nhánh');
+    if (resolvedVariant.is_available === false || product.is_available === false) {
+      toast.error('Sản phẩm hiện đang tạm ngưng phục vụ tại chi nhánh này');
       return;
     }
 
@@ -817,10 +827,10 @@ export function DynamicProductConfigurator({
                 </div>
               </div>
 
-              {resolvedConfig?.variant.is_available === false && (
+              {(resolvedConfig?.variant.is_available === false || product.is_available === false) && (
                 <div className="flex items-center gap-2 rounded-xl bg-destructive/10 p-3 text-destructive text-xs">
                   <AlertCircle className="size-4 shrink-0" />
-                  <span>Sản phẩm hoặc biến thể này hiện không có sẵn tại chi nhánh đang chọn.</span>
+                  <span>Sản phẩm này hiện đang tạm ngưng phục vụ tại chi nhánh đang chọn.</span>
                 </div>
               )}
             </div>
@@ -841,7 +851,8 @@ export function DynamicProductConfigurator({
                     calculating ||
                     !resolvedConfig ||
                     !isConfigurationComplete ||
-                    resolvedConfig.variant.is_available === false
+                    resolvedConfig.variant.is_available === false ||
+                    product.is_available === false
                   }
                   className="gap-2 px-6 rounded-2xl"
                 >
@@ -855,7 +866,8 @@ export function DynamicProductConfigurator({
                     calculating ||
                     !resolvedConfig ||
                     !isConfigurationComplete ||
-                    resolvedConfig.variant.is_available === false
+                    resolvedConfig.variant.is_available === false ||
+                    product.is_available === false
                   }
                   variant="hero"
                   className="gap-2 px-6 rounded-2xl"
@@ -873,7 +885,8 @@ export function DynamicProductConfigurator({
                     calculating ||
                     !resolvedConfig ||
                     !isConfigurationComplete ||
-                    resolvedConfig.variant.is_available === false
+                    resolvedConfig.variant.is_available === false ||
+                    product.is_available === false
                   }
                   className="gap-2 px-6 rounded-2xl"
                 >

@@ -14,6 +14,7 @@ import {
   getUser,
 } from '@/lib/api';
 import { BranchOfferTable, type BranchOfferRow } from '@/components/admin/catalog/BranchOfferTable';
+import { AdminPagination } from '@/components/admin/AdminUI';
 import { toast } from 'sonner';
 
 type CatalogCategory = {
@@ -278,27 +279,14 @@ function AdminHangDangBanPage() {
             onRefresh={loadData}
           />
           {offers.length > 0 && (
-            <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-              <span>Trang {page} / {Math.max(1, totalPages)}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1 || loading}
-                >
-                  Trang trước
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-                  disabled={page >= totalPages || loading}
-                >
-                  Trang sau
-                </Button>
-              </div>
-            </div>
+            <AdminPagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalOffers}
+              itemLabel="SKU"
+              onPageChange={setPage}
+              loading={loading}
+            />
           )}
         </>
       )}

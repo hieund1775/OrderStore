@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { AdminPageHeader, AdminPagination } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -117,6 +117,7 @@ function PromotionsAdminPage() {
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalPromos, setTotalPromos] = useState<number | undefined>(undefined);
 
   const setPage = (newPageOrFn: number | ((prev: number) => number)) => {
     const nextVal = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn;
@@ -150,6 +151,7 @@ function PromotionsAdminPage() {
         if (res.pagination) {
           const tp = Math.max(1, res.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalPromos(res.pagination.totalItems);
           if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
             setPage(res.pagination.totalPages);
           }
@@ -497,31 +499,14 @@ function PromotionsAdminPage() {
             </div>
 
             {promos.length > 0 && (
-              <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-                <span>Trang {page} / {Math.max(1, totalPages)}</span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="disabled:cursor-not-allowed"
-                    aria-label="Trang trước"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1 || loading}
-                  >
-                    <ChevronLeft className="mr-1 size-4" /> Trang trước
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="disabled:cursor-not-allowed"
-                    aria-label="Trang sau"
-                    onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-                    disabled={page >= totalPages || loading}
-                  >
-                    Trang sau <ChevronRight className="ml-1 size-4" />
-                  </Button>
-                </div>
-              </div>
+              <AdminPagination
+                page={page}
+                totalPages={totalPages}
+                totalItems={totalPromos}
+                itemLabel="mã khuyến mãi"
+                onPageChange={setPage}
+                loading={loading}
+              />
             )}
           </div>
         )}

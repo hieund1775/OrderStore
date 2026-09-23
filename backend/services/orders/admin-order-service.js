@@ -13,13 +13,28 @@ export function createAdminOrderService(
   attemptsRepository = defaultPaymentAttemptsRepository,
 ) {
   return {
-    async list({ status, storeId, dateFrom, dateTo, search, cursor, limit, paginated = false }) {
+    async list({ status, storeId, dateFrom, dateTo, search, orderType, paymentMethod, cursor, page, limit, paginated = false }) {
+      if (page != null) {
+        return await repository.list({
+          status,
+          scopedStoreId: storeId,
+          dateFrom,
+          dateTo,
+          search,
+          orderType,
+          paymentMethod,
+          page,
+          limit,
+        });
+      }
       const rows = await repository.list({
         status,
         scopedStoreId: storeId,
         dateFrom,
         dateTo,
         search,
+        orderType,
+        paymentMethod,
         cursor,
         limit,
       });

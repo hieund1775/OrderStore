@@ -85,21 +85,32 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
   const [activeSchema, setActiveSchema] = useState<any | null>(null);
   const [selectedRootId, setSelectedRootId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('rootId') || '';
+      const fromUrl = new URLSearchParams(window.location.search).get('rootId');
+      if (fromUrl) return fromUrl;
+      const fromStorage = sessionStorage.getItem(`admin_catalog_root_${activeLane}`);
+      if (fromStorage) return fromStorage;
     }
     return '';
   });
   const [loading, setLoading] = useState(true);
 
   const updateUrlRootId = useCallback((id: string) => {
+    if (typeof window !== 'undefined') {
+      if (id) {
+        sessionStorage.setItem(`admin_catalog_root_${activeLane}`, id);
+      } else {
+        sessionStorage.removeItem(`admin_catalog_root_${activeLane}`);
+      }
+    }
     navigate({
+      to: location.pathname as any,
       search: (prev: any) => ({
         ...prev,
         rootId: id || undefined,
       }),
       replace: true,
     });
-  }, [navigate]);
+  }, [navigate, location.pathname, activeLane]);
 
   const handleSelectRootId = useCallback((id: string) => {
     setSelectedRootId(id);
@@ -190,29 +201,34 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
     });
   }, [categories, activeLane]);
 
-  // Tự động chọn Ngành gốc đầu tiên nếu chưa chọn hoặc id không còn tồn tại
+  // Tự động chọn Ngành gốc nếu chưa chọn hoặc id không còn tồn tại
   useEffect(() => {
-    if (rootCategories.length > 0) {
-      const urlParamId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('rootId') : null;
-      const targetCandidate = selectedRootId || urlParamId || '';
-      const candidateExists = targetCandidate ? rootCategories.some((root) => String(root.id) === targetCandidate) : false;
+    if (rootCategories.length === 0) {
+      // Đang tải dữ liệu: tuyệt đối không xóa trắng selectedRootId!
+      return;
+    }
 
-      if (candidateExists && targetCandidate) {
-        if (selectedRootId !== targetCandidate) {
-          setSelectedRootId(targetCandidate);
-        }
-        if (urlParamId !== targetCandidate) {
-          updateUrlRootId(targetCandidate);
-        }
-      } else {
-        const fallbackId = String(rootCategories[0].id);
-        setSelectedRootId(fallbackId);
-        updateUrlRootId(fallbackId);
+    const urlParamId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('rootId') : null;
+    const storageParamId = typeof window !== 'undefined' ? sessionStorage.getItem(`admin_catalog_root_${activeLane}`) : null;
+    const targetCandidate = selectedRootId || urlParamId || storageParamId || '';
+    const candidateExists = targetCandidate ? rootCategories.some((root) => String(root.id) === targetCandidate) : false;
+
+    if (candidateExists && targetCandidate) {
+      if (selectedRootId !== targetCandidate) {
+        setSelectedRootId(targetCandidate);
+      }
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`admin_catalog_root_${activeLane}`, targetCandidate);
+      }
+      if (urlParamId !== targetCandidate) {
+        updateUrlRootId(targetCandidate);
       }
     } else {
-      setSelectedRootId('');
+      const fallbackId = String(rootCategories[0].id);
+      setSelectedRootId(fallbackId);
+      updateUrlRootId(fallbackId);
     }
-  }, [rootCategories, selectedRootId, updateUrlRootId]);
+  }, [rootCategories, selectedRootId, updateUrlRootId, activeLane]);
 
   // Danh mục thuộc khu vực activeLane (loại trừ tuyệt đối danh mục của lane khác)
   const laneCategories = useMemo(() => {

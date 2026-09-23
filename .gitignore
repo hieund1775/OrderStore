@@ -93,3 +93,8 @@ bun.lockb
 *.zip
 *.7z
 *.gz
+
+# ------------------------------------------
+# 8. Git Worktrees (local development only)
+# ------------------------------------------
+.worktrees/

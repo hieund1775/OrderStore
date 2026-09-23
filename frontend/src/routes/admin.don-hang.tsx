@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Eye, Filter, LayoutGrid, List, Loader2, Printer, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { AdminPageHeader, AdminPagination } from "@/components/admin/AdminUI";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiGet, apiPatch } from "@/lib/api";
+import { apiGet, apiPatch, getUser } from "@/lib/api";
 import { fmtDateTime, vnd, formatOrderItemOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/don-hang")({
@@ -51,6 +51,7 @@ export const Route = createFileRoute("/admin/don-hang")({
     type: typeof search.type === "string" ? search.type : undefined,
     payment: typeof search.payment === "string" ? search.payment : undefined,
     q: typeof search.q === "string" ? search.q : undefined,
+    page: Number(search.page) > 0 ? Math.floor(Number(search.page)) : undefined,
   }),
   head: () => ({
     meta: [
@@ -141,38 +142,117 @@ const statusTone: Record<string, string> = {
   "Đã hủy": "bg-berry/15 text-berry",
 };
 
-function OrdersPage() {
+const ORDERS_STORAGE_KEY = "admin_orders_filters";
+
+export function OrdersPage() {
   const navigate = useNavigate();
   const searchParams = Route.useSearch();
+  const user = getUser();
+  const isSuper = user?.role === "super";
+  const userBranchId = user?.branch_id ? String(user.branch_id) : undefined;
 
   const view = searchParams.view || "list";
   const status = searchParams.status || "Tất cả";
   const type = searchParams.type || "Tất cả";
   const payment = searchParams.payment || "Tất cả";
-  const branchId = searchParams.branchId || "all";
+  const branchId = isSuper ? (searchParams.branchId || "all") : (userBranchId || "all");
+  const page = searchParams.page || 1;
   const [q, setQ] = useState(searchParams.q || "");
 
   const updateSearch = useCallback((updates: Record<string, any>) => {
     navigate({
+      to: "/admin/don-hang",
       search: (prev: any) => {
         const next = { ...prev, ...updates };
+        if (!isSuper && userBranchId) {
+          next.branchId = userBranchId;
+        }
+        if (typeof window !== "undefined") {
+          try {
+            const toSave: Record<string, any> = {};
+            if (next.view && next.view !== "list") toSave.view = next.view;
+            if (next.status && next.status !== "Tất cả") toSave.status = next.status;
+            if (next.branchId && next.branchId !== "all") toSave.branchId = next.branchId;
+            if (next.type && next.type !== "Tất cả") toSave.type = next.type;
+            if (next.payment && next.payment !== "Tất cả") toSave.payment = next.payment;
+            if (next.q) toSave.q = next.q;
+            if (next.page && next.page > 1) toSave.page = next.page;
+            sessionStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(toSave));
+          } catch {
+            // ignore
+          }
+        }
         if (next.view === "list") delete next.view;
         if (next.status === "Tất cả") delete next.status;
         if (next.branchId === "all") delete next.branchId;
         if (next.type === "Tất cả") delete next.type;
         if (next.payment === "Tất cả") delete next.payment;
         if (!next.q) delete next.q;
+        if (!next.page || next.page <= 1) delete next.page;
         return next;
       },
       replace: true,
     });
   }, [navigate]);
 
-  const setView = (v: "list" | "kanban") => updateSearch({ view: v });
-  const setStatus = (s: string) => updateSearch({ status: s });
-  const setBranchId = (b: string) => updateSearch({ branchId: b });
-  const setType = (t: string) => updateSearch({ type: t });
-  const setPayment = (p: string) => updateSearch({ payment: p });
+  const setView = (v: "list" | "kanban") => updateSearch({ view: v, page: undefined });
+  const setStatus = (s: string) => updateSearch({ status: s, page: undefined });
+  const setBranchId = (b: string) => {
+    if (!isSuper) return;
+    updateSearch({ branchId: b, page: undefined });
+  };
+  const setType = (t: string) => updateSearch({ type: t, page: undefined });
+  const setPayment = (p: string) => updateSearch({ payment: p, page: undefined });
+  const setPage = (p: number) => updateSearch({ page: p > 1 ? p : undefined });
+
+  // Khôi phục bộ lọc từ sessionStorage khi URL chưa có bộ lọc
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = sessionStorage.getItem(ORDERS_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      const updates: Record<string, any> = {};
+      if (!searchParams.view && saved.view && saved.view !== "list") updates.view = saved.view;
+      if (!searchParams.status && saved.status && saved.status !== "Tất cả") updates.status = saved.status;
+      if (isSuper && !searchParams.branchId && saved.branchId && saved.branchId !== "all") updates.branchId = saved.branchId;
+      if (!searchParams.type && saved.type && saved.type !== "Tất cả") updates.type = saved.type;
+      if (!searchParams.payment && saved.payment && saved.payment !== "Tất cả") updates.payment = saved.payment;
+      if (!searchParams.page && saved.page && saved.page > 1) updates.page = saved.page;
+      if (!searchParams.q && saved.q) {
+        updates.q = saved.q;
+        setQ(saved.q);
+      }
+      if (Object.keys(updates).length > 0) {
+        updateSearch(updates);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Đồng bộ searchParams hiện tại vào sessionStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const toSave: Record<string, any> = {};
+      if (searchParams.view && searchParams.view !== "list") toSave.view = searchParams.view;
+      if (searchParams.status && searchParams.status !== "Tất cả") toSave.status = searchParams.status;
+      if (searchParams.branchId && searchParams.branchId !== "all") toSave.branchId = searchParams.branchId;
+      if (searchParams.type && searchParams.type !== "Tất cả") toSave.type = searchParams.type;
+      if (searchParams.payment && searchParams.payment !== "Tất cả") toSave.payment = searchParams.payment;
+      if (searchParams.q) toSave.q = searchParams.q;
+      if (searchParams.page && searchParams.page > 1) toSave.page = searchParams.page;
+
+      if (Object.keys(toSave).length > 0) {
+        const raw = sessionStorage.getItem(ORDERS_STORAGE_KEY);
+        const existing = raw ? JSON.parse(raw) : {};
+        sessionStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify({ ...existing, ...toSave }));
+      }
+    } catch {
+      // ignore
+    }
+  }, [searchParams]);
 
   const isSearchFirstMount = useRef(true);
   useEffect(() => {
@@ -181,15 +261,19 @@ function OrdersPage() {
       return;
     }
     const timer = setTimeout(() => {
-      updateSearch({ q: q.trim() || undefined });
+      if ((q.trim() || undefined) !== (searchParams.q || undefined)) {
+        updateSearch({ q: q.trim() || undefined, page: undefined });
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, updateSearch]);
+  }, [q, searchParams.q, updateSearch]);
 
   const [orders, setOrders] = useState<AdminOrderRow[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     apiGet<{ id: number; name: string }[]>("/admin/branches")
@@ -197,72 +281,66 @@ function OrdersPage() {
       .catch(() => setBranches([]));
   }, []);
 
-  const [pageIndex, setPageIndex] = useState(0);
-  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-
-  useEffect(() => {
-    setPageIndex(0);
-    setCursorStack([null]);
-    setNextCursor(null);
-    setHasMore(false);
-  }, [status, branchId, q, type, payment, view]);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (status !== "Tất cả") params.set("status", status);
       if (branchId !== "all") params.set("store_id", branchId);
+      if (type !== "Tất cả") params.set("order_type", type);
+      if (payment !== "Tất cả") params.set("payment_method", payment);
       if (q.trim()) params.set("search", q.trim());
       if (view === "list") {
-        params.set("limit", "20");
-        const cur = cursorStack[pageIndex];
-        if (cur) params.set("cursor", cur);
+        params.set("page", String(page));
+        params.set("limit", "10");
       }
-      const res = await apiGet<AdminOrderRow[] | { orders: AdminOrderRow[]; page_info: { next_cursor: string | null; has_more: boolean } }>(`/admin/orders?${params.toString()}`);
+      const res = await apiGet<
+        | AdminOrderRow[]
+        | {
+            orders: AdminOrderRow[];
+            pagination?: {
+              page: number;
+              limit: number;
+              total_items: number;
+              total_pages: number;
+              has_next: boolean;
+              has_prev: boolean;
+            };
+            page_info?: {
+              next_cursor: string | null;
+              has_more: boolean;
+            };
+          }
+      >(`/admin/orders?${params.toString()}`);
+
       let rows: AdminOrderRow[] = [];
-      let resNextCursor: string | null = null;
-      let resHasMore = false;
+      let count = 0;
+      let pages = 1;
+
       if (Array.isArray(res)) {
         rows = res;
+        count = res.length;
+        pages = Math.max(1, Math.ceil(res.length / 10));
       } else if (res && typeof res === "object") {
         rows = res.orders || [];
-        resNextCursor = res.page_info?.next_cursor ?? null;
-        resHasMore = Boolean(res.page_info?.has_more);
+        if (res.pagination) {
+          count = res.pagination.total_items;
+          pages = Math.max(1, res.pagination.total_pages);
+        } else {
+          count = rows.length;
+          pages = 1;
+        }
       }
-      setOrders(
-        rows.filter(
-          (o) =>
-            (type === "Tất cả" || o.order_type === type) &&
-            (payment === "Tất cả" || o.payment_method === payment),
-        ),
-      );
-      setNextCursor(resNextCursor);
-      setHasMore(resHasMore);
+
+      setOrders(rows);
+      setTotalItems(count);
+      setTotalPages(pages);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được đơn hàng");
     } finally {
       setLoading(false);
     }
-  }, [status, type, payment, branchId, q, view, cursorStack, pageIndex]);
-
-  const handleNextPage = () => {
-    if (!hasMore || !nextCursor) return;
-    const nextIdx = pageIndex + 1;
-    setCursorStack((prev) => {
-      const next = [...prev];
-      next[nextIdx] = nextCursor;
-      return next;
-    });
-    setPageIndex(nextIdx);
-  };
-
-  const handlePrevPage = () => {
-    if (pageIndex <= 0) return;
-    setPageIndex((prev) => Math.max(0, prev - 1));
-  };
+  }, [status, type, payment, branchId, q, view, page]);
 
   useEffect(() => {
     const t = window.setTimeout(load, 250);
@@ -286,7 +364,7 @@ function OrdersPage() {
     <>
       <AdminPageHeader
         title="Quản lý đơn hàng"
-        desc={`${orders.length} đơn khớp bộ lọc · cập nhật real-time`}
+        desc={`${view === "list" ? totalItems : orders.length} đơn khớp bộ lọc · cập nhật real-time`}
         actions={
           <div className="bg-muted flex rounded-xl p-1">
             <Button
@@ -320,15 +398,31 @@ function OrdersPage() {
               className="h-9 sm:h-10 text-xs sm:text-sm"
             />
           </div>
-          <FilterSelect
-            value={branchId}
-            onChange={setBranchId}
-            label="Chi nhánh"
-            options={[
-              { v: "all", l: "Tất cả chi nhánh" },
-              ...branches.map((b) => ({ v: String(b.id), l: b.name })),
-            ]}
-          />
+          {isSuper ? (
+            <FilterSelect
+              value={branchId}
+              onChange={setBranchId}
+              label="Chi nhánh"
+              options={[
+                { v: "all", l: "Tất cả chi nhánh" },
+                ...branches.map((b) => ({ v: String(b.id), l: b.name })),
+              ]}
+            />
+          ) : (
+            <FilterSelect
+              value={userBranchId || "all"}
+              onChange={() => {}}
+              label="Chi nhánh"
+              disabled
+              options={
+                branches.some((b) => String(b.id) === userBranchId)
+                  ? branches
+                      .filter((b) => String(b.id) === userBranchId)
+                      .map((b) => ({ v: String(b.id), l: b.name }))
+                  : [{ v: userBranchId || "all", l: user?.branch_name || "Chi nhánh được phân công" }]
+              }
+            />
+          )}
           <FilterSelect
             value={status}
             onChange={setStatus}
@@ -495,28 +589,15 @@ function OrdersPage() {
             </div>
           </Card>
 
-          {/* CURSOR PAGINATION FOR LIST VIEW */}
-          <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-            <span>Trang {pageIndex + 1}</span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePrevPage}
-                disabled={pageIndex <= 0}
-              >
-                Trang trước
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleNextPage}
-                disabled={!hasMore || !nextCursor}
-              >
-                Trang sau
-              </Button>
-            </div>
-          </div>
+          {/* PAGINATION FOR LIST VIEW */}
+          <AdminPagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            itemLabel="đơn hàng"
+            onPageChange={setPage}
+            loading={loading}
+          />
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -560,23 +641,29 @@ function FilterSelect({
   onChange,
   label,
   options,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
   options: { v: string; l: string }[];
+  disabled?: boolean;
 }) {
+  const renderedOptions = options.some((o) => o.v === value)
+    ? options
+    : [...options, { v: value, l: value === "all" ? label : `${label} #${value}` }];
+
   return (
     <div className="space-y-1">
       <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
         {label}
       </label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger className={disabled ? "opacity-80 bg-muted/50 cursor-not-allowed" : ""}>
           <SelectValue placeholder={label} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((o) => (
+          {renderedOptions.map((o) => (
             <SelectItem key={o.v} value={o.v}>
               {o.l}
             </SelectItem>

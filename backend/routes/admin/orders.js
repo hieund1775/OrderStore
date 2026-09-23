@@ -5,6 +5,7 @@ import { logAudit } from '../../services/audit.js';
 import { VALID_STATUSES } from '../../services/order-transition-policy.js';
 import { parseSingleDateBoundary, parseDateRangeBoundaries } from '../../services/date-range.js';
 import { decodeCursor, validatePaginationLimit } from '../../services/cursor-pagination.js';
+import { validatePage, validateLimit, buildOffsetPagination } from '../../services/offset-pagination.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { orderErrorStatus } from '../../services/orders/order-errors.js';
 import { validateOrderFilters, validateOrderId, validateOrderMutationInput, validateOrderStatus } from '../../validation/order-schemas.js';
@@ -17,11 +18,9 @@ const router = Router();
 
 router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing'), asyncHandler(async (req, res) => {
   try {
-    const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit } = req.query;
-    validateOrderFilters({ status, store_id, search });
+    const { status, store_id, date_from, date_to, search, cursor: rawCursor, limit: rawLimit, page: rawPage, order_type, payment_method } = req.query;
+    const validatedFilters = validateOrderFilters({ status, store_id, search, order_type, payment_method });
     const scopedStoreId = resolveStoreScope(req.user, store_id);
-    const limit = validatePaginationLimit(rawLimit, 50, 100);
-    const cursor = decodeCursor(rawCursor);
 
     let dateFrom;
     let dateTo;
@@ -37,8 +36,38 @@ router.get('/', requireRole('super', 'manager', 'cashier', 'kitchen', 'packing')
       dateTo = end;
     }
 
+    if (rawPage !== undefined) {
+      const page = validatePage(rawPage, 1);
+      const limit = validateLimit(rawLimit, 10, 50);
+      const result = await adminOrderService.list({
+        status: validatedFilters.status,
+        storeId: scopedStoreId,
+        dateFrom,
+        dateTo,
+        search,
+        orderType: validatedFilters.orderType,
+        paymentMethod: validatedFilters.paymentMethod,
+        page,
+        limit,
+      });
+      const orders = (result.rows || []).map(toAdminOrderListItemDto);
+      const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });
+      return res.json({ orders, pagination });
+    }
+
+    const limit = validatePaginationLimit(rawLimit, 50, 100);
+    const cursor = decodeCursor(rawCursor);
+
     const result = await adminOrderService.list({
-      status, storeId: scopedStoreId, dateFrom, dateTo, search, cursor, limit,
+      status: validatedFilters.status,
+      storeId: scopedStoreId,
+      dateFrom,
+      dateTo,
+      search,
+      orderType: validatedFilters.orderType,
+      paymentMethod: validatedFilters.paymentMethod,
+      cursor,
+      limit,
       paginated: rawCursor !== undefined || rawLimit !== undefined,
     });
     if (Array.isArray(result)) {

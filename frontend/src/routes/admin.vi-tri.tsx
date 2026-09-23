@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import {
   Download,
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { AdminPagination } from "@/components/admin/AdminUI";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -45,6 +46,7 @@ export const Route = createFileRoute("/admin/vi-tri")({
         : typeof search.store_id === "number"
           ? String(search.store_id)
           : undefined,
+    page: Number(search.page) > 0 ? Math.floor(Number(search.page)) : undefined,
   }),
   head: () => ({ meta: [{ title: "Vị trí & Mã QR bàn | Admin" }, { name: "robots", content: "noindex" }] }),
   component: TablesPage,
@@ -56,6 +58,7 @@ type TableRow = {
   store_name: string;
   name: string;
   has_checkout_qr?: boolean;
+  qr_checkout_token?: string;
   is_active: boolean;
 };
 
@@ -69,14 +72,25 @@ function storeQrUrl(storeId: number) {
   return `${window.location.origin}/menu?store_id=${storeId}`;
 }
 
-function TablesPage() {
+const TABLES_STORAGE_KEY = "admin_tables_branch";
+
+export function TablesPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const [tables, setTables] = useState<TableRow[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
-  const [branchFilter, setBranchFilter] = useState(search.store_id ?? "all");
+  const [branchFilter, setBranchFilter] = useState(() => {
+    if (search.store_id) return search.store_id;
+    if (typeof window !== "undefined") {
+      const fromStorage = sessionStorage.getItem(TABLES_STORAGE_KEY);
+      if (fromStorage) return fromStorage;
+    }
+    return "all";
+  });
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(search.page || 1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalTables, setTotalTables] = useState<number | undefined>(undefined);
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
   const [storeQrMap, setStoreQrMap] = useState<Record<number, string>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -85,11 +99,12 @@ function TablesPage() {
   const [formNum, setFormNum] = useState("1");
   const [formStore, setFormStore] = useState("1");
   const [saving, setSaving] = useState(false);
+  const [viewingQr, setViewingQr] = useState<TableRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ page: String(page), limit: "5" });
+      const q = new URLSearchParams({ page: String(page), limit: "12" });
       if (branchFilter !== "all") q.set("store_id", branchFilter);
       const res = await apiGet<any>(`/admin/tables?${q.toString()}`);
       let rows: TableRow[] = [];
@@ -100,13 +115,22 @@ function TablesPage() {
         if (res.pagination) {
           const tp = Math.max(1, res.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalTables(res.pagination.totalItems);
           if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
             setPage(res.pagination.totalPages);
           }
         }
       }
       setTables(rows);
-      setQrMap({});
+      const newMap: Record<number, string> = {};
+      await Promise.all(
+        rows.map(async (r: TableRow) => {
+          if (r.qr_checkout_token) {
+            newMap[r.id] = await QRCode.toDataURL(qrUrl(r.qr_checkout_token), { width: 220, margin: 1 });
+          }
+        })
+      );
+      setQrMap(newMap);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không tải được danh sách bàn");
     } finally {
@@ -117,7 +141,52 @@ function TablesPage() {
   const handleBranchFilterChange = (val: string) => {
     setBranchFilter(val);
     setPage(1);
+    if (typeof window !== "undefined") {
+      if (val !== "all") {
+        sessionStorage.setItem(TABLES_STORAGE_KEY, val);
+      } else {
+        sessionStorage.removeItem(TABLES_STORAGE_KEY);
+      }
+    }
+    navigate({
+      to: "/admin/vi-tri",
+      search: (prev: any) => ({
+        ...prev,
+        store_id: val !== "all" ? val : undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
   };
+
+  const handlePageChange = (p: number | ((prev: number) => number)) => {
+    const nextVal = typeof p === "function" ? p(page) : p;
+    setPage(nextVal);
+    navigate({
+      to: "/admin/vi-tri",
+      search: (prev: any) => ({
+        ...prev,
+        page: nextVal > 1 ? nextVal : undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const fromStorage = sessionStorage.getItem(TABLES_STORAGE_KEY);
+    if (!search.store_id && fromStorage && fromStorage !== "all") {
+      setBranchFilter(fromStorage);
+      navigate({
+        to: "/admin/vi-tri",
+        search: (prev: any) => ({
+          ...prev,
+          store_id: fromStorage,
+        }),
+        replace: true,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     load();
@@ -152,7 +221,37 @@ function TablesPage() {
     return (nums.length ? Math.max(...nums) : 0) + 1;
   }
 
-  const filtered = branchFilter === "all" ? tables : tables.filter((t) => t.store_id === Number(branchFilter));
+  const sortedTables = useMemo(() => {
+    return [...tables].sort((a, b) => {
+      if (a.store_id !== b.store_id) return a.store_id - b.store_id;
+      const numA = tableNumber(a.name);
+      const numB = tableNumber(b.name);
+      if (numA !== numB) return numA - numB;
+      return a.name.localeCompare(b.name, undefined, { numeric: true }) || a.id - b.id;
+    });
+  }, [tables]);
+
+  const filtered = useMemo(() => {
+    return branchFilter === "all"
+      ? sortedTables
+      : sortedTables.filter((t) => t.store_id === Number(branchFilter));
+  }, [sortedTables, branchFilter]);
+
+  const groupedByBranch = useMemo(() => {
+    const groups: { store_id: number; store_name: string; tables: TableRow[] }[] = [];
+    const map = new Map<number, { store_id: number; store_name: string; tables: TableRow[] }>();
+
+    for (const t of filtered) {
+      let group = map.get(t.store_id);
+      if (!group) {
+        group = { store_id: t.store_id, store_name: t.store_name, tables: [] };
+        map.set(t.store_id, group);
+        groups.push(group);
+      }
+      group.tables.push(t);
+    }
+    return groups;
+  }, [filtered]);
 
   function openCreate() {
     setEditing(null);
@@ -307,8 +406,8 @@ function TablesPage() {
   }
 
   return (
-    <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-extrabold">Vị trí & Mã QR bàn</h1>
           <p className="text-muted-foreground text-sm">
@@ -406,75 +505,142 @@ function TablesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((t) => (
-            <Card key={t.id} className="overflow-hidden">
-              <CardContent className="flex flex-col items-center gap-3 p-5">
-                <div className="bg-white rounded-xl border p-2">
-                  {qrMap[t.id] ? (
-                    <img src={qrMap[t.id]} alt={`QR ${t.name}`} className="size-32" />
-                  ) : (
-                    <div className="bg-muted flex size-32 items-center justify-center p-2 text-center text-xs text-muted-foreground">Tạo QR mới để in</div>
-                  )}
-                </div>
-                <div className="text-center">
-                  <p className="font-display font-bold">{t.name}</p>
-                  <p className="text-muted-foreground flex items-center justify-center gap-1 text-xs">
-                    <MapPin className="size-3" /> {t.store_name}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Button variant="outline" size="sm" onClick={() => rotateQr(t)} aria-label={`Tạo QR mới cho ${t.name}`} title="Tạo QR checkout mới">
-                    <QrIcon className="size-3.5" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => downloadQr(t)} aria-label={`Tải mã QR ${t.name}`} title="Tải PNG">
-                    <Download className="size-3.5" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => printQr(t)} aria-label={`In mã QR ${t.name}`} title="In QR">
-                    <Printer className="size-3.5" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => openEdit(t)} aria-label={`Sửa ${t.name}`} title="Sửa">
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button variant="outline" size="sm" className="text-berry hover:text-berry" onClick={() => setDeleting(t)} aria-label={`Xóa ${t.name}`} title="Xóa">
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-                {t.is_active ? (
-                  <Badge variant="secondary" className="bg-leaf/10 text-leaf">
-                    Đang hoạt động
+        <div className="space-y-8">
+          {groupedByBranch.map((group) => (
+            <div key={group.store_id} className="space-y-3.5">
+              <div className="flex items-center justify-between border-b pb-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <MapPin className="size-4 text-primary" />
+                  <h2 className="font-display font-bold text-base text-foreground tracking-tight">
+                    {group.store_name}
+                  </h2>
+                  <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
+                    {group.tables.length} bàn
                   </Badge>
-                ) : (
-                  <Badge variant="outline">Đã tắt</Badge>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                {group.tables.map((t) => {
+                  const hasQr = Boolean(qrMap[t.id]);
+                  return (
+                    <Card key={t.id} className="overflow-hidden">
+                      <CardContent className="flex flex-col items-center gap-3 p-5">
+                        <div className="bg-white rounded-xl border p-2">
+                          {hasQr ? (
+                            <img
+                              src={qrMap[t.id]}
+                              alt={`QR ${t.name}`}
+                              className="size-32 cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => setViewingQr(t)}
+                              title="Click để phóng to mã QR"
+                            />
+                          ) : (
+                            <div className="bg-muted flex size-32 flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-muted-foreground rounded-lg">
+                              <span>Chưa tạo QR</span>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-7 text-xs font-semibold px-2.5 shadow-xs"
+                                onClick={() => rotateQr(t)}
+                              >
+                                <Plus className="mr-1 size-3" /> Tạo QR
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <p className="font-display font-bold">{t.name}</p>
+                          <p className="text-muted-foreground flex items-center justify-center gap-1 text-xs">
+                            <MapPin className="size-3" /> {t.store_name}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setViewingQr(t)}
+                            disabled={!hasQr}
+                            aria-label={`Xem mã QR ${t.name}`}
+                            title={hasQr ? "Xem mã QR" : "Chưa có mã QR để xem"}
+                            className="disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <QrIcon className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => downloadQr(t)}
+                            disabled={!hasQr}
+                            aria-label={`Tải mã QR ${t.name}`}
+                            title={hasQr ? "Tải PNG" : "Chưa có mã QR để tải"}
+                            className="disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Download className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => printQr(t)}
+                            disabled={!hasQr}
+                            aria-label={`In mã QR ${t.name}`}
+                            title={hasQr ? "In QR" : "Chưa có mã QR để in"}
+                            className="disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Printer className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEdit(t)}
+                            aria-label={`Sửa ${t.name}`}
+                            title="Sửa"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-berry hover:text-berry"
+                            onClick={() => setDeleting(t)}
+                            aria-label={`Xóa ${t.name}`}
+                            title="Xóa"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                        {!hasQr ? (
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                            Chưa tạo QR
+                          </Badge>
+                        ) : t.is_active ? (
+                          <Badge variant="secondary" className="bg-leaf/10 text-leaf font-medium">
+                            Đang hoạt động
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Đã tắt
+                          </Badge>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       )}
 
       {tables.length > 0 && (
-        <div className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-          <span>Trang {page} / {Math.max(1, totalPages)}</span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-            >
-              Trang trước
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-              disabled={page >= totalPages || loading}
-            >
-              Trang sau
-            </Button>
-          </div>
-        </div>
+        <AdminPagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalTables}
+          itemLabel="bàn"
+          onPageChange={handlePageChange}
+          loading={loading}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -546,6 +712,44 @@ function TablesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+      <Dialog open={!!viewingQr} onOpenChange={(open) => !open && setViewingQr(null)}>
+        <DialogContent className="sm:max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle>Mã QR - {viewingQr?.name}</DialogTitle>
+          </DialogHeader>
+          {viewingQr && qrMap[viewingQr.id] && (
+            <div className="flex flex-col items-center gap-4 py-2">
+              <div className="bg-white p-3 rounded-2xl border shadow-sm">
+                <img
+                  src={qrMap[viewingQr.id]}
+                  alt={`QR ${viewingQr.name}`}
+                  className="size-48 sm:size-56"
+                />
+              </div>
+              <div className="text-sm">
+                <p className="font-bold text-base">{viewingQr.name}</p>
+                <p className="text-muted-foreground">{viewingQr.store_name}</p>
+                <p className="text-xs text-muted-foreground mt-1">Quét mã để chọn món và đặt hàng trực tiếp tại bàn</p>
+              </div>
+              <div className="flex gap-2 w-full pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => downloadQr(viewingQr)}
+                >
+                  <Download className="mr-1.5 size-4" /> Tải ảnh
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => printQr(viewingQr)}
+                >
+                  <Printer className="mr-1.5 size-4" /> In mã QR
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

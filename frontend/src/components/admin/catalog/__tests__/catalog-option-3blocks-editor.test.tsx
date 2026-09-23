@@ -136,5 +136,64 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
     expect(html).toContain('Size XL');
     expect(html).toContain('+5.000đ');
   });
+
+  it('renders clean annotation text without icons for option groups', () => {
+    const html = renderToString(
+      <CatalogOption3BlocksEditor
+        categoryId={2}
+        categoryName="Trà sữa"
+        schema={sampleSchema}
+        categoryProducts={[]}
+        onRefresh={async () => {}}
+      />,
+    );
+
+    // Initial state before assignments loaded defaults to unassigned / off
+    expect(html).toContain('Đang tắt theo danh mục gốc');
+    // Ensure no status emojis used in annotation text
+    expect(html).not.toContain('🟢');
+    expect(html).not.toContain('🔴');
+  });
+
+  it('renders default badge when an option is marked as default in validation_rules or label', () => {
+    const defaultSchema: SchemaDetails = {
+      ...sampleSchema,
+      attributes: [
+        {
+          id: 11,
+          name: 'Mức Đường',
+          code: 'sugar_level',
+          role: 'modifier',
+          input_type: 'single_select',
+          is_required: false,
+          sort_order: 1,
+          min_selections: 0,
+          max_selections: 1,
+          validation_rules: {
+            default_value_code: '100_sugar',
+            default_value_label: '100% Đường',
+          },
+          values: [
+            { id: 1, code: '100_sugar', label: '100% Đường', price_adjustment: 0, sort_order: 1, is_active: true },
+            { id: 2, code: '50_sugar', label: '50% Đường', price_adjustment: 0, sort_order: 2, is_active: true },
+          ],
+        },
+      ],
+    };
+
+    const html = renderToString(
+      <CatalogOption3BlocksEditor
+        categoryId={2}
+        categoryName="Trà sữa"
+        schema={defaultSchema}
+        categoryProducts={[]}
+        onRefresh={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('★ Mặc định');
+    expect(html).toContain('100% Đường');
+  });
 });
+
 

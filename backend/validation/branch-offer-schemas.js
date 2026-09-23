@@ -18,9 +18,13 @@ export function validateBranchOfferInput(input) {
     throw badRequest('variant_id phải là số nguyên dương');
   }
 
+  if (input.price === undefined || input.price === null || String(input.price).trim() === '') {
+    throw badRequest('Giá bán chi nhánh không được để trống');
+  }
+
   const price = Number(input.price);
-  if (!Number.isInteger(price) || price < 0) {
-    throw badRequest('Giá bán (price) phải là số nguyên không âm');
+  if (!Number.isInteger(price) || price < 1000) {
+    throw badRequest('Giá bán chi nhánh phải là số nguyên từ 1.000đ trở lên');
   }
 
   const compareAtPrice =

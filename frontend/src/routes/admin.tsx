@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertTriangle, ClipboardList, Home } from "lucide-react";
-import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { AlertTriangle, ClipboardList, Home, ShieldAlert } from "lucide-react";
+import { AdminSidebar, adminNav } from "@/components/admin/AdminSidebar";
 import { AdminTopbar } from "@/components/admin/AdminTopbar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -39,6 +39,32 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
+export function AdminAccessDenied({
+  title = "Bạn không có quyền truy cập vào trang này",
+  desc = "Chức năng này không thuộc phạm vi quyền hạn của tài khoản bạn đang đăng nhập. Vui lòng liên hệ Quản trị viên cấp cao (Super Admin) nếu bạn cần cấp quyền truy cập.",
+}: {
+  title?: string;
+  desc?: string;
+}) {
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center text-center px-4">
+      <div className="bg-destructive/10 text-destructive mb-4 grid size-16 place-items-center rounded-2xl">
+        <ShieldAlert className="size-8" />
+      </div>
+      <h1 className="text-3xl font-bold tracking-tight text-foreground">403</h1>
+      <h2 className="mt-2 text-xl font-semibold text-foreground">{title}</h2>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{desc}</p>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <Button asChild>
+          <Link to="/admin/don-hang">
+            <ClipboardList className="mr-2 size-4" /> Về trang Đơn hàng
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AdminNotFound() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center text-center px-4">
@@ -70,11 +96,21 @@ function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const user = getUser();
+  const role = user?.role;
 
   // Trang đăng nhập hiển thị toàn màn hình, không sidebar
   if (pathname === "/admin/login") {
     return <Outlet />;
   }
+
+  // Kiểm tra phân quyền truy cập theo danh sách route trong adminNav
+  const matchingNav = adminNav.find(
+    (item) => pathname === item.to || pathname.startsWith(item.to + "/")
+  );
+  const isUnauthorized = Boolean(
+    matchingNav && role && !matchingNav.roles.includes(role as any)
+  );
 
   return (
     <div className="bg-muted/30 flex min-h-screen">
@@ -95,7 +131,7 @@ function AdminLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6 md:py-8">
-          <Outlet />
+          {isUnauthorized ? <AdminAccessDenied /> : <Outlet />}
         </main>
       </div>
     </div>

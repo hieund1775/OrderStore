@@ -814,13 +814,24 @@ export function createCatalogV2Repository(database = postgresDb) {
         }
 
         let updatedAttr = attribute;
+        const attrSets = [];
+        const attrParams = [];
         if (attributeData.name) {
+          attrParams.push(attributeData.name.trim());
+          attrSets.push(`name = $${attrParams.length}`);
+        }
+        if (attributeData.validation_rules !== undefined) {
+          attrParams.push(JSON.stringify(attributeData.validation_rules || {}));
+          attrSets.push(`validation_rules = $${attrParams.length}`);
+        }
+        if (attrSets.length > 0) {
+          attrParams.push(Number(attributeId));
           const [updatedRows] = await tx.query(
             `UPDATE attribute_definitions
-             SET name = $1
-             WHERE id = $2
+             SET ${attrSets.join(', ')}
+             WHERE id = $${attrParams.length}
              RETURNING *`,
-            [attributeData.name.trim(), Number(attributeId)],
+            attrParams,
           );
           updatedAttr = updatedRows[0] || attribute;
         }

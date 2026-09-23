@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bike, CalendarClock, Clock, EyeOff, Flame, MapPin, Phone, Printer, Volume2 } from "lucide-react";
+import { Bike, CalendarClock, Clock, EyeOff, Flame, MapPin, Maximize, Minimize, Phone, Printer, Volume2 } from "lucide-react";
 import { toast } from "sonner";
-import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { AdminPageHeader, AdminPagination } from "@/components/admin/AdminUI";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -207,15 +207,40 @@ export function KdsPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState<number | undefined>(undefined);
   const [armedCompletion, setArmedCompletion] = useState<ArmedCompletionState>(null);
   const [completionLoadingId, setCompletionLoadingId] = useState<number | null>(null);
   const armedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completionInFlightRef = useRef<number | null>(null);
   const prevIds = useRef<Set<number>>(new Set());
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      toast.error("Không thể chuyển đổi chế độ toàn màn hình");
+    }
+  };
 
   const handleStoreFilterChange = (newFilter: string) => {
     setStoreFilter(newFilter);
     setPage(1);
+    setTotalOrders(undefined);
     setDoneOrders([]);
     setDoneAt({});
     setDismissConfirmOrder(null);
@@ -264,6 +289,7 @@ export function KdsPage() {
         if (rawKitchen.pagination) {
           const tp = Math.max(1, rawKitchen.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalOrders(typeof rawKitchen.pagination.totalItems === "number" ? rawKitchen.pagination.totalItems : undefined);
           if (rawKitchen.pagination.totalPages > 0 && page > rawKitchen.pagination.totalPages) {
             setPage(rawKitchen.pagination.totalPages);
           }
@@ -812,6 +838,16 @@ export function KdsPage() {
             <Volume2 className="size-4" />
             {soundEnabled ? "Chuông: BẬT" : "Chuông: TẮT"}
           </Button>
+
+          <Button
+            variant={isFullscreen ? "hero" : "outline"}
+            size="sm"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Thoát toàn màn hình (Esc)" : "Bật toàn màn hình"}
+          >
+            {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+            {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
+          </Button>
         </div>
       </div>
 
@@ -869,27 +905,13 @@ export function KdsPage() {
         {lanes.map((lane) => renderLaneSection(lane))}
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t pt-4 text-sm text-muted-foreground">
-        <span>Trang {page} / {Math.max(1, totalPages)}</span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-          >
-            Trang trước
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => (p < totalPages ? p + 1 : p))}
-            disabled={page >= totalPages}
-          >
-            Trang sau
-          </Button>
-        </div>
-      </div>
+      <AdminPagination
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalOrders}
+        itemLabel="đơn"
+        onPageChange={setPage}
+      />
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="sm:max-w-lg">

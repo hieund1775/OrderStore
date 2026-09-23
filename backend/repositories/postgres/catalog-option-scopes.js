@@ -28,16 +28,68 @@ export function createCatalogOptionScopesRepository(database = postgresDb) {
     },
 
     async listCategoryAssignments(categoryId) {
+      const catId = Number(categoryId);
+      // 1. Fetch category lineage from root down to this category
+      const [ancestors] = await database.query(
+        `WITH RECURSIVE cat_ancestors AS (
+           SELECT id, parent_id, depth, name
+           FROM categories WHERE id = $1
+           UNION ALL
+           SELECT c.id, c.parent_id, c.depth, c.name
+           FROM categories c
+           JOIN cat_ancestors ca ON ca.parent_id = c.id
+         )
+         SELECT * FROM cat_ancestors ORDER BY depth ASC`,
+        [catId],
+      );
+
+      const ancestorIds = ancestors.map((a) => Number(a.id));
+      if (ancestorIds.length === 0) return [];
+
+      // 2. Fetch all assignments along lineage ordered by depth ASC (root -> child)
       const [rows] = await database.query(
         `SELECT caa.*, ad.name AS attribute_name, ad.code AS attribute_code,
-                ad.role AS attribute_role, ad.input_type
+                ad.role AS attribute_role, ad.input_type,
+                c.name AS category_name, c.depth AS category_depth
          FROM category_attribute_assignments caa
+         JOIN categories c ON c.id = caa.category_id
          JOIN attribute_definitions ad ON ad.id = caa.attribute_definition_id
-         WHERE caa.category_id = $1
-         ORDER BY caa.sort_order ASC, ad.name ASC`,
-        [Number(categoryId)],
+         WHERE caa.category_id = ANY($1::bigint[])
+           AND (caa.category_id = $2 OR caa.inherit_to_descendants = TRUE)
+         ORDER BY c.depth ASC, caa.sort_order ASC, ad.name ASC`,
+        [ancestorIds, catId],
       );
-      return rows;
+
+      // 3. Resolve effective state per attribute
+      const map = new Map();
+      for (const row of rows) {
+        const attrId = Number(row.attribute_definition_id);
+        const isDirect = Number(row.category_id) === catId;
+        const previous = map.get(attrId);
+
+        map.set(attrId, {
+          ...row,
+          target_category_id: catId,
+          is_inherited: !isDirect,
+          is_overridden: isDirect && Boolean(previous),
+          inherited_from_category_id: !isDirect
+            ? Number(row.category_id)
+            : previous
+            ? Number(previous.category_id)
+            : null,
+          inherited_from_category_name: !isDirect
+            ? row.category_name
+            : previous
+            ? (previous.inherited_from_category_name || previous.category_name)
+            : null,
+          root_category_is_enabled: !isDirect
+            ? Boolean(row.is_enabled)
+            : previous
+            ? Boolean(previous.is_enabled)
+            : null,
+        });
+      }
+      return Array.from(map.values());
     },
 
     async upsertCategoryAssignment({

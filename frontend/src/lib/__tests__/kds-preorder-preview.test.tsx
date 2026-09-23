@@ -235,4 +235,28 @@ describe('KDS Preorder Preview Suite', () => {
     expect(container?.textContent).not.toContain('PRE-DONE-10');
     expect(container?.textContent).not.toContain('PRE-CANCEL-20');
   });
+
+  it('renders Fullscreen button on KDS toolbar alongside Sound toggle', async () => {
+    vi.mocked(api.apiGet).mockImplementation(async (url: string) => {
+      if (url.startsWith('/admin/kitchen/orders')) {
+        return { items: [], pagination: { page: 1, limit: 10, totalPages: 1, totalItems: 0 } };
+      }
+      return [];
+    });
+
+    await act(async () => {
+      root?.render(<KdsPage />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container?.textContent).toContain('Toàn màn hình');
+    expect(container?.textContent).toContain('Chuông: TẮT');
+
+    const fullscreenBtn = Array.from(container?.querySelectorAll('button') || []).find((b) =>
+      b.textContent?.includes('Toàn màn hình'),
+    );
+    expect(fullscreenBtn).toBeDefined();
+  });
 });

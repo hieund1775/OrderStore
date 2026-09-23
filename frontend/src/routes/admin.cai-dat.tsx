@@ -67,12 +67,23 @@ const roleLabels: Record<string, string> = {
   packing: "Packing Staff",
 };
 
-function SettingsPage() {
+import { AdminAccessDenied } from "./admin";
+
+export function SettingsPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Keep role source consistent with admin login, route guard and sidebar.
+  // `auth_user` belongs to a legacy/customer session and must never grant admin UI access.
+  const currentUser = getUser();
+  const isSuper = currentUser?.role === 'super';
+
   useEffect(() => {
+    if (!isSuper) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     Promise.all([
       apiGet<AccountRow[]>("/admin/settings/accounts"),
@@ -90,12 +101,11 @@ function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isSuper]);
 
-  // Keep role source consistent with admin login, route guard and sidebar.
-  // `auth_user` belongs to a legacy/customer session and must never grant admin UI access.
-  const currentUser = getUser();
-  const isSuper = currentUser?.role === 'super';
+  if (!isSuper) {
+    return <AdminAccessDenied />;
+  }
 
   return (
     <>

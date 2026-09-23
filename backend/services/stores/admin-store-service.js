@@ -1,5 +1,5 @@
 import defaultAdminStoresRepository from '../../repositories/postgres/admin-stores.js';
-import { createTableQrToken, hashTableQrToken } from '../table-qr-token.js';
+import { createTableQrToken, hashTableQrToken, getTableDeterministicToken } from '../table-qr-token.js';
 
 export function createAdminStoreService(repository = defaultAdminStoresRepository) {
   return {
@@ -20,26 +20,60 @@ export function createAdminStoreService(repository = defaultAdminStoresRepositor
     },
 
     async listTablesByStore(storeId, { scopedStoreId } = {}) {
-      return repository.listTablesByStore(storeId, { scopedStoreId });
+      const rows = await repository.listTablesByStore(storeId, { scopedStoreId });
+      return (rows || []).map((row) => ({
+        ...row,
+        qr_checkout_token: getTableDeterministicToken(row.id, row.store_id || storeId),
+        has_checkout_qr: true,
+      }));
     },
 
     async listAllTables({ scopedStoreId, page, limit } = {}) {
+      let result;
       if (typeof repository.listTables === 'function') {
-        return repository.listTables({ scopedStoreId, page, limit });
+        result = await repository.listTables({ scopedStoreId, page, limit });
+      } else if (typeof repository.listAllTables === 'function') {
+        result = await repository.listAllTables({ scopedStoreId, page, limit });
+      } else {
+        return [];
       }
-      if (typeof repository.listAllTables === 'function') {
-        return repository.listAllTables({ scopedStoreId, page, limit });
+
+      const attachToken = (row) => {
+        if (!row || !row.id || !row.store_id) return row;
+        const qr_checkout_token = getTableDeterministicToken(row.id, row.store_id);
+        return {
+          ...row,
+          qr_checkout_token,
+          has_checkout_qr: true,
+        };
+      };
+
+      if (Array.isArray(result)) {
+        return result.map(attachToken);
       }
-      return [];
+      if (result && Array.isArray(result.items)) {
+        return {
+          ...result,
+          items: result.items.map(attachToken),
+        };
+      }
+      return result;
     },
 
     async createTable(data, { scopedStoreId } = {}) {
-      const qrToken = createTableQrToken();
-      const table = await repository.createTable({
-        ...data,
-        qrCheckoutTokenHash: hashTableQrToken(qrToken),
-      }, { scopedStoreId });
-      return { table, qrToken };
+      // 1. Create table record
+      const created = await repository.createTable(data, { scopedStoreId });
+      const table = created?.table || created;
+      const targetStoreId = table.store_id || data.store_id;
+      const qrToken = getTableDeterministicToken(table.id, targetStoreId);
+      const tokenHash = hashTableQrToken(qrToken);
+      if (typeof repository.rotateTableCheckoutToken === 'function') {
+        await repository.rotateTableCheckoutToken(table.id, {
+          scopedStoreId,
+          qrCheckoutTokenHash: tokenHash,
+        }).catch(() => {});
+      }
+      return { table: { ...table, qr_checkout_token: qrToken, has_checkout_qr: true }, qrToken };
     },
 
     async rotateTableCheckoutToken(id, { scopedStoreId } = {}) {
@@ -48,7 +82,7 @@ export function createAdminStoreService(repository = defaultAdminStoresRepositor
         scopedStoreId,
         qrCheckoutTokenHash: hashTableQrToken(qrToken),
       });
-      return { table, qrToken };
+      return { table: { ...table, qr_checkout_token: qrToken, has_checkout_qr: true }, qrToken };
     },
 
     async updateTable(id, data, { scopedStoreId } = {}) {

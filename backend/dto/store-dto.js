@@ -54,6 +54,8 @@ export function toTableDto(table) {
     id: Number(table.id),
     store_id: Number(table.store_id),
     name: table.name,
+    has_checkout_qr: Boolean(table.has_checkout_qr ?? (table.qr_checkout_token_hash != null) ?? table.qr_checkout_token),
+    qr_checkout_token: table.qr_checkout_token || undefined,
     is_active: table.is_active !== false,
     created_at: table.created_at,
     updated_at: table.updated_at,

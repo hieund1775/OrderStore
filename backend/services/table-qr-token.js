@@ -22,6 +22,11 @@ export function createTableQrToken() {
   return crypto.randomBytes(32).toString('base64url');
 }
 
+export function getTableDeterministicToken(tableId, storeId) {
+  const payload = `table:${Number(storeId)}:${Number(tableId)}`;
+  return crypto.createHmac('sha256', resolvePepper()).update(payload).digest('base64url');
+}
+
 export function hashTableQrToken(token) {
   const normalized = typeof token === 'string' ? token.trim() : '';
   if (!/^[A-Za-z0-9_-]{32,200}$/.test(normalized)) {

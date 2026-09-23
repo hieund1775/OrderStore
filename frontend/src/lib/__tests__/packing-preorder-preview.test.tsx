@@ -188,4 +188,34 @@ describe('Packing Station Preorder Preview Suite', () => {
     // Should NOT show preview banner because the only preorder task is already ready
     expect(container?.textContent).not.toContain('Preorder sắp tới (Đóng gói)');
   });
+
+  it('renders Sound toggle and Fullscreen buttons on toolbar and allows toggling sound', async () => {
+    vi.mocked(api.apiGet).mockImplementation(async (url: string) => {
+      if (url.startsWith('/admin/fulfillment/tasks')) {
+        return { tasks: [] };
+      }
+      return [];
+    });
+
+    await act(async () => {
+      root?.render(<PackingStationPage />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container?.textContent).toContain('Chuông: TẮT');
+    expect(container?.textContent).toContain('Toàn màn hình');
+
+    const soundBtn = Array.from(container?.querySelectorAll('button') || []).find((b) =>
+      b.textContent?.includes('Chuông: TẮT'),
+    );
+    expect(soundBtn).toBeDefined();
+
+    await act(async () => {
+      soundBtn?.click();
+    });
+
+    expect(container?.textContent).toContain('Chuông: BẬT');
+  });
 });

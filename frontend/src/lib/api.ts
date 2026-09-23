@@ -389,6 +389,11 @@ export type CategoryOptionAssignment = {
   max_selected: number | null;
   source_category_id?: number;
   source_category_name?: string;
+  is_inherited?: boolean;
+  is_overridden?: boolean;
+  inherited_from_category_id?: number | null;
+  inherited_from_category_name?: string | null;
+  root_category_is_enabled?: boolean | null;
 };
 
 export type CategoryOptionAssignmentInput = {
@@ -637,6 +642,7 @@ export type PublicAttributeValue = {
   price_adjustment: number;
   sort_order: number;
   is_active: boolean;
+  is_default?: boolean;
 };
 
 export type PublicAttributeDefinition = {
