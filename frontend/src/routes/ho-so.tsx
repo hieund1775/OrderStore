@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3, CalendarClock } from "lucide-react";
+import { Heart, QrCode, Star, LogIn, Bell, Trash2, CheckCheck, ShoppingBag, ShoppingCart, Tag, Loader2, RefreshCw, User as UserIcon, Edit3, CalendarClock, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,10 +24,11 @@ import { CustomerPreordersTab } from "@/components/profile/CustomerPreordersTab"
 import { CustomerDateTime } from "@/components/time/CustomerDateTime";
 import { useCart, mapConfiguredItemToCartItem } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from "@/lib/wishlist";
-import { apiGet, apiPost, setCustomerUser, getCustomerToken, resolveProductConfiguration } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, setCustomerUser, getCustomerToken, resolveProductConfiguration } from "@/lib/api";
+import { explicitCustomerLogout } from "@/lib/auth-logout";
 import { useBranch } from "@/lib/branch";
 import { DynamicProductConfigurator } from "@/components/catalog/DynamicProductConfigurator";
-import { vnd } from "@/lib/data";
+import { vnd, resolveProductImage } from "@/lib/data";
 import { OrderReviewPanel } from "@/components/reviews/OrderReviewPanel";
 import {
   isSafeInternalLink,
@@ -217,6 +218,58 @@ function Profile() {
   const [emailStep, setEmailStep] = useState<'input' | 'otp'>('input');
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailCountdown, setEmailCountdown] = useState(0);
+
+  const [fullNameInput, setFullNameInput] = useState(user?.fullname || '');
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    if (user?.fullname) {
+      setFullNameInput(user.fullname);
+    }
+  }, [user?.fullname]);
+
+  const handleSaveName = async () => {
+    const trimmed = fullNameInput.trim();
+    if (!trimmed) {
+      toast.error('Vui lòng nhập họ và tên');
+      return;
+    }
+    const words = trimmed.replace(/\s+/g, ' ').split(' ');
+    const hasOnlyLetters = words.every((word) => /^[\p{L}\p{M}]+$/u.test(word));
+    if (trimmed.length < 2 || trimmed.length > 50 || words.length < 2 || !hasOnlyLetters) {
+      toast.error('Họ và tên không hợp lệ (từ 2 đến 50 ký tự, ít nhất 2 từ)');
+      return;
+    }
+
+    if (user && trimmed === user.fullname) {
+      toast.info('Thông tin họ và tên chưa có thay đổi');
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      const res = await apiPatch<{
+        success: boolean;
+        message: string;
+        user: { id: number; fullname: string; phone?: string; tier?: string; points?: number };
+      }>(`/api/users/${user?.id}`, { fullname: trimmed });
+
+      toast.success(res.message || 'Cập nhật thông tin thành công!');
+      if (res.user) {
+        setCustomerUser({
+          id: res.user.id,
+          fullname: res.user.fullname,
+          phone: res.user.phone || user?.phone || '',
+          tier: res.user.tier || user?.tier || 'Đồng',
+          points: res.user.points ?? user?.points ?? 0,
+        });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể cập nhật họ và tên');
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const handleSendEmailOtp = async () => {
     if (!newEmail.trim() || !newEmail.includes('@')) {
@@ -482,6 +535,18 @@ function Profile() {
               <Progress value={progressPct} className="bg-white/30 h-2" />
             </div>
           </div>
+
+          <Button
+            variant="outline"
+            className="w-full text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive gap-2 font-medium"
+            onClick={() => {
+              explicitCustomerLogout({
+                navigate: () => void navigate({ to: '/' }),
+              });
+            }}
+          >
+            <LogOut className="size-4" /> Đăng xuất tài khoản
+          </Button>
         </aside>
 
         <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -793,10 +858,19 @@ function Profile() {
                   return (
                     <div key={p.id} className="bg-card flex items-center justify-between rounded-2xl border p-4 shadow-sm gap-3">
                       <img
-                        src={p.image_url || "/placeholder.png"}
+                        src={resolveProductImage(p.product_slug, p.image_url, {
+                          fulfillment_lane: p.fulfillment_lane,
+                          name: p.product_name,
+                        })}
                         alt={p.product_name || "Món"}
                         loading="lazy"
                         className="size-16 rounded-xl object-cover bg-muted shrink-0"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = resolveProductImage(p.product_slug, null, {
+                            fulfillment_lane: p.fulfillment_lane,
+                            name: p.product_name,
+                          });
+                        }}
                       />
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-sm truncate">{p.product_name}</p>
@@ -853,8 +927,14 @@ function Profile() {
                   <p className="text-xs text-muted-foreground">Thông tin định danh và tích điểm của bạn</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="p-name">Họ tên</Label>
-                  <Input id="p-name" defaultValue={userName} />
+                  <Label htmlFor="p-name">Họ và tên</Label>
+                  <Input
+                    id="p-name"
+                    value={fullNameInput}
+                    onChange={(e) => setFullNameInput(e.target.value)}
+                    placeholder="Nhập họ và tên của bạn"
+                    disabled={savingName}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="p-phone">Số điện thoại</Label>
@@ -863,6 +943,24 @@ function Profile() {
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label htmlFor="p-tier">Hạng hội viên & Điểm tích lũy</Label>
                   <Input id="p-tier" value={`Hạng ${userTier} · ${userPoints} điểm`} readOnly className="bg-muted" />
+                </div>
+                <div className="sm:col-span-2 flex items-center justify-end pt-3 border-t">
+                  <Button
+                    type="button"
+                    variant="hero"
+                    size="sm"
+                    disabled={savingName}
+                    onClick={handleSaveName}
+                  >
+                    {savingName ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin mr-1.5" />
+                        Đang lưu...
+                      </>
+                    ) : (
+                      "Lưu thay đổi"
+                    )}
+                  </Button>
                 </div>
               </div>
 

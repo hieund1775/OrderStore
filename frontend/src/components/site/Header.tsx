@@ -65,7 +65,7 @@ import {
 } from '@/lib/api';
 import { resolveLoginDestination } from '@/lib/auth-login-destination';
 import { googleClientId, hasGoogleSignIn } from '@/lib/google-signin';
-import { brand, vnd } from '@/lib/data';
+import { brand, vnd, resolveProductImage } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import { fetchPreorderStoreAvailability, hasAvailablePreorderStore } from '@/lib/preorder-store-availability';
 import { CategoryMenu, MobileCategoryMenu } from '@/components/navigation';
@@ -280,10 +280,19 @@ export function WishlistButton() {
               return (
                 <div key={p.id} className="flex items-center gap-3 rounded-xl border p-3 bg-card shadow-sm">
                   <img
-                    src={p.image_url || '/placeholder.png'}
+                    src={resolveProductImage(p.product_slug, p.image_url, {
+                      fulfillment_lane: p.fulfillment_lane,
+                      name: p.product_name,
+                    })}
                     alt={p.product_name || 'Món'}
                     loading="lazy"
-                    className="size-14 rounded-lg object-cover bg-muted"
+                    className="size-14 rounded-lg object-cover bg-muted shrink-0"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = resolveProductImage(p.product_slug, null, {
+                        fulfillment_lane: p.fulfillment_lane,
+                        name: p.product_name,
+                      });
+                    }}
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate">{p.product_name}</p>

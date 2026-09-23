@@ -11,7 +11,7 @@ import { ApiError, apiDelete, apiGet, apiPut, clearCustomerToken } from "./api";
 import { useCustomerIdentity } from "./notifications";
 import { getCustomerSession, openCustomerLoginModal } from "./customer-session";
 import type { CartItem } from "./cart";
-import type { Product } from "./data";
+import { resolveProductImage, type Product } from "./data";
 
 export type WishlistItem = {
   id: number;
@@ -161,7 +161,10 @@ export function buildWishlistQuickCartItem(
     productId: String(productId),
     productSlug: item.product_slug?.trim() || String(productId),
     name,
-    image: item.image_url || "",
+    image: resolveProductImage(item.product_slug, item.image_url, {
+      fulfillment_lane: fulfillmentLane,
+      name,
+    }),
     size,
     base: baseTea || undefined,
     sugar: undefined,

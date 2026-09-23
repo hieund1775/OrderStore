@@ -63,14 +63,18 @@ const CITY_CENTERS: Record<string, { lat: number; lng: number; name: string }> =
   "Quảng Ninh": { lat: 20.9101, lng: 107.1839, name: "Trung tâm Quảng Ninh" },
 };
 
-function parseAmenities(s: string | null): string[] {
+function parseAmenities(s: unknown): string[] {
   if (!s) return [];
-  try {
-    const arr = JSON.parse(s);
-    return Array.isArray(arr) ? arr.map(String) : [];
-  } catch {
-    return [];
+  if (Array.isArray(s)) return s.map(String).map((x) => x.trim()).filter(Boolean);
+  if (typeof s === "string") {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) return arr.map(String).map((x) => x.trim()).filter(Boolean);
+    } catch {
+      return s.split(",").map((x) => x.trim()).filter(Boolean);
+    }
   }
+  return [];
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {

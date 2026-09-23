@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { validateJobApplyInput } from '../../validation/engagement-schemas.js';
-import { validateCustomerId, validateWishlistProductId } from '../../validation/customer-schemas.js';
+import { validateCustomerId, validateWishlistProductId, normalizeAndValidateFullName, CustomerValidationError } from '../../validation/customer-schemas.js';
 import { toWishlistDto, toJobDto } from '../../dto/engagement-dto.js';
 import { toCustomerDto, toNotificationDto } from '../../dto/customer-dto.js';
+import usersRepository from '../../repositories/postgres/users.js';
 import engagementService from '../../services/engagement/engagement-service.js';
 import recruitmentService from '../../services/recruitment/recruitment-service.js';
 import notificationService from '../../services/notifications/notification-service.js';
@@ -108,6 +109,27 @@ router.get('/users/:id', authenticate, requireCustomerSelf, asyncHandler(async (
     if (!user) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     res.json(toCustomerDto(user));
   } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
+}));
+
+router.patch('/users/:id', authenticate, requireCustomerSelf, asyncHandler(async (req, res) => {
+  try {
+    const id = validateCustomerId(req.params.id);
+    const { fullname } = req.body || {};
+    const cleanName = normalizeAndValidateFullName(fullname);
+    const updated = await usersRepository.updateCustomerProfile(id, { fullname: cleanName });
+    if (!updated) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
+    res.json({
+      success: true,
+      message: 'Cập nhật thông tin thành công',
+      user: toCustomerDto(updated),
+    });
+  } catch (err) {
+    if (err instanceof CustomerValidationError) {
+      return res.status(err.status || 400).json({ error: err.message, code: err.code });
+    }
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
   }

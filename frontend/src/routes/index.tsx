@@ -24,7 +24,6 @@ import { ProductCard } from "@/components/menu/ProductCard";
 import {
   mapApiProduct,
   promotions as fallbackPromotions,
-  stores as fallbackStores,
   vnd,
   type ApiCatalogProduct,
   type Product,
@@ -118,37 +117,53 @@ const defaultFeaturedPromos: EnrichedPromo[] = [
   },
 ];
 
-function getStoreAmenities(amenities: unknown): string[] {
-  if (!amenities) return ["Máy lạnh", "Mua mang đi", "Chỗ đỗ xe"];
-  if (Array.isArray(amenities)) return amenities.map(String);
+export const DEFAULT_STORE_AMENITIES = [
+  "Chỗ đỗ ô tô",
+  "Máy lạnh",
+  "Mua mang đi",
+  "Giao 25p",
+  "Không gian thoáng",
+];
+
+export function getStoreAmenities(amenities: unknown): string[] {
+  if (!amenities) return DEFAULT_STORE_AMENITIES;
+  if (Array.isArray(amenities)) {
+    const list = amenities.map(String).map((s) => s.trim()).filter(Boolean);
+    return list.length > 0 ? list : DEFAULT_STORE_AMENITIES;
+  }
   if (typeof amenities === "string") {
     try {
       const parsed = JSON.parse(amenities);
-      if (Array.isArray(parsed)) return parsed.map(String);
+      if (Array.isArray(parsed)) {
+        const list = parsed.map(String).map((s) => s.trim()).filter(Boolean);
+        return list.length > 0 ? list : DEFAULT_STORE_AMENITIES;
+      }
     } catch {
-      return amenities.split(",").map((s) => s.trim()).filter(Boolean);
+      const list = amenities.split(",").map((s) => s.trim()).filter(Boolean);
+      return list.length > 0 ? list : DEFAULT_STORE_AMENITIES;
     }
   }
-  return ["Máy lạnh", "Mua mang đi", "Chỗ đỗ xe"];
+  return DEFAULT_STORE_AMENITIES;
 }
 
-function formatAmenityLabel(amenity: string): string {
+export function formatAmenityLabel(amenity: string): string {
   const lower = amenity.toLowerCase();
   if (lower.includes("lạnh")) return "❄️ Máy lạnh";
   if (lower.includes("đỗ") || lower.includes("xe") || lower.includes("ô tô")) return "🚗 Đỗ ô tô";
   if (lower.includes("mang đi")) return "🛵 Mua mang đi";
   if (lower.includes("giao")) return "⚡ Giao 25p";
   if (lower.includes("wifi")) return "📶 Wifi miễn phí";
-  if (lower.includes("rộng") || lower.includes("view")) return "🌿 Không gian thoáng";
+  if (lower.includes("rộng") || lower.includes("view") || lower.includes("thoáng")) return "🌿 Không gian thoáng";
   return `✨ ${amenity}`;
 }
 
-function Home() {
+export function Home() {
   const navigate = useNavigate();
   const { selectStore } = useBranch();
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [storeList, setStoreList] = useState<Store[]>(fallbackStores);
+  const [storeList, setStoreList] = useState<Store[]>([]);
+  const [loadingStores, setLoadingStores] = useState(true);
   const [apiPromos, setApiPromos] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -180,9 +195,16 @@ function Home() {
       .then((rows) => {
         if (!cancelled && rows && rows.length > 0) {
           setStoreList(rows);
+        } else if (!cancelled) {
+          setStoreList([]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setStoreList([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStores(false);
+      });
 
     apiGet<any[]>("/api/promotions")
       .then((rows) => {
@@ -694,111 +716,157 @@ function Home() {
               Ghé tiệm gần bạn
             </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              {storeList.length > 0
+              {!loadingStores && storeList.length > 0
                 ? `Hệ thống ${storeList.length} không gian thưởng thức trà trái cây tươi mát, hiện đại sẵn sàng phục vụ tại chỗ và mang đi.`
                 : "Không gian thưởng thức trà trái cây tươi mát, hiện đại sẵn sàng phục vụ tại chỗ và mang đi."}
             </p>
           </div>
           <Button asChild variant="soft" size="sm">
             <Link to="/cua-hang">
-              Tất cả chi nhánh ({storeList.length}) <ArrowRight className="size-4 ml-1" />
+              Tất cả chi nhánh {!loadingStores && storeList.length > 0 ? `(${storeList.length})` : ""} <ArrowRight className="size-4 ml-1" />
             </Link>
           </Button>
         </div>
 
         {/* Store Cards Grid */}
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {storeList.slice(0, 3).map((s) => (
-            <div
-              key={s.id}
-              className="bg-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
-            >
-              <div>
-                {/* Store status & district */}
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                    <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Đang mở cửa
-                  </span>
-                  {(s.district || s.city) && (
-                    <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                      {s.district || s.city}
-                    </span>
-                  )}
+        {loadingStores ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-card flex flex-col justify-between overflow-hidden rounded-2xl border p-5 shadow-sm min-h-[310px] animate-pulse"
+              >
+                <div>
+                  {/* Status & location badge skeleton */}
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="h-5 w-24 rounded-full bg-muted" />
+                    <div className="h-5 w-20 rounded-full bg-muted" />
+                  </div>
+
+                  {/* Store Name skeleton */}
+                  <div className="mt-3 h-6 w-3/4 rounded bg-muted" />
+
+                  {/* Details skeleton */}
+                  <div className="mt-3 space-y-2">
+                    <div className="h-4 w-full rounded bg-muted" />
+                    <div className="h-4 w-2/3 rounded bg-muted" />
+                    <div className="h-4 w-1/2 rounded bg-muted" />
+                  </div>
+
+                  {/* Amenities pills skeleton */}
+                  <div className="mt-4 flex flex-wrap gap-1.5 min-h-[26px]">
+                    <div className="h-5 w-16 rounded-md bg-muted" />
+                    <div className="h-5 w-20 rounded-md bg-muted" />
+                    <div className="h-5 w-18 rounded-md bg-muted" />
+                  </div>
                 </div>
 
-                {/* Store Name */}
-                <h3 className="font-display group-hover:text-primary text-lg font-bold transition-colors line-clamp-1">
-                  {s.name}
-                </h3>
+                {/* Action buttons skeleton */}
+                <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
+                  <div className="h-8 w-full rounded-md bg-muted" />
+                  <div className="h-8 w-full rounded-md bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : storeList.length > 0 ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {storeList.slice(0, 3).map((s) => (
+              <div
+                key={s.id}
+                className="bg-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg min-h-[310px]"
+              >
+                <div>
+                  {/* Store status & district */}
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Đang mở cửa
+                    </span>
+                    {(s.district || s.city) && (
+                      <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                        {s.district || s.city}
+                      </span>
+                    )}
+                  </div>
 
-                {/* Details list */}
-                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-start gap-2">
-                    <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
-                    <span className="line-clamp-2 leading-snug">{s.address}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="text-primary size-4 shrink-0" />
-                    <span>Mở cửa {s.hours || "07:00 – 22:30"}</span>
-                  </div>
-                  {s.phone && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="text-primary size-4 shrink-0" />
-                      <a
-                        href={`tel:${s.phone.replace(/\s+/g, "")}`}
-                        className="hover:text-primary hover:underline font-medium"
-                      >
-                        {s.phone}
-                      </a>
+                  {/* Store Name */}
+                  <h3 className="font-display group-hover:text-primary text-lg font-bold transition-colors line-clamp-1">
+                    {s.name}
+                  </h3>
+
+                  {/* Details list */}
+                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="text-primary mt-0.5 size-4 shrink-0" />
+                      <span className="line-clamp-2 leading-snug">{s.address}</span>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <Clock className="text-primary size-4 shrink-0" />
+                      <span>Mở cửa {s.hours || "07:00 – 22:30"}</span>
+                    </div>
+                    {s.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="text-primary size-4 shrink-0" />
+                        <a
+                          href={`tel:${s.phone.replace(/\s+/g, "")}`}
+                          className="hover:text-primary hover:underline font-medium"
+                        >
+                          {s.phone}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Amenities pills */}
+                  <div className="mt-4 flex flex-wrap gap-1.5 min-h-[26px]">
+                    {getStoreAmenities(s.amenities).slice(0, 5).map((amenity, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-muted/70 text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
+                      >
+                        {formatAmenityLabel(amenity)}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
-                {/* Amenities pills */}
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {getStoreAmenities(s.amenities).slice(0, 3).map((amenity, idx) => (
-                    <span
-                      key={idx}
-                      className="bg-muted/70 text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
-                    >
-                      {formatAmenityLabel(amenity)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="w-full gap-1.5 font-semibold text-xs shadow-sm"
-                  onClick={() => handleOrderAtBranch(s)}
-                >
-                  <ShoppingBag className="size-3.5" />
-                  Đặt tại đây
-                </Button>
-                <Button
-                  asChild
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="w-full gap-1.5 font-medium text-xs hover:bg-secondary"
-                >
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.name}, ${s.address}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {/* Action buttons */}
+                <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full gap-1.5 font-semibold text-xs shadow-sm"
+                    onClick={() => handleOrderAtBranch(s)}
                   >
-                    <Navigation className="size-3.5" />
-                    Chỉ đường
-                  </a>
-                </Button>
+                    <ShoppingBag className="size-3.5" />
+                    Đặt tại đây
+                  </Button>
+                  <Button
+                    asChild
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1.5 font-medium text-xs hover:bg-secondary"
+                  >
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.name}, ${s.address}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Navigation className="size-3.5" />
+                      Chỉ đường
+                    </a>
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-12 text-center text-muted-foreground border rounded-2xl bg-muted/20">
+            <p className="text-sm font-medium">Hiện chưa có chi nhánh nào hoạt động</p>
+          </div>
+        )}
 
         {/* Benefits bar */}
         <div className="mt-8 grid gap-4 rounded-2xl border bg-secondary/30 p-5 sm:grid-cols-3">

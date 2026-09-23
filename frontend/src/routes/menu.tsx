@@ -17,7 +17,7 @@ import {
   type PublicCatalogSection,
   apiGet,
 } from "@/lib/api";
-import { mapApiProduct, vnd, type Product } from "@/lib/data";
+import { mapApiProduct, vnd, resolveProductImage, type Product } from "@/lib/data";
 import { usePublicCategoryTree } from "@/lib/catalog-navigation";
 import menuBannerImg from "@/assets/menu.jpg";
 
@@ -400,7 +400,21 @@ function MenuPage() {
                 )}
                 {items.map((item) => (
                   <div key={item.key} className="flex gap-3 border-b pb-3 last:border-0">
-                    <img src={item.image} alt={item.name} loading="lazy" className="size-12 rounded-lg object-cover" />
+                    <img
+                      src={resolveProductImage(item.productSlug, item.image, {
+                        fulfillment_lane: item.fulfillmentLane,
+                        name: item.name,
+                      })}
+                      alt={item.name}
+                      loading="lazy"
+                      className="size-12 rounded-lg object-cover bg-muted shrink-0"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = resolveProductImage(item.productSlug, null, {
+                          fulfillment_lane: item.fulfillmentLane,
+                          name: item.name,
+                        });
+                      }}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{item.qty}× {item.name}</p>
                       {(() => {

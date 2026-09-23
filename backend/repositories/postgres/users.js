@@ -400,6 +400,21 @@ export function createUsersRepository(database = postgresDb) {
       );
       return rows[0] || null;
     },
+
+    /**
+     * Update customer profile (fullname)
+     */
+    async updateCustomerProfile(userId, { fullname }, { tx = null } = {}) {
+      const executor = tx || database;
+      const [rows] = await executor.query(
+        `UPDATE users
+         SET fullname = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND is_active = TRUE
+         RETURNING ${CUSTOMER_COLUMNS}`,
+        [userId, fullname],
+      );
+      return rows[0] || null;
+    },
   };
 }
 

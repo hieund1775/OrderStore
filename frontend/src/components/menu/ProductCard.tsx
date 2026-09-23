@@ -88,8 +88,13 @@ export function ProductCard({ product, usePreorder = false }: { product: Product
             width={640}
             height={640}
             onError={() => {
-              if (imgSrc !== DEFAULT_PRODUCT_PLACEHOLDER) {
-                setImgSrc(DEFAULT_PRODUCT_PLACEHOLDER);
+              const fallback = resolveProductImage(product.slug, null, {
+                category: product.category,
+                fulfillment_lane: product.fulfillment_lane,
+                name: product.name,
+              });
+              if (imgSrc !== fallback) {
+                setImgSrc(fallback);
               }
             }}
             className="size-full object-cover transition-transform duration-500 group-hover:scale-105"

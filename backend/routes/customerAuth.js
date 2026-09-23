@@ -376,6 +376,32 @@ router.post('/staff-invitation/accept', async (req, res, next) => {
 });
 
 /**
+ * PATCH /api/auth/profile (Yêu cầu đăng nhập)
+ * Payload: { fullname: string }
+ */
+router.patch('/profile', authenticate, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user?.id || req.user?.sub);
+    const { fullname } = req.body || {};
+    const cleanName = normalizeAndValidateFullName(fullname);
+    const updated = await usersRepository.updateCustomerProfile(currentUserId, { fullname: cleanName });
+    if (!updated) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin tài khoản' });
+    }
+    res.json({
+      success: true,
+      message: 'Cập nhật thông tin thành công',
+      user: customerPayload(updated),
+    });
+  } catch (err) {
+    if (err instanceof CustomerValidationError) {
+      return res.status(err.status || 400).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+});
+
+/**
  * GET /api/auth/me (Yêu cầu đăng nhập)
  */
 router.get('/me', authenticate, async (req, res, next) => {

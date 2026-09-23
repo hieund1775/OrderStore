@@ -13,7 +13,7 @@ import { getCustomerSession, openCustomerLoginModal } from '@/lib/customer-sessi
 import { ProductCard } from '@/components/menu/ProductCard';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 import { PublicReviewHub } from '@/components/reviews/PublicReviewHub';
-import { mapApiProduct, type Product, vnd, DEFAULT_PRODUCT_PLACEHOLDER } from '@/lib/data';
+import { mapApiProduct, type Product, vnd, resolveProductImage, DEFAULT_PRODUCT_PLACEHOLDER } from '@/lib/data';
 import { usePublicCategoryTree } from '@/lib/catalog-navigation';
 import { resolveCheckoutPaymentRedirect } from '@/lib/payment-redirect';
 import {
@@ -415,17 +415,21 @@ function PreorderCheckoutPage() {
             const hasModifiers = item.appliedModifiers && item.appliedModifiers.length > 0;
             return (
               <div key={item.key} className="flex items-start gap-3 rounded-xl border p-3.5 bg-background shadow-xs">
-                {item.image && (
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = DEFAULT_PRODUCT_PLACEHOLDER;
-                    }}
-                    className="size-14 rounded-lg object-cover border shrink-0 mt-0.5"
-                  />
-                )}
+                <img
+                  src={resolveProductImage(item.productSlug, item.image, {
+                    fulfillment_lane: item.fulfillmentLane,
+                    name: item.name,
+                  })}
+                  alt={item.name}
+                  loading="lazy"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = resolveProductImage(item.productSlug, null, {
+                      fulfillment_lane: item.fulfillmentLane,
+                      name: item.name,
+                    });
+                  }}
+                  className="size-14 rounded-lg object-cover border shrink-0 mt-0.5 bg-muted"
+                />
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-start justify-between gap-1">
                     <p className="truncate font-semibold text-sm">{item.name}</p>

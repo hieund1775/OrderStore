@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ShoppingCart,
   Trash2,
@@ -25,7 +25,7 @@ import {
 import { toast } from 'sonner';
 import { useCart, type CartItem, mapConfiguredItemToCartItem } from '@/lib/cart';
 import { clearBuyNowIntent } from '@/lib/buy-now';
-import { vnd } from '@/lib/data';
+import { vnd, resolveProductImage } from '@/lib/data';
 import { DynamicProductConfigurator } from '@/components/catalog/DynamicProductConfigurator';
 
 function formatAddedTime(isoString?: string): string {
@@ -82,8 +82,16 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
     };
   }, []);
 
+  const navigate = useNavigate();
+
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
+  };
+
+  const handleExploreMenu = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setOpen(false);
+    navigate({ to: '/menu' });
   };
 
   const handleEditClick = (item: CartItem) => {
@@ -170,8 +178,15 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                 <p className="text-muted-foreground text-sm">
                   Giỏ hàng của bạn đang trống.
                 </p>
-                <Button asChild size="sm" variant="outline" className="rounded-full">
-                  <Link to="/menu">Khám phá Thực Đơn</Link>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full cursor-pointer touch-manipulation active:scale-95 transition-transform"
+                >
+                  <Link to="/menu" onClick={handleExploreMenu}>
+                    Khám phá Thực Đơn
+                  </Link>
                 </Button>
               </div>
             ) : (
@@ -221,10 +236,19 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
                           </div>
 
                           <img
-                            src={item.image}
+                            src={resolveProductImage(item.productSlug, item.image, {
+                              fulfillment_lane: item.fulfillmentLane,
+                              name: item.name,
+                            })}
                             alt={item.name}
                             loading="lazy"
-                            className="size-16 rounded-xl object-cover border shrink-0"
+                            className="size-16 rounded-xl object-cover border shrink-0 bg-muted"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src = resolveProductImage(item.productSlug, null, {
+                                fulfillment_lane: item.fulfillmentLane,
+                                name: item.name,
+                              });
+                            }}
                           />
 
                           <div className="min-w-0 flex-1 space-y-1">

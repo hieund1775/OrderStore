@@ -1,3 +1,11 @@
+export const DEFAULT_STORE_AMENITIES = [
+  'Chỗ đỗ ô tô',
+  'Máy lạnh',
+  'Mua mang đi',
+  'Giao 25p',
+  'Không gian thoáng',
+];
+
 export function toStoreDto(store) {
   if (!store) return null;
   let parsedAmenities = [];
@@ -11,6 +19,14 @@ export function toStoreDto(store) {
         parsedAmenities = [String(store.amenities)];
       }
     }
+  }
+
+  if (!Array.isArray(parsedAmenities)) {
+    parsedAmenities = [];
+  }
+  parsedAmenities = parsedAmenities.map(String).map((s) => s.trim()).filter(Boolean);
+  if (parsedAmenities.length === 0) {
+    parsedAmenities = [...DEFAULT_STORE_AMENITIES];
   }
 
   return {

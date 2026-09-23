@@ -172,31 +172,24 @@ export const DEFAULT_PRODUCT_IMAGES: Record<string, string> = {
   'detox-nho-nha-dam': 'https://images.unsplash.com/photo-1536935338788-846bb9981813?auto=format&fit=crop&w=640&q=80',
 };
 
-export const FALLBACK_TEA_IMAGE = 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=640&q=80';
+export const PLACEHOLDER_FOOD_IMAGE = '/placeholders/placeholder-food.jpg';
+export const PLACEHOLDER_GOODS_IMAGE = '/placeholders/placeholder-goods.jpg';
+export const FALLBACK_TEA_IMAGE = PLACEHOLDER_FOOD_IMAGE;
 
-export const DEFAULT_PRODUCT_PLACEHOLDER =
-  "data:image/svg+xml;charset=utf-8," +
-  encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" fill="none">
-  <rect width="600" height="600" fill="#F1F5F9"/>
-  <circle cx="300" cy="250" r="100" fill="#E2E8F0"/>
-  <path d="M260 210H340L330 310H270L260 210Z" fill="#CBD5E1" stroke="#94A3B8" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M310 170L325 210" stroke="#059669" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="300" cy="255" r="18" fill="#10B981" fill-opacity="0.2"/>
-  <text x="300" y="410" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="#475569" text-anchor="middle">TeaPlus</text>
-  <text x="300" y="445" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="500" fill="#94A3B8" text-anchor="middle">H&igrave;nh &aacute;nh đang c&#7853;p nh&#7853;t</text>
-</svg>`);
+export const DEFAULT_PRODUCT_PLACEHOLDER = PLACEHOLDER_FOOD_IMAGE;
 
-export function resolveProductImage(
-  slug?: string,
-  image?: string | null,
-  context?: { category?: string | null; fulfillment_lane?: string | null; name?: string },
-): string {
+export function getProductPlaceholder(context?: {
+  category?: string | null;
+  fulfillment_lane?: string | null;
+  name?: string;
+  slug?: string;
+}): string {
   const cat = (context?.category || '').toLowerCase();
   const lane = (context?.fulfillment_lane || '').toLowerCase();
   const name = (context?.name || '').toLowerCase();
-  const s = (slug || '').toLowerCase();
+  const s = (context?.slug || '').toLowerCase();
 
-  const isNonDrink =
+  const isGoods =
     lane === 'packing' ||
     cat.includes('áo') ||
     cat.includes('aó') ||
@@ -207,6 +200,8 @@ export function resolveProductImage(
     cat.includes('dong goi') ||
     cat.includes('phụ kiện') ||
     cat.includes('quà tặng') ||
+    cat.includes('snack') ||
+    cat.includes('hạt') ||
     name.includes('áo') ||
     name.includes('aó') ||
     name.startsWith('ao ') ||
@@ -216,49 +211,93 @@ export function resolveProductImage(
     name.includes('túi') ||
     name.includes('nón') ||
     name.includes('bình giữ nhiệt') ||
+    name.includes('ly giữ nhiệt') ||
+    name.includes('hạt dinh dưỡng') ||
     s.includes('ao-') ||
     s.includes('quan-') ||
     s.includes('hoodie') ||
     s.includes('tui-') ||
     s.includes('merch') ||
-    s.includes('dong-goi');
+    s.includes('dong-goi') ||
+    s.includes('ly-giu-nhiet') ||
+    s.includes('hat-dinh-duong');
 
-  // Direct image from database / CDN if valid and not a broken local path
-  const targetImage = (image && image.trim() !== '') ? image.trim() : (context?.image_url && context.image_url.trim() !== '') ? context.image_url.trim() : null;
+  return isGoods ? PLACEHOLDER_GOODS_IMAGE : PLACEHOLDER_FOOD_IMAGE;
+}
 
-  if (isNonDrink) {
-    if (
-      targetImage &&
-      !targetImage.startsWith('/src/assets/p-') &&
-      targetImage !== FALLBACK_TEA_IMAGE &&
-      !targetImage.includes('images.unsplash.com/photo-1556679343-c7306c1976bc')
-    ) {
-      return targetImage;
+export function resolveProductImage(
+  slug?: string,
+  image?: string | null,
+  context?: { category?: string | null; fulfillment_lane?: string | null; name?: string; image_url?: string | null },
+): string {
+  const cat = (context?.category || '').toLowerCase();
+  const lane = (context?.fulfillment_lane || '').toLowerCase();
+  const name = (context?.name || '').toLowerCase();
+  const s = (slug || '').toLowerCase();
+
+  const isGoods =
+    lane === 'packing' ||
+    cat.includes('áo') ||
+    cat.includes('aó') ||
+    cat.includes('quần') ||
+    cat.includes('merch') ||
+    cat.includes('thời trang') ||
+    cat.includes('đóng gói') ||
+    cat.includes('dong goi') ||
+    cat.includes('phụ kiện') ||
+    cat.includes('quà tặng') ||
+    cat.includes('snack') ||
+    cat.includes('hạt') ||
+    name.includes('áo') ||
+    name.includes('aó') ||
+    name.startsWith('ao ') ||
+    name.includes(' áo ') ||
+    name.includes('quần') ||
+    name.includes('hoodie') ||
+    name.includes('túi') ||
+    name.includes('nón') ||
+    name.includes('bình giữ nhiệt') ||
+    name.includes('ly giữ nhiệt') ||
+    name.includes('hạt dinh dưỡng') ||
+    s.includes('ao-') ||
+    s.includes('quan-') ||
+    s.includes('hoodie') ||
+    s.includes('tui-') ||
+    s.includes('merch') ||
+    s.includes('dong-goi') ||
+    s.includes('ly-giu-nhiet') ||
+    s.includes('hat-dinh-duong');
+
+  // Direct image from database / CDN if valid and not a broken local path or placeholder
+  const rawTarget = (image && image.trim() !== '') ? image.trim() : (context?.image_url && context.image_url.trim() !== '') ? context.image_url.trim() : null;
+  const isInvalidImage = !rawTarget ||
+    rawTarget.startsWith('/src/assets/p-') ||
+    rawTarget === '/placeholder.png' ||
+    rawTarget.includes('images.unsplash.com/photo-1556679343-c7306c1976bc');
+
+  if (isGoods) {
+    if (!isInvalidImage) {
+      return rawTarget;
     }
-    return DEFAULT_PRODUCT_PLACEHOLDER;
+    if (name.includes('hạt') || name.includes('hat') || name.includes('snack') || s.includes('hat-dinh-duong') || s.includes('snack')) {
+      return '/catalog/hat-dinh-duong.png';
+    }
+    if (name.includes('ly') || name.includes('bình') || name.includes('binh') || s.includes('ly-giu-nhiet')) {
+      return '/catalog/ly-giu-nhiet.png';
+    }
+    return PLACEHOLDER_GOODS_IMAGE;
   }
 
   // Handle valid external/public URL from database
-  if (
-    targetImage &&
-    !targetImage.startsWith('/src/assets/p-') &&
-    (targetImage.startsWith('http://') ||
-      targetImage.startsWith('https://') ||
-      targetImage.startsWith('/catalog/') ||
-      targetImage.startsWith('/images/') ||
-      targetImage.startsWith('data:image/'))
-  ) {
-    return targetImage;
-  }
-
-  // Map seed path /src/assets/p-... to matching slug or defaults
-  if (targetImage && targetImage.startsWith('/src/assets/p-')) {
-    if (targetImage.includes('cam-sa')) return DEFAULT_PRODUCT_IMAGES['tra-cam-sa'];
-    if (targetImage.includes('dau-tay')) return DEFAULT_PRODUCT_IMAGES['tra-dau-tay'];
-    if (targetImage.includes('xoai')) return DEFAULT_PRODUCT_IMAGES['tra-xoai-chanh-day'];
-    if (targetImage.includes('dao-vai')) return DEFAULT_PRODUCT_IMAGES['tra-dao-vai'];
-    if (targetImage.includes('dua-hau')) return DEFAULT_PRODUCT_IMAGES['tuyet-dua-hau'];
-    if (targetImage.includes('nho')) return DEFAULT_PRODUCT_IMAGES['detox-nho-nha-dam'];
+  if (!isInvalidImage && (
+    rawTarget.startsWith('http://') ||
+    rawTarget.startsWith('https://') ||
+    rawTarget.startsWith('/catalog/') ||
+    rawTarget.startsWith('/placeholders/') ||
+    rawTarget.startsWith('/images/') ||
+    rawTarget.startsWith('data:image/')
+  )) {
+    return rawTarget;
   }
 
   // Exact slug match
@@ -266,7 +305,7 @@ export function resolveProductImage(
     return DEFAULT_PRODUCT_IMAGES[slug];
   }
 
-  // Semantic category and keyword matching for dishes entered in QA / DB (Bạc xỉu, Cà phê đen, Trà dâu, Trà dưa hấu, etc.)
+  // Semantic category and keyword matching for dishes entered in QA / DB
   if (
     name.includes('bạc xỉu') ||
     name.includes('bac xiu') ||
@@ -318,20 +357,11 @@ export function resolveProductImage(
     return DEFAULT_PRODUCT_IMAGES['detox-nho-nha-dam'];
   }
 
-  if (name.includes('hạt') || name.includes('hat') || name.includes('snack') || s.includes('snack') || s.includes('hat')) {
-    return '/catalog/hat-dinh-duong.png';
+  if (!isInvalidImage) {
+    return rawTarget;
   }
 
-  if (name.includes('ly') || name.includes('bình') || name.includes('binh') || s.includes('ly') || s.includes('binh')) {
-    return '/catalog/ly-giu-nhiet.png';
-  }
-
-  // Any other non-empty image string from database
-  if (targetImage && !targetImage.startsWith('/src/assets/p-')) {
-    return targetImage;
-  }
-
-  return FALLBACK_TEA_IMAGE;
+  return PLACEHOLDER_FOOD_IMAGE;
 }
 
 /** Maps the PostgreSQL catalog DTO to the storefront card shape. */
