@@ -177,7 +177,7 @@ export function createAdminStoresRepository(database = postgresDb) {
          JOIN stores s ON s.id = t.store_id
          ${where}
          ORDER BY t.store_id ASC,
-                  NULLIF(regexp_replace(t.name, '\D', '', 'g'), '')::int ASC NULLS LAST,
+                  NULLIF(regexp_replace(t.name, '[^0-9]', '', 'g'), '')::numeric ASC NULLS LAST,
                   t.name ASC,
                   t.id ASC
          ${paginationClause}`,

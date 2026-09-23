@@ -67,25 +67,36 @@ describe('Canonical Repository SQL-Level Pagination & Deterministic Sorting', ()
     assert.ok(Array.isArray(unpaginated), 'Unpaginated call must return an array');
   });
 
-  it('admin-stores listTables applies COUNT(*) OVER(), LIMIT/OFFSET, and ORDER BY t.store_id ASC, t.id DESC', async () => {
-    let capturedSql = '';
-    let capturedParams = [];
+  it('admin-stores listTables builds safe natural sorting for scoped and paginated production queries', async () => {
+    const capturedQueries = [];
     const mockDb = {
       async query(sql, params) {
-        capturedSql = sql;
-        capturedParams = params;
+        capturedQueries.push({ sql, params });
         return [[{ id: 10, store_id: 1, name: 'Bàn 10', total_count: '1' }]];
       },
     };
 
     const repo = createAdminStoresRepository(mockDb);
-    const result = await repo.listTables({ page: 2, limit: 5 });
+    const scopedResult = await repo.listTables({ scopedStoreId: 15 });
+    const paginatedResult = await repo.listTables({ page: 1, limit: 12 });
 
-    assert.ok(capturedSql.includes('COUNT(*) OVER() AS total_count'));
-    assert.ok(capturedSql.includes('ORDER BY t.store_id ASC, t.id DESC'));
-    assert.ok(capturedSql.includes('LIMIT $1 OFFSET $2'));
-    assert.deepEqual(capturedParams, [5, 5]);
-    assert.equal(result.totalItems, 1);
+    assert.equal(capturedQueries.length, 2);
+    const [scopedQuery, paginatedQuery] = capturedQueries;
+
+    assert.match(scopedQuery.sql, /AND t\.store_id = \$1/);
+    assert.deepEqual(scopedQuery.params, [15]);
+    assert.ok(Array.isArray(scopedResult));
+
+    assert.ok(paginatedQuery.sql.includes('COUNT(*) OVER() AS total_count'));
+    assert.ok(paginatedQuery.sql.includes('LIMIT $1 OFFSET $2'));
+    assert.deepEqual(paginatedQuery.params, [12, 0]);
+    assert.equal(paginatedResult.totalItems, 1);
+
+    for (const { sql } of capturedQueries) {
+      assert.ok(sql.includes("regexp_replace(t.name, '[^0-9]', '', 'g')"), 'runtime SQL must strip every non-digit without JavaScript escape ambiguity');
+      assert.ok(sql.includes("NULLIF(regexp_replace(t.name, '[^0-9]', '', 'g'), '')::numeric ASC NULLS LAST"), 'natural table-number sorting must tolerate large numeric suffixes');
+      assert.equal(sql.includes("regexp_replace(t.name, 'D'"), false, 'runtime SQL must never degrade the intended non-digit pattern to literal D');
+    }
   });
 
   it('admin-promotions listPromotions applies COUNT(*) OVER(), LIMIT/OFFSET, and ORDER BY p.id DESC', async () => {

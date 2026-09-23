@@ -119,8 +119,20 @@ describe('Phase 3 Slice 3 Stores, Promotions & Inventory HTTP Characterization',
   });
 
   it('serves admin branches, tables, promotions, and inventory with role enforcement', async () => {
+    const tableListCalls = [];
     adminStoresRepository.listBranches = async () => [{ id: 1, name: 'Store 1' }];
-    adminStoresRepository.listTables = async () => [{ id: 1, store_id: 1, name: 'Bàn 1' }];
+    adminStoresRepository.listTables = async (options = {}) => {
+      tableListCalls.push(options);
+      const item = {
+        id: 1,
+        store_id: options.scopedStoreId || 1,
+        name: 'Bàn 1',
+      };
+      if (options.page && options.limit) {
+        return { items: [item], totalItems: 1 };
+      }
+      return [item];
+    };
     adminPromotionsRepository.listPromotions = async () => [{ id: 1, title: 'Summer' }];
     adminInventoryRepository.listInventory = async () => [{ id: 1, name: 'Trà ô long' }];
 
@@ -133,6 +145,25 @@ describe('Phase 3 Slice 3 Stores, Promotions & Inventory HTTP Characterization',
       headers: { authorization: `Bearer ${cashierToken}` },
     });
     assert.equal(tablesRes.status, 200);
+
+    const scopedTablesRes = await fetch(`${baseUrl}/admin/tables?store_id=15`, {
+      headers: { authorization: `Bearer ${superToken}` },
+    });
+    assert.equal(scopedTablesRes.status, 200);
+    assert.equal((await scopedTablesRes.json())[0].store_id, 15);
+
+    const paginatedTablesRes = await fetch(`${baseUrl}/admin/tables?page=1&limit=12`, {
+      headers: { authorization: `Bearer ${superToken}` },
+    });
+    assert.equal(paginatedTablesRes.status, 200);
+    const paginatedTables = await paginatedTablesRes.json();
+    assert.equal(paginatedTables.items.length, 1);
+    assert.equal(paginatedTables.pagination.totalItems, 1);
+    assert.deepEqual(tableListCalls, [
+      { scopedStoreId: 1, page: undefined, limit: undefined },
+      { scopedStoreId: 15, page: undefined, limit: undefined },
+      { scopedStoreId: null, page: 1, limit: 12 },
+    ]);
 
     const promosRes = await fetch(`${baseUrl}/admin/promotions`, {
       headers: { authorization: `Bearer ${superToken}` },
