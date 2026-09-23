@@ -20,7 +20,7 @@ router.get('/', requireRole('super', 'manager', 'cashier'), asyncHandler(async (
   const isPaginated = isPaginationRequested(req.query);
   if (isPaginated) {
     const page = validatePage(req.query.page, 1);
-    const limit = validateLimit(req.query.limit, 5, 50);
+    const limit = validateLimit(req.query.limit, 20, 50);
     const result = await service.listBranchOffers(storeId, { ...filters, page, limit });
     const items = result.items || [];
     const pagination = buildOffsetPagination({ totalItems: result.totalItems, page, limit });

@@ -295,26 +295,26 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
     const hasDirectProds = products.some((p) => Number(p.category_id) === Number(root.id));
 
     if (hasSubcats || hasDirectProds) {
-      toast.error(`Ngành "${root.name}" đang chứa danh mục con hoặc sản phẩm. Vui lòng chuyển hoặc xóa danh mục con trước.`);
+      toast.error(`Danh mục "${root.name}" đang chứa danh mục con hoặc sản phẩm. Vui lòng chuyển hoặc xóa danh mục con trước.`);
       return;
     }
 
-    if (!confirm(`Bạn có chắc chắn muốn xóa ngành hàng gốc "${root.name}"?`)) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa danh mục "${root.name}"?`)) return;
 
     try {
       await archiveCatalogCategory(root.id);
-      toast.success(`Đã xóa ngành hàng "${root.name}"`);
+      toast.success(`Đã xóa danh mục "${root.name}"`);
       handleSelectRootId('');
       await loadAllData();
     } catch (err: any) {
-      toast.error(err.message || 'Lỗi xóa ngành hàng');
+      toast.error(err.message || 'Lỗi xóa danh mục');
     }
   };
 
   const handleSaveRootCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRootName.trim()) {
-      toast.error('Vui lòng nhập tên ngành hàng gốc');
+      toast.error('Vui lòng nhập tên danh mục');
       return;
     }
 
@@ -329,7 +329,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
           slug: autoSlug,
           is_visible: editingRootCategory.is_visible,
         });
-        toast.success(`Đã cập nhật ngành hàng "${newRootName}"`);
+        toast.success(`Đã cập nhật danh mục "${newRootName}"`);
       } else {
         const created = await createCatalogIndustry({
           name: newRootName.trim(),
@@ -337,14 +337,14 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
           default_stock_mode: 'made_to_order',
           default_fulfillment_lane: activeLane,
         });
-        toast.success(`Đã tạo ngành hàng "${newRootName}"`);
+        toast.success(`Đã tạo danh mục "${newRootName}"`);
         if (created?.rootCategory?.id) handleSelectRootId(String(created.rootCategory.id));
       }
       setCreateRootOpen(false);
       setNewRootName('');
       await loadAllData();
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error || err.data?.error || err.message || 'Lỗi lưu ngành hàng gốc';
+      const errorMsg = err.response?.data?.error || err.data?.error || err.message || 'Lỗi lưu danh mục';
       setRootError(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -507,7 +507,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Plus className="size-5 text-primary" />
-                <span>{editingRootCategory ? 'Đổi Tên Ngành Hàng Gốc' : `Tạo Ngành Hàng Gốc ${activeLane === 'packing' ? 'Đóng gói' : 'Bếp'}`}</span>
+                <span>{editingRootCategory ? 'Đổi Tên Danh Mục' : `Tạo Danh Mục ${activeLane === 'packing' ? 'Đóng gói' : 'Bếp'}`}</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -519,7 +519,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
               )}
               <div className="space-y-2">
                 <Label htmlFor="root-name" className="text-xs font-semibold">
-                  Tên ngành hàng gốc <span className="text-destructive">*</span>
+                  Tên danh mục <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="root-name"
@@ -544,7 +544,7 @@ export function AdminCatalogPage({ lane }: { lane?: 'kitchen' | 'packing' }) {
                 Hủy
               </Button>
               <Button type="submit" variant="hero" disabled={creatingRoot}>
-                {creatingRoot ? 'Đang lưu...' : editingRootCategory ? 'Cập nhật' : 'Tạo ngành hàng'}
+                {creatingRoot ? 'Đang lưu...' : editingRootCategory ? 'Cập nhật' : 'Tạo danh mục'}
               </Button>
             </DialogFooter>
           </form>

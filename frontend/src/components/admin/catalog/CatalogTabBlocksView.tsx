@@ -679,7 +679,7 @@ export function CatalogTabBlocksView({
                   <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
                     <SelectValue placeholder="Lọc theo danh mục con" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-60 overflow-y-auto">
                     <SelectItem value="all" className="text-xs">Tất cả danh mục con ({displayedProducts.length} món)</SelectItem>
                     {subcategories.map((subcat) => {
                       const count = products.filter((p) => Number(p.category_id) === Number(subcat.id)).length;

@@ -158,7 +158,7 @@ function AdminHangDangBanPage() {
           category_id: effectiveCategoryId,
           search: debouncedSearch.trim() || undefined,
           page,
-          limit: 5,
+          limit: 20,
         }),
         fetchCatalogCategories(),
       ]);
@@ -233,38 +233,34 @@ function AdminHangDangBanPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground whitespace-nowrap">
           <FolderTree className="size-4 text-primary" />
-          Lọc theo catalog
+          Lọc theo catalog:
         </div>
-        <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
-          Ngành hàng gốc
+        <select
+          aria-label="Lọc theo danh mục"
+          className="h-9 min-w-48 rounded-md border border-input bg-background px-3 text-xs font-semibold text-foreground"
+          value={selectedRootId}
+          onChange={(event) => handleRootChange(event.target.value)}
+        >
+          <option value="all">Tất cả danh mục</option>
+          {rootCategories.map((category) => (
+            <option key={category.id} value={category.id}>{category.name}</option>
+          ))}
+        </select>
+        {selectedRootId !== 'all' && (
           <select
+            aria-label="Lọc theo danh mục con"
             className="h-9 min-w-48 rounded-md border border-input bg-background px-3 text-xs font-semibold text-foreground"
-            value={selectedRootId}
-            onChange={(event) => handleRootChange(event.target.value)}
+            value={selectedChildId}
+            onChange={(event) => handleChildChange(event.target.value)}
           >
-            <option value="all">Tất cả ngành hàng</option>
-            {rootCategories.map((category) => (
+            <option value="all">Tất cả danh mục con</option>
+            {childCategories.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}
           </select>
-        </label>
-        {selectedRootId !== 'all' && (
-          <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
-            Danh mục con
-            <select
-              className="h-9 min-w-48 rounded-md border border-input bg-background px-3 text-xs font-semibold text-foreground"
-              value={selectedChildId}
-              onChange={(event) => handleChildChange(event.target.value)}
-            >
-              <option value="all">Tất cả trong ngành</option>
-              {childCategories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
-              ))}
-            </select>
-          </label>
         )}
       </div>
 

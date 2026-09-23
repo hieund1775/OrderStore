@@ -34,13 +34,13 @@ export function CatalogRootSelector({
     <div className="bg-muted/40 border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap flex items-center gap-1.5">
-          <Layers className="size-4 text-primary" /> Ngành hàng gốc:
+          <Layers className="size-4 text-primary" /> Danh mục:
         </Label>
         <Select value={value} onValueChange={onValueChange}>
           <SelectTrigger className="w-[240px] font-semibold h-9 text-sm bg-background">
-            <SelectValue placeholder="Chọn ngành hàng gốc" />
+            <SelectValue placeholder="Chọn danh mục" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="max-h-60 overflow-y-auto">
             {roots.map((root) => (
               <SelectItem key={root.id} value={String(root.id)}>
                 {root.name}
@@ -57,9 +57,9 @@ export function CatalogRootSelector({
                 size="sm"
                 className="h-8 text-xs px-2.5 bg-background"
                 onClick={() => onEditRoot(currentSelectedRoot)}
-                title="Đổi tên ngành hàng gốc"
+                title="Đổi tên danh mục"
               >
-                <Edit2 className="size-3.5 mr-1" /> Sửa tên ngành
+                <Edit2 className="size-3.5 mr-1" /> Sửa danh mục
               </Button>
             )}
             {onDeleteRoot && (
@@ -68,9 +68,9 @@ export function CatalogRootSelector({
                 size="sm"
                 className="h-8 text-xs px-2.5 text-destructive hover:bg-destructive/10"
                 onClick={() => onDeleteRoot(currentSelectedRoot)}
-                title="Xóa ngành hàng gốc"
+                title="Xóa danh mục"
               >
-                <Trash2 className="size-3.5 mr-1" /> Xóa ngành
+                <Trash2 className="size-3.5 mr-1" /> Xóa danh mục
               </Button>
             )}
           </div>
@@ -79,7 +79,7 @@ export function CatalogRootSelector({
 
       {canCreateRoot && (
         <Button variant="hero" size="sm" onClick={onCreateRoot} className="h-9 font-semibold text-xs">
-          <Plus className="size-4 mr-1.5" /> Tạo ngành hàng gốc {laneLabel}
+          <Plus className="size-4 mr-1.5" /> Tạo danh mục {laneLabel}
         </Button>
       )}
     </div>

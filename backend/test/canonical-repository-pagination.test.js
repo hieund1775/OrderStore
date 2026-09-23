@@ -171,10 +171,18 @@ describe('Canonical Repository SQL-Level Pagination & Deterministic Sorting', ()
     // Category tree filter check
     capturedSql = '';
     capturedParams = [];
-    await repo.listBranchOffers(1, { categoryId: 87, page: 1, limit: 5 });
+    await repo.listBranchOffers(1, { categoryId: 87, page: 1, limit: 20 });
     assert.ok(capturedSql.includes('WITH RECURSIVE cat_tree AS'));
     assert.ok(capturedSql.includes('p.category_id IN ('));
-    assert.deepEqual(capturedParams, [1, 87, 5, 0]);
+    assert.deepEqual(capturedParams, [1, 87, 20, 0]);
+
+    // Search by category and lineage check
+    capturedSql = '';
+    capturedParams = [];
+    await repo.listBranchOffers(1, { search: 'Trà Trái Cây', page: 1, limit: 20 });
+    assert.ok(capturedSql.includes('WITH RECURSIVE cat_lineage AS'));
+    assert.ok(capturedSql.includes('cat_lineage WHERE name ILIKE $2'));
+    assert.deepEqual(capturedParams, [1, '%Trà Trái Cây%', 20, 0]);
   });
 
   it('notifications listForUser applies COUNT(*) OVER(), LIMIT/OFFSET, and ORDER BY created_at DESC, id DESC', async () => {

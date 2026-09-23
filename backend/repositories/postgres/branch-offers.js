@@ -88,7 +88,20 @@ export function createBranchOffersRepository(database = postgresDb) {
       }
       if (search) {
         params.push(`%${search}%`);
-        where += ` AND (p.name ILIKE $${params.length} OR pv.sku ILIKE $${params.length})`;
+        where += ` AND (
+          p.name ILIKE $${params.length}
+          OR pv.sku ILIKE $${params.length}
+          OR EXISTS (
+            WITH RECURSIVE cat_lineage AS (
+              SELECT id, parent_id, name FROM categories WHERE id = p.category_id
+              UNION ALL
+              SELECT parent.id, parent.parent_id, parent.name
+              FROM categories parent
+              JOIN cat_lineage child ON child.parent_id = parent.id
+            )
+            SELECT 1 FROM cat_lineage WHERE name ILIKE $${params.length}
+          )
+        )`;
       }
 
       const isPaginated = page != null && limit != null;
@@ -150,7 +163,20 @@ export function createBranchOffersRepository(database = postgresDb) {
         }
         if (search) {
           countParams.push(`%${search}%`);
-          countWhere += ` AND (p.name ILIKE $${countParams.length} OR pv.sku ILIKE $${countParams.length})`;
+          countWhere += ` AND (
+            p.name ILIKE $${countParams.length}
+            OR pv.sku ILIKE $${countParams.length}
+            OR EXISTS (
+              WITH RECURSIVE cat_lineage AS (
+                SELECT id, parent_id, name FROM categories WHERE id = p.category_id
+                UNION ALL
+                SELECT parent.id, parent.parent_id, parent.name
+                FROM categories parent
+                JOIN cat_lineage child ON child.parent_id = parent.id
+              )
+              SELECT 1 FROM cat_lineage WHERE name ILIKE $${countParams.length}
+            )
+          )`;
         }
         const [countRows] = await database.query(
           `SELECT COUNT(*)::int AS total
