@@ -41,7 +41,7 @@ router.post('/login', async (req, res) => {
     let branchName = null;
     if (user.admin_branch_id) {
       try {
-        const { rows: storeRows } = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
+        const [storeRows] = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
         branchName = storeRows[0]?.name || null;
       } catch (e) {
         console.warn('Could not resolve store name on login:', e.message);
@@ -83,7 +83,7 @@ router.get('/me', authenticate, async (req, res) => {
   let branchName = null;
   if (user.admin_branch_id) {
     try {
-      const { rows: storeRows } = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
+      const [storeRows] = await postgresDb.query('SELECT name FROM stores WHERE id = $1', [user.admin_branch_id]);
       branchName = storeRows[0]?.name || null;
     } catch (e) {
       console.warn('Could not resolve store name on /me:', e.message);

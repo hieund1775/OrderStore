@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { fetchBranchCapabilities, getUser } from '@/lib/api';
 
 type AdminRole = 'super' | 'manager' | 'kitchen' | 'cashier' | 'packing';
+export const ADMIN_BRAND_NAME = 'Trà Trái Cây Tô';
 const ALL_ROLES: AdminRole[] = ['super', 'manager', 'kitchen', 'cashier', 'packing'];
 const MANAGEMENT_ROLES: AdminRole[] = ['super', 'manager'];
 const SUPER_ROLES: AdminRole[] = ['super'];
@@ -137,7 +138,7 @@ export function AdminSidebar({
         </span>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold tracking-tight text-foreground">Tea Station</p>
+            <p className="truncate text-sm font-semibold tracking-tight text-foreground">{ADMIN_BRAND_NAME}</p>
             <p className="text-muted-foreground truncate text-xs">Trang quản trị</p>
           </div>
         )}

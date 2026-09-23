@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatAdminRoleLabel } from '../admin-topbar';
-import { adminNav } from '@/components/admin/AdminSidebar';
+import { ADMIN_BRAND_NAME, adminNav } from '@/components/admin/AdminSidebar';
 
 describe('Legacy Admin Menu & RBAC Contract Suite', () => {
   it('formats valid role labels for legacy staff and admin hierarchy', () => {
@@ -24,6 +24,11 @@ describe('Legacy Admin Menu & RBAC Contract Suite', () => {
     const catalogItem = adminNav.find((item) => item.to === '/admin/catalog');
     expect(catalogItem).toBeDefined();
     expect(catalogItem?.label).toContain('Sản phẩm & Danh mục');
+  });
+
+  it('uses the canonical customer-facing brand in the admin sidebar', () => {
+    expect(ADMIN_BRAND_NAME).toBe('Trà Trái Cây Tô');
+    expect(ADMIN_BRAND_NAME).not.toBe('Tea Station');
   });
 
   it('Admin sidebar categorizes orders into catalog, packing into operations, and branch/qr into store_management', () => {
