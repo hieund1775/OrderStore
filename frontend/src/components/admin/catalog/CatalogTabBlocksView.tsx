@@ -181,7 +181,7 @@ export function CatalogTabBlocksView({
       list.push({
         ...activeRootCategory,
         isRootScope: true,
-        scopeLabel: `Ngành gốc: ${activeRootCategory.name}`,
+        scopeLabel: `Danh mục gốc: ${activeRootCategory.name}`,
       });
       for (const sub of subcategories) {
         list.push({
@@ -201,7 +201,7 @@ export function CatalogTabBlocksView({
         list.push({
           ...root,
           isRootScope: true,
-          scopeLabel: `Ngành gốc: ${root.name}`,
+          scopeLabel: `Danh mục gốc: ${root.name}`,
         });
         const children = categories.filter((c) => {
           if (Number(c.parent_id) !== Number(root.id)) return false;

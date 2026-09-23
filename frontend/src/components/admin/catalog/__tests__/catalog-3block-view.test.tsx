@@ -315,7 +315,7 @@ describe('Admin Catalog Tab Blocks View Suite', () => {
     // Không còn dòng mô tả thừa
     expect(html).not.toContain('Thiết lập 3 Block: Tùy chọn không tiền');
     // Nhãn phạm vi áp dụng không chứa icon emoji
-    expect(html).toContain('Ngành gốc: Nước uống');
+    expect(html).toContain('Danh mục gốc: Nước uống');
     expect(html).toContain('Danh mục: Trà sữa');
     expect(html).not.toContain('👑');
     expect(html).not.toContain('📁');
