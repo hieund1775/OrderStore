@@ -41,7 +41,7 @@ export const Route = createFileRoute('/admin/hang-dang-ban')({
   }),
 });
 
-function AdminHangDangBanPage() {
+export function AdminHangDangBanPage() {
   const navigate = useNavigate();
   const searchParams = Route.useSearch();
 
@@ -57,6 +57,7 @@ function AdminHangDangBanPage() {
   const [debouncedSearch, setDebouncedSearch] = useState<string>(searchParams.search || '');
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalOffers, setTotalOffers] = useState(0);
 
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === 'super';
@@ -166,14 +167,20 @@ function AdminHangDangBanPage() {
       let list: BranchOfferRow[] = [];
       if (Array.isArray(offersRes)) {
         list = offersRes;
+        setTotalPages(1);
+        setTotalOffers(offersRes.length);
       } else if (offersRes && typeof offersRes === 'object') {
         list = Array.isArray(offersRes.items) ? offersRes.items : [];
         if (offersRes.pagination) {
           const tp = Math.max(1, offersRes.pagination.totalPages || 1);
           setTotalPages(tp);
+          setTotalOffers(Number(offersRes.pagination.totalItems) || 0);
           if (offersRes.pagination.totalPages > 0 && page > offersRes.pagination.totalPages) {
             setPage(offersRes.pagination.totalPages);
           }
+        } else {
+          setTotalPages(1);
+          setTotalOffers(list.length);
         }
       }
       setOffers(list);
