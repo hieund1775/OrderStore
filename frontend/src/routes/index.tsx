@@ -32,6 +32,7 @@ import {
 } from "@/lib/data";
 import { apiGet } from "@/lib/api";
 import { useBranch } from "@/lib/branch";
+import { isStoreOpen } from "@/lib/store-hours";
 import { formatVoucherDate } from "@/lib/promotion-status";
 import heroImg from "@/assets/hero-tea.jpg";
 import storyImg from "@/assets/story.jpg";
@@ -238,6 +239,14 @@ export function Home() {
   };
 
   const handleOrderAtBranch = (store: Store) => {
+    if (!store.is_active) {
+      toast.error(`${store.name} đang tạm ngưng phục vụ`);
+      return;
+    }
+    if (!isStoreOpen(store.hours || "07:00 – 22:30")) {
+      toast.error("Quán hiện đã đóng cửa");
+      return;
+    }
     selectStore(store.id);
     toast.success(`Đã chọn chi nhánh ${store.name} — Bắt đầu gọi món!`);
     void navigate({ to: "/menu" });
@@ -779,10 +788,20 @@ export function Home() {
                 <div>
                   {/* Store status & district */}
                   <div className="mb-3 flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                      <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Đang mở cửa
-                    </span>
+                    {!s.is_active ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+                        🔴 Tạm ngưng
+                      </span>
+                    ) : isStoreOpen(s.hours || "07:00 – 22:30") ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Đang mở cửa
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+                        🔴 Đã đóng cửa
+                      </span>
+                    )}
                     {(s.district || s.city) && (
                       <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
                         {s.district || s.city}
@@ -836,11 +855,28 @@ export function Home() {
                   <Button
                     type="button"
                     size="sm"
-                    className="w-full gap-1.5 font-semibold text-xs shadow-sm"
+                    variant={!s.is_active || !isStoreOpen(s.hours || "07:00 – 22:30") ? "secondary" : "default"}
+                    className={`w-full gap-1.5 font-semibold text-xs shadow-sm ${
+                      !s.is_active || !isStoreOpen(s.hours || "07:00 – 22:30")
+                        ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground"
+                        : ""
+                    }`}
+                    disabled={!s.is_active || !isStoreOpen(s.hours || "07:00 – 22:30")}
+                    title={
+                      !s.is_active
+                        ? "Chi nhánh tạm ngưng"
+                        : !isStoreOpen(s.hours || "07:00 – 22:30")
+                        ? "Quán hiện đã đóng cửa"
+                        : "Đặt tại đây"
+                    }
                     onClick={() => handleOrderAtBranch(s)}
                   >
                     <ShoppingBag className="size-3.5" />
-                    Đặt tại đây
+                    {!s.is_active
+                      ? "Tạm đóng"
+                      : !isStoreOpen(s.hours || "07:00 – 22:30")
+                      ? "Quán hiện đã đóng cửa"
+                      : "Đặt tại đây"}
                   </Button>
                   <Button
                     asChild

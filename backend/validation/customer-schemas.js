@@ -86,6 +86,9 @@ export function validateCustomerRegisterInput(body = {}) {
   if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
     throw new CustomerValidationError('Mật khẩu phải dài từ 8 đến 128 ký tự', 'CUSTOMER_INVALID_PASSWORD');
   }
+  if (body.confirm_password !== undefined && body.confirm_password !== password) {
+    throw new CustomerValidationError('Mật khẩu xác nhận không trùng khớp', 'CUSTOMER_PASSWORD_MISMATCH');
+  }
   return { phone, fullname, password };
 }
 

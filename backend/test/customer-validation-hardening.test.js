@@ -161,6 +161,26 @@ describe('Customer & Order Validation Hardening Suite', () => {
         CustomerValidationError
       );
     });
+
+    it('validates matching confirm_password and rejects mismatching confirm_password', () => {
+      const valid = validateCustomerRegisterInput({
+        phone: '0901234567',
+        fullname: 'Nguyễn Văn An',
+        password: 'Password123!',
+        confirm_password: 'Password123!',
+      });
+      assert.equal(valid.password, 'Password123!');
+
+      assert.throws(
+        () => validateCustomerRegisterInput({
+          phone: '0901234567',
+          fullname: 'Nguyễn Văn An',
+          password: 'Password123!',
+          confirm_password: 'DifferentPassword!',
+        }),
+        /Mật khẩu xác nhận không trùng khớp/
+      );
+    });
   });
 
   describe('validateCreateOrderInput Customer Name and Phone Integration', () => {

@@ -496,6 +496,7 @@ function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [userName, setUserName] = useState('');
   const [userTier, setUserTier] = useState('Đồng');
   const [loading, setLoading] = useState(false);
@@ -617,6 +618,16 @@ function ProfileButton() {
       setError('Mật khẩu phải có ít nhất 8 ký tự');
       return;
     }
+    if (authMode === 'register') {
+      if (!confirmPassword) {
+        setError('Vui lòng nhập lại mật khẩu để xác nhận');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Mật khẩu xác nhận không trùng khớp');
+        return;
+      }
+    }
     setLoading(true);
     setError('');
     try {
@@ -626,7 +637,7 @@ function ProfileButton() {
         login_destination?: 'admin' | 'customer';
       }>(authMode === 'register' ? '/api/auth/register' : '/api/auth/login', {
         phone,
-        ...(authMode === 'register' ? { fullname: cleanName } : {}),
+        ...(authMode === 'register' ? { fullname: cleanName, confirm_password: confirmPassword } : {}),
         password,
       });
 
@@ -689,6 +700,7 @@ function ProfileButton() {
     setLoggedIn(false);
     setPhone('');
     setPassword('');
+    setConfirmPassword('');
     setAuthMode('login');
     setError('');
     setUserName('');
@@ -696,6 +708,8 @@ function ProfileButton() {
   }
 
   if (!loggedIn) {
+    const isRegisterSubmitDisabled = authMode === 'register' && (!confirmPassword || password !== confirmPassword);
+
     return (
       <>
         <Dialog
@@ -706,6 +720,7 @@ function ProfileButton() {
             setAuthMode('login');
             setError('');
             setPassword('');
+            setConfirmPassword('');
           }
         }}
       >
@@ -741,6 +756,17 @@ function ProfileButton() {
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError(''); }}
               />
+              {authMode === 'register' && (
+                <Input
+                  placeholder="Xác nhận mật khẩu"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }}
+                />
+              )}
+              {authMode === 'register' && Boolean(confirmPassword && password !== confirmPassword) && (
+                <p className="text-berry text-xs">Mật khẩu xác nhận chưa trùng khớp</p>
+              )}
               {authMode === 'login' && (
                 <div className="flex justify-end pt-0.5">
                   <button
@@ -756,12 +782,21 @@ function ProfileButton() {
                 </div>
               )}
               {error && <p className="text-berry text-xs">{error}</p>}
-              <Button variant="hero" className="w-full" onClick={handlePasswordAuth} disabled={loading}>
+              <Button
+                variant="hero"
+                className="w-full"
+                onClick={handlePasswordAuth}
+                disabled={loading || isRegisterSubmitDisabled}
+              >
                 {loading ? 'Đang xử lý…' : authMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}
               </Button>
               <button
                 className="text-muted-foreground text-xs text-center w-full underline"
-                onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError(''); }}
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setError('');
+                  setConfirmPassword('');
+                }}
               >
                 {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
               </button>

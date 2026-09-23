@@ -226,7 +226,10 @@ function StoresPage() {
 
   function orderFrom(s: Store) {
     if (!s.is_active) {
-      return toast.error(`${s.name} đang tạm đóng cửa — hãy chọn chi nhánh khác`);
+      return toast.error(`${s.name} đang tạm ngưng phục vụ — hãy chọn chi nhánh khác`);
+    }
+    if (!isStoreOpen(s.hours)) {
+      return toast.error("Quán hiện đã đóng cửa");
     }
     if (branchStatus !== "ready" || !selectBranchStore(s.id)) {
       return toast.error("Danh sách chi nhánh chưa sẵn sàng — vui lòng thử lại");
@@ -402,16 +405,34 @@ function StoresPage() {
                         <Navigation className="size-3.5 shrink-0" /> <span className="truncate">Google Maps</span>
                       </Button>
                       <Button
-                        variant="hero"
+                        variant={!s.is_active || !isStoreOpen(s.hours) ? "secondary" : "hero"}
                         size="sm"
-                        className="w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1"
-                        disabled={!s.is_active}
+                        className={`w-full min-w-0 text-xs sm:text-sm px-2 flex items-center justify-center gap-1 ${
+                          !s.is_active || !isStoreOpen(s.hours)
+                            ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground"
+                            : ""
+                        }`}
+                        disabled={!s.is_active || !isStoreOpen(s.hours)}
+                        title={
+                          !s.is_active
+                            ? "Chi nhánh tạm ngưng"
+                            : !isStoreOpen(s.hours)
+                            ? "Quán hiện đã đóng cửa"
+                            : "Đặt món ngay"
+                        }
                         onClick={(e) => {
                           e.stopPropagation();
                           orderFrom(s);
                         }}
                       >
-                        <ShoppingCart className="size-3.5 shrink-0" /> <span className="truncate">{s.is_active ? "Đặt món" : "Tạm đóng"}</span>
+                        <ShoppingCart className="size-3.5 shrink-0" />
+                        <span className="truncate">
+                          {!s.is_active
+                            ? "Tạm đóng"
+                            : !isStoreOpen(s.hours)
+                            ? "Quán hiện đã đóng cửa"
+                            : "Đặt món"}
+                        </span>
                       </Button>
                     </div>
                   </article>
