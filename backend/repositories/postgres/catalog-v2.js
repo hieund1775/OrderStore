@@ -119,8 +119,8 @@ export function createCatalogV2Repository(database = postgresDb) {
           // 2. Retire any previously archived category holding the same slug or name
           await tx.query(
             `UPDATE categories
-             SET slug = LEFT(slug, 110) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
-                 name = LEFT(name, 110) || ' [archived-' || id::text || ']'
+             SET slug = LEFT(slug, 120) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                 name = LEFT(name, 120) || ' [archived-' || id::text || ']'
              WHERE (slug = $1 OR (parent_id IS NOT DISTINCT FROM $2 AND name = $3)) AND archived_at IS NOT NULL`,
             [targetSlug, parentId, targetName],
           );
@@ -228,8 +228,40 @@ export function createCatalogV2Repository(database = postgresDb) {
         }
       }
 
+      const targetName = data.name !== undefined ? (data.name || '').trim() : current.name;
+      const targetSlug = data.slug !== undefined ? (data.slug || '').trim().toLowerCase() : current.slug;
+
+      const effectiveParentId = data.parent_id !== undefined ? data.parent_id : current.parent_id;
+      if (data.name !== undefined) {
+        if (depth === 0) {
+          const [existingRoot] = await database.query(
+            'SELECT 1 FROM categories WHERE name = $1 AND parent_id IS NULL AND archived_at IS NULL AND id <> $2 LIMIT 1',
+            [targetName, id],
+          );
+          if (existingRoot[0]) {
+            throw new CatalogV2Error('Tên hoặc slug ngành hàng gốc đã tồn tại', 409);
+          }
+        } else {
+          const [existingSub] = await database.query(
+            'SELECT 1 FROM categories WHERE parent_id = $1 AND name = $2 AND archived_at IS NULL AND id <> $3 LIMIT 1',
+            [effectiveParentId, targetName, id],
+          );
+          if (existingSub[0]) {
+            throw new CatalogV2Error('Tên hoặc slug danh mục đã tồn tại', 409);
+          }
+        }
+      }
+
       try {
         return await database.transaction(async (tx) => {
+          // Retire any previously archived category holding the new slug or name
+          await tx.query(
+            `UPDATE categories
+             SET slug = LEFT(slug, 120) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+                 name = LEFT(name, 120) || ' [archived-' || id::text || ']'
+             WHERE (slug = $1 OR (parent_id IS NOT DISTINCT FROM $2 AND name = $3)) AND archived_at IS NOT NULL AND id <> $4`,
+            [targetSlug, effectiveParentId, targetName, id],
+          );
           const [rows] = await tx.query(
             `UPDATE categories
              SET name = COALESCE($1, name),
@@ -310,8 +342,8 @@ export function createCatalogV2Repository(database = postgresDb) {
                -- The legacy schema makes both identifiers globally unique.
                -- Retiring them lets an administrator recreate a deleted test
                -- category without an archived record blocking the new row.
-               name = LEFT(name, 120) || ' [archived-' || id::text || ']',
-               slug = LEFT(slug, 120) || '--archived-' || id::text
+               name = LEFT(name, 120) || ' [archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text || ']',
+               slug = LEFT(slug, 120) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text
            WHERE id = $1
            RETURNING *`,
           [id],
@@ -533,8 +565,8 @@ export function createCatalogV2Repository(database = postgresDb) {
         const targetSlug = data.code.replace(/_/g, '-');
         await tx.query(
           `UPDATE categories
-           SET slug = LEFT(slug, 110) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
-               name = LEFT(name, 110) || ' [archived-' || id::text || ']'
+           SET slug = LEFT(slug, 120) || '--archived-' || id::text || '-' || EXTRACT(EPOCH FROM NOW())::bigint::text,
+               name = LEFT(name, 120) || ' [archived-' || id::text || ']'
            WHERE (slug = $1 OR name = $2) AND archived_at IS NOT NULL`,
           [targetSlug, data.name],
         );
@@ -733,6 +765,19 @@ export function createCatalogV2Repository(database = postgresDb) {
           throw new CatalogV2Error('Tùy chọn không thuộc loại sản phẩm của danh mục', 409);
         }
 
+        // Check duplicate attribute name in this schema
+        if (attributeData.name) {
+          const [dupAttrs] = await tx.query(
+            `SELECT id, name FROM attribute_definitions
+             WHERE schema_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+             LIMIT 1`,
+            [Number(schemaId), attributeData.name.trim()],
+          );
+          if (dupAttrs[0]) {
+            throw new CatalogV2Error(`Tên nhóm tùy chọn "${attributeData.name.trim()}" đã tồn tại trong danh mục`, 409);
+          }
+        }
+
         // Attribute, values, and assignment are intentionally written in this
         // one transaction so a failed assignment cannot leave hidden data that
         // makes a retry fail with a duplicate-code error.
@@ -817,8 +862,17 @@ export function createCatalogV2Repository(database = postgresDb) {
         const attrSets = [];
         const attrParams = [];
         if (attributeData.name) {
+          const [dupAttrs] = await tx.query(
+            `SELECT id FROM attribute_definitions
+             WHERE schema_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) AND id <> $3
+             LIMIT 1`,
+            [attribute.schema_id, attributeData.name.trim(), Number(attributeId)],
+          );
+          if (dupAttrs[0]) {
+            throw new CatalogV2Error(`Tên nhóm tùy chọn "${attributeData.name.trim()}" đã tồn tại trong danh mục`, 409);
+          }
           attrParams.push(attributeData.name.trim());
-          attrSets.push(`name = $${attrParams.length}`);
+          attrSets.push(`name = ${attrParams.length}`);
         }
         if (attributeData.validation_rules !== undefined) {
           attrParams.push(JSON.stringify(attributeData.validation_rules || {}));

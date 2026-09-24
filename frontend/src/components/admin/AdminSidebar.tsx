@@ -61,11 +61,14 @@ export function AdminSidebar({
   collapsed,
   onToggle,
   onNavigate,
+  isMobile,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   onNavigate?: () => void;
+  isMobile?: boolean;
 }) {
+  const isMobileMode = isMobile ?? Boolean(onNavigate);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const user = getUser();
   const role = user?.role as AdminRole | undefined;
@@ -137,22 +140,24 @@ export function AdminSidebar({
           <Leaf className="size-5" />
         </span>
         {!collapsed && (
-          <div className="min-w-0 flex-1">
+          <div className={cn("min-w-0 flex-1", isMobileMode && "pr-8")}>
             <p className="truncate text-sm font-semibold tracking-tight text-foreground">{ADMIN_BRAND_NAME}</p>
             <p className="text-muted-foreground truncate text-xs">Trang quản trị</p>
           </div>
         )}
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-          className={cn(
-            'hover:bg-accent text-muted-foreground hover:text-accent-foreground ml-auto grid size-8 place-items-center rounded-lg transition-colors',
-            collapsed && 'hidden',
-          )}
-        >
-          <PanelLeftClose className="size-4" />
-        </button>
+        {!isMobileMode && (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+            className={cn(
+              'hover:bg-accent text-muted-foreground hover:text-accent-foreground ml-auto grid size-8 place-items-center rounded-lg transition-colors',
+              collapsed && 'hidden',
+            )}
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">

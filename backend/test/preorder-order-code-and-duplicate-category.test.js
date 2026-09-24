@@ -625,5 +625,95 @@ describe('Regression: Preorder Code PO, Normal Code TP, PayOS Description & Dupl
         },
       );
     });
+    it('createCategory retires archived category across any parent_id and succeeds', async () => {
+      let retiredSql = '';
+      let retiredParams = [];
+      const mockDb = {
+        async query(sql, params) {
+          if (sql.includes('UPDATE categories') && sql.includes('archived_at IS NOT NULL')) {
+            retiredSql = sql;
+            retiredParams = params;
+            return [[{ id: 99 }], 1];
+          }
+          if (sql.includes('INSERT INTO categories')) {
+            return [[{ id: 100, name: params[0], slug: params[1], parent_id: params[2], depth: params[3] }], 1];
+          }
+          return [[], 0];
+        },
+      };
+
+      const repo = createCatalogV2Repository(mockDb);
+      const created = await repo.createCategory({
+        name: 'Trà QA',
+        slug: 'tra-qa',
+        parent_id: null,
+        default_fulfillment_lane: 'kitchen',
+      });
+
+      assert.equal(created.name, 'Trà QA');
+      assert.ok(retiredSql.includes('WHERE (slug = $1 OR (parent_id IS NOT DISTINCT FROM $2 AND name = $3)) AND archived_at IS NOT NULL'));
+      assert.deepEqual(retiredParams, ['tra-qa', null, 'Trà QA']);
+    });
+
+    it('updateCategory retires archived category holding the new name/slug and succeeds', async () => {
+      let retiredSql = '';
+      let retiredParams = [];
+      const mockDb = {
+        async query(sql, params) {
+          if (sql.includes('WHERE c.id = $1') || sql.includes('WHERE id = $1')) {
+            return [[{ id: 10, depth: 0, name: 'Trà Cũ', slug: 'tra-cu', parent_id: null, default_fulfillment_lane: 'kitchen' }], 1];
+          }
+          if (sql.includes('UPDATE categories') && sql.includes('archived_at IS NOT NULL')) {
+            retiredSql = sql;
+            retiredParams = params;
+            return [[{ id: 99 }], 1];
+          }
+          if (sql.includes('UPDATE categories') && sql.includes('SET name = COALESCE')) {
+            return [[{ id: 10, name: params[0] || 'Trà QA', slug: params[1] || 'tra-qa' }], 1];
+          }
+          return [[], 0];
+        },
+        async transaction(cb) {
+          return await cb(this);
+        },
+      };
+
+      const repo = createCatalogV2Repository(mockDb);
+      const updated = await repo.updateCategory(10, {
+        name: 'Trà QA',
+        slug: 'tra-qa',
+      });
+
+      assert.equal(updated.name, 'Trà QA');
+      assert.ok(retiredSql.includes('WHERE (slug = $1 OR (parent_id IS NOT DISTINCT FROM $2 AND name = $3)) AND archived_at IS NOT NULL AND id <> $4'));
+      assert.deepEqual(retiredParams, ['tra-qa', null, 'Trà QA', 10]);
+    });
+
+    it('updateCategory detects duplicate name among active root categories => 409', async () => {
+      const mockDb = {
+        async query(sql, params) {
+          if (sql.includes('WHERE c.id = $1') || (sql.includes('FROM categories') && sql.includes('id = $1') && !sql.includes('name = $1'))) {
+            return [[{ id: 10, depth: 0, name: 'Trà Cũ', slug: 'tra-cu', parent_id: null, default_fulfillment_lane: 'kitchen' }], 1];
+          }
+          if (sql.includes('SELECT 1 FROM categories WHERE name = $1 AND parent_id IS NULL AND archived_at IS NULL AND id <> $2')) {
+            return [[{ 1: 1 }], 1];
+          }
+          return [[], 0];
+        },
+      };
+
+      const repo = createCatalogV2Repository(mockDb);
+      await assert.rejects(
+        async () => {
+          await repo.updateCategory(10, { name: 'Trà Đang Hoạt Động Khác' });
+        },
+        (err) => {
+          assert.ok(err instanceof CatalogV2Error);
+          assert.equal(err.status, 409);
+          assert.equal(err.message, 'Tên hoặc slug ngành hàng gốc đã tồn tại');
+          return true;
+        },
+      );
+    });
   });
 });

@@ -291,15 +291,43 @@ export function CatalogOption3BlocksEditor({
 
   const handleSaveOptionGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!groupName.trim()) {
-      toast.error('Vui lòng nhập tên nhóm tùy chọn');
+    const trimmedGroupName = groupName.trim();
+    if (!trimmedGroupName) {
+      toast.error('Vui lòng nhập tên nhóm tùy chọn.');
       return;
     }
-    const cleanOptions = optionsList.filter((o) => o.label.trim().length > 0);
-    if (cleanOptions.length === 0) {
-      toast.error('Vui lòng thêm ít nhất một lựa chọn có tên');
+
+    const normalizedGroupName = trimmedGroupName.toLowerCase();
+    const duplicateGroup = rawAttributes.find(
+      (attr) => attr.id !== editingAttribute?.id && attr.name.trim().toLowerCase() === normalizedGroupName
+    );
+    if (duplicateGroup) {
+      toast.error(`Tên nhóm tùy chọn "${trimmedGroupName}" đã tồn tại trong danh mục.`);
       return;
     }
+
+    if (optionsList.length === 0) {
+      toast.error('Vui lòng thêm ít nhất một lựa chọn.');
+      return;
+    }
+
+    const seenLabels = new Set();
+    for (let i = 0; i < optionsList.length; i++) {
+      const opt = optionsList[i];
+      const trimmedLabel = opt.label.trim();
+      if (!trimmedLabel) {
+        toast.error(`Vui lòng nhập tên cho lựa chọn số ${i + 1}.`);
+        return;
+      }
+      const normalizedLabel = trimmedLabel.toLowerCase();
+      if (seenLabels.has(normalizedLabel)) {
+        toast.error(`Các lựa chọn trong cùng một nhóm không được trùng tên: "${trimmedLabel}"`);
+        return;
+      }
+      seenLabels.add(normalizedLabel);
+    }
+
+    const cleanOptions = optionsList.map((o) => ({ ...o, label: o.label.trim() }));
     if (!schema?.id) {
       toast.error('Chưa có thông tin schema ngành để lưu nhóm tùy chọn');
       return;
@@ -318,8 +346,13 @@ export function CatalogOption3BlocksEditor({
           }
         : {};
 
+      const seenCodes = new Set<string>();
       const values = cleanOptions.map((opt, index) => {
-        const code = opt.code || generateCode(opt.label || `opt_${index}`);
+        let code = opt.code || generateCode(opt.label || `opt_${index}`);
+        if (!code || seenCodes.has(code.toLowerCase())) {
+          code = `${code || 'opt'}_${index + 1}`;
+        }
+        seenCodes.add(code.toLowerCase());
         return {
           id: opt.id,
           code,
@@ -361,7 +394,7 @@ export function CatalogOption3BlocksEditor({
       await onRefresh();
       await loadAssignments();
     } catch (err: any) {
-      toast.error(err.message || `Lỗi khi lưu nhóm tùy chọn "${groupName}"`);
+      toast.error(err?.response?.data?.message || err?.message || `Lỗi khi lưu nhóm tùy chọn "${groupName}"`);
     } finally {
       setModalSaving(false);
     }
@@ -628,7 +661,7 @@ export function CatalogOption3BlocksEditor({
       {/* MODAL TẠO / SỬA NHÓM TÙY CHỌN (BLOCK 1 HOẶC BLOCK 2) */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-          <form onSubmit={handleSaveOptionGroup} className="flex flex-col h-full overflow-hidden">
+          <form onSubmit={handleSaveOptionGroup} noValidate className="flex flex-col h-full overflow-hidden">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <span>
@@ -663,7 +696,6 @@ export function CatalogOption3BlocksEditor({
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   className="h-9 text-xs"
-                  required
                 />
               </div>
 
@@ -728,7 +760,7 @@ export function CatalogOption3BlocksEditor({
                           value={opt.label}
                           onChange={(e) => handleOptionLabelChange(index, e.target.value)}
                           className="h-8 text-xs flex-1 bg-background"
-                          required={index === 0}
+                          
                         />
                         {(modalType === 'paid' || block1HasPrice) && (
                           <Input

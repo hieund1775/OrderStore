@@ -194,6 +194,25 @@ describe('CatalogOption3BlocksEditor Component Suite', () => {
     expect(html).toContain('★ Mặc định');
     expect(html).toContain('100% Đường');
   });
+  it('prevents browser default English validation and validates Vietnamese empty/duplicate errors', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const editorSource = fs.readFileSync(
+      path.resolve(__dirname, '../CatalogOption3BlocksEditor.tsx'),
+      'utf8',
+    );
+
+    // Form must have noValidate to disable browser native English tooltip "Please fill out this field."
+    expect(editorSource).toMatch(/<form[^>]*noValidate/);
+
+    // Modal input for group name must NOT have required attribute
+    expect(editorSource).not.toMatch(/id="modal-group-name"[^>]*required/);
+
+    // Vietnamese toast messages must be present
+    expect(editorSource).toContain('Vui lòng nhập tên nhóm tùy chọn.');
+    expect(editorSource).toContain('Tên nhóm tùy chọn "${trimmedGroupName}" đã tồn tại trong danh mục.');
+    expect(editorSource).toContain('Vui lòng thêm ít nhất một lựa chọn.');
+    expect(editorSource).toContain('Vui lòng nhập tên cho lựa chọn số ${i + 1}.');
+    expect(editorSource).toContain('Các lựa chọn trong cùng một nhóm không được trùng tên: "${trimmedLabel}"');
+  });
 });
-
-

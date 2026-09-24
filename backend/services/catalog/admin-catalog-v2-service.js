@@ -110,8 +110,31 @@ export function createAdminCatalogV2Service({
       if (!Array.isArray(input.values) || input.values.length === 0) {
         throw new CatalogV2Error('Nhóm tùy chọn cần có ít nhất một giá trị', 400);
       }
+      const rawName = String(input.name || '').trim();
+      if (!rawName || rawName.length < 1 || rawName.length > 200) {
+        throw new CatalogV2Error('Vui lòng nhập tên nhóm tùy chọn.', 400);
+      }
       const attribute = validateAttributeDefinitionInput(input);
       const values = input.values.map(validateAttributeValueInput);
+
+      const seenLabels = new Set();
+      for (const val of values) {
+        const normLabel = val.label.trim().toLowerCase();
+        if (seenLabels.has(normLabel)) {
+          throw new CatalogV2Error(`Các lựa chọn trong cùng một nhóm không được trùng tên: "${val.label.trim()}"`, 400);
+        }
+        seenLabels.add(normLabel);
+      }
+
+      const seenCodes = new Set();
+      for (let i = 0; i < values.length; i++) {
+        let code = values[i].code.trim().toLowerCase();
+        if (seenCodes.has(code)) {
+          code = `${code}_${i + 1}`;
+          values[i].code = code;
+        }
+        seenCodes.add(code);
+      }
       return await schemaRepository.createCategoryOptionGroup(
         Number(categoryId),
         schemaId,
@@ -135,9 +158,9 @@ export function createAdminCatalogV2Service({
       if (!Number.isInteger(normalizedAttrId) || normalizedAttrId <= 0) {
         throw new CatalogV2Error('Mã nhóm tùy chọn không hợp lệ', 400);
       }
-      const name = input.name ? String(input.name).trim() : undefined;
+      const name = input.name !== undefined ? String(input.name).trim() : undefined;
       if (name !== undefined && (!name || name.length < 1 || name.length > 200)) {
-        throw new CatalogV2Error('Tên nhóm tùy chọn phải từ 1 đến 200 ký tự', 400);
+        throw new CatalogV2Error('Vui lòng nhập tên nhóm tùy chọn.', 400);
       }
 
       let values = undefined;
@@ -145,11 +168,19 @@ export function createAdminCatalogV2Service({
         if (input.values.length === 0) {
           throw new CatalogV2Error('Nhóm tùy chọn cần có ít nhất một giá trị', 400);
         }
+        const seenLabels = new Set();
+        const seenCodes = new Set();
         values = input.values.map((v, idx) => {
           const label = String(v.label || '').trim();
           if (!label || label.length < 1 || label.length > 200) {
             throw new CatalogV2Error('Tên lựa chọn phải từ 1 đến 200 ký tự', 400);
           }
+          const normLabel = label.toLowerCase();
+          if (seenLabels.has(normLabel)) {
+            throw new CatalogV2Error(`Các lựa chọn trong cùng một nhóm không được trùng tên: "${label}"`, 400);
+          }
+          seenLabels.add(normLabel);
+
           const rawCode = v.code
             ? String(v.code).trim().toLowerCase()
             : String(label)
@@ -159,7 +190,12 @@ export function createAdminCatalogV2Service({
                 .replace(/[đĐ]/g, 'd')
                 .replace(/[^a-z0-9_-]/g, '_')
                 .trim();
-          const code = (rawCode && /^[a-z0-9_-]+$/.test(rawCode)) ? rawCode : `opt_${idx}_${Date.now()}`;
+          let code = (rawCode && /^[a-z0-9_-]+$/.test(rawCode)) ? rawCode : `opt_${idx}_${Date.now()}`;
+          if (seenCodes.has(code)) {
+            code = `${code}_${idx + 1}`;
+          }
+          seenCodes.add(code);
+
           return {
             id: v.id ? Number(v.id) : undefined,
             code,

@@ -6,6 +6,8 @@ const root = path.resolve(process.cwd(), 'src');
 const headerContent = fs.readFileSync(path.join(root, 'components/site/Header.tsx'), 'utf8');
 const smartCartContent = fs.readFileSync(path.join(root, 'components/cart/SmartCartDrawer.tsx'), 'utf8');
 const datTruocContent = fs.readFileSync(path.join(root, 'routes/dat-truoc.tsx'), 'utf8');
+const adminSidebarContent = fs.readFileSync(path.join(root, 'components/admin/AdminSidebar.tsx'), 'utf8');
+const adminRouteContent = fs.readFileSync(path.join(root, 'routes/admin.tsx'), 'utf8');
 
 describe('UI Fixes Verification Suite', () => {
   describe('Header branch switch protection', () => {
@@ -55,6 +57,15 @@ describe('UI Fixes Verification Suite', () => {
       expect(cartItemSection).toContain('Trash2');
       expect(cartItemSection).toContain('Giảm số lượng');
       expect(cartItemSection).toContain('Tăng số lượng');
+    });
+  });
+
+  describe('Admin sidebar mobile drawer toggle overlap fix', () => {
+    it('hides PanelLeftClose toggle on mobile to prevent overlapping with Sheet close button', () => {
+      expect(adminSidebarContent).toContain('isMobileMode');
+      expect(adminSidebarContent).toContain('!isMobileMode &&');
+      expect(adminSidebarContent).toContain('PanelLeftClose');
+      expect(adminRouteContent).toContain('isMobile');
     });
   });
 });

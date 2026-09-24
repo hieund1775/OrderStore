@@ -13,6 +13,9 @@ test('createCatalogV2Repository.updateCategoryOptionGroup updates name and synch
           if (statement.includes('SELECT ad.*')) {
             return [[{ id: 42, name: 'Độ ngọt cũ', role: 'modifier', schema_id: 1 }]];
           }
+          if (statement.includes('SELECT id') && statement.includes('LOWER(TRIM(name))')) {
+            return [[]];
+          }
           if (statement.includes('UPDATE attribute_definitions')) {
             return [[{ id: 42, name: params[0], role: 'modifier' }]];
           }
@@ -103,5 +106,103 @@ test('createAdminCatalogV2Service rejects deleting non-modifier or invalid ids',
   await assert.rejects(
     () => service.deleteCategoryOptionGroup(5, 'invalid'),
     /Mã nhóm tùy chọn không hợp lệ/,
+  );
+});
+test('createAdminCatalogV2Service rejects creating group with duplicate choice labels', async () => {
+  const service = createAdminCatalogV2Service();
+  await assert.rejects(
+    () => service.createCategoryOptionGroup(10, {
+      schema_id: 1,
+      code: 'color',
+      name: 'Màu sắc',
+      role: 'modifier',
+      input_type: 'single_select',
+      values: [
+        { code: 'den_1', label: 'Đen' },
+        { code: 'den_2', label: 'đen' },
+      ],
+    }),
+    /Các lựa chọn trong cùng một nhóm không được trùng tên: "đen"/,
+  );
+});
+
+test('createAdminCatalogV2Service rejects updating group with duplicate choice labels', async () => {
+  const service = createAdminCatalogV2Service();
+  await assert.rejects(
+    () => service.updateCategoryOptionGroup(10, 42, {
+      values: [
+        { label: 'Size L' },
+        { label: 'size l' },
+      ],
+    }),
+    /Các lựa chọn trong cùng một nhóm không được trùng tên: "size l"/,
+  );
+});
+
+test('createAdminCatalogV2Service rejects empty group name', async () => {
+  const service = createAdminCatalogV2Service();
+  await assert.rejects(
+    () => service.createCategoryOptionGroup(10, {
+      schema_id: 1,
+      code: 'size',
+      name: '   ',
+      role: 'modifier',
+      input_type: 'single_select',
+      values: [{ code: 's', label: 'S' }],
+    }),
+    /Vui lòng nhập tên nhóm tùy chọn./,
+  );
+
+  await assert.rejects(
+    () => service.updateCategoryOptionGroup(10, 42, {
+      name: '',
+    }),
+    /Vui lòng nhập tên nhóm tùy chọn./,
+  );
+});
+
+test('createCatalogV2Repository rejects creating group with duplicate group name in schema', async () => {
+  const database = {
+    async transaction(callback) {
+      return await callback({
+        async query(statement) {
+          if (statement.includes('SELECT c.id AS category_id')) {
+            return [[{ category_id: 10, category_product_type_id: 1, schema_id: 1, schema_product_type_id: 1, schema_status: 'active' }]];
+          }
+          if (statement.includes('SELECT id, name FROM attribute_definitions')) {
+            return [[{ id: 99, name: 'Màu sắc' }]];
+          }
+          throw new Error(`Unexpected SQL: ${statement}`);
+        },
+      });
+    },
+  };
+  const repo = createCatalogV2Repository(database);
+  await assert.rejects(
+    () => repo.createCategoryOptionGroup(10, 1, { code: 'color_2', name: 'Màu sắc' }, [{ code: 'red', label: 'Đỏ' }]),
+    /Tên nhóm tùy chọn "Màu sắc" đã tồn tại trong danh mục/,
+  );
+});
+
+test('createCatalogV2Repository rejects updating group with duplicate group name in schema', async () => {
+  const database = {
+    async transaction(callback) {
+      return await callback({
+        async query(statement) {
+          if (statement.includes('SELECT ad.*')) {
+            return [[{ id: 42, name: 'Màu', role: 'modifier', schema_id: 1 }]];
+          }
+          if (statement.includes('SELECT id FROM attribute_definitions') && statement.includes('LOWER(TRIM(name))')) {
+            return [[{ id: 43 }]];
+          }
+          throw new Error(`Unexpected SQL: ${statement}`);
+        },
+      });
+    },
+  };
+  const repo = createCatalogV2Repository(database);
+  await assert.rejects(
+    () => repo.updateCategoryOptionGroup(10, 42, { name: 'Màu sắc khác' }),
+    /Tên nhóm tùy chọn "Màu sắc khác" đã tồn tại trong danh mục/,
   );
 });

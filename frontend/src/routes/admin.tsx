@@ -124,6 +124,7 @@ function AdminLayout() {
             collapsed={false}
             onToggle={() => {}}
             onNavigate={() => setMobileOpen(false)}
+            isMobile
           />
         </SheetContent>
       </Sheet>

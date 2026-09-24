@@ -292,6 +292,7 @@ test('category option-group creation is one rollback-safe transaction', async ()
             if (statement.includes('FROM categories c')) {
               return [[{ category_id: 7, category_product_type_id: 3, schema_id: 12, schema_product_type_id: 3, schema_status: 'draft' }]];
             }
+            if (statement.includes('SELECT id, name FROM attribute_definitions')) return [[]];
             if (statement.includes('INSERT INTO attribute_definitions')) return [[{ id: 99, code: 'size', name: 'Size' }]];
             if (statement.includes('INSERT INTO attribute_values')) return [[{ id: 199 }]];
             if (statement.includes('INSERT INTO category_attribute_assignments')) {
