@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost, clearToken, createIdempotencyKey, getUser } from "@/lib/api";
-import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, teaLines, fruitGroups, baseOptions, sugarOptions, iceOptions, formatOrderItemOptions } from "@/lib/data";
+import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, baseOptions, sugarOptions, iceOptions, formatOrderItemOptions } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/pos")({
   head: () => ({
@@ -263,9 +263,25 @@ function PosPage() {
     };
   }, [selectedStoreId, loadTables]);
 
+  const kitchenCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of products) {
+      if (p.line && p.line.trim()) {
+        set.add(p.line.trim());
+      }
+    }
+    return Array.from(set);
+  }, [products]);
+
+  useEffect(() => {
+    if (activeTab !== "Tất cả" && !kitchenCategories.includes(activeTab)) {
+      setActiveTab("Tất cả");
+    }
+  }, [kitchenCategories, activeTab]);
+
   const filteredProducts = useMemo(() => {
     if (activeTab === "Tất cả") return products;
-    return products.filter(p => p.line === activeTab);
+    return products.filter((p) => p.line === activeTab);
   }, [products, activeTab]);
 
   const cartTotal = useMemo(() => {
@@ -678,13 +694,13 @@ function PosPage() {
             </span>
             <Select value={activeTab} onValueChange={setActiveTab}>
               <SelectTrigger className="w-[160px] sm:w-[200px] h-9 bg-background font-semibold shadow-sm rounded-xl text-xs sm:text-sm">
-                <SelectValue placeholder="Chọn dòng trà" />
+                <SelectValue placeholder="Chọn danh mục" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
                 <SelectItem value="Tất cả">Tất cả món</SelectItem>
-                {teaLines.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
+                {kitchenCategories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
                   </SelectItem>
                 ))}
               </SelectContent>

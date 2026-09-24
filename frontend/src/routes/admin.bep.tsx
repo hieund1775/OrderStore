@@ -195,6 +195,8 @@ export function KdsPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
   const [autoPrint, setAutoPrint] = useState(() => isAutoPrintEnabled());
   const [pairingOpen, setPairingOpen] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<ActivePrinterConfig | null>(() => getActivePrinterConfig());
@@ -301,7 +303,7 @@ export function KdsPage() {
       const fresh = rows.filter((o) => !prevIds.current.has(o.id));
       if (fresh.length > 0) {
         setNewIds((s) => ({ ...s, ...Object.fromEntries(fresh.map((o) => [o.id, true])) }));
-        if (soundEnabled) {
+        if (soundEnabledRef.current) {
           playDingDong();
           toast.success(`Có ${fresh.length} đơn mới!`, { description: fresh[0].order_code });
         }
@@ -335,7 +337,7 @@ export function KdsPage() {
       setFetchError(err instanceof Error ? err.message : "Mất kết nối máy chủ");
       throw err;
     }
-  }, [page, soundEnabled, storeFilter]);
+  }, [page, storeFilter]);
 
   // Polling realtime (Non-overlapping) & Storage Event Listener cho Standalone mode
   useEffect(() => {

@@ -64,4 +64,12 @@ describe('Admin POS resilient bootstrap specification and contract', () => {
     expect(mobileCartHook).toBeGreaterThan(-1);
     expect(mobileCartHook).toBeLessThan(loadingReturn);
   });
+
+  it('eliminates mock teaLines and dynamically derives kitchenCategories from kitchen products', () => {
+    expect(source).not.toContain('teaLines');
+    expect(source).not.toContain('Chọn dòng trà');
+    expect(source).toContain('const kitchenCategories = useMemo');
+    expect(source).toContain('Chọn danh mục');
+    expect(source).toContain('kitchenCategories.map');
+  });
 });
