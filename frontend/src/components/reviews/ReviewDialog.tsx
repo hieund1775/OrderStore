@@ -228,19 +228,22 @@ export function ReviewDialog({
 
           {/* Comment */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Nhận xét (không bắt buộc)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Nhận xét (không bắt buộc)
+              </label>
+              <span className="text-xs text-muted-foreground">Tối đa ~50 từ (250 ký tự)</span>
+            </div>
             <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Chia sẻ cảm nhận của bạn về sản phẩm..."
-              rows={4}
-              maxLength={2000}
+              placeholder="Chia sẻ cảm nhận súc tích của bạn về sản phẩm..."
+              rows={3}
+              maxLength={250}
               className="resize-none"
             />
-            <p className="mt-1 text-right text-xs text-gray-400">
-              {comment.length}/2000
+            <p className="mt-1 text-right text-xs text-muted-foreground">
+              {comment.length}/250 ký tự
             </p>
           </div>
 
