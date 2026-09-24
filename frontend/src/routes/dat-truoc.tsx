@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { CalendarClock, CreditCard, Edit2, Minus, Plus, ShoppingBag, Store, Ticket, Trash2 } from 'lucide-react';
+import { CalendarClock, CreditCard, Edit2, Loader2, Minus, Plus, ShoppingBag, Store, Ticket, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -372,37 +372,59 @@ function PreorderCheckoutPage() {
       <div className="mb-3 flex items-center gap-2 font-semibold"><ShoppingBag className="size-4" />Chọn món cho đơn đặt trước</div>
       {!selectedStore ? <p className="text-sm text-muted-foreground">Hãy chọn chi nhánh trước để xem và thêm món.</p> : null}
       {selectedStore && selectedStorePreorderAvailable !== true ? <p className="text-sm text-amber-700">Chi nhánh này chưa nhận đặt trước nên chưa thể thêm món cho preorder.</p> : null}
-      {selectedStorePreorderAvailable === true && catalogLoading ? <p className="text-sm text-muted-foreground">Đang tải thực đơn…</p> : null}
-      {selectedStorePreorderAvailable === true && catalogError ? <p className="text-sm text-destructive">{catalogError}</p> : null}
-      {selectedStorePreorderAvailable === true && !catalogLoading && !catalogError ? <>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1.5 pt-1 no-scrollbar whitespace-nowrap scroll-smooth touch-pan-x min-w-0" aria-label="Lọc theo danh mục">
-            <Button
-              type="button"
-              size="sm"
-              variant={activeCatalogCategory ? 'outline' : 'default'}
-              className="shrink-0 whitespace-nowrap"
-              onClick={() => setActiveCatalogCategory('')}
-            >
-              Tất cả món
-            </Button>
-            {preorderCategories.map((category) => (
+      {selectedStore && selectedStorePreorderAvailable === true ? (
+        <>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1.5 pt-1 no-scrollbar whitespace-nowrap scroll-smooth touch-pan-x min-w-0" aria-label="Lọc theo danh mục">
               <Button
-                key={category.id}
                 type="button"
                 size="sm"
-                variant={activeCatalogCategory === category.slug ? 'default' : 'outline'}
+                variant={activeCatalogCategory ? 'outline' : 'default'}
                 className="shrink-0 whitespace-nowrap"
-                onClick={() => setActiveCatalogCategory(category.slug)}
+                onClick={() => setActiveCatalogCategory('')}
               >
-                {category.name}
+                Tất cả món
               </Button>
-            ))}
+              {preorderCategories.map((category) => (
+                <Button
+                  key={category.id}
+                  type="button"
+                  size="sm"
+                  variant={activeCatalogCategory === category.slug ? 'default' : 'outline'}
+                  className="shrink-0 whitespace-nowrap"
+                  onClick={() => setActiveCatalogCategory(category.slug)}
+                >
+                  {category.name}
+                </Button>
+              ))}
+            </div>
+            <Input
+              value={catalogSearch}
+              onChange={(event) => setCatalogSearch(event.target.value)}
+              placeholder="Tìm món…"
+              className="sm:max-w-52"
+              aria-label="Tìm món preorder"
+            />
           </div>
-          <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Tìm món…" className="sm:max-w-52" aria-label="Tìm món preorder" />
-        </div>
-        {catalogProducts.length === 0 ? <p className="text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p> : <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">{catalogProducts.map((product) => <ProductCard key={product.id} product={product} usePreorder />)}</div>}
-      </> : null}
+
+          {catalogLoading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" />
+              <span>Đang tải thực đơn…</span>
+            </div>
+          ) : catalogError ? (
+            <p className="py-6 text-sm text-destructive">{catalogError}</p>
+          ) : catalogProducts.length === 0 ? (
+            <p className="py-6 text-sm text-muted-foreground">Không có món phù hợp tại chi nhánh này.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {catalogProducts.map((product) => (
+                <ProductCard key={product.id} product={product} usePreorder />
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
     </section>
 
     <section className="rounded-xl border bg-card p-5">
@@ -431,18 +453,7 @@ function PreorderCheckoutPage() {
                   className="size-14 rounded-lg object-cover border shrink-0 mt-0.5 bg-muted"
                 />
                 <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-start justify-between gap-1">
-                    <p className="truncate font-semibold text-sm">{item.name}</p>
-                    <button
-                      type="button"
-                      onClick={() => setEditingItem(item)}
-                      className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors shrink-0 cursor-pointer"
-                      title="Chỉnh sửa size, đường, đá, topping..."
-                    >
-                      <Edit2 className="size-3" />
-                      <span>Sửa</span>
-                    </button>
-                  </div>
+                  <p className="truncate font-semibold text-sm">{item.name}</p>
 
                   {hasModifiers ? (
                     <p className="text-xs text-muted-foreground line-clamp-2">
@@ -484,8 +495,20 @@ function PreorderCheckoutPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 self-center">
-                  <div className="flex items-center gap-1 rounded-md border">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingItem(item)}
+                    className="h-7 px-2 text-xs font-medium text-primary border-primary/30 hover:bg-primary/10 hover:text-primary gap-1 cursor-pointer"
+                    title="Chỉnh sửa size, đường, đá, topping..."
+                  >
+                    <Edit2 className="size-3" />
+                    <span>Sửa</span>
+                  </Button>
+
+                  <div className="flex items-center gap-0.5 rounded-md border bg-muted/20">
                     <Button
                       type="button"
                       variant="ghost"

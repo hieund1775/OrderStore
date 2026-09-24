@@ -150,14 +150,14 @@ export function SmartCartDrawer({ children }: { children?: React.ReactNode }) {
 
         <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
           {/* Header */}
-          <SheetHeader className="border-b px-5 py-4">
-            <div className="flex items-center justify-between">
+          <SheetHeader className="border-b pl-5 pr-14 py-4">
+            <div className="flex items-center justify-between gap-3">
               <SheetTitle className="font-display flex items-center gap-2 text-lg">
                 <ShoppingCart className="size-5 text-primary" />
                 <span>Giỏ Hàng ({count} món)</span>
               </SheetTitle>
               {items.length > 0 && (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none shrink-0 whitespace-nowrap">
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}

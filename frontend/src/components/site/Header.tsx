@@ -35,6 +35,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -98,8 +108,11 @@ function Logo() {
 
 function BranchSelector() {
   const { stores, selectedStoreId, status, selectStore } = useBranch();
+  const { items, clear } = useCart();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [pendingStoreId, setPendingStoreId] = useState<string | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
   const placeholder =
     status === 'loading'
@@ -110,33 +123,77 @@ function BranchSelector() {
           ? 'Chưa có chi nhánh'
           : 'Chọn chi nhánh';
 
-  const handleSelectStore = (value: string) => {
-    if (!selectStore(value)) return;
+  const executeSwitchBranch = (targetStoreId: string) => {
+    if (!selectStore(targetStoreId)) return;
     if (pathname === '/menu') {
-      void navigate({ to: '/menu', search: { store_id: value }, replace: true });
+      void navigate({ to: '/menu', search: { store_id: targetStoreId }, replace: true });
     } else if (pathname === '/thanh-toan') {
       void navigate({ to: '/thanh-toan', search: {}, replace: true });
     }
   };
 
+  const handleSelectStore = (value: string) => {
+    if (value === String(selectedStoreId)) return;
+
+    if (items.length > 0) {
+      setPendingStoreId(value);
+      setConfirmDialogOpen(true);
+      return;
+    }
+
+    executeSwitchBranch(value);
+  };
+
+  const handleConfirmSwitch = () => {
+    if (pendingStoreId) {
+      clear();
+      executeSwitchBranch(pendingStoreId);
+      toast.info('Đã chuyển chi nhánh và làm mới giỏ hàng.');
+    }
+    setPendingStoreId(null);
+    setConfirmDialogOpen(false);
+  };
+
+  const handleCancelSwitch = () => {
+    setPendingStoreId(null);
+    setConfirmDialogOpen(false);
+  };
+
   return (
-    <Select
-      value={selectedStoreId == null ? undefined : String(selectedStoreId)}
-      onValueChange={handleSelectStore}
-      disabled={status !== 'ready' || stores.length === 0}
-    >
-      <SelectTrigger className="h-9 w-full max-w-56 rounded-full border-dashed text-xs">
-        <MapPin className="text-primary size-3.5 shrink-0" />
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {stores.map((s) => (
-          <SelectItem key={s.id} value={String(s.id)}>
-            {s.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Select
+        value={selectedStoreId == null ? undefined : String(selectedStoreId)}
+        onValueChange={handleSelectStore}
+        disabled={status !== 'ready' || stores.length === 0}
+      >
+        <SelectTrigger className="h-9 w-full max-w-56 rounded-full border-dashed text-xs">
+          <MapPin className="text-primary size-3.5 shrink-0" />
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {stores.map((s) => (
+            <SelectItem key={s.id} value={String(s.id)}>
+              {s.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận đổi chi nhánh</AlertDialogTitle>
+            <AlertDialogDescription>
+              Thay đổi chi nhánh sẽ xóa các món đang có trong giỏ hàng. Bạn có muốn tiếp tục?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelSwitch}>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSwitch}>Tiếp tục</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
