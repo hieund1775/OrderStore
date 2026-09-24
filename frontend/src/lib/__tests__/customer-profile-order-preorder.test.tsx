@@ -112,6 +112,27 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
       const contentMatches = [...content.matchAll(/<TabsContent[^>]*value="([^"]+)"/g)].map((m) => m[1]);
       expect(contentMatches).toEqual(expectedOrder);
     });
+
+    it('autoloads customer orders on mount to synchronize badge count without defaulting to (0)', () => {
+      const hoSoPath = path.resolve(process.cwd(), 'src/routes/ho-so.tsx');
+      const content = fs.readFileSync(hoSoPath, 'utf8');
+
+      expect(content).toContain('const [initialOrdersLoaded, setInitialOrdersLoaded] = useState(false);');
+      expect(content).toContain('setInitialOrdersLoaded(true);');
+      expect(content).toContain("initialOrdersLoaded ? `(${userOrders.length})` : ''");
+      expect(content).toMatch(/useEffect\(\(\) => \{\s*if \(isLoggedIn && user\?\.id\) \{\s*void fetchUserOrders\(\);/);
+    });
+
+    it('provides prominent login CTA card and clear header guide in ho-so.tsx when unauthenticated', () => {
+      const hoSoPath = path.resolve(process.cwd(), 'src/routes/ho-so.tsx');
+      const content = fs.readFileSync(hoSoPath, 'utf8');
+
+      expect(content).toContain('Bạn chưa đăng nhập tài khoản');
+      expect(content).toContain('openCustomerLoginModal()');
+      expect(content).toContain('Đăng nhập ngay');
+      expect(content).toContain('Tài khoản');
+      expect(content).toContain('ở góc trên bên phải');
+    });
   });
 
   describe('2. Preorder Route Compatibility Redirect', () => {
@@ -381,6 +402,71 @@ describe('Customer Profile: Order and Preorder Tabs Suite', () => {
       await act(async () => { await Promise.resolve(); });
       expect(container?.textContent).toContain('B-ONLY');
       expect(container?.textContent).not.toContain('A-ONLY');
+    });
+
+    it('toggles review panel directly in completed preorder card instead of redirecting to orders tab', async () => {
+      customerSession.current = { userId: 1, token: 'token-a' };
+      vi.mocked(api.apiGet).mockImplementation(async (url: string) => {
+        if (url.includes('/api/preorders/mine')) {
+          return {
+            preorders: [
+              {
+                id: 88,
+                preorder_code: 'PO-8888',
+                status: 'COMPLETED',
+                store_name: 'TeaPlus Q1',
+                orders: [
+                  {
+                    id: 101,
+                    order_code: 'ORD-101',
+                    current_status: 'COMPLETED',
+                    total: 50000,
+                    items: [
+                      {
+                        id: 201,
+                        product_id: 15,
+                        product_name: 'Trà Sữa Oolong',
+                        qty: 2,
+                        size_label: 'L',
+                        line_total: 50000,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          };
+        }
+        if (url.includes('/api/reviews/check-eligibility')) {
+          return { canReview: true, hasReviewed: false };
+        }
+        return {};
+      });
+
+      await act(async () => {
+        root?.render(<CustomerPreordersTab isActive={true} />);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(container?.textContent).toContain('PO-8888');
+      const reviewBtn = Array.from(container?.querySelectorAll('button') || []).find(
+        (b) => b.textContent?.includes('Đánh giá món')
+      );
+      expect(reviewBtn).toBeDefined();
+
+      // Click to toggle inline review panel
+      await act(async () => {
+        reviewBtn?.click();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(container?.textContent).toContain('Đánh giá món cho đơn đặt trước #PO-8888');
+      expect(container?.textContent).toContain('Trà Sữa Oolong');
+      expect(container?.textContent).toContain('Đóng đánh giá');
     });
   });
 });

@@ -416,4 +416,40 @@ describe('Category Navigation Components & Adaptive Mega Menu Suite', () => {
       expect(inactiveChild?.className).not.toContain('bg-primary/10');
     });
   });
+
+  describe('Horizontal Scrollbar Prevention & Layout Integrity', () => {
+    it('ensures MegaMenu container and inner grid enforce overflow-x-hidden', () => {
+      act(() => {
+        root.render(<MegaMenu categoryTree={richDataset} />);
+      });
+
+      const megaMenuRegion = container.querySelector('[role="region"]');
+      expect(megaMenuRegion).not.toBeNull();
+      expect(megaMenuRegion?.className).toContain('overflow-x-hidden');
+
+      const gridContainer = megaMenuRegion?.querySelector('.grid');
+      expect(gridContainer).not.toBeNull();
+      expect(gridContainer?.className).toContain('overflow-x-hidden');
+      expect(gridContainer?.className).toContain('overflow-y-auto');
+    });
+
+    it('ensures MegaMenuGroup uses flexible min-w-0 w-full without rigid column min-widths', () => {
+      const rootNode = richDataset[0];
+      act(() => {
+        root.render(
+          <MegaMenuGroup
+            root={rootNode}
+            subcategories={rootNode.children || []}
+          />
+        );
+      });
+
+      const groupDiv = container.firstElementChild as HTMLElement;
+      expect(groupDiv).not.toBeNull();
+      expect(groupDiv.className).toContain('min-w-0');
+      expect(groupDiv.className).toContain('w-full');
+      expect(groupDiv.className).not.toContain('min-w-[140px]');
+    });
+  });
 });
+

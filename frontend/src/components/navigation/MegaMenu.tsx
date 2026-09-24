@@ -22,7 +22,7 @@ export function MegaMenu({
     <div
       role="region"
       aria-label="Mega menu danh mục sản phẩm"
-      className="w-[720px] max-w-[90vw] lg:w-[840px] xl:w-[920px] rounded-2xl border border-border/80 bg-popover/98 p-6 text-popover-foreground shadow-2xl backdrop-blur-xl animate-in fade-in-0 slide-in-from-top-1 duration-200"
+      className="w-[720px] max-w-[90vw] lg:w-[840px] xl:w-[920px] rounded-2xl border border-border/80 bg-popover/98 p-6 text-popover-foreground shadow-2xl backdrop-blur-xl animate-in fade-in-0 slide-in-from-top-1 duration-200 overflow-x-hidden"
     >
       {/* Top Banner / Standalone "Tất cả sản phẩm" */}
       <div className="flex items-center justify-between border-b border-border/60 pb-4 mb-5">
@@ -45,7 +45,7 @@ export function MegaMenu({
       </div>
 
       {/* Responsive Columns Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 max-h-[65vh] overflow-y-auto pr-1">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 max-h-[65vh] overflow-y-auto overflow-x-hidden pr-2 scrollbar-thin">
         {rootCategories.map((root) => {
           const subcategories =
             root.children && root.children.length > 0

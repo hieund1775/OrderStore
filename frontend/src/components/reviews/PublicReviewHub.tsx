@@ -147,7 +147,7 @@ export function PublicReviewHub({
     <div className="space-y-8">
       {/* Summary Header */}
       <div className="rounded-3xl border bg-card/80 backdrop-blur p-6 sm:p-8 shadow-sm">
-        <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10 items-center">
+        <div className="grid gap-6 md:grid-cols-[260px_1fr] md:gap-8 items-center">
           {/* Left Column: Big rating number */}
           <div className="flex flex-col items-center justify-center text-center border-b md:border-b-0 md:border-r border-border/60 pb-6 md:pb-0 md:pr-8">
             <span className="font-display text-5xl sm:text-6xl font-extrabold text-foreground tracking-tight">
@@ -165,8 +165,8 @@ export function PublicReviewHub({
                 />
               ))}
             </div>
-            <p className="text-muted-foreground text-xs mt-2">
-              Dựa trên <span className="font-semibold text-foreground">{totalReviews.toLocaleString('vi-VN')}</span> đánh giá từ khách hàng đã mua
+            <p className="text-muted-foreground text-xs mt-2 max-w-[220px] leading-relaxed">
+              Dựa trên <span className="font-semibold text-foreground">{totalReviews.toLocaleString('vi-VN')}</span> đánh giá từ <span className="whitespace-nowrap">khách hàng</span> đã mua
             </p>
           </div>
 
@@ -187,7 +187,7 @@ export function PublicReviewHub({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-12 text-right text-muted-foreground font-mono text-[11px]">
+                  <span className="min-w-16 shrink-0 text-right text-muted-foreground font-mono text-[11px] whitespace-nowrap">
                     {pct}% ({count})
                   </span>
                 </div>

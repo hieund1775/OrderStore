@@ -69,7 +69,7 @@ export function normalizeSugarLevel(raw?: string | null): string {
 
   if (/đường/i.test(trimmed)) {
     const cleaned = trimmed.replace(/\s*đường/gi, '').trim();
-    return cleaned ? `${cleaned} Đường` : 'Đường';
+    return cleaned ? `${cleaned} Đường` : '';
   }
   return `${trimmed} Đường`;
 }
@@ -85,9 +85,12 @@ export function normalizeIceLevel(raw?: string | null): string {
   if (/^(nóng|hot)$/i.test(trimmed)) {
     return 'Nóng';
   }
+  if (/^đá\s+riêng$/i.test(trimmed)) {
+    return 'Đá Riêng';
+  }
   if (/đá/i.test(trimmed)) {
     const cleaned = trimmed.replace(/\s*đá/gi, '').trim();
-    return cleaned ? `${cleaned} Đá` : 'Đá';
+    return cleaned ? `${cleaned} Đá` : '';
   }
   return `${trimmed} Đá`;
 }

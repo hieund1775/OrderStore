@@ -104,4 +104,44 @@ describe('Checkout Item Editing & Dynamic Configurator Contract', () => {
 
     expect(container).toBeDefined();
   });
+
+  describe('Option String Concatenation & Duplicate Prevention Contract', () => {
+    it('verifies thanh-toan.tsx uses normalizers and avoids duplicate "Đường đường" or "Đá đá"', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const thanhToanPath = path.resolve(process.cwd(), 'src/routes/thanh-toan.tsx');
+      const content = fs.readFileSync(thanhToanPath, 'utf8');
+
+      // Ensure normalizers are imported
+      expect(content).toContain('normalizeSugarLevel');
+      expect(content).toContain('normalizeIceLevel');
+
+      // Ensure bug pattern is completely eliminated
+      expect(content).not.toContain('{i.sugar} đường');
+      expect(content).not.toContain('{i.ice} đá');
+      expect(content).not.toContain('{item.sugar} đường');
+      expect(content).not.toContain('{item.ice} đá');
+    });
+
+    it('normalizes sugar and ice levels correctly without repeating words', async () => {
+      const { normalizeSugarLevel, normalizeIceLevel } = await import('@/lib/data');
+
+      expect(normalizeSugarLevel('100% Đường')).toBe('100% Đường');
+      expect(normalizeSugarLevel('100% đường')).toBe('100% Đường');
+      expect(normalizeSugarLevel('100%')).toBe('100% Đường');
+      expect(normalizeSugarLevel('Không đường')).toBe('Không Đường');
+      expect(normalizeSugarLevel('đường')).toBe('');
+      expect(normalizeSugarLevel('')).toBe('');
+      expect(normalizeSugarLevel(null)).toBe('');
+
+      expect(normalizeIceLevel('100% Đá')).toBe('100% Đá');
+      expect(normalizeIceLevel('100% đá')).toBe('100% Đá');
+      expect(normalizeIceLevel('100%')).toBe('100% Đá');
+      expect(normalizeIceLevel('Nóng')).toBe('Nóng');
+      expect(normalizeIceLevel('Đá riêng')).toBe('Đá Riêng');
+      expect(normalizeIceLevel('đá')).toBe('');
+      expect(normalizeIceLevel('')).toBe('');
+      expect(normalizeIceLevel(null)).toBe('');
+    });
+  });
 });

@@ -35,7 +35,7 @@ export function MobileCartBar() {
   const { count, subtotal } = useCart();
   if (!session || count === 0) return null;
   return (
-    <div className="bg-card/95 fixed inset-x-0 bottom-0 z-50 border-t p-3 backdrop-blur md:hidden">
+    <div className="bg-card/95 fixed inset-x-0 bottom-16 z-40 border-t p-3 backdrop-blur md:hidden shadow-md">
       <div className="flex items-center gap-3">
         <div className="relative">
           <ShoppingCart className="text-primary size-6" />

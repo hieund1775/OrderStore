@@ -198,7 +198,7 @@ describe('Customer & Order Validation Hardening Suite', () => {
       assert.equal(result.storeId, 1);
     });
 
-    it('uses the customer name contract for checkout, including a one-word Google name', () => {
+    it('uses the customer name contract for checkout, including one-word and alphanumeric names (e.g. QA Customer 1)', () => {
       const oneWordPayload = {
         store_id: 1,
         customer_name: 'an',
@@ -208,7 +208,16 @@ describe('Customer & Order Validation Hardening Suite', () => {
       const normalized = validateCreateOrderInput(oneWordPayload);
       assert.equal(normalized.customerName, 'An');
 
-      const invalidNamePayload = { ...oneWordPayload, customer_name: 'tran 123' };
+      const qaCustomerPayload = {
+        store_id: 1,
+        customer_name: 'qa customer 1',
+        customer_phone: '0987654321',
+        items: [{ product_id: 1, qty: 1 }],
+      };
+      const qaNormalized = validateCreateOrderInput(qaCustomerPayload);
+      assert.equal(qaNormalized.customerName, 'Qa Customer 1');
+
+      const invalidNamePayload = { ...oneWordPayload, customer_name: 'tran @ 123' };
       assert.throws(() => validateCreateOrderInput(invalidNamePayload));
 
       const invalidPhonePayload = {

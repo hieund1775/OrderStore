@@ -8,16 +8,19 @@ import {
   PackageOpen,
   RefreshCw,
   Loader2,
+  Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { OrderReviewPanel } from '@/components/reviews/OrderReviewPanel';
 import { apiGet, apiPost } from '@/lib/api';
 import { openCustomerLoginModal, useCustomerSession } from '@/lib/customer-session';
 import { vnd } from '@/lib/data';
 
 export type PreorderItem = {
   id: number;
+  product_id?: number;
   product_name: string;
   qty: number;
   size_label?: string;
@@ -267,6 +270,7 @@ export function normalizeCustomerPreorder(raw: any): CustomerPreorder | null {
 
       return {
         id: Number(ri?.id) || itemIdx + 1,
+        product_id: Number(ri?.product_id) || 0,
         product_name: String(ri?.product_name || 'Sản phẩm').trim(),
         qty: Number(ri?.qty) > 0 ? Number(ri.qty) : 1,
         size_label: ri?.size_label ? String(ri.size_label).trim() : undefined,
@@ -335,6 +339,7 @@ export function CustomerPreordersTab({
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
   const [requestingCheckin, setRequestingCheckin] = useState<number | null>(null);
+  const [reviewingPreorderId, setReviewingPreorderId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const hasLoadedRef = useRef(false);
@@ -703,12 +708,13 @@ export function CustomerPreordersTab({
                 <Button
                   size="sm"
                   variant="outline"
-                  asChild
                   className="border-primary text-primary hover:bg-primary/10"
+                  onClick={() =>
+                    setReviewingPreorderId(reviewingPreorderId === preorder.id ? null : preorder.id)
+                  }
                 >
-                  <Link to="/ho-so" search={{ tab: 'orders' }}>
-                    Đánh giá món
-                  </Link>
+                  <Star className="mr-1 size-3.5 fill-amber-400 text-amber-500" />
+                  {reviewingPreorderId === preorder.id ? 'Đóng đánh giá' : 'Đánh giá món'}
                 </Button>
               ) : null}
 
@@ -729,6 +735,34 @@ export function CustomerPreordersTab({
                 </Button>
               ) : null}
             </div>
+
+            {reviewingPreorderId === preorder.id && preorder.orders?.length > 0 && (
+              <div className="mt-4 border-t pt-4 space-y-3">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <Star className="size-4 fill-amber-400 text-amber-500" />
+                  <span>Đánh giá món cho đơn đặt trước #{preorder.preorder_code}</span>
+                </div>
+                {preorder.orders.map((order) => {
+                  const reviewableItems = (order.items || []).map((it) => ({
+                    orderItemId: Number(it.id),
+                    productId: Number(it.product_id || 0),
+                    name: `${it.qty}x ${it.product_name}${it.size_label ? ` (${it.size_label})` : ''}`,
+                  }));
+
+                  if (reviewableItems.length === 0) return null;
+
+                  return (
+                    <OrderReviewPanel
+                      key={order.id}
+                      orderCode={order.order_code}
+                      items={reviewableItems}
+                      canReview={true}
+                      className="mt-2 bg-muted/30 p-3 rounded-lg border"
+                    />
+                  );
+                })}
+              </div>
+            )}
           </article>
         );
       })}

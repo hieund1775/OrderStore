@@ -136,9 +136,7 @@ export function CategoryMenu({
       {isOpen && (
         <div
           id="category-desktop-menu"
-          className={`absolute top-full pt-2 z-50 animate-in fade-in-0 duration-150 ${
-            isMega ? 'left-0' : 'left-0'
-          }`}
+          className="absolute top-full left-0 pt-2 z-50 animate-in fade-in-0 duration-150 overflow-x-hidden max-w-[95vw]"
         >
           {isLoading ? (
             <div className="w-56 rounded-xl border border-border/80 bg-popover/98 p-4 text-xs text-muted-foreground shadow-xl backdrop-blur-xl text-center">

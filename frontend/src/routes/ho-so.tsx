@@ -26,6 +26,7 @@ import { useCart, mapConfiguredItemToCartItem } from "@/lib/cart";
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from "@/lib/wishlist";
 import { apiGet, apiPost, apiPatch, setCustomerUser, getCustomerToken, resolveProductConfiguration } from "@/lib/api";
 import { explicitCustomerLogout } from "@/lib/auth-logout";
+import { openCustomerLoginModal } from "@/lib/customer-session";
 import { useBranch } from "@/lib/branch";
 import { DynamicProductConfigurator } from "@/components/catalog/DynamicProductConfigurator";
 import { vnd, resolveProductImage } from "@/lib/data";
@@ -210,6 +211,7 @@ function Profile() {
   const [activeTab, setActiveTab] = useState(search?.tab || "orders");
   const [userOrders, setUserOrders] = useState<ProfileOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [initialOrdersLoaded, setInitialOrdersLoaded] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   const [emailEditing, setEmailEditing] = useState(false);
@@ -339,6 +341,7 @@ function Profile() {
     setNextCursor(null);
     setHasMore(false);
     setUserOrders([]);
+    setInitialOrdersLoaded(false);
   }, [isLoggedIn, user?.id]);
 
   const fetchUserOrders = useCallback(async (isBackground = false) => {
@@ -387,9 +390,17 @@ function Profile() {
       if (isBackground) throw err;
     } finally {
       ordersInFlightRef.current = false;
+      setInitialOrdersLoaded(true);
       if (!isBackground) setOrdersLoading(false);
     }
   }, [cursorStack, isLoggedIn, pageIndex, user?.id]);
+
+  // Autoload orders on mount to sync tab badge immediately, and refetch when switching to orders tab
+  useEffect(() => {
+    if (isLoggedIn && user?.id) {
+      void fetchUserOrders();
+    }
+  }, [fetchUserOrders, isLoggedIn, user?.id]);
 
   useEffect(() => {
     if (isLoggedIn && user?.id && activeTab === 'orders') {
@@ -461,11 +472,30 @@ function Profile() {
           title="Hồ sơ cá nhân"
           desc="Đăng nhập để xem thông tin tài khoản"
         />
-        <div className="container-page flex flex-col items-center justify-center py-20">
-          <p className="text-muted-foreground mb-4 text-sm">Bạn chưa đăng nhập</p>
-          <p className="text-muted-foreground text-xs">
-            Nhấn vào icon <LogIn className="inline size-3" /> ở góc phải trên để đăng nhập.
-          </p>
+        <div className="container-page flex flex-col items-center justify-center py-16 sm:py-24 text-center">
+          <div className="mx-auto w-full max-w-md rounded-3xl border bg-card p-8 sm:p-10 shadow-sm flex flex-col items-center">
+            <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner">
+              <UserIcon className="size-8" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">Bạn chưa đăng nhập tài khoản</h2>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+              Vui lòng đăng nhập để xem thông tin cá nhân, điểm tích lũy thành viên, thông báo và lịch sử đơn hàng của bạn.
+            </p>
+            <Button
+              onClick={() => openCustomerLoginModal()}
+              size="lg"
+              className="mt-6 w-full max-w-xs font-semibold shadow-sm hover:shadow"
+            >
+              <LogIn className="size-4 mr-2" /> Đăng nhập ngay
+            </Button>
+            <p className="mt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-center gap-1.5 leading-normal">
+              <span>Hoặc bấm biểu tượng tài khoản</span>
+              <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted px-1.5 py-0.5 rounded-md border text-[11px]">
+                <UserIcon className="size-3 text-primary" /> Tài khoản
+              </span>
+              <span>ở góc trên bên phải</span>
+            </p>
+          </div>
         </div>
       </>
     );
@@ -557,8 +587,12 @@ function Profile() {
             >
               <ShoppingCart className="size-3.5 sm:size-4 shrink-0 text-primary" />
               <span className="truncate">
-                <span className="sm:hidden">Đơn hàng ({userOrders.length})</span>
-                <span className="hidden sm:inline">Lịch sử đơn ({userOrders.length})</span>
+                <span className="sm:hidden">
+                  Đơn hàng {initialOrdersLoaded ? `(${userOrders.length})` : ''}
+                </span>
+                <span className="hidden sm:inline">
+                  Lịch sử đơn {initialOrdersLoaded ? `(${userOrders.length})` : ''}
+                </span>
               </span>
             </TabsTrigger>
 

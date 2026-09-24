@@ -18,7 +18,7 @@ export function MegaMenuGroup({
   const isRootActive = isRootCategoryActive(root, currentCategorySlug);
 
   return (
-    <div className="flex flex-col space-y-2.5 min-w-[140px] max-w-[220px]">
+    <div className="flex flex-col space-y-2.5 min-w-0 w-full">
       {/* Root Category Heading Link */}
       <Link
         to="/menu"

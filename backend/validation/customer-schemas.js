@@ -43,7 +43,10 @@ export function normalizeAndValidatePhone(rawPhone, { required = true } = {}) {
   return str;
 }
 
-export function normalizeAndValidateFullName(rawName, { required = true, allowSingleWord = false } = {}) {
+export function normalizeAndValidateFullName(
+  rawName,
+  { required = true, allowSingleWord = false, allowAlphanumeric = false } = {},
+) {
   if (rawName === undefined || rawName === null || rawName === '') {
     if (required) throw new CustomerValidationError('Họ và tên không được để trống', 'CUSTOMER_INVALID_NAME');
     return null;
@@ -58,11 +61,18 @@ export function normalizeAndValidateFullName(rawName, { required = true, allowSi
     .join(' ');
 
   const words = clean ? clean.split(' ') : [];
-  const hasOnlyLetters = words.every((word) => /^[\p{L}\p{M}]+$/u.test(word));
+  const hasValidChars = allowAlphanumeric
+    ? words.every((word) => /^[\p{L}\p{M}0-9]+$/u.test(word))
+    : words.every((word) => /^[\p{L}\p{M}]+$/u.test(word));
   const hasRequiredWordCount = allowSingleWord ? words.length >= 1 : words.length >= 2;
 
-  if (clean.length < 2 || clean.length > 50 || !hasRequiredWordCount || !hasOnlyLetters) {
-    throw new CustomerValidationError('Họ và tên không hợp lệ (từ 2 đến 50 ký tự, chỉ gồm chữ cái và khoảng trắng)', 'CUSTOMER_INVALID_NAME');
+  if (clean.length < 2 || clean.length > 50 || !hasRequiredWordCount || !hasValidChars) {
+    throw new CustomerValidationError(
+      allowAlphanumeric
+        ? 'Họ và tên không hợp lệ (từ 2 đến 50 ký tự, chỉ gồm chữ cái, chữ số và khoảng trắng)'
+        : 'Họ và tên không hợp lệ (từ 2 đến 50 ký tự, chỉ gồm chữ cái và khoảng trắng)',
+      'CUSTOMER_INVALID_NAME',
+    );
   }
   return clean;
 }

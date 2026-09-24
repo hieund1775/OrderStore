@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Bike, MapPin, QrCode, Settings2, Store, Ticket, Trash2 } from "lucide-react";
+import { Bike, MapPin, QrCode, Settings2, Store, Ticket, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,8 @@ import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/site/PageHeader";
 import { useCart, type CartItem } from "@/lib/cart";
 import { useBranch } from "@/lib/branch";
-import { vnd } from "@/lib/data";
+import { isStoreOpen } from "@/lib/store-hours";
+import { vnd, normalizeSugarLevel, normalizeIceLevel } from "@/lib/data";
 import { apiGet, apiPost, createIdempotencyKey, getCustomerToken, getCustomerUser } from "@/lib/api";
 import { getCustomerSession, useCustomerSession, openCustomerLoginModal } from "@/lib/customer-session";
 import { getOrderRequestHeaders } from "@/lib/order-access";
@@ -317,6 +318,22 @@ function Checkout() {
     }
     if (checkoutStoreId != null) previousStoreIdRef.current = checkoutStoreId;
   }, [checkoutStoreId]);
+
+  // When takeaway is selected, ensure default branch is an open store if available
+  useEffect(() => {
+    if (method === "takeaway" && !boundTableInfo && branchStatus === "ready" && storeOptions.length > 0) {
+      const currentStore = storeOptions.find((s) => s.id === selectedStoreId);
+      const isCurrentOpen = currentStore ? isStoreOpen(currentStore.hours || "") : false;
+      if (!isCurrentOpen) {
+        const firstOpen = storeOptions.find(
+          (s) => s.is_active !== false && isStoreOpen(s.hours || "")
+        );
+        if (firstOpen && firstOpen.id !== selectedStoreId) {
+          selectStore(firstOpen.id);
+        }
+      }
+    }
+  }, [method, boundTableInfo, branchStatus, storeOptions, selectedStoreId, selectStore]);
 
   const inFlightPaymentStatusRef = useRef(new Map());
 
@@ -708,8 +725,10 @@ function Checkout() {
 
     const isVnPhone = /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone);
     const isIntlPhone = /^\+[1-9][0-9]{7,14}$/.test(cleanPhone);
-    if (!isTableQrCheckout && (cleanName.length < 2 || cleanName.length > 50)) {
-      return toast.error("Họ và tên phải dài từ 2 đến 50 ký tự");
+    const nameWords = cleanName ? cleanName.split(' ') : [];
+    const hasValidNameChars = nameWords.length > 0 && nameWords.every((word) => /^[\p{L}\p{M}0-9]+$/u.test(word));
+    if (!isTableQrCheckout && (cleanName.length < 2 || cleanName.length > 50 || !hasValidNameChars)) {
+      return toast.error("Họ và tên không hợp lệ (từ 2 đến 50 ký tự, chỉ gồm chữ cái, chữ số và khoảng trắng)");
     }
     if (!isTableQrCheckout && (!cleanPhone || (!isVnPhone && !isIntlPhone))) {
       return toast.error("Số điện thoại không hợp lệ (yêu cầu 10 số Việt Nam hoặc chuẩn quốc tế có mã vùng +)");
@@ -724,6 +743,12 @@ function Checkout() {
     }
     if (checkoutStoreId == null) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");
+    }
+    if (!isTableQrCheckout && method === "takeaway") {
+      const targetStore = storeOptions.find((s) => s.id === checkoutStoreId);
+      if (targetStore && targetStore.is_active !== false && !isStoreOpen(targetStore.hours || "")) {
+        return toast.error("Chi nhánh đã chọn hiện đã đóng cửa. Vui lòng chọn chi nhánh khác đang mở.");
+      }
     }
     if (boundTableInfo && checkoutStoreId !== boundTableInfo.table.store_id) {
       return toast.error("Món đã chọn không thuộc chi nhánh của bàn hiện tại");
@@ -1241,9 +1266,20 @@ function Checkout() {
                                 </div>
                               )}
                             </div>
-                            <p className="text-muted-foreground text-xs">
-                              Size {i.size} · {i.base} · {i.sugar} đường · {i.ice} đá
-                            </p>
+                            {(() => {
+                              const details: string[] = [];
+                              if (i.size) details.push(i.size.toLowerCase().startsWith('size ') ? i.size : `Size ${i.size}`);
+                              if (i.base) details.push(i.base);
+                              const sugarText = normalizeSugarLevel(i.sugar);
+                              if (sugarText) details.push(sugarText);
+                              const iceText = normalizeIceLevel(i.ice);
+                              if (iceText) details.push(iceText);
+                              return details.length > 0 ? (
+                                <p className="text-muted-foreground text-xs">
+                                  {details.join(" · ")}
+                                </p>
+                              ) : null;
+                            })()}
                             {i.toppings && i.toppings.length > 0 && (
                               <p className="text-muted-foreground text-xs">
                                 Topping: {i.toppings.join(", ")}
@@ -1399,13 +1435,40 @@ function Checkout() {
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {storeOptions.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
+                      {storeOptions.map((s) => {
+                        const isOpen = s.is_active !== false && isStoreOpen(s.hours || "");
+                        return (
+                          <SelectItem
+                            key={s.id}
+                            value={String(s.id)}
+                            disabled={!isOpen}
+                          >
+                            <span className="flex items-center justify-between gap-2 w-full">
+                              <span>{s.name}</span>
+                              {!isOpen && (
+                                <span className="text-xs text-destructive font-medium">
+                                  (Đã đóng cửa)
+                                </span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
+                  {(() => {
+                    const currentStore = storeOptions.find((s) => s.id === effectiveStoreId);
+                    const isClosed = currentStore && (!isStoreOpen(currentStore.hours || "") || currentStore.is_active === false);
+                    if (isClosed) {
+                      return (
+                        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive">
+                          <AlertTriangle className="size-4 shrink-0" />
+                          <span>Chi nhánh này hiện đã đóng cửa. Vui lòng chọn chi nhánh khác đang mở để nhận món.</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {boundTableInfo && (
                     <p className="text-muted-foreground text-xs">
                       Bàn {boundTableInfo.table.name} — {boundTableInfo.table.store_name}

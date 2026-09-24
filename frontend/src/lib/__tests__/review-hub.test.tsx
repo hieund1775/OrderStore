@@ -111,4 +111,15 @@ describe('Public Review Hub & Admin Moderation Contract', () => {
     expect(container?.textContent).toContain('Trà Đào Cam Sả');
     expect(container?.textContent).toContain('Phản hồi từ cửa hàng');
   });
+
+  it('applies whitespace-nowrap and min-w-16 to rating distribution percentage labels', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const hubPath = path.resolve(process.cwd(), 'src/components/reviews/PublicReviewHub.tsx');
+    const content = fs.readFileSync(hubPath, 'utf8');
+
+    expect(content).toContain('whitespace-nowrap');
+    expect(content).toContain('min-w-16');
+    expect(content).toContain('md:grid-cols-[260px_1fr]');
+  });
 });

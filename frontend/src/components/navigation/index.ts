@@ -3,3 +3,4 @@ export { MegaMenu } from './MegaMenu';
 export { MegaMenuGroup } from './MegaMenuGroup';
 export { SimpleCategoryDropdown } from './SimpleCategoryDropdown';
 export { MobileCategoryMenu } from './MobileCategoryMenu';
+export { MobileBottomNav } from './MobileBottomNav';

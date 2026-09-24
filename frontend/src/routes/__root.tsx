@@ -17,6 +17,7 @@ import { BranchProvider } from "@/lib/branch";
 import { Header } from "@/components/site/Header";
 import { Footer } from "@/components/site/Footer";
 import { FloatingWidgets, MobileCartBar } from "@/components/site/FloatingWidgets";
+import { MobileBottomNav } from "@/components/navigation/MobileBottomNav";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -172,6 +173,7 @@ function RootComponent() {
                 <Footer />
                 <FloatingWidgets />
                 <MobileCartBar />
+                <MobileBottomNav />
               </div>
             )}
             <Toaster position="top-right" offset="80px" richColors />
