@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiPost, getToken, setToken, getUser, setUser } from "@/lib/api";
+import { apiPost, getToken, setToken, getUser, setUser, getRoleLandingRoute } from "@/lib/api";
 import { brand } from "@/lib/data";
 
 export const Route = createFileRoute("/admin/login")({
@@ -27,9 +27,10 @@ function AdminLogin() {
 
   // Auto-redirect if already logged in
   useEffect(() => {
-    const existing = getUser() || getToken();
-    if (existing) {
-      navigate({ to: "/admin" });
+    const user = getUser();
+    const token = getToken();
+    if (user || token) {
+      navigate({ to: getRoleLandingRoute(user?.role) as any });
     } else {
       setChecking(false);
     }
@@ -50,7 +51,7 @@ function AdminLogin() {
       setToken(res.token);
       if (res.user) setUser(res.user as any);
       toast.success(`Đăng nhập thành công! Xin chào ${res.user.fullname}`);
-      navigate({ to: "/admin" });
+      navigate({ to: getRoleLandingRoute((res.user as any)?.role) as any });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {

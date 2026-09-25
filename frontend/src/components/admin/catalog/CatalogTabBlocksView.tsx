@@ -729,8 +729,8 @@ export function CatalogTabBlocksView({
             </div>
           </div>
 
-          <div className="overflow-hidden border rounded-xl bg-background">
-            <table className="w-full text-xs text-left">
+          <div className="overflow-x-auto border rounded-xl bg-background">
+            <table className="w-full text-xs text-left min-w-[640px]">
               <thead className="bg-muted/50 border-b text-muted-foreground font-bold uppercase text-[10px] tracking-wider">
                 <tr>
                   <th className="p-3.5">Sản Phẩm</th>

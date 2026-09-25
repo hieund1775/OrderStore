@@ -522,16 +522,16 @@ export function Home() {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="bg-card rounded-2xl border p-3 sm:p-4 h-[350px] flex flex-col justify-between animate-pulse"
+                className="bg-card rounded-2xl border p-3 sm:p-4 pb-4 sm:pb-5 h-auto min-h-[380px] flex flex-col justify-between overflow-hidden animate-pulse"
               >
-                <div className="bg-muted aspect-square w-full rounded-xl" />
+                <div className="bg-muted aspect-square w-full rounded-xl shrink-0" />
                 <div className="space-y-2 mt-3 flex-1">
                   <div className="bg-muted h-4 w-3/4 rounded" />
                   <div className="bg-muted h-3 w-1/2 rounded" />
                   <div className="bg-muted h-3 w-1/3 rounded" />
                   <div className="bg-muted h-5 w-1/2 rounded mt-2" />
                 </div>
-                <div className="bg-muted h-9 w-full rounded-xl mt-3" />
+                <div className="bg-muted h-9 w-full rounded-xl mt-3 shrink-0" />
               </div>
             ))}
           </div>

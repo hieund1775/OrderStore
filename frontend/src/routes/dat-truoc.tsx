@@ -64,6 +64,18 @@ function isValidPhone(phone: string): boolean {
   return /^(0)(3[2-9]|5[25689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(str);
 }
 
+export function parseHoursRange(hoursStr?: string | null) {
+  if (!hoursStr || typeof hoursStr !== 'string') return null;
+  const match = hoursStr.trim().match(/^(\d{1,2}):(\d{2})\s*[-–—~]\s*(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const openHour = parseInt(match[1], 10);
+  const openMinute = parseInt(match[2], 10);
+  const closeHour = parseInt(match[3], 10);
+  const closeMinute = parseInt(match[4], 10);
+  if (openHour < 0 || openHour > 23 || closeHour < 0 || closeHour > 24) return null;
+  return { openHour, openMinute, closeHour, closeMinute };
+}
+
 function PreorderCheckoutPage() {
   const navigate = useNavigate();
   const { selectedItems, selectedSubtotal, removeItem, removeItems, setQty, updateItem } = usePreorderCart();
@@ -177,22 +189,25 @@ function PreorderCheckoutPage() {
   );
 
   const slotRangeText = useMemo(() => {
-    if (!availability?.slots || availability.slots.length === 0) return '09:00–23:00';
-    const startHour = availability.slots[0].hour;
-    const lastHour = availability.slots[availability.slots.length - 1].hour;
-    return `${String(startHour).padStart(2, '0')}:00–${String(lastHour + 1).padStart(2, '0')}:00`;
-  }, [availability?.slots]);
+    if (availability?.slots && availability.slots.length > 0) {
+      const startHour = availability.slots[0].hour;
+      const lastHour = availability.slots[availability.slots.length - 1].hour;
+      return `${String(startHour).padStart(2, '0')}:00–${String(lastHour + 1).padStart(2, '0')}:00`;
+    }
+    const parsed = parseHoursRange(selectedStore?.hours);
+    if (parsed) {
+      const start = parsed.openMinute === 0 ? parsed.openHour : parsed.openHour + 1;
+      const end = Math.max(start + 1, parsed.closeHour <= 22 ? parsed.closeHour - 1 : parsed.closeHour);
+      return `${String(start).padStart(2, '0')}:00–${String(end).padStart(2, '0')}:00`;
+    }
+    return '08:00–21:00';
+  }, [availability?.slots, selectedStore?.hours]);
 
   const storeOperatingHoursText = useMemo(() => {
     const raw = (selectedStore?.hours || '').trim();
-    // If store hours contains a known typo (e.g. 08:00 - 09:00 instead of 21:00) or is missing,
-    // synchronize accurately with slotRangeText or default to 08:00 - 21:00
-    if (raw && (raw.includes('08:00') || raw.includes('8:00')) && (raw.includes('09:00') || raw.includes('9:00'))) {
-      return slotRangeText !== '09:00–23:00' ? slotRangeText.replace('–', ' - ') : '08:00 - 21:00';
-    }
-    if (raw) return raw;
-    return slotRangeText !== '09:00–23:00' ? slotRangeText.replace('–', ' - ') : '08:00 - 21:00';
-  }, [selectedStore?.hours, slotRangeText]);
+    if (raw) return raw.replace('–', ' - ');
+    return '08:00 - 22:00';
+  }, [selectedStore?.hours]);
 
   useEffect(() => {
     const user = getCustomerUser();
@@ -273,6 +288,11 @@ function PreorderCheckoutPage() {
     if (date < vietnamToday()) { toast.error('Không thể đặt trước cho ngày trong quá khứ.'); return; }
     const selectedSlot = availability?.slots.find((slot) => String(slot.hour) === hour && slot.available);
     if (!selectedSlot) { toast.error('Khung giờ không còn phù hợp. Với giờ gần hơn 3 tiếng, vui lòng đặt đơn thường.'); return; }
+    const parsedHours = parseHoursRange(selectedStore?.hours);
+    if (parsedHours && (Number(hour) < parsedHours.openHour || (Number(hour) + 1) > parsedHours.closeHour)) {
+      toast.error('Khung giờ đã chọn nằm ngoài giờ mở cửa của chi nhánh.');
+      return;
+    }
     setSubmitting(true);
     try {
       const [products, sizes, toppings] = await Promise.all([
@@ -359,7 +379,26 @@ function PreorderCheckoutPage() {
         )}
       </div>
       {noAvailableSlotsToday && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm md:col-span-2 lg:col-span-3"><p>Hôm nay đã hết khung giờ nhận đặt trước. Vui lòng chọn ngày tiếp theo.</p><Button type="button" variant="link" className="h-auto px-0 py-1" onClick={() => setDate(vietnamTomorrow())}>Chọn ngày mai ({vietnamTomorrow().split('-').reverse().join('/')})</Button></div>}
-      <div><Label>Khung giờ nhận ({slotRangeText})</Label><Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}><SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger><SelectContent>{availability?.slots.map((slot) => <SelectItem key={slot.hour} value={String(slot.hour)} disabled={!slot.available}>{String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{slot.available ? '' : ' · không khả dụng'}</SelectItem>)}</SelectContent></Select></div>
+      <div>
+        <Label>Khung giờ nhận ({slotRangeText})</Label>
+        <Select value={hour} onValueChange={setHour} disabled={selectedStorePreorderAvailable !== true}>
+          <SelectTrigger><SelectValue placeholder="Chọn khung giờ" /></SelectTrigger>
+          <SelectContent>
+            {availability?.slots.map((slot) => {
+              const parsed = parseHoursRange(selectedStore?.hours);
+              const isOutOfHours = parsed
+                ? slot.hour < parsed.openHour || (slot.hour + 1) > parsed.closeHour
+                : false;
+              const isDisabled = !slot.available || isOutOfHours;
+              return (
+                <SelectItem key={slot.hour} value={String(slot.hour)} disabled={isDisabled}>
+                  {String(slot.hour).padStart(2, '0')}:00–{String(slot.hour + 1).padStart(2, '0')}:00{isDisabled ? ' · không khả dụng' : ''}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
       <div><Label><Ticket className="mr-1 inline size-4" />Mã voucher (áp dụng đặt trước)</Label><Input value={voucherCode} onChange={(event) => setVoucherCode(event.target.value.toUpperCase())} placeholder="Ví dụ: PREORDER10" /></div>
       <div><Label>Tên người nhận</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
       <div><Label>Số điện thoại</Label><Input type="tel" maxLength={15} value={phone} placeholder="Ví dụ: 0901234567" onChange={(event) => setPhone(event.target.value)} />{phone.trim() && (!isValidPhone(phone.trim()) || phone.trim().length > 15) && <p className="mt-1 text-xs text-destructive">Số điện thoại không hợp lệ (10 chữ số, bắt đầu bằng 03, 05, 07, 08, 09).</p>}</div>

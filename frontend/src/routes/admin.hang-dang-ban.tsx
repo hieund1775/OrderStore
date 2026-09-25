@@ -277,7 +277,7 @@ export function AdminHangDangBanPage() {
           Đang tải dữ liệu hàng bán chi nhánh...
         </div>
       ) : (
-        <>
+        <div className="space-y-3">
           <BranchOfferTable
             offers={offers}
             storeId={effectiveStoreId}
@@ -293,9 +293,10 @@ export function AdminHangDangBanPage() {
               itemLabel="SKU"
               onPageChange={setPage}
               loading={loading}
+              className="!mt-2 pt-2"
             />
           )}
-        </>
+        </div>
       )}
     </div>
   );

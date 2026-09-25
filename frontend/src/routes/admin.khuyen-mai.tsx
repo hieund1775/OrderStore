@@ -283,6 +283,11 @@ function PromotionsAdminPage() {
 
   async function toggleActive(p: Promotion, active: boolean) {
     if (!canManage) return;
+    const statusInfo = getPromotionStatus(p);
+    if (active && (statusInfo.variant === "expired" || statusInfo.variant === "exhausted")) {
+      toast.error(`Không thể bật mã đã ${statusInfo.label.toLowerCase()}`);
+      return;
+    }
     try {
       await apiPut(`/admin/promotions/${p.id}`, { is_active: active });
       setPromos((prev) => prev.map((x) => (x.id === p.id ? { ...x, is_active: active } : x)));
@@ -373,12 +378,22 @@ function PromotionsAdminPage() {
                       <div className="flex items-center justify-between pt-2 border-t border-dashed gap-2">
                         <div className="flex items-center gap-2">
                           <Switch
-                            checked={p.is_active}
+                            checked={statusInfo.variant === "expired" || statusInfo.variant === "exhausted" ? false : p.is_active}
+                            disabled={statusInfo.variant === "expired" || statusInfo.variant === "exhausted"}
                             onCheckedChange={(v) => toggleActive(p, v)}
                             aria-label={`Bật/tắt mã ${p.code}`}
+                            title={
+                              statusInfo.variant === "expired" || statusInfo.variant === "exhausted"
+                                ? `Mã đã ${statusInfo.label.toLowerCase()}, công tắc bị khóa`
+                                : `Bật/tắt mã ${p.code}`
+                            }
                           />
                           <span className="text-xs text-muted-foreground font-medium">
-                            {p.is_active ? "Đang bật" : "Đang tắt"}
+                            {statusInfo.variant === "expired" || statusInfo.variant === "exhausted"
+                              ? statusInfo.label
+                              : p.is_active
+                              ? "Đang bật"
+                              : "Đang tắt"}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -467,9 +482,15 @@ function PromotionsAdminPage() {
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1.5">
                               <Switch
-                                checked={p.is_active}
+                                checked={statusInfo.variant === "expired" || statusInfo.variant === "exhausted" ? false : p.is_active}
+                                disabled={statusInfo.variant === "expired" || statusInfo.variant === "exhausted"}
                                 onCheckedChange={(v) => toggleActive(p, v)}
                                 aria-label={`Bật/tắt mã ${p.code}`}
+                                title={
+                                  statusInfo.variant === "expired" || statusInfo.variant === "exhausted"
+                                    ? `Mã đã ${statusInfo.label.toLowerCase()}, công tắc bị khóa`
+                                    : `Bật/tắt mã ${p.code}`
+                                }
                               />
                               <Button
                                 variant="ghost"

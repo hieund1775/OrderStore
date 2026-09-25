@@ -135,28 +135,40 @@ export function AdminSidebar({
         collapsed ? 'w-[76px]' : 'w-[264px]',
       )}
     >
-      <div className="flex h-16 items-center gap-2 border-b px-4">
-        <span className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-xl">
-          <Leaf className="size-5" />
-        </span>
-        {!collapsed && (
-          <div className={cn("min-w-0 flex-1", isMobileMode && "pr-8")}>
-            <p className="truncate text-sm font-semibold tracking-tight text-foreground">{ADMIN_BRAND_NAME}</p>
-            <p className="text-muted-foreground truncate text-xs">Trang quản trị</p>
-          </div>
-        )}
-        {!isMobileMode && (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-            className={cn(
-              'hover:bg-accent text-muted-foreground hover:text-accent-foreground ml-auto grid size-8 place-items-center rounded-lg transition-colors',
-              collapsed && 'hidden',
+      <div className={cn("flex h-16 items-center border-b", collapsed ? "justify-center px-2" : "gap-2 px-4")}>
+        {!collapsed ? (
+          <>
+            <span className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-xl">
+              <Leaf className="size-5" />
+            </span>
+            <div className={cn("min-w-0 flex-1", isMobileMode && "pr-8")}>
+              <p className="truncate text-sm font-semibold tracking-tight text-foreground">{ADMIN_BRAND_NAME}</p>
+              <p className="text-muted-foreground truncate text-xs">Trang quản trị</p>
+            </div>
+            {!isMobileMode && (
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-label="Thu gọn sidebar"
+                title="Thu gọn sidebar"
+                className="hover:bg-accent text-muted-foreground hover:text-accent-foreground ml-auto grid size-8 place-items-center rounded-lg transition-colors"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
             )}
-          >
-            <PanelLeftClose className="size-4" />
-          </button>
+          </>
+        ) : (
+          !isMobileMode && (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="Mở rộng sidebar"
+              title="Mở rộng sidebar"
+              className="hover:bg-accent text-muted-foreground hover:text-accent-foreground grid size-8 place-items-center rounded-lg transition-colors"
+            >
+              <PanelLeftOpen className="size-4" />
+            </button>
+          )
         )}
       </div>
 
@@ -218,18 +230,7 @@ export function AdminSidebar({
         })}
       </nav>
 
-      {collapsed && (
-        <div className="border-t p-3">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Mở rộng sidebar"
-            className="hover:bg-accent text-muted-foreground hover:text-accent-foreground grid size-10 w-full place-items-center rounded-lg transition-colors"
-          >
-            <PanelLeftOpen className="size-4.5" />
-          </button>
-        </div>
-      )}
+
     </aside>
   );
 }

@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, MapPin, Search, AlertCircle, RefreshCw, ShoppingBag } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Search, AlertCircle, RefreshCw, ShoppingBag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/site/PageHeader";
@@ -247,13 +247,23 @@ function MenuPage() {
 
           {/* Search bar */}
           <div className="relative w-full md:w-64 shrink-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <Input
               placeholder="Tìm kiếm sản phẩm…"
-              className="pl-9 h-9 text-xs"
+              className={`pl-9 ${searchQuery ? "pr-8" : ""} h-9 text-xs`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {Boolean(searchQuery) && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors focus:outline-none"
+                aria-label="Xóa từ khóa tìm kiếm"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
           </div>
         </div>
 

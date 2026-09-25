@@ -23,7 +23,7 @@ export async function seedDemoData({ customUrl = null, pool = null } = {}) {
     await client.query(`
       INSERT INTO stores (id, name, city, district, address, hours, phone, amenities, is_active)
       VALUES
-        (1, 'TeaPlus Quận 1 - Nguyễn Huệ', 'Hồ Chí Minh', 'Quận 1', '123 Nguyễn Huệ', '08:00-22:00', '02838221101', '["Chỗ đỗ ô tô", "Máy lạnh", "Mua mang đi", "Giao 25p", "Không gian thoáng"]', true),
+        (1, 'TeaPlus Quận 1 - Nguyễn Huệ', 'Hồ Chí Minh', 'Quận 1', '123 Nguyễn Huệ', '08:00 – 21:00', '02838221101', '["Chỗ đỗ ô tô", "Máy lạnh", "Mua mang đi", "Giao 25p", "Không gian thoáng"]', true),
         (2, 'TeaPlus Bình Thạnh - D2', 'Hồ Chí Minh', 'Bình Thạnh', '45 Nguyễn Gia Trí', '08:00-22:00', '02838221102', '["Chỗ đỗ ô tô", "Máy lạnh", "Mua mang đi", "Giao 25p", "Không gian thoáng"]', true)
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, address = EXCLUDED.address, amenities = EXCLUDED.amenities, is_active = EXCLUDED.is_active;
     `);

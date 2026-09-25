@@ -1,8 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Loader2, Users, History, Laptop, CreditCard } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Users, History, Laptop, CreditCard, Server } from "lucide-react";
 import { toast } from "sonner";
 import { AdminPageHeader } from "@/components/admin/AdminUI";
+import { parseDeviceUserAgent, formatAuditAction, formatAuditDetail } from "@/lib/audit-format";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -74,6 +75,9 @@ export function SettingsPage() {
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [products, setProducts] = useState<{ id: number; name: string }[]>([]);
+
   // Keep role source consistent with admin login, route guard and sidebar.
   // `auth_user` belongs to a legacy/customer session and must never grant admin UI access.
   const currentUser = getUser();
@@ -88,11 +92,15 @@ export function SettingsPage() {
     Promise.all([
       apiGet<AccountRow[]>("/admin/settings/accounts"),
       apiGet<AuditRow[]>("/admin/settings/audit-logs"),
+      apiGet<any>("/admin/branches").catch(() => []),
+      apiGet<any>("/api/products").catch(() => []),
     ])
-      .then(([accs, als]) => {
+      .then(([accs, als, rawBranches, rawProds]) => {
         if (cancelled) return;
         setAccounts(accs);
         setLogs(als);
+        setBranches(Array.isArray(rawBranches) ? rawBranches : rawBranches?.items || []);
+        setProducts(Array.isArray(rawProds) ? rawProds : []);
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : "Không tải được cài đặt"))
       .finally(() => {
@@ -102,6 +110,9 @@ export function SettingsPage() {
       cancelled = true;
     };
   }, [isSuper]);
+
+  const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p.name])), [products]);
 
   if (!isSuper) {
     return <AdminAccessDenied />;
@@ -257,19 +268,26 @@ export function SettingsPage() {
                         </span>
                       </div>
 
-                      <p className="font-semibold text-primary text-xs">{l.action}</p>
+                      <p className="font-semibold text-primary text-xs">{formatAuditAction(l.action, productMap, branchMap)}</p>
 
                       {l.detail && (
                         <div className="bg-muted/30 p-2.5 rounded-xl border border-muted/50 text-muted-foreground text-[11px] leading-relaxed break-words">
-                          {l.detail}
+                          {formatAuditDetail(l.detail, branchMap, productMap)}
                         </div>
                       )}
 
                       {l.user_agent && (
-                        <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1 pt-1">
-                          <Laptop className="size-3 shrink-0" />
-                          <span className="truncate">{l.user_agent.split(" ").slice(0, 3).join(" ")}</span>
-                        </p>
+                        <div className="text-[10px] text-muted-foreground/70 flex items-center gap-1.5 pt-1">
+                          {(() => {
+                            const dev = parseDeviceUserAgent(l.user_agent);
+                            return (
+                              <span className="inline-flex items-center gap-1">
+                                {dev.isServer ? <Server className="size-3 text-amber-500" /> : <Laptop className="size-3 text-primary" />}
+                                {dev.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -291,12 +309,22 @@ export function SettingsPage() {
                       {logs.map((l) => (
                         <TableRow key={l.id}>
                           <TableCell className="text-sm font-medium">{l.user_name}</TableCell>
-                          <TableCell className="text-sm font-semibold text-primary">{l.action}</TableCell>
-                          <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
-                            {l.detail || "—"}
+                          <TableCell className="text-sm font-semibold text-primary">
+                            {formatAuditAction(l.action, productMap, branchMap)}
                           </TableCell>
-                          <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                            {l.user_agent?.split(" ").slice(0, 2).join(" ") || "—"}
+                          <TableCell className="text-muted-foreground hidden text-sm md:table-cell max-w-xs break-words">
+                            {formatAuditDetail(l.detail, branchMap, productMap)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground hidden text-xs lg:table-cell whitespace-nowrap">
+                            {(() => {
+                              const dev = parseDeviceUserAgent(l.user_agent);
+                              return (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/50 border border-muted font-medium text-[11px]">
+                                  {dev.isServer ? <Server className="size-3 text-amber-500" /> : <Laptop className="size-3 text-primary" />}
+                                  {dev.label}
+                                </span>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell className="text-right text-sm whitespace-nowrap font-mono">
                             {fmtDateTime(l.created_at)}

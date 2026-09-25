@@ -28,7 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiGet, apiPost, clearToken, createIdempotencyKey, getUser } from "@/lib/api";
-import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, baseOptions, sugarOptions, iceOptions, formatOrderItemOptions } from "@/lib/data";
+import { vnd, mapApiProduct, type ApiCatalogProduct, type Product, formatOrderItemOptions } from "@/lib/data";
+import { DynamicProductConfigurator, type ConfiguredItemPayload } from "@/components/catalog/DynamicProductConfigurator";
 
 export const Route = createFileRoute("/admin/pos")({
   head: () => ({
@@ -104,8 +105,8 @@ function PosPage() {
   const [activeTab, setActiveTab] = useState<string>("Tất cả");
 
   // Dialog state
-  const [editingItem, setEditingItem] = useState<PosCartItem | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [configuringProductSlug, setConfiguringProductSlug] = useState<string | null>(null);
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [checkoutQr, setCheckoutQr] = useState<string | null>(null);
   const [qrOrderCode, setQrOrderCode] = useState<string | null>(null);
@@ -293,57 +294,64 @@ function PosPage() {
   }, [cart]);
 
   function handleProductClick(p: Product) {
-    const defaultSize = sizes.length > 0 ? sizes[0] : null;
-    const newItem: PosCartItem = {
-      uid: crypto.randomUUID(),
-      product_id: p.id,
-      product_name: p.name,
-      size_id: defaultSize ? defaultSize.id : null,
-      size_label: defaultSize ? defaultSize.label : "M",
-      price: p.price,
-      base_tea: baseOptions[0],
-      sugar_level: "100%",
-      ice_level: "100%",
-      qty: 1,
-      note: "",
-      toppings: [],
-    };
-    setEditingItem(newItem);
-    setIsDialogOpen(true);
+    setConfiguringProductSlug(p.slug || p.id);
+    setIsConfigOpen(true);
   }
 
-  function saveItemToCart() {
-    if (!editingItem) return;
-    
-    setCart(prev => {
-      // Check if exact same item exists (excluding uid)
-      const existingIdx = prev.findIndex(item => 
-        item.product_id === editingItem.product_id &&
-        item.size_id === editingItem.size_id &&
-        item.base_tea === editingItem.base_tea &&
-        item.sugar_level === editingItem.sugar_level &&
-        item.ice_level === editingItem.ice_level &&
-        item.note === editingItem.note &&
-        JSON.stringify(item.toppings) === JSON.stringify(editingItem.toppings)
+  function handleAddToCartFromConfigurator(configuredItem: ConfiguredItemPayload) {
+    const sugarModifier = configuredItem.appliedModifiers.find(
+      (m) => m.attribute_code === 'sugar' || m.attribute_name?.toLowerCase().includes('đường')
+    );
+    const iceModifier = configuredItem.appliedModifiers.find(
+      (m) => m.attribute_code === 'ice' || m.attribute_name?.toLowerCase().includes('đá')
+    );
+    const toppingModifiers = configuredItem.appliedModifiers.filter(
+      (m) => m.attribute_code === 'topping' || m.attribute_name?.toLowerCase().includes('topping')
+    );
+
+    const cartToppings = toppingModifiers.map((t) => ({
+      topping_id: Number(t.attribute_value_id || t.value_id || 0),
+      name: t.value_label || t.attribute_name,
+      price: Number(t.price_adjustment || 0),
+      qty: 1,
+    }));
+
+    const newItem: PosCartItem = {
+      uid: crypto.randomUUID(),
+      product_id: String(configuredItem.productId),
+      product_name: configuredItem.productName,
+      size_id: configuredItem.variantId,
+      size_label: configuredItem.variantName?.replace(/^Size\s*/i, '').trim() || (configuredItem.variantName || 'M'),
+      price: configuredItem.unitPrice,
+      base_tea: '', // Nhóm Cốt trà bỏ luôn không còn sài
+      sugar_level: sugarModifier?.value_label || '',
+      ice_level: iceModifier?.value_label || '',
+      qty: configuredItem.quantity,
+      note: '',
+      toppings: cartToppings,
+    };
+
+    setCart((prev) => {
+      const existingIdx = prev.findIndex(
+        (item) =>
+          item.product_id === newItem.product_id &&
+          item.size_id === newItem.size_id &&
+          item.sugar_level === newItem.sugar_level &&
+          item.ice_level === newItem.ice_level &&
+          item.note === newItem.note &&
+          JSON.stringify(item.toppings) === JSON.stringify(newItem.toppings)
       );
 
-      if (existingIdx >= 0 && prev[existingIdx].uid !== editingItem.uid) {
-        // Increment qty of existing
+      if (existingIdx >= 0) {
         const copy = [...prev];
-        copy[existingIdx].qty += editingItem.qty;
+        copy[existingIdx].qty += newItem.qty;
         return copy;
       }
-
-      // If it's an update to an existing uid, replace it
-      const isUpdate = prev.some(item => item.uid === editingItem.uid);
-      if (isUpdate) {
-        return prev.map(item => item.uid === editingItem.uid ? editingItem : item);
-      }
-
-      // Otherwise, add new
-      return [...prev, editingItem];
+      return [...prev, newItem];
     });
-    setIsDialogOpen(false);
+
+    setIsConfigOpen(false);
+    setConfiguringProductSlug(null);
   }
 
   function removeFromCart(uid: string) {
@@ -469,8 +477,9 @@ function PosPage() {
                 <div
                   className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-muted/20 mt-1 cursor-pointer"
                   onClick={() => {
-                    setEditingItem(item);
-                    setIsDialogOpen(true);
+                    const p = products.find((x) => String(x.id) === String(item.product_id));
+                    setConfiguringProductSlug(p?.slug || item.product_id);
+                    setIsConfigOpen(true);
                   }}
                 >
                   <img
@@ -488,8 +497,9 @@ function PosPage() {
                   <div
                     className="pr-6 cursor-pointer"
                     onClick={() => {
-                      setEditingItem(item);
-                      setIsDialogOpen(true);
+                      const p = products.find((x) => String(x.id) === String(item.product_id));
+                      setConfiguringProductSlug(p?.slug || item.product_id);
+                      setIsConfigOpen(true);
                     }}
                   >
                     <p className="font-bold text-sm leading-tight truncate">{item.product_name}</p>
@@ -807,136 +817,20 @@ function PosPage() {
         </SheetContent>
       </Sheet>
 
-      {/* OPTIONS DIALOG */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-0 overflow-hidden border-transparent shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)]">
-          <DialogHeader className="bg-muted/30 p-6 pb-4 border-b">
-            <DialogTitle className="font-display text-2xl font-bold tracking-tight">{editingItem?.product_name}</DialogTitle>
-          </DialogHeader>
-          
-          {editingItem && (
-            <ScrollArea className="max-h-[60vh]">
-              <div className="space-y-6 p-6">
-                <div className="grid grid-cols-2 gap-5">
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block font-bold uppercase tracking-wider">Size</Label>
-                    <Select value={String(editingItem.size_id || "")} onValueChange={(v) => {
-                      const sz = sizes.find(s => String(s.id) === v);
-                      if (sz) setEditingItem({ ...editingItem, size_id: sz.id, size_label: sz.label });
-                    }}>
-                      <SelectTrigger className="rounded-xl h-10 bg-muted/10"><SelectValue/></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {sizes.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block font-bold uppercase tracking-wider">Cốt trà</Label>
-                    <Select value={editingItem.base_tea} onValueChange={(v) => setEditingItem({ ...editingItem, base_tea: v })}>
-                      <SelectTrigger className="rounded-xl h-10 bg-muted/10"><SelectValue/></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {baseOptions.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block font-bold uppercase tracking-wider">Độ đường</Label>
-                    <Select value={editingItem.sugar_level} onValueChange={(v) => setEditingItem({ ...editingItem, sugar_level: v })}>
-                      <SelectTrigger className="rounded-xl h-10 bg-muted/10"><SelectValue/></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {sugarOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block font-bold uppercase tracking-wider">Độ đá</Label>
-                    <Select value={editingItem.ice_level} onValueChange={(v) => setEditingItem({ ...editingItem, ice_level: v })}>
-                      <SelectTrigger className="rounded-xl h-10 bg-muted/10"><SelectValue/></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {iceOptions.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-3 block font-bold uppercase tracking-wider">Topping</Label>
-                  <div className="space-y-2.5">
-                    {toppings.map(t => {
-                      const selected = editingItem.toppings.find(x => x.topping_id === t.id);
-                      return (
-                        <div key={t.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${selected ? 'bg-primary/5 border-primary/20' : 'bg-muted/10 hover:bg-muted/20 border-transparent'}`}>
-                          <span className="text-sm font-semibold">{t.name} <span className="text-primary font-bold ml-1">(+{vnd(t.price)})</span></span>
-                          {selected ? (
-                            <div className="flex items-center gap-1.5 bg-background shadow-sm rounded-lg p-1 border">
-                              <button 
-                                className="rounded-md size-6 flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
-                                onClick={() => {
-                                  const newToppings = editingItem.toppings.map(x => 
-                                    x.topping_id === t.id ? { ...x, qty: x.qty - 1 } : x
-                                  ).filter(x => x.qty > 0);
-                                  setEditingItem({ ...editingItem, toppings: newToppings });
-                                }}
-                              ><Minus className="size-3.5"/></button>
-                              <span className="w-5 text-center font-bold text-sm">{selected.qty}</span>
-                              <button 
-                                className="rounded-md size-6 flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
-                                onClick={() => {
-                                  const newToppings = editingItem.toppings.map(x => 
-                                    x.topping_id === t.id ? { ...x, qty: x.qty + 1 } : x
-                                  );
-                                  setEditingItem({ ...editingItem, toppings: newToppings });
-                                }}
-                              ><Plus className="size-3.5"/></button>
-                            </div>
-                          ) : (
-                            <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs font-semibold hover:text-primary hover:border-primary" onClick={() => {
-                              setEditingItem({
-                                ...editingItem,
-                                toppings: [...editingItem.toppings, { topping_id: t.id, name: t.name, price: t.price, qty: 1 }]
-                              })
-                            }}>Thêm</Button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-1.5 block font-bold uppercase tracking-wider">Ghi chú thêm</Label>
-                  <Input 
-                    placeholder="VD: ít sữa, không trân châu..." 
-                    value={editingItem.note} 
-                    onChange={e => setEditingItem({ ...editingItem, note: e.target.value })} 
-                    className="rounded-xl h-11 bg-muted/10 border-transparent focus-visible:ring-primary/30"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between border-t border-dashed mt-6 pt-6">
-                  <span className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Số lượng:</span>
-                  <div className="flex items-center bg-muted/20 rounded-xl border p-1 shadow-sm">
-                    <button 
-                      className="p-2 hover:bg-background rounded-lg text-muted-foreground transition-all hover:shadow-sm" 
-                      onClick={() => setEditingItem({ ...editingItem, qty: Math.max(1, editingItem.qty - 1) })}
-                    ><Minus className="size-4"/></button>
-                    <span className="w-12 text-center font-extrabold text-lg">{editingItem.qty}</span>
-                    <button 
-                      className="p-2 hover:bg-background rounded-lg text-muted-foreground transition-all hover:shadow-sm" 
-                      onClick={() => setEditingItem({ ...editingItem, qty: editingItem.qty + 1 })}
-                    ><Plus className="size-4"/></button>
-                  </div>
-                </div>
-              </div>
-            </ScrollArea>
-          )}
-
-          <DialogFooter className="p-5 border-t bg-muted/10">
-            <Button variant="ghost" className="rounded-xl font-semibold" onClick={() => setIsDialogOpen(false)}>Hủy</Button>
-            <Button variant="hero" className="rounded-xl shadow-glow font-bold px-8" onClick={saveItemToCart}>Cập nhật giỏ</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* OPTIONS CONFIGURATOR DÙNG CHUẨN CATALOG LANE KITCHEN */}
+      {configuringProductSlug && (
+        <DynamicProductConfigurator
+          open={isConfigOpen}
+          onOpenChange={(open) => {
+            setIsConfigOpen(open);
+            if (!open) setConfiguringProductSlug(null);
+          }}
+          productSlug={configuringProductSlug}
+          storeId={selectedStoreId || undefined}
+          mode="add"
+          onAddToCart={handleAddToCartFromConfigurator}
+        />
+      )}
 
       {/* QR CODE DIALOG */}
       <Dialog open={!!checkoutQr} onOpenChange={(open) => !open && setCheckoutQr(null)}>

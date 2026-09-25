@@ -147,17 +147,14 @@ export function createPreorderService({
       if (!setting) {
         throw new PreorderError('Chi nhánh chưa bật đặt trước hoặc chưa có Quản lý phó trách', 409, 'PREORDER_STORE_UNAVAILABLE');
       }
-      let startHour = 9;
-      let lastSlotHour = 22;
-      if (setting.store_hours) {
-        const operating = parseStoreOperatingHours(setting.store_hours);
-        startHour = operating.openMinute === 0 ? operating.openHour : operating.openHour + 1;
-        lastSlotHour = Math.floor((operating.totalCloseMinutes - 120) / 60);
-      }
+      const storeHours = setting.store_hours || '08:00 – 22:00';
+      const operating = parseStoreOperatingHours(storeHours);
+      const startHour = operating.openMinute === 0 ? operating.openHour : operating.openHour + 1;
+      const lastSlotHour = Math.floor((operating.totalCloseMinutes - 120) / 60);
       const slots = [];
       for (let hour = startHour; hour <= lastSlotHour; hour += 1) {
         try {
-          const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow, storeHours: setting.store_hours });
+          const slot = validateVietnamPreorderSlot({ date, hour, now: currentNow, storeHours });
           slots.push({ hour, scheduled_start_at: slot.start.toISOString(), scheduled_end_at: slot.end.toISOString(), available: true });
         } catch (error) {
           if (error.code === 'PREORDER_MIN_LEAD_TIME') {

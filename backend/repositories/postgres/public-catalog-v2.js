@@ -408,6 +408,27 @@ export function createPublicCatalogV2Repository(database = postgresDb) {
 
       return product;
     },
+
+    async checkProductsAvailability({ storeId, productIds }) {
+      if (!productIds || productIds.length === 0) return [];
+      const normalizedStoreId = Number(storeId);
+      const [rows] = await database.query(
+        `SELECT p.id AS product_id, p.name AS product_name,
+                (p.status = 'active' AND p.is_available = TRUE AND EXISTS (
+                  SELECT 1 FROM product_variants pv
+                  JOIN branch_variant_offers bvo ON bvo.variant_id = pv.id AND bvo.store_id = $1 AND bvo.is_available = TRUE
+                  WHERE pv.product_id = p.id AND pv.status = 'active' AND bvo.price IS NOT NULL
+                )) AS is_available
+         FROM products p
+         WHERE p.id = ANY($2::int[])`,
+        [normalizedStoreId, productIds],
+      );
+      return rows.map((r) => ({
+        product_id: Number(r.product_id),
+        product_name: r.product_name,
+        is_available: Boolean(r.is_available),
+      }));
+    },
   };
 }
 

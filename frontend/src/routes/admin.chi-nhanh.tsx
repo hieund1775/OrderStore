@@ -344,6 +344,8 @@ export function StoresAdminPage() {
   const [mapStore, setMapStore] = useState<Store | null>(null);
   const [deleting, setDeleting] = useState<Store | null>(null);
 
+  const isFiltering = Boolean(search.trim()) || cityFilter !== "all";
+
   const cities = Array.from(new Set(stores.map((s) => s.city)));
 
   const filteredStores = stores.filter((s) => {
@@ -449,7 +451,7 @@ export function StoresAdminPage() {
     <div className="space-y-6">
       <AdminPageHeader
         title="Hệ thống cửa hàng"
-        desc={`${stores.length} chi nhánh đang vận hành`}
+        desc={isFiltering ? `${filteredStores.length} chi nhánh phù hợp` : `${totalStores ?? stores.length} chi nhánh đang vận hành`}
         actions={
           <Button variant="hero" onClick={() => setAdding(true)}>
             <Plus className="mr-1 size-4" /> Thêm chi nhánh
@@ -576,13 +578,13 @@ export function StoresAdminPage() {
           })}
           </div>
 
-          {stores.length > 0 && (
+          {filteredStores.length > 0 && (
             <AdminPagination
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalStores}
+              page={isFiltering ? 1 : page}
+              totalPages={isFiltering ? Math.max(1, Math.ceil(filteredStores.length / 6)) : totalPages}
+              totalItems={isFiltering ? filteredStores.length : (totalStores ?? stores.length)}
               itemLabel="chi nhánh"
-              onPageChange={setPage}
+              onPageChange={isFiltering ? () => {} : setPage}
               loading={loading}
             />
           )}

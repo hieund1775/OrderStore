@@ -13,6 +13,8 @@ import {
   Loader2,
   RefreshCw,
   FolderTree,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +58,7 @@ import { useCart, mapConfiguredItemToCartItem } from '@/lib/cart';
 import { SmartCartDrawer } from '@/components/cart/SmartCartDrawer';
 import { ForgotPasswordDialog } from '@/components/site/ForgotPasswordDialog';
 import { useBranch } from '@/lib/branch';
+import { checkCartAvailability, type CartAvailabilityItem } from '@/lib/cart-availability';
 import { buildWishlistQuickCartItem, useWishlist, type WishlistItem } from '@/lib/wishlist';
 import { toast } from 'sonner';
 import { explicitCustomerLogout } from '@/lib/auth-logout';
@@ -108,11 +111,13 @@ function Logo() {
 
 function BranchSelector() {
   const { stores, selectedStoreId, status, selectStore } = useBranch();
-  const { items, clear } = useCart();
+  const { items, removeItems, transferStore } = useCart();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const [pendingStoreId, setPendingStoreId] = useState<string | null>(null);
+  const [pendingStore, setPendingStore] = useState<{ id: number; name: string; district?: string } | null>(null);
+  const [unavailableList, setUnavailableList] = useState<CartAvailabilityItem[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
 
   const placeholder =
     status === 'loading'
@@ -132,12 +137,38 @@ function BranchSelector() {
     }
   };
 
-  const handleSelectStore = (value: string) => {
+  const handleSelectStore = async (value: string) => {
     if (value === String(selectedStoreId)) return;
 
+    const targetStore = stores.find((s) => String(s.id) === value);
+    if (!targetStore) return;
+
     if (items.length > 0) {
-      setPendingStoreId(value);
-      setConfirmDialogOpen(true);
+      setIsChecking(true);
+      try {
+        const productIds = items.map((i) => i.productId);
+        const result = await checkCartAvailability(value, productIds);
+        if (!result.hasUnavailable) {
+          transferStore({
+            id: targetStore.id,
+            name: targetStore.name,
+            district: targetStore.district,
+          });
+          executeSwitchBranch(value);
+          toast.success(`Đã chuyển sang ${targetStore.name}. Giỏ hàng được giữ nguyên.`);
+          return;
+        }
+
+        setPendingStore({
+          id: targetStore.id,
+          name: targetStore.name,
+          district: targetStore.district,
+        });
+        setUnavailableList(result.unavailableItems);
+        setConfirmDialogOpen(true);
+      } finally {
+        setIsChecking(false);
+      }
       return;
     }
 
@@ -145,17 +176,33 @@ function BranchSelector() {
   };
 
   const handleConfirmSwitch = () => {
-    if (pendingStoreId) {
-      clear();
-      executeSwitchBranch(pendingStoreId);
-      toast.info('Đã chuyển chi nhánh và làm mới giỏ hàng.');
+    if (pendingStore) {
+      const unavailableProductIds = new Set(unavailableList.map((u) => String(u.product_id)));
+      const keysToRemove = items
+        .filter((i) => unavailableProductIds.has(String(i.productId)))
+        .map((i) => i.key);
+
+      if (keysToRemove.length > 0) {
+        removeItems(keysToRemove);
+      }
+      transferStore({
+        id: pendingStore.id,
+        name: pendingStore.name,
+        district: pendingStore.district,
+      });
+      executeSwitchBranch(String(pendingStore.id));
+      toast.warning(
+        `Đã chuyển sang ${pendingStore.name}. Đã loại bỏ ${keysToRemove.length} món ngưng phục vụ.`,
+      );
     }
-    setPendingStoreId(null);
+    setPendingStore(null);
+    setUnavailableList([]);
     setConfirmDialogOpen(false);
   };
 
   const handleCancelSwitch = () => {
-    setPendingStoreId(null);
+    setPendingStore(null);
+    setUnavailableList([]);
     setConfirmDialogOpen(false);
   };
 
@@ -164,10 +211,14 @@ function BranchSelector() {
       <Select
         value={selectedStoreId == null ? undefined : String(selectedStoreId)}
         onValueChange={handleSelectStore}
-        disabled={status !== 'ready' || stores.length === 0}
+        disabled={status !== 'ready' || stores.length === 0 || isChecking}
       >
         <SelectTrigger className="h-9 w-full max-w-56 rounded-full border-dashed text-xs">
-          <MapPin className="text-primary size-3.5 shrink-0" />
+          {isChecking ? (
+            <Loader2 className="text-primary size-3.5 shrink-0 animate-spin" />
+          ) : (
+            <MapPin className="text-primary size-3.5 shrink-0" />
+          )}
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -182,9 +233,21 @@ function BranchSelector() {
       <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận đổi chi nhánh</AlertDialogTitle>
-            <AlertDialogDescription>
-              Thay đổi chi nhánh sẽ xóa các món đang có trong giỏ hàng. Bạn có muốn tiếp tục?
+            <AlertDialogTitle>Món không khả dụng tại chi nhánh mới</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Chi nhánh <span className="font-semibold text-foreground">{pendingStore?.name}</span> hiện ngưng phục vụ một số món trong giỏ hàng:
+                </p>
+                <ul className="list-disc pl-5 font-medium text-destructive text-xs space-y-1">
+                  {unavailableList.map((item) => (
+                    <li key={item.product_id}>{item.product_name}</li>
+                  ))}
+                </ul>
+                <p>
+                  Hệ thống sẽ loại bỏ các món này và giữ lại các món khả dụng trong giỏ hàng. Bạn có muốn tiếp tục?
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -553,6 +616,7 @@ function ProfileButton() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [userName, setUserName] = useState('');
   const [userTier, setUserTier] = useState('Đồng');
@@ -757,6 +821,7 @@ function ProfileButton() {
     setLoggedIn(false);
     setPhone('');
     setPassword('');
+    setShowPassword(false);
     setConfirmPassword('');
     setAuthMode('login');
     setError('');
@@ -777,6 +842,7 @@ function ProfileButton() {
             setAuthMode('login');
             setError('');
             setPassword('');
+            setShowPassword(false);
             setConfirmPassword('');
           }
         }}
@@ -807,12 +873,23 @@ function ProfileButton() {
                 value={phone}
                 onChange={(e) => { setPhone(e.target.value); setError(''); }}
               />
-              <Input
-                placeholder="Mật khẩu (tối thiểu 8 ký tự)"
-                type="password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              />
+              <div className="relative">
+                <Input
+                  placeholder="Mật khẩu (tối thiểu 8 ký tự)"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2 focus:outline-none"
+                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
               {authMode === 'register' && (
                 <Input
                   placeholder="Xác nhận mật khẩu"
@@ -852,6 +929,7 @@ function ProfileButton() {
                 onClick={() => {
                   setAuthMode(authMode === 'login' ? 'register' : 'login');
                   setError('');
+                  setShowPassword(false);
                   setConfirmPassword('');
                 }}
               >

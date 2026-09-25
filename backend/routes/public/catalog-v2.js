@@ -50,4 +50,16 @@ router.post('/resolve-configuration', asyncHandler(async (req, res) => {
   res.json(resolved);
 }));
 
+
+router.post('/check-availability', asyncHandler(async (req, res) => {
+  const { store_id, product_ids } = req.body || {};
+  const storeId = Number(store_id);
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    return res.status(400).json({ error: 'Mã chi nhánh không hợp lệ' });
+  }
+  const rawIds = Array.isArray(product_ids) ? product_ids : [];
+  const productIds = Array.from(new Set(rawIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)));
+  const results = await service.checkProductsAvailability({ storeId, productIds });
+  res.json({ items: results });
+}));
 export default router;

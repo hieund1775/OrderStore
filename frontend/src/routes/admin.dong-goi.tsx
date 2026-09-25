@@ -278,64 +278,66 @@ export function PackingStationPage() {
   const completedCount = tasks.filter((t) => t.current_status === 'Hoàn thành' || t.status === 'completed').length;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-6 max-w-full overflow-hidden">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Package className="size-7 text-primary" />
+          <h1 className="font-display text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Package className="size-6 sm:size-7 text-primary shrink-0" />
             <span>Khu Vực Đóng Gói (Packing Station)</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             Quản lý và hoàn thiện đơn hàng cho các sản phẩm thời trang, đồ khô, snack và quà lưu niệm.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={soundEnabled ? 'hero' : 'outline'}
             size="sm"
+            className="h-8 text-xs"
             onClick={() => {
               setSoundEnabled((v) => !v);
               if (!soundEnabled) playDingDong();
             }}
             aria-pressed={soundEnabled}
           >
-            <Volume2 className="size-4" />
+            <Volume2 className="size-3.5 sm:size-4 mr-1" />
             {soundEnabled ? 'Chuông: BẬT' : 'Chuông: TẮT'}
           </Button>
 
           <Button
             variant={isFullscreen ? 'hero' : 'outline'}
             size="sm"
+            className="h-8 text-xs"
             onClick={toggleFullscreen}
             title={isFullscreen ? 'Thoát toàn màn hình (Esc)' : 'Bật toàn màn hình'}
           >
-            {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+            {isFullscreen ? <Minimize className="size-3.5 sm:size-4 mr-1" /> : <Maximize className="size-3.5 sm:size-4 mr-1" />}
             {isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'}
           </Button>
 
-          <Button variant="outline" size="sm" onClick={fetchTasks} disabled={loading}>
-            <RefreshCw className={`mr-2 size-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={fetchTasks} disabled={loading}>
+            <RefreshCw className={`mr-1 size-3.5 sm:size-4 ${loading ? 'animate-spin' : ''}`} />
             Làm mới
           </Button>
         </div>
       </div>
 
       {/* Filters & Tabs */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col sm:flex-row flex-1 items-stretch sm:items-center gap-2 sm:gap-3">
+          <div className="relative flex-1 max-w-full sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Tìm mã đơn, tên khách, sản phẩm…"
-              className="pl-9 text-sm"
+              className="pl-9 text-xs sm:text-sm h-9"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           {isSuperAdmin && (
             <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px] h-9 text-xs sm:text-sm">
                 <SelectValue placeholder="Chọn chi nhánh" />
               </SelectTrigger>
               <SelectContent>
@@ -350,8 +352,8 @@ export function PackingStationPage() {
           )}
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-auto">
-          <TabsList className="grid grid-cols-3 w-full sm:w-[420px]">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
+          <TabsList className="grid grid-cols-3 w-full sm:w-[420px] h-9">
             <TabsTrigger value="packing" className="text-xs">
               Đóng gói ({pendingCount + preparingCount})
             </TabsTrigger>
@@ -460,9 +462,17 @@ export function PackingStationPage() {
                       <span className="flex items-center gap-1">
                         <Store className="size-3 text-muted-foreground" /> {task.store_name}
                       </span>
-                      <span className="flex items-center gap-1 font-mono">
-                        <Clock className="size-3 text-muted-foreground" />
-                        {new Date(task.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                      <span className="flex items-center gap-1 font-mono text-[11px] sm:text-xs">
+                        <Clock className="size-3 text-muted-foreground shrink-0" />
+                        {activeTab === 'completed' || task.status === 'completed' || task.current_status === 'Hoàn thành'
+                          ? new Date(task.updated_at || task.created_at).toLocaleString('vi-VN', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : new Date(task.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     {task.preorder_scheduled_start_at && (

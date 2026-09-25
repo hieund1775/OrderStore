@@ -296,6 +296,10 @@ export function CatalogOption3BlocksEditor({
       toast.error('Vui lòng nhập tên nhóm tùy chọn.');
       return;
     }
+    if (trimmedGroupName.length > 50) {
+      toast.error('Tên nhóm tùy chọn không được vượt quá 50 ký tự.');
+      return;
+    }
 
     const normalizedGroupName = trimmedGroupName.toLowerCase();
     const duplicateGroup = rawAttributes.find(
@@ -442,9 +446,9 @@ export function CatalogOption3BlocksEditor({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 truncate">
-                            {attr.name}
-                            <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 min-w-0">
+                            <span className="truncate" title={attr.name}>{attr.name}</span>
+                            <span className="text-[10px] text-muted-foreground font-normal shrink-0">({attr.code})</span>
                           </p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[10px] text-muted-foreground font-medium">
@@ -576,9 +580,9 @@ export function CatalogOption3BlocksEditor({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 truncate">
-                            {attr.name}
-                            <span className="text-[10px] text-muted-foreground font-normal">({attr.code})</span>
+                          <p className="font-bold text-xs text-foreground flex items-center gap-1.5 min-w-0">
+                            <span className="truncate" title={attr.name}>{attr.name}</span>
+                            <span className="text-[10px] text-muted-foreground font-normal shrink-0">({attr.code})</span>
                           </p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[10px] text-muted-foreground font-medium">
@@ -683,9 +687,14 @@ export function CatalogOption3BlocksEditor({
 
               {/* Tên nhóm */}
               <div className="space-y-1.5">
-                <Label htmlFor="modal-group-name" className="text-xs font-semibold">
-                  Tên nhóm tùy chọn <span className="text-destructive">*</span>
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="modal-group-name" className="text-xs font-semibold">
+                    Tên nhóm tùy chọn <span className="text-destructive">*</span>
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">
+                    {groupName.length}/50 ký tự
+                  </span>
+                </div>
                 <Input
                   id="modal-group-name"
                   placeholder={
@@ -694,6 +703,7 @@ export function CatalogOption3BlocksEditor({
                       : 'Ví dụ: Topping, Món thêm...'
                   }
                   value={groupName}
+                  maxLength={50}
                   onChange={(e) => setGroupName(e.target.value)}
                   className="h-9 text-xs"
                 />

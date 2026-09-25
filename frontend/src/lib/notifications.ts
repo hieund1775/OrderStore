@@ -181,9 +181,21 @@ export async function fetchAdminNotifications(limitOrOptions: number | AdminNoti
     const limit = limitOrOptions.limit ?? 10;
     const type = limitOrOptions.type && limitOrOptions.type !== 'all' ? `&type=${encodeURIComponent(limitOrOptions.type)}` : '';
     const res = await apiGet<PaginatedAdminNotificationResponse>(`/admin/notifications?page=${page}&limit=${limit}${type}`);
+    const rawPag = res?.pagination as any;
+    const totalItems = Number(rawPag?.totalItems ?? rawPag?.total_items ?? 0);
+    const totalPages = Math.max(1, Number(rawPag?.totalPages ?? rawPag?.total_pages ?? 1));
     return {
       items: Array.isArray(res?.items) ? res.items.map(sanitizeNotificationItem) : [],
-      pagination: res?.pagination || { page, limit, total_items: 0, total_pages: 1, has_prev: false, has_next: false },
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+        total_items: totalItems,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      },
       unread_count: typeof res?.unread_count === 'number' ? res.unread_count : 0,
     };
   }

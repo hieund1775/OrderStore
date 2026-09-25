@@ -95,6 +95,8 @@ router.post('/', asyncHandler(async (req, res) => {
       note: validated.note,
       delivery_addr: validated.deliveryAddress,
     };
+    delete input.allocatedDiscount;
+    delete input.skipVoucherConsume;
     const customerUserId = validated.source === 'table_qr' ? null : extractCustomerUserId(req);
     const idempotencyKey = String(req.headers['idempotency-key'] || '');
     const order = await customerOrderService.create({

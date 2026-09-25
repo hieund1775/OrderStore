@@ -163,6 +163,8 @@ export function createAdminOrdersRepository(
         const [orders] = await tx.query(`SELECT id, payment_status, payment_provider FROM orders ${filter} FOR UPDATE`, params);
         const order = orders[0];
         if (!order) throw new AdminOrderError('Không tìm thấy đơn hàng hoặc không có quyền thao tác', 404);
+        const [current] = await tx.query('SELECT status FROM order_status_history WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE', [order.id]);
+        if (current[0]?.status === 'Đã hủy') throw new AdminOrderError('Đơn hàng đã bị hủy, không thể xác nhận thanh toán');
         if (order.payment_provider === 'payos') throw new AdminOrderError('Đơn hàng PayOS được xác nhận tự động qua Webhook, không thể xác nhận thủ công');
         if (order.payment_status === 'paid') return { alreadyPaid: true };
         if (order.payment_status === 'expired') throw new AdminOrderError('Đơn hàng đã hết hạn thanh toán, không thể xác nhận thủ công');

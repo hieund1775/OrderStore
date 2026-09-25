@@ -14,14 +14,20 @@ router.get('/promotions', asyncHandler(async (req, res) => {
 router.post('/vouchers/apply', asyncHandler(async (req, res) => {
   try {
     const validated = validateVoucherApplyInput(req.body);
-    const { discount_amount } = await promotionService.previewVoucher({
+    const { discount_amount, promotion } = await promotionService.previewVoucher({
       code: validated.code,
       subtotal: validated.subtotal,
       phone: validated.phone,
       storeId: validated.storeId,
       checkoutChannel: validated.checkoutChannel,
     });
-    res.json({ valid: true, discount_amount, code: validated.code, message: 'Áp dụng thành công' });
+    res.json({
+      valid: true,
+      discount_amount,
+      code: validated.code,
+      min_order: Number(promotion?.min_order || 0),
+      message: 'Áp dụng thành công',
+    });
   } catch (err) {
     res.status(400).json({ valid: false, message: err.message });
   }

@@ -820,6 +820,20 @@ export function handleLocalMock<T>(path: string, options?: RequestInit): Promise
     } as T);
   }
 
+  if (path.startsWith('/api/catalog/check-availability')) {
+    const requestedIds = Array.isArray(body?.product_ids) ? body.product_ids : [];
+    const mockProds = getMockCatalogProducts();
+    const items = requestedIds.map((pid: number | string) => {
+      const found = mockProds.find((p) => String(p.id) === String(pid));
+      return {
+        product_id: pid,
+        product_name: found ? found.name : `Sản phẩm #${pid}`,
+        is_available: found ? Boolean(found.is_available) : true,
+      };
+    });
+    return Promise.resolve({ items } as T);
+  }
+
   if (path.startsWith('/api/catalog/resolve-configuration')) {
     const mockProds = getMockCatalogProducts();
     const p = mockProds.find((prod) => prod.slug === body.product_slug) || mockProds[0];

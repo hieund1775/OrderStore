@@ -694,6 +694,56 @@ export function createCustomerOrderService({
         throw new OrderDomainError('Không tìm thấy đơn hàng', { status: 404, code: 'ORDER_NOT_FOUND', expose: true });
       }
 
+      // Strict ownership verification to prevent IDOR
+      const userId = tokenUser ? Number(tokenUser.id || tokenUser.sub) : null;
+      const isStaff = tokenUser && ['super', 'manager', 'cashier', 'kitchen', 'packing', 'admin'].includes(tokenUser.role);
+
+      if (!isStaff) {
+        if (order.user_id != null) {
+          if (!userId) {
+            throw new OrderDomainError('Vui lòng đăng nhập để xem thông tin đơn hàng', {
+              status: 401,
+              code: 'CUSTOMER_AUTH_REQUIRED',
+              expose: true,
+            });
+          }
+          if (Number(order.user_id) !== Number(userId)) {
+            throw new OrderDomainError('Bạn không có quyền truy cập đơn hàng này', {
+              status: 403,
+              code: 'ORDER_FORBIDDEN',
+              expose: true,
+            });
+          }
+        } else {
+          // Guest order placed without account
+          const trimmedCancelToken = (cancelToken || '').trim();
+          if (!trimmedCancelToken) {
+            throw new OrderDomainError('Yêu cầu token xác thực cho đơn hàng khách vãng lai', {
+              status: 401,
+              code: 'GUEST_TOKEN_REQUIRED',
+              expose: true,
+            });
+          }
+          let isTokenValid = false;
+          if (order.cancel_token_hash) {
+            try {
+              const providedHash = crypto.createHash('sha256').update(trimmedCancelToken).digest();
+              const storedHash = Buffer.from(String(order.cancel_token_hash).trim(), 'hex');
+              if (providedHash.length === storedHash.length && crypto.timingSafeEqual(providedHash, storedHash)) {
+                isTokenValid = true;
+              }
+            } catch {}
+          }
+          if (!isTokenValid) {
+            throw new OrderDomainError('Token xác thực đơn hàng không hợp lệ', {
+              status: 403,
+              code: 'GUEST_TOKEN_INVALID',
+              expose: true,
+            });
+          }
+        }
+      }
+
       const shouldReconcile = order.payment_provider === 'payos' && ['unpaid', 'expired'].includes(order.payment_status);
       if (shouldReconcile) {
         await reconcilePayOSOrder({ order, attemptsRepository: paymentsRepository });

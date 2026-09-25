@@ -287,4 +287,31 @@ describe('Preorder service lifecycle and authorization', () => {
     assert.equal(result.slots[result.slots.length - 1].hour, 19);
     assert.equal(result.slots.some((s) => s.hour === 20), false);
   });
+
+  it('bounds Suối Tiên slots to 07:00 – 22:00 store hours (ends at 21:00, never past close)', async () => {
+    const { service } = harness({
+      async getActiveStoreSetting() {
+        return {
+          store_id: 15,
+          is_enabled: true,
+          responsible_manager_id: 74,
+          admin_role: 'manager',
+          admin_branch_id: 15,
+          store_hours: '07:00 – 22:00',
+        };
+      },
+    });
+    const result = await service.availability({
+      storeId: 15,
+      date: '2026-09-15',
+      now: new Date('2026-09-12T02:00:00.000Z'),
+    });
+    // Slots must start at 07:00
+    assert.equal(result.slots[0].hour, 7);
+    // Last slot is 20:00 - 21:00 (ends at 21:00, >= 1h before store closes at 22:00)
+    assert.equal(result.slots[result.slots.length - 1].hour, 20);
+    // Slots after close time (>= 21 or 22) must not exist
+    assert.equal(result.slots.some((s) => s.hour >= 21), false);
+    assert.equal(result.slots.some((s) => s.hour === 22), false);
+  });
 });

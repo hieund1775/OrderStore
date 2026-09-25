@@ -103,8 +103,18 @@ function NotificationsPage() {
   const paginatedData = data as any;
   const rows: AppNotification[] = paginatedData?.items ?? paginatedData?.notifications ?? [];
   const unreadCount = data?.unread_count ?? 0;
-  const totalPages = paginatedData?.pagination?.total_pages ?? 1;
-  const totalItems = paginatedData?.pagination?.total_items;
+  const totalPages =
+    paginatedData?.pagination?.totalPages ??
+    paginatedData?.pagination?.total_pages ??
+    1;
+  const totalItems =
+    paginatedData?.pagination?.totalItems ??
+    paginatedData?.pagination?.total_items ??
+    (typeof paginatedData?.pagination?.total === "number"
+      ? paginatedData.pagination.total
+      : rows.length > 0
+        ? rows.length
+        : undefined);
   async function handleNotificationClick(n: AppNotification) {
     if (!n.is_read) {
       await markRead(n.id).catch(() => undefined);

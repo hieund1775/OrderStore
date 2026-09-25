@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Bike, MapPin, QrCode, Settings2, Store, Ticket, Trash2, AlertTriangle } from "lucide-react";
+import { Bike, MapPin, QrCode, Settings2, Store, Ticket, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ import {
 } from "@/lib/pending-payment";
 import { resolveCheckoutPaymentRedirect } from "@/lib/payment-redirect";
 import { DeliveryAddressSelector } from "@/components/checkout/DeliveryAddressSelector";
+import { checkCartAvailability, type CartAvailabilityItem } from "@/lib/cart-availability";
 import type { PaymentSummary } from "@/types/payment-summary";
 
 export const Route = createFileRoute("/thanh-toan")({
@@ -247,6 +248,7 @@ function Checkout() {
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherDiscount, setVoucherDiscount] = useState(0);
   const [appliedCode, setAppliedCode] = useState("");
+  const [appliedMinOrder, setAppliedMinOrder] = useState<number>(0);
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<PendingPayOSPayment | null>(null);
@@ -314,10 +316,34 @@ function Checkout() {
     if (checkoutStoreId != null && previousStoreId != null && checkoutStoreId !== previousStoreId) {
       setVoucherDiscount(0);
       setAppliedCode("");
+      setAppliedMinOrder(0);
       orderRequestRef.current = null;
     }
     if (checkoutStoreId != null) previousStoreIdRef.current = checkoutStoreId;
   }, [checkoutStoreId]);
+
+  const [unavailableCheckoutItems, setUnavailableCheckoutItems] = useState<CartAvailabilityItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (!checkoutStoreId || checkoutItems.length === 0) {
+      setUnavailableCheckoutItems([]);
+      return;
+    }
+    const productIds = checkoutItems.map((i) => i.productId);
+    checkCartAvailability(checkoutStoreId, productIds)
+      .then((res) => {
+        if (active) {
+          setUnavailableCheckoutItems(res.unavailableItems);
+        }
+      })
+      .catch(() => {
+        if (active) setUnavailableCheckoutItems([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [checkoutStoreId, checkoutItems]);
 
   // When takeaway is selected, ensure default branch is an open store if available
   useEffect(() => {
@@ -675,7 +701,7 @@ function Checkout() {
     if (storeAtRequest == null) return toast.error("Vui lòng chọn chi nhánh nhận hàng");
     try {
       const upperCode = voucherCode.trim().toUpperCase();
-      const res = await apiPost<{ valid: boolean; discount_amount: number; code?: string; message: string }>(
+      const res = await apiPost<{ valid: boolean; discount_amount: number; code?: string; min_order?: number; message: string }>(
         "/api/vouchers/apply",
         {
           code: upperCode,
@@ -689,6 +715,7 @@ function Checkout() {
       if (!res.valid) return toast.error(res.message);
       setVoucherDiscount(res.discount_amount);
       setAppliedCode(res.code || upperCode);
+      setAppliedMinOrder(Number(res.min_order || 0));
       toast.success(res.message);
     } catch (err) {
       if (checkoutStoreIdRef.current !== storeAtRequest) return;
@@ -699,12 +726,30 @@ function Checkout() {
   function removeVoucher() {
     setAppliedCode("");
     setVoucherDiscount(0);
+    setAppliedMinOrder(0);
     setVoucherCode("");
     toast.info("Đã gỡ mã ưu đãi");
   }
 
+  useEffect(() => {
+    if (appliedCode && appliedMinOrder > 0 && checkoutSubtotal < appliedMinOrder) {
+      const codeToReport = appliedCode;
+      setVoucherDiscount(0);
+      setAppliedCode("");
+      setAppliedMinOrder(0);
+      toast.error(`Đơn hàng của bạn không còn đủ điều kiện áp dụng mã giảm giá ${codeToReport}`);
+    }
+  }, [appliedCode, appliedMinOrder, checkoutSubtotal]);
+
   async function submitOrder() {
     if (checkoutItems.length === 0) return;
+    if (appliedCode && appliedMinOrder > 0 && checkoutSubtotal < appliedMinOrder) {
+      const codeToReport = appliedCode;
+      setVoucherDiscount(0);
+      setAppliedCode("");
+      setAppliedMinOrder(0);
+      return toast.error(`Đơn hàng của bạn không còn đủ điều kiện áp dụng mã giảm giá ${codeToReport}`);
+    }
     if (!isTableQrCheckout && !getCustomerSession()) {
       openCustomerLoginModal();
       return toast.error("Vui lòng đăng ký hoặc đăng nhập tài khoản trước khi đặt hàng");
@@ -743,6 +788,11 @@ function Checkout() {
     }
     if (checkoutStoreId == null) {
       return toast.error("Vui lòng chọn chi nhánh nhận hàng");
+    }
+    if (unavailableCheckoutItems.length > 0) {
+      return toast.error(
+        `Chi nhánh hiện ngưng phục vụ: ${unavailableCheckoutItems.map((u) => u.product_name).join(", ")}. Vui lòng xóa món để tiếp tục.`,
+      );
     }
     if (!isTableQrCheckout && method === "takeaway") {
       const targetStore = storeOptions.find((s) => s.id === checkoutStoreId);
@@ -894,11 +944,20 @@ function Checkout() {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Đặt hàng thất bại, thử lại";
       if (
+        errMsg.includes("PRODUCT_UNAVAILABLE_AT_BRANCH") ||
+        errMsg.includes("ngưng phục vụ tại chi nhánh") ||
+        errMsg.includes("không phục vụ")
+      ) {
+        toast.error("Một số món hiện ngưng phục vụ tại chi nhánh đã chọn. Vui lòng kiểm tra lại giỏ hàng.");
+        return;
+      }
+      if (
         /mã giảm giá|voucher|hết hạn|tối thiểu|lượt sử dụng/i.test(errMsg) ||
         (typeof err === "object" && err !== null && "code" in err && String((err as any).code).startsWith("PROMOTION_"))
       ) {
         setVoucherDiscount(0);
         setAppliedCode("");
+        setAppliedMinOrder(0);
       }
       toast.error(errMsg);
     } finally {
@@ -1160,6 +1219,23 @@ function Checkout() {
 
       <div className="container-page grid gap-6 py-10 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          {/* Warning Banner if items are unavailable at selected branch */}
+          {unavailableCheckoutItems.length > 0 && (
+            <div className="flex items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 shadow-sm text-destructive">
+              <AlertCircle className="size-5 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-sm">Món ngưng phục vụ tại chi nhánh đã chọn</p>
+                <p className="text-destructive/90 leading-relaxed">
+                  Các món sau hiện không khả dụng tại chi nhánh này:{" "}
+                  <span className="font-semibold underline">
+                    {unavailableCheckoutItems.map((u) => u.product_name).join(", ")}
+                  </span>
+                  . Vui lòng xóa món khỏi giỏ hàng hoặc chọn chi nhánh khác trước khi đặt hàng.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Buy Now Active Banner */}
           {isBuyNow && (
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-4 shadow-sm">

@@ -301,10 +301,13 @@ export function OrdersPage() {
             pagination?: {
               page: number;
               limit: number;
-              total_items: number;
-              total_pages: number;
-              has_next: boolean;
-              has_prev: boolean;
+              totalItems?: number;
+              totalPages?: number;
+              total_items?: number;
+              total_pages?: number;
+              total?: number;
+              has_next?: boolean;
+              has_prev?: boolean;
             };
             page_info?: {
               next_cursor: string | null;
@@ -323,9 +326,13 @@ export function OrdersPage() {
         pages = Math.max(1, Math.ceil(res.length / 10));
       } else if (res && typeof res === "object") {
         rows = res.orders || [];
-        if (res.pagination) {
-          count = res.pagination.total_items;
-          pages = Math.max(1, res.pagination.total_pages);
+        const pag = res.pagination;
+        if (pag) {
+          count = Number(pag.totalItems ?? pag.total_items ?? pag.total ?? rows.length) || 0;
+          pages = Math.max(1, Number(pag.totalPages ?? pag.total_pages) || Math.ceil(count / 10) || 1);
+          if (view === "list" && pages > 0 && page > pages) {
+            updateSearch({ page: pages > 1 ? pages : undefined });
+          }
         } else {
           count = rows.length;
           pages = 1;
@@ -340,7 +347,7 @@ export function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, type, payment, branchId, q, view, page]);
+  }, [status, type, payment, branchId, q, view, page, updateSearch]);
 
   useEffect(() => {
     const t = window.setTimeout(load, 250);
@@ -769,6 +776,10 @@ function OrderDetail({
   }
 
   async function confirmManualPayment() {
+    if (st === "Đã hủy") {
+      toast.error("Đơn hàng đã bị hủy, không thể xác nhận thanh toán");
+      return;
+    }
     setActionLoading(true);
     try {
       await apiPut(`/admin/orders/${orderId}/payment/confirm`, {});
@@ -862,7 +873,7 @@ function OrderDetail({
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {detail.payment_status === "unpaid" && detail.payment_provider !== "payos" && (
+                {st !== "Đã hủy" && detail.payment_status === "unpaid" && detail.payment_provider !== "payos" && (
                   <Button
                     variant="default"
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"

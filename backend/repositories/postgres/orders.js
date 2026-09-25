@@ -119,6 +119,15 @@ export function createOrdersRepository(
             [item.product_id],
           );
           if (!products[0]) throw new OrderError('Sản phẩm không tồn tại hoặc đã ngừng bán');
+          if (input.store_id) {
+            const [offerCheck] = await tx.query(
+              'SELECT 1 FROM branch_variant_offers bvo JOIN product_variants pv ON pv.id = bvo.variant_id WHERE pv.product_id = $1 AND bvo.store_id = $2 AND bvo.is_available = FALSE AND NOT EXISTS (SELECT 1 FROM branch_variant_offers bvo2 JOIN product_variants pv2 ON pv2.id = bvo2.variant_id WHERE pv2.product_id = $1 AND bvo2.store_id = $2 AND bvo2.is_available = TRUE)',
+              [item.product_id, input.store_id],
+            );
+            if (offerCheck && offerCheck[0]) {
+              throw new OrderError(`Sản phẩm "${products[0].name}" hiện ngưng phục vụ tại chi nhánh này`, 400, 'PRODUCT_UNAVAILABLE_AT_BRANCH');
+            }
+          }
           if (item.variant_id != null) {
             const [variants] = await tx.query(
               'SELECT id, sku, price, is_active FROM product_variants WHERE id = $1 AND product_id = $2',

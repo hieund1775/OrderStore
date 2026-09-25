@@ -101,23 +101,56 @@ export function TablesPage() {
   const [saving, setSaving] = useState(false);
   const [viewingQr, setViewingQr] = useState<TableRow | null>(null);
 
+  const [branchTableCounts, setBranchTableCounts] = useState<Record<number, number>>({});
+
+  const refreshBranchCounts = useCallback(() => {
+    apiGet<any>("/admin/tables")
+      .then((res) => {
+        const rows = Array.isArray(res) ? res : res?.items || [];
+        const counts: Record<number, number> = {};
+        for (const t of rows) {
+          counts[t.store_id] = (counts[t.store_id] || 0) + 1;
+        }
+        setBranchTableCounts(counts);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshBranchCounts();
+  }, [refreshBranchCounts]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ page: String(page), limit: "12" });
-      if (branchFilter !== "all") q.set("store_id", branchFilter);
-      const res = await apiGet<any>(`/admin/tables?${q.toString()}`);
       let rows: TableRow[] = [];
-      if (Array.isArray(res)) {
-        rows = res;
-      } else if (res && typeof res === "object") {
-        rows = Array.isArray(res.items) ? res.items : [];
-        if (res.pagination) {
-          const tp = Math.max(1, res.pagination.totalPages || 1);
-          setTotalPages(tp);
-          setTotalTables(res.pagination.totalItems);
-          if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
-            setPage(res.pagination.totalPages);
+      if (branchFilter === "all") {
+        // When showing all branches, fetch all tables to avoid cutting a branch's tables across multiple pages
+        const res = await apiGet<any>("/admin/tables");
+        rows = Array.isArray(res) ? res : res?.items || [];
+        setTotalPages(1);
+        setTotalTables(rows.length);
+        const counts: Record<number, number> = {};
+        for (const t of rows) {
+          counts[t.store_id] = (counts[t.store_id] || 0) + 1;
+        }
+        setBranchTableCounts(counts);
+      } else {
+        const q = new URLSearchParams({ page: String(page), limit: "12", store_id: branchFilter });
+        const res = await apiGet<any>(`/admin/tables?${q.toString()}`);
+        if (Array.isArray(res)) {
+          rows = res;
+          setTotalPages(1);
+          setTotalTables(rows.length);
+        } else if (res && typeof res === "object") {
+          rows = Array.isArray(res.items) ? res.items : [];
+          if (res.pagination) {
+            const tp = Math.max(1, res.pagination.totalPages || 1);
+            setTotalPages(tp);
+            setTotalTables(res.pagination.totalItems);
+            if (res.pagination.totalPages > 0 && page > res.pagination.totalPages) {
+              setPage(res.pagination.totalPages);
+            }
           }
         }
       }
@@ -126,7 +159,7 @@ export function TablesPage() {
       await Promise.all(
         rows.map(async (r: TableRow) => {
           if (r.qr_checkout_token) {
-            newMap[r.id] = await QRCode.toDataURL(qrUrl(r.qr_checkout_token), { width: 220, margin: 1 });
+            newMap[r.id] = await QRCode.toDataURL(qrUrl(r.qr_checkout_token), { width: 220, margin: 2 });
           }
         })
       );
@@ -200,7 +233,7 @@ export function TablesPage() {
         const map: Record<number, string> = {};
         await Promise.all(
           rows.map(async (b) => {
-            map[b.id] = await QRCode.toDataURL(storeQrUrl(b.id), { width: 220, margin: 1 });
+            map[b.id] = await QRCode.toDataURL(storeQrUrl(b.id), { width: 220, margin: 2 });
           })
         );
         setStoreQrMap(map);
@@ -294,7 +327,7 @@ export function TablesPage() {
         toast.success(`Đã cập nhật ${name}`);
       } else {
         const created = await apiPost<TableQrResponse>("/admin/tables", { name, store_id: Number(formStore) });
-        const dataUrl = await QRCode.toDataURL(qrUrl(created.qr_checkout_token), { width: 200, margin: 1 });
+        const dataUrl = await QRCode.toDataURL(qrUrl(created.qr_checkout_token), { width: 200, margin: 2 });
         createdQr = { id: created.id, token: dataUrl };
         toast.success(`Đã tạo ${name}`);
       }
@@ -313,7 +346,7 @@ export function TablesPage() {
   async function rotateQr(t: TableRow) {
     try {
       const rotated = await apiPost<TableQrResponse>(`/admin/tables/${t.id}/rotate-qr`, {});
-      const dataUrl = await QRCode.toDataURL(qrUrl(rotated.qr_checkout_token), { width: 200, margin: 1 });
+      const dataUrl = await QRCode.toDataURL(qrUrl(rotated.qr_checkout_token), { width: 200, margin: 2 });
       setQrMap((current) => ({ ...current, [t.id]: dataUrl }));
       setTables((current) => current.map((row) => row.id === t.id ? { ...row, has_checkout_qr: true } : row));
       toast.success(`Đã tạo QR checkout mới cho ${t.name}. Hãy in lại QR cũ.`);
@@ -515,7 +548,7 @@ export function TablesPage() {
                     {group.store_name}
                   </h2>
                   <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
-                    {group.tables.length} bàn
+                    {branchTableCounts[group.store_id] || group.tables.length} bàn
                   </Badge>
                 </div>
               </div>
@@ -526,12 +559,12 @@ export function TablesPage() {
                   return (
                     <Card key={t.id} className="overflow-hidden">
                       <CardContent className="flex flex-col items-center gap-3 p-5">
-                        <div className="bg-white rounded-xl border p-2">
+                        <div className="bg-white rounded-2xl border p-4 shadow-2xs">
                           {hasQr ? (
                             <img
                               src={qrMap[t.id]}
                               alt={`QR ${t.name}`}
-                              className="size-32 cursor-pointer hover:opacity-90 transition-opacity"
+                              className="size-32 object-contain cursor-pointer hover:opacity-90 transition-opacity"
                               onClick={() => setViewingQr(t)}
                               title="Click để phóng to mã QR"
                             />
@@ -719,11 +752,11 @@ export function TablesPage() {
           </DialogHeader>
           {viewingQr && qrMap[viewingQr.id] && (
             <div className="flex flex-col items-center gap-4 py-2">
-              <div className="bg-white p-3 rounded-2xl border shadow-sm">
+              <div className="bg-white p-5 rounded-2xl border shadow-sm">
                 <img
                   src={qrMap[viewingQr.id]}
                   alt={`QR ${viewingQr.name}`}
-                  className="size-48 sm:size-56"
+                  className="size-48 sm:size-56 object-contain"
                 />
               </div>
               <div className="text-sm">

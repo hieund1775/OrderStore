@@ -204,6 +204,7 @@ type CartContextValue = {
   toggleSelectStore: (storeId: string, selected: boolean) => void;
   toggleSelectAll: (selected: boolean) => void;
   clear: (storeId?: string) => void;
+  transferStore: (targetStore: { id: number | string; name?: string; district?: string }) => void;
   count: number;
   subtotal: number;
   selectedItems: CartItem[];
@@ -443,6 +444,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
           toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
           openCustomerLoginModal();
         },
+        transferStore: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ hàng');
+          openCustomerLoginModal();
+        },
       };
     }
 
@@ -628,6 +633,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
           });
         }
       },
+      transferStore: (targetStore) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
+        setItems((prev) => {
+          const map = new Map<string, CartItem>();
+          for (const item of prev) {
+            const updated: CartItem = {
+              ...item,
+              storeId: String(targetStore.id),
+              storeName: targetStore.name || item.storeName,
+              storeDistrict: targetStore.district || item.storeDistrict,
+            };
+            const newKey = buildCartItemKey(updated);
+            const existing = map.get(newKey);
+            if (existing) {
+              map.set(newKey, { ...existing, qty: existing.qty + updated.qty });
+            } else {
+              map.set(newKey, { ...updated, key: newKey });
+            }
+          }
+          return Array.from(map.values());
+        });
+      },
     };
   }, [items, activeUserId]);
 
@@ -796,6 +826,10 @@ export function PreorderCartProvider({ children }: { children: ReactNode }) {
           openCustomerLoginModal();
         },
         clear: () => {
+          toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ đặt trước');
+          openCustomerLoginModal();
+        },
+        transferStore: () => {
           toast.error('Vui lòng đăng nhập hoặc đăng ký tài khoản để sử dụng giỏ đặt trước');
           openCustomerLoginModal();
         },
@@ -982,6 +1016,31 @@ export function PreorderCartProvider({ children }: { children: ReactNode }) {
             });
           });
         }
+      },
+      transferStore: (targetStore) => {
+        if (!getCustomerSession()) {
+          openCustomerLoginModal();
+          return;
+        }
+        setItems((prev) => {
+          const map = new Map<string, CartItem>();
+          for (const item of prev) {
+            const updated: CartItem = {
+              ...item,
+              storeId: String(targetStore.id),
+              storeName: targetStore.name || item.storeName,
+              storeDistrict: targetStore.district || item.storeDistrict,
+            };
+            const newKey = buildCartItemKey(updated);
+            const existing = map.get(newKey);
+            if (existing) {
+              map.set(newKey, { ...existing, qty: existing.qty + updated.qty });
+            } else {
+              map.set(newKey, { ...updated, key: newKey });
+            }
+          }
+          return Array.from(map.values());
+        });
       },
     };
   }, [items, activeUserId]);

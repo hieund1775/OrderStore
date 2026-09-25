@@ -43,6 +43,21 @@ export function setUser(u: AdminUser | null) {
   }
 }
 
+export function getRoleLandingRoute(role?: string | null): string {
+  switch (role) {
+    case 'cashier':
+      return '/admin/pos';
+    case 'kitchen':
+      return '/admin/bep';
+    case 'packing':
+      return '/admin/dong-goi';
+    case 'manager':
+    case 'super':
+    default:
+      return '/admin/don-hang';
+  }
+}
+
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const inFlightMutations = new Map<string, Promise<unknown>>();
 // Only signal-less GETs are safe to share. Callers that own an AbortSignal

@@ -136,3 +136,24 @@ test('Public Catalog V2 Service: rejects fabricated variants, duplicate modifier
     /Tổ hợp biến thể này không tồn tại/,
   );
 });
+
+test('Public Catalog V2 Service: checks products availability for store and reports unavailable items', async () => {
+  const fakeRepo = {
+    async checkProductsAvailability({ storeId, productIds }) {
+      assert.equal(storeId, 2);
+      assert.deepEqual(productIds, [10, 20]);
+      return [
+        { product_id: 10, product_name: 'Trà Sữa Oolong', is_available: true },
+        { product_id: 20, product_name: 'Trà Đào Cam Sả', is_available: false },
+      ];
+    },
+  };
+
+  const service = createPublicCatalogV2Service({ catalogRepository: fakeRepo });
+  const result = await service.checkProductsAvailability({ storeId: 2, productIds: [10, 20] });
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].is_available, true);
+  assert.equal(result[1].is_available, false);
+  assert.equal(result[1].product_name, 'Trà Đào Cam Sả');
+});

@@ -342,6 +342,11 @@ export function createPublicCatalogV2Service(options = {}) {
         unit_price: finalPrice,
       };
     },
+
+    async checkProductsAvailability({ storeId, productIds }) {
+      if (!productIds || productIds.length === 0) return [];
+      return catalogRepository.checkProductsAvailability({ storeId, productIds });
+    },
   };
 }
 
